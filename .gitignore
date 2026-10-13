@@ -28,3 +28,7 @@ pdf/
 coverage/
 playwright-report/
 test-results/
+
+# Local development PostgreSQL (scripts/pg-dev.js)
+.pgdata/
+.migration-backups/

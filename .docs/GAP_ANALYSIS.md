@@ -1,0 +1,84 @@
+# Production-Readiness Gap Analysis
+
+Scope: the whole system as of commit `50679be` (stage 1 complete). Evidence is from source code, the two existing SQLite databases, running the app, and [POS_BENCHMARK_RESEARCH.md](POS_BENCHMARK_RESEARCH.md).
+
+Priority: **P0** = must fix before any multi-terminal or real-store use (security / data integrity); **P1** = core operational gap; **P2** = important quality gap; **P3** = improvement.
+Status values: Open · In progress · Done (with evidence) · Deferred (with reason).
+
+## 1. Technology decision matrix
+
+Scores 1 (poor) – 5 (good) against the mission's criteria. The weighted total uses: functional fit ×3, security ×3, reliability ×3, maintainability ×2, migration cost ×2, deployment complexity ×1, performance ×1, licensing ×1.
+
+### 1.1 Operational database
+
+| Option | Functional fit (multi-terminal, transactions) | Security / access control | Reliability, backup | Maintainability | Migration cost | Windows deployment | Performance | Licensing | Weighted |
+|---|---|---|---|---|---|---|---|---|---|
+| SQLite (current, file per PC, `sqlite3.exe` per query) | 1 – one writer, one PC, no network access | 1 – any process with file access reads everything | 3 | 3 | 5 | 5 | 2 (process spawn per query) | 5 | 45 |
+| **PostgreSQL 17** | 5 – MVCC, row locks, real concurrent terminals | 5 – roles, SCRAM auth, network ACLs | 5 – WAL, `pg_dump`/PITR | 5 | 3 | 4 (official Windows installer service, or Docker) | 5 | 5 (PostgreSQL licence) | **78** |
+| MySQL / MariaDB | 4 | 4 | 4 | 4 | 3 | 4 | 4 | 4 (GPL / commercial split) | 64 |
+| SQL Server Express | 4 (10 GB cap) | 4 | 4 | 3 | 2 | 4 | 4 | 2 (proprietary, size cap) | 56 |
+
+**Decision:** PostgreSQL (D-026). SQLite remains only as the *source* format for the one-off legacy import.
+
+### 1.2 Data-access architecture
+
+| Option | Security boundary | Multi-terminal | Effort | Notes | Verdict |
+|---|---|---|---|---|---|
+| Keep renderer-composed SQL, point `db.execute` at PostgreSQL | None (renderer can run any SQL) | Yes | Low | Fails the mission's authorization requirement; dialect translation of 228 call sites at runtime is fragile | Rejected |
+| Electron main connects to PostgreSQL directly (typed IPC) | Main process only; DB credentials on every till | Yes | Medium | Every terminal holds DB credentials; anyone with the PC can bypass app permissions with `psql` | Rejected for multi-terminal |
+| **HeroMarket service (Node) owns the database; terminals call it** | Service process; terminals hold only a session token | Yes | High | Same code runs in-process for single-PC stores ("standalone") or on a store server ("server"); permissions and calculations enforced in one place | **Chosen** (D-027) |
+
+### 1.3 Service framework and libraries
+
+| Concern | Options considered | Choice | Reason |
+|---|---|---|---|
+| HTTP framework | Node `http` + hand router, Express 5, **Fastify 5**, NestJS | Fastify 5 | Mature, fast, built-in JSON-schema validation and structured logging (pino); far smaller than NestJS; same language as the app |
+| PostgreSQL driver | **`pg`**, `postgres` (porsager), Prisma, Knex, Kysely | `pg` with hand-written parameterised SQL | Most used driver, pure JS (no native build in Electron), explicit transactions; existing SQL ports directly; no ORM migration of business logic |
+| Schema migrations | Prisma Migrate, Knex, node-pg-migrate, **numbered SQL files + small runner** | SQL files + runner (`schema_migrations` table, checksums, one transaction per file) | Transparent, reviewable, no extra DSL; deterministic |
+| Legacy import | Custom, pgloader | Custom Node script using `node:sqlite` (read-only) | Needs exact value preservation, idempotence and row-level parity reports in our own format |
+| Dev/test PostgreSQL | Docker, native install, `embedded-postgres` | Docker Compose for servers/CI parity; GitHub Actions `services: postgres` in CI; native or Docker locally | 8 GB development PC: Docker optional, documented |
+
+### 1.4 Frameworks kept
+
+| Component | Keep? | Reason |
+|---|---|---|
+| Electron 39 (desktop shell) | Keep, upgrade major separately | Correct for scanner/printer integration and a kiosk-style till; advisories need a dedicated upgrade PR (K-22) |
+| React 19 + Vite 7 + electron-vite | Keep | Current, well supported; redesign just completed |
+| Plain CSS tokens | Keep | D-001 |
+| Typst + PowerShell printing | Keep for now | Works; replacing it is unrelated to the mission's goals |
+
+## 2. Findings
+
+| ID | Category | Finding and evidence | Affected | Why it matters | Sev. | Pri. | Depends on | Remediation | Test strategy | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| G-01 | Security | Renderer composes SQL (228 call sites) and `ipcMain 'execute-sql'` runs any statement; only a regex deny-list (`src/main/index.js`) | All modules | No authorization boundary; any UI bug or injected script can read or change everything | Critical | P0 | – | Service layer with named operations; remove raw SQL IPC | Contract tests: unknown operations rejected; renderer cannot run SQL | Open |
+| G-02 | Security | Role checks exist only in React (`role === 'admin'`) | Admin screens, shifts | Hidden buttons are not security | Critical | P0 | G-01 | Permission catalogue + `requirePermission` on every service operation | Authorization tests per role, including direct calls | Open |
+| G-03 | Data integrity | Checkout links items and ledger rows with `(SELECT MAX(id) FROM sales)` and new customers with `SELECT MAX(id)` (`usePOSController.js` 647–700) | Sales, client ledger | With two terminals, rows attach to the wrong sale | Critical | P0 | Service layer | Server checkout in one transaction using `RETURNING id`; customer creation inside the same transaction | Concurrency test: parallel checkouts keep items with their sale | Open |
+| G-04 | Data integrity | Totals, prices and costs come from the client; server trusts them | Checkout, returns | A modified client can sell at any price; financial truth must be server-side | High | P0 | Service layer | Server recomputes line totals, subtotal, discount bounds, change from product prices; client values are only compared | Unit + integration tests on totals, rounding, tampered payloads | Open |
+| G-05 | Security | PINs: unsalted SHA-256 or plain text; no attempt limiting; Change PIN wrote plain text (fixed K-18) | Auth | 4-digit PINs are trivially guessable without throttling | High | P0 | Service layer | Keyed hash (HMAC with server secret) for lookup + scrypt verification, progressive lock-out, session tokens with expiry | Auth tests: lock-out, legacy upgrade, wrong PIN | Open |
+| G-06 | Security | Default `admin` / `1234` (release seed, sample data) | First run | Mission forbids a hard-coded public password | High | P0 | Service layer | First-run setup screen creates the first administrator; installers ship no users | E2E: empty DB → setup → login | Open |
+| G-07 | Architecture | SQLite file per PC, a new `sqlite3.exe` process per query | Whole app | No multi-terminal; slow (process spawn per query); polling every second spawns processes (K-16) | High | P0 | – | PostgreSQL + connection pool (D-026, D-027) | Integration suite on PostgreSQL | Open |
+| G-08 | Data integrity | Money and quantities stored as `REAL` (binary floating point) | All amounts | Rounding drift in totals and balances | Medium | P1 | G-07 | `NUMERIC` in PostgreSQL; legacy values copied exactly (shortest round-trip decimal) | Migration parity + rounding unit tests | Open |
+| G-09 | Functionality | Only three fixed roles; no role or permission management UI | Users | Mission §9 | High | P1 | G-02 | Roles/permissions tables, default roles, admin screen, invariants (last super admin, no self-escalation) | Policy unit tests + UI E2E | Open |
+| G-10 | Functionality | No settings screen; store name/branch/printer only in a key/value table | Admin | Operators cannot configure the store | Medium | P1 | Service layer | Settings module (store profile, receipt, printer, inventory alerts, checkout, security), store vs device scope | E2E + validation tests | Open |
+| G-11 | Functionality | Receipt template hard-coded (`lib/printTemplates.js`) | Printing | Mission §11 | Medium | P1 | G-10 | Template model (sections, fields, labels, paper width 58/80 mm, A4), preview, default restore, used by the real print path | Snapshot tests: preview HTML = print HTML; printer contract tests | Open |
+| G-12 | Business logic | Shift report printed with wrong field names → totals likely zero (K-13) | Close shift | Wrong numbers on a financial report | Medium | P1 | – | Pass the fields the template reads | Unit test on report data | Open |
+| G-13 | Business logic | Manager approval dialog unreachable (K-10) | Discounts/returns | Feature advertised in code but dead | Low | P2 | G-09 | Decide policy (product owner) or remove; documented as decision needed | – | Open – decision needed |
+| G-14 | Reliability | Restore overwrites the DB file without a safety copy | Backup | One wrong click loses current data | High | P1 | G-07 | PostgreSQL: `pg_dump`-based backup/restore into a new database with confirmation and pre-restore backup | Recovery test into disposable DB | Open |
+| G-15 | Security | Electron 39 advisories (K-22); CSP allows `unsafe-eval` | Shell | Known vulnerabilities | Medium | P2 | – | Electron major upgrade PR; drop `unsafe-eval` in production builds | Build + smoke tests | Open |
+| G-16 | Reliability | Auto-unlock when any shift is open (K-15) | Lock screen | Anyone restarting the PC gets a logged-in till | Medium | P1 | G-05 | Session restore requires PIN; open shift is resumed after login | E2E restart test | Open |
+| G-17 | Observability | Errors only in console; `system_logs` written from the renderer | All | No reliable audit or diagnostics | Medium | P2 | Service layer | Structured service logs (pino, no PINs/tokens), audit events written server-side for sensitive operations | Tests assert audit rows | Open |
+| G-18 | Testing | Only SQL-level simulation suites; no unit/E2E in CI | All | Regressions undetected | Medium | P1 | – | Test matrix in TESTING_AND_KNOWN_ISSUES (unit, integration on PostgreSQL, contract, E2E, migration, concurrency, security) | CI | Open |
+| G-19 | Performance | Single 1.2 MB renderer chunk; polling every second in the close dialog (K-16) | Renderer | Slow start on low-end tills | Low | P2 | – | Lazy-load admin screens; replace polling with on-demand refresh | Startup timing | Open |
+| G-20 | Reliability | LAN/server outage stops selling once a central server is used | Multi-terminal | Must be stated honestly | Medium | P2 | G-07 | Document; idempotent checkout API (client-generated sale key) so an offline queue can be added later | Duplicate-submission test | Open |
+| G-21 | Data integrity | Invoice numbers are row ids; duplicate submission (double click/F1) could create two sales | Checkout | Duplicate sales | Medium | P1 | G-03 | Idempotency key per checkout; UI disables while pending | Duplicate-request test | Open |
+| G-22 | Release | Unsigned installers; no auto-update | Release | SmartScreen warnings; manual updates | Low | P3 | – | Documented; signing when a certificate exists | – | Deferred |
+| G-23 | UX | Accessibility review incomplete (review unit did not finish) | UI | WCAG 2.2 AA target | Low | P2 | – | Automated axe checks in E2E + keyboard review | axe in E2E | Open |
+
+## 3. Execution order
+
+1. **Foundation (P0):** G-07 database + service skeleton → G-01/G-02 named operations with permission checks → G-05/G-06 authentication and first-run setup → G-03/G-04/G-21 transactional, server-calculated checkout. Data migration with parity (DATABASE_MIGRATION.md) before the app is switched.
+2. **Core gaps (P1):** G-09 roles UI, G-10 settings, G-11 receipt designer, G-12, G-14, G-16, G-08, G-18.
+3. **Quality (P2/P3):** G-15, G-17, G-19, G-20, G-23, G-13 (after a product decision), G-22.
+
+Status is updated in this table as items land; evidence links point to tests and commits.

@@ -33,3 +33,5 @@ scratch
 AUDIT_REPORT.md
 BUSINESS_AUDIT_REPORT.md
 implementation_plan.md
+
+.pgdata
