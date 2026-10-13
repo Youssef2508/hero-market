@@ -1,119 +1,84 @@
 <div align="center">
 
-# 🛒 Elnagdi POS: Retail Point of Sale Desktop System
+<img src="resources/brand/png/heromarket-mark-128.png" width="88" height="88" alt="HeroMarket logo" />
 
-### Production-Ready Supermarket POS & Inventory Management Desktop Application
+# HeroMarket POS
 
-[![Electron](https://img.shields.io/badge/Electron-30+-47848F.svg?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![React](https://img.shields.io/badge/React-18+-61DAFB.svg?logo=react&logoColor=black)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-Build%20Tool-646CFF.svg?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![SQLite](https://img.shields.io/badge/SQLite-Offline%20First-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Typst](https://img.shields.io/badge/Engine-Typst%20Receipts-239DAD.svg)](https://typst.app/)
-[![TailwindCSS](https://img.shields.io/badge/UI-Tailwind%20%26%20RTL-06B6D4.svg?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+**Offline-first point of sale and back office for a supermarket – Arabic, right-to-left, Windows desktop.**
 
-**Offline-First SQLite Architecture • Hardware Barcode Scanner Bridge • Typst Thermal Receipts • Native RTL Arabic UI**
-
-[System Architecture](#-system-architecture) • [Key Capabilities](#-key-capabilities) • [Local Development](#-development--build) • [Production Packaging](#-production-packaging)
+[![CI](https://github.com/Youssef2508/hero-market/actions/workflows/ci.yml/badge.svg)](https://github.com/Youssef2508/hero-market/actions/workflows/ci.yml)
 
 </div>
 
 ---
 
-## 🎯 Overview
+## What it does
 
-**Elnagdi POS** is a high-reliability desktop Point of Sale (POS) and store management system built for high-throughput commercial retail and grocery environments.
+HeroMarket POS runs on the store's Windows PC and keeps everything in one local SQLite database, so selling never depends on the internet.
 
-Engineered with an offline-first **Electron + Vite + React** architecture and local **SQLite** database storage, the system ensures zero downtime during internet outages. It features sub-millisecond barcode lookups, granular cashier shift accounting, low-stock threshold monitoring, and automated thermal receipt generation powered by the high-speed **Typst** document compiler.
+- **Cashier screen** – barcode scanner input (including price- and weight-embedded scale labels), instant product search (F2), quantity editing, amount discounts, five payment types (cash, Vodafone Cash, InstaPay, credit, partial payment), customer accounts with credit balance and loyalty points, delivery address, thermal receipts.
+- **Shifts and tills** – opening floats for the drawer, the Momkn machine and mobile wallets; hourly drawer audits with deficit notes; simple and advanced (multi-till) shift close with a printed report.
+- **Back office** – products and stock, reorder assistant, damaged goods, invoices and returns, customers, suppliers and purchases, cheques, expenses, users and roles, event log, backup and restore, KPIs, advanced reports and cashier performance.
+- **Roles** – `cashier`, `manager`, `admin`, each with a 4-digit PIN.
+- **Light and dark themes**, a right-side navigation sidebar, and keyboard shortcuts for the till: F1 pay, F2 search, F3 quantity, F4 remove last item, Esc clear invoice, Ctrl+Alt+L lock.
 
----
-
-## 🏗 System Architecture
+## Architecture
 
 ```mermaid
-flowchart TD
-    Hardware["⚡ Hardware Peripherals<br/>(USB Barcode Scanner, Cash Drawer, ESC/POS Thermal Printer)"]
-    
-    subgraph Electron Native Main Process
-        IPCMain["🔌 IPC Dispatcher & Security Bridge"]
-        DBEngine["💾 SQLite 3 Native Engine (market_unified.db)"]
-        TypstEngine["📄 Typst Document Compiler (Thermal Receipts & Shortage Reports)"]
-        PrinterDriver["🖨️ ESC/POS Thermal Print Manager"]
+flowchart LR
+    subgraph Renderer["Renderer – React 19 (Arabic RTL UI)"]
+        UI["Cashier, tills and back-office screens"]
+        Hooks["Controller hooks – business rules + SQL"]
     end
-    
-    subgraph React Renderer Process
-        CashierUI["🖥️ Cashier Checkout & Item Grid (RTL Arabic)"]
-        InventoryUI["📦 Inventory & Price Margin Manager"]
-        ShiftUI["💵 Cashier Shift Auditing & Drawer Balances"]
-        LockScreen["🔒 PIN Authentication & Role Controls"]
+    subgraph Main["Electron main process"]
+        IPC["IPC handlers (preload: window.api)"]
+        DB["sqlite3.exe per query, -json output"]
+        Print["Receipt printing (PowerShell)"]
+        PDF["Shortages PDF (typst.exe)"]
     end
-
-    Hardware --> CashierUI
-    CashierUI <-->|ContextBridge IPC| IPCMain
-    InventoryUI <-->|ContextBridge IPC| IPCMain
-    ShiftUI <-->|ContextBridge IPC| IPCMain
-    LockScreen <-->|ContextBridge IPC| IPCMain
-    
-    IPCMain <--> DBEngine
-    IPCMain --> TypstEngine
-    TypstEngine --> PrinterDriver
-    PrinterDriver --> Hardware
+    File[("market_unified.db")]
+    Scanner["USB barcode scanner (keyboard input)"] --> UI
+    UI --> Hooks --> IPC
+    IPC --> DB --> File
+    IPC --> Print
+    IPC --> PDF
 ```
 
----
+Details: [.docs/ARCHITECTURE.md](.docs/ARCHITECTURE.md) · [.docs/FRONTEND_ARCHITECTURE.md](.docs/FRONTEND_ARCHITECTURE.md) · [.docs/BUSINESS_LOGIC.md](.docs/BUSINESS_LOGIC.md)
 
-## 🌟 Key Capabilities
+## Quick start (development)
 
-- ⚡ **High-Speed Checkout Engine:** Instant product lookup via USB/Bluetooth barcode scanners with automatic item aggregation and quantity calculation.
-- 📴 **100% Offline-First Reliability:** Operates entirely locally using an embedded SQLite database engine; transactions and receipts continue uninterrupted during internet cuts.
-- 📄 **Typst-Powered Thermal Receipts:** Generates pixel-perfect 80mm/58mm thermal receipts in milliseconds using the high-performance Typst typesetting engine.
-- 💵 **Cashier Shift Reconciliation:** Strict cash drawer balance enforcement, beginning-of-shift floats, mid-shift withdrawals, and automated end-of-day X/Z audit reports.
-- 📊 **Dynamic Inventory & Shortages:** Automatic inventory deduction upon checkout, custom cost-price tracking, and automatic shortage reports when items hit minimum thresholds.
-- 🌍 **Native RTL Arabic User Experience:** Custom Arabic design tokens, ergonomic keyboard shortcuts (F1-F12), and touch-friendly interface layouts.
-- 🔐 **Role-Based Security:** PIN-protected authorization for sensitive operations (cashier refunds, item deletions, manager discounts, and inventory edits).
+Requirements: Windows 10/11, Node.js 22, Git.
 
----
-
-## 💻 Development & Build
-
-### Prerequisites
-- **Node.js 18+** & **npm**
-- Windows OS (for running pre-bundled `sqlite3.exe` and `typst.exe` binaries)
-
-### 1. Installation
-```bash
-# Clone the repository
-git clone https://github.com/3bkader-gpt/elnagdi-pos.git
-cd elnagdi-pos
-
-# Install dependencies
-npm install
-```
-
-### 2. Running in Development Mode
-```bash
-# Start Vite development server with Electron hot reload
+```powershell
+git clone https://github.com/Youssef2508/hero-market.git HeroMarket
+cd HeroMarket
+npm ci
+npm run db:init      # creates market_unified_testing.db with sample data (admin PIN 1234)
 npm run dev
 ```
 
----
+If Electron fails to start with `app` undefined, your terminal exports `ELECTRON_RUN_AS_NODE`; clear it first (`Remove-Item Env:ELECTRON_RUN_AS_NODE`). Full guide: [.docs/DEVELOPMENT_SETUP.md](.docs/DEVELOPMENT_SETUP.md).
 
-## 📦 Production Packaging
+## Scripts
 
-Compile and build standalone installer packages:
+| Command                                      | Purpose                                                         |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| `npm run dev`                                | Run the app with hot reload                                     |
+| `npm run lint` / `npm run format:check`      | ESLint / Prettier checks                                        |
+| `npm run build`                              | Production build of main, preload and renderer                  |
+| `npm test` / `npm run test:fresh`            | SQL simulation suites (copy of the installed DB / fresh DB)     |
+| `npm run build:unpack` / `npm run build:win` | Unpacked app / unsigned NSIS installer in `dist/`               |
+| `npm run icons`                              | Regenerate all icons from `resources/brand/heromarket-mark.svg` |
 
-```bash
-# Package for Windows (.exe / NSIS Installer)
-npm run build:win
+## Documentation
 
-# Build portable unpacked directory
-npm run build:unpack
-```
+Engineering documentation lives in [`.docs/`](.docs/README.md): product overview, repository map, data model, business rules, UI design system, user flows, testing and known issues, Docker, CI/CD, security and releases, and the decision log. The older `docs/` folder is inherited from the original project.
 
-The output installers and portable binaries will be generated inside the `dist/` directory.
+## Project history
 
----
+HeroMarket POS is developed from the open-source **Elnagdi POS** project (`3bkader-gpt/elnagdi-pos`), kept as the read-only `upstream` remote. Internal identifiers such as the package name and the `%APPDATA%\elnagdi-pos` data folder are kept on purpose so existing installations upgrade without losing data (see [.docs/DECISIONS.md](.docs/DECISIONS.md), D-005).
 
-## 📄 License
+## License
 
-This software is licensed under the [MIT License](LICENSE).
+No license file is included in this repository. The upstream project's README stated MIT; confirm the licensing and add a `LICENSE` file before distributing the software.
