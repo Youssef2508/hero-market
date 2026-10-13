@@ -1,4 +1,5 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import './userDataPath'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -9,42 +10,58 @@ import { initializePrinter } from './printer'
 // Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
 if (app.isPackaged) {
   const logPath = join(app.getPath('userData'), 'app.log')
-  
+
   if (fs.existsSync(logPath)) {
     try {
       const stats = fs.statSync(logPath)
       const now = new Date()
       const timeDiff = now.getTime() - stats.mtime.getTime()
       if (timeDiff > 24 * 60 * 60 * 1000) {
-        fs.writeFileSync(logPath, `[LOG ENGINE] [${new Date().toISOString()}] Log file reset (exceeded 24 hours).\n`, 'utf8')
+        fs.writeFileSync(
+          logPath,
+          `[LOG ENGINE] [${new Date().toISOString()}] Log file reset (exceeded 24 hours).\n`,
+          'utf8'
+        )
       }
     } catch (_) {}
   }
-  
+
   const logStream = fs.createWriteStream(logPath, { flags: 'a' })
-  
+
   console.log = (...args) => {
-    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}\n`)
+    logStream.write(
+      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
+    )
   }
   console.info = (...args) => {
-    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}\n`)
+    logStream.write(
+      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
+    )
   }
   console.warn = (...args) => {
-    logStream.write(`[WARN] [${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}\n`)
+    logStream.write(
+      `[WARN] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
+    )
   }
   console.error = (...args) => {
-    logStream.write(`[ERROR] [${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}\n`)
+    logStream.write(
+      `[ERROR] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
+    )
   }
 }
 
 function createWindow() {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 1200,
+    width: 1280,
     height: 800,
+    minWidth: 960,
+    minHeight: 600,
     show: false,
+    title: 'HeroMarket POS',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0D1412' : '#F4F6F3',
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -83,6 +100,7 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
+  // Unchanged on purpose: Windows ties taskbar pinning/notifications to this id.
   electronApp.setAppUserModelId('com.elnagdi.pos')
 
   // Default open or close DevTools by F12 in development
@@ -103,14 +121,18 @@ app.whenReady().then(() => {
       let tableRows = ''
       if (items && items.length > 0) {
         items.forEach((item, index) => {
-          const nameClean = String(item.name || '').replace(/[\[\]]/g, '') // escape typst brackets
+          const nameClean = String(item.name || '').replace(/[[\]]/g, '') // escape typst brackets
           tableRows += `    [${index + 1}], [${nameClean}], [${item.stock_qty || 0}], [${item.min_limit || 0}],\n`
         })
       }
 
-      const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      const todayStr = new Date().toLocaleDateString('ar-EG', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
 
-      const typstTemplate = `// سوبر ماركت النجدي - تقرير نواقص المخزون
+      const typstTemplate = `// HeroMarket POS - تقرير نواقص المخزون
 #set page(
   width: 80mm,
   height: auto,
@@ -125,7 +147,7 @@ app.whenReady().then(() => {
 )
 
 #align(center)[
-  #text(13pt, weight: "bold")[سوبر ماركت النجدي] \\
+  #text(13pt, weight: "bold")[هيرو ماركت] \\
   #v(2pt)
   #text(10pt, weight: "bold")[تقرير نواقص المخزون] \\
   #text(8pt, fill: rgb("#57606a"))[التاريخ: ${todayStr}]
@@ -155,8 +177,8 @@ ${tableRows}  )
 ]
 `
 
-      const tempTypPath = join(app.getPath('temp'), 'elnagdi_shortages.typ')
-      const pdfOutputPath = join(app.getPath('temp'), 'elnagdi_shortages.pdf')
+      const tempTypPath = join(app.getPath('temp'), 'heromarket_shortages.typ')
+      const pdfOutputPath = join(app.getPath('temp'), 'heromarket_shortages.pdf')
       fs.writeFileSync(tempTypPath, typstTemplate, 'utf8')
 
       const isDev = !app.isPackaged
@@ -184,15 +206,17 @@ ${tableRows}  )
 
   // IPC Direct Shortages Printer
   ipcMain.handle('print-shortages-to-printer', async (event, items) => {
-    let storeName = 'سوبر ماركت النجدي'
+    let storeName = 'هيرو ماركت'
     let branchName = 'الفرع الرئيسي'
     let printerName = 'CITIZEN CT-S300'
     try {
-      const dbSettings = await executeSql("SELECT key, value FROM settings WHERE key IN ('store_name', 'branch_name', 'printer_name');")
+      const dbSettings = await executeSql(
+        "SELECT key, value FROM settings WHERE key IN ('store_name', 'branch_name', 'printer_name');"
+      )
       if (Array.isArray(dbSettings)) {
-        const storeSetting = dbSettings.find(s => s.key === 'store_name')
-        const branchSetting = dbSettings.find(s => s.key === 'branch_name')
-        const printerSetting = dbSettings.find(s => s.key === 'printer_name')
+        const storeSetting = dbSettings.find((s) => s.key === 'store_name')
+        const branchSetting = dbSettings.find((s) => s.key === 'branch_name')
+        const printerSetting = dbSettings.find((s) => s.key === 'printer_name')
         if (storeSetting) storeName = storeSetting.value
         if (branchSetting) branchName = branchSetting.value
         if (printerSetting) printerName = printerSetting.value
@@ -201,7 +225,11 @@ ${tableRows}  )
       console.error('[PRINTER] Failed to fetch settings from DB:', err)
     }
 
-    const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: '2-digit', day: '2-digit' })
+    const todayStr = new Date().toLocaleDateString('ar-EG', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
     const timeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
 
     const lines = [
@@ -213,7 +241,7 @@ ${tableRows}  )
       `------------------------------------------------`,
       `الصنف|المخزون|حد الطلب| `,
       `------------------------------------------------`,
-      ...items.map(item => {
+      ...items.map((item) => {
         const nameClean = String(item.name || '').replace(/[|~]/g, '') // strip delimiters
         return `${nameClean}|${item.stock_qty || 0}|${item.min_limit || 0}| `
       }),
@@ -229,7 +257,7 @@ ${tableRows}  )
     console.log('[PRINTER-SHORTAGES] Text Content built:\n', textContent)
 
     return new Promise((resolve, reject) => {
-      const ts  = Date.now()
+      const ts = Date.now()
       const os = require('os')
       const tempTxtPath = join(os.tmpdir(), `shortages_${ts}.txt`)
 
@@ -247,7 +275,9 @@ ${tableRows}  )
         exec(cmd, { timeout: 20000 }, (err, stdout, stderr) => {
           console.log('[PRINTER-SHORTAGES] stdout:', stdout ? stdout.trim() : '')
           if (stderr) console.warn('[PRINTER-SHORTAGES] stderr:', stderr.trim())
-          try { if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath) } catch (_) {}
+          try {
+            if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath)
+          } catch (_) {}
           if (err) {
             console.error('[PRINTER-SHORTAGES] Error:', err.message)
             return reject(err)
@@ -256,7 +286,9 @@ ${tableRows}  )
         })
       } catch (err) {
         console.error('[PRINTER-SHORTAGES] Catch error:', err)
-        try { if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath) } catch (_) {}
+        try {
+          if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath)
+        } catch (_) {}
         reject(err)
       }
     })
@@ -268,7 +300,8 @@ ${tableRows}  )
       if (typeof sqlQuery !== 'string' || !sqlQuery.trim()) {
         throw new Error('Invalid SQL query input')
       }
-      const forbidden = /(DROP\s+TABLE|ALTER\s+TABLE|ATTACH\s+DATABASE|DETACH\s+DATABASE|DELETE\s+FROM\s+users)/i
+      const forbidden =
+        /(DROP\s+TABLE|ALTER\s+TABLE|ATTACH\s+DATABASE|DETACH\s+DATABASE|DELETE\s+FROM\s+users)/i
       if (forbidden.test(sqlQuery)) {
         console.warn('[SECURITY] Blocked dangerous SQL operation:', sqlQuery)
         throw new Error('Forbidden SQL operation')
@@ -280,9 +313,8 @@ ${tableRows}  )
     }
   })
 
-
   // IPC Backup Database Bridge
-  ipcMain.handle('backup-database', async (event) => {
+  ipcMain.handle('backup-database', async () => {
     try {
       const { filePath } = await dialog.showSaveDialog({
         title: 'حفظ نسخة احتياطية من قاعدة البيانات',
@@ -290,7 +322,9 @@ ${tableRows}  )
         filters: [{ name: 'SQLite Database', extensions: ['db'] }]
       })
       if (filePath) {
-        try { await executeSql('PRAGMA wal_checkpoint(FULL);') } catch (_) {}
+        try {
+          await executeSql('PRAGMA wal_checkpoint(FULL);')
+        } catch (_) {}
         fs.copyFileSync(dbPath, filePath)
         return { success: true, filePath }
       }
@@ -301,7 +335,7 @@ ${tableRows}  )
     }
   })
 
-  ipcMain.handle('restore-database', async (event) => {
+  ipcMain.handle('restore-database', async () => {
     try {
       const { filePaths } = await dialog.showOpenDialog({
         title: 'استيراد قاعدة بيانات (استرجاع نسخة احتياطية)',
@@ -310,7 +344,9 @@ ${tableRows}  )
       })
       if (filePaths && filePaths.length > 0) {
         const sourcePath = filePaths[0]
-        try { await executeSql('PRAGMA wal_checkpoint(TRUNCATE);') } catch (_) {}
+        try {
+          await executeSql('PRAGMA wal_checkpoint(TRUNCATE);')
+        } catch (_) {}
         fs.copyFileSync(sourcePath, dbPath)
         return { success: true, requiresRestart: true }
       }
@@ -341,7 +377,6 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
