@@ -82,12 +82,10 @@ export async function getMobileMoneyShiftSummary(shiftId) {
     WHERE id = ${cleanShiftId} 
     LIMIT 1;
   `)
-  const startBalance = (shiftRes && shiftRes.length > 0)
-    ? parseFloat(shiftRes[0].vfcash_start_balance) || 0.0
-    : 0.0
-  const startCash = (shiftRes && shiftRes.length > 0)
-    ? parseFloat(shiftRes[0].vfcash_start_cash) || 0.0
-    : 0.0
+  const startBalance =
+    shiftRes && shiftRes.length > 0 ? parseFloat(shiftRes[0].vfcash_start_balance) || 0.0 : 0.0
+  const startCash =
+    shiftRes && shiftRes.length > 0 ? parseFloat(shiftRes[0].vfcash_start_cash) || 0.0 : 0.0
 
   const totalsRes = await executeQuery(`
     SELECT 
@@ -101,13 +99,19 @@ export async function getMobileMoneyShiftSummary(shiftId) {
     WHERE shift_id = ${cleanShiftId};
   `)
 
-  const vfcashDigitalSum = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].vfcash_digital_sum) || 0.0 : 0.0;
-  const instapayDigitalSum = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].instapay_digital_sum) || 0.0 : 0.0;
-  const bankDigitalSum = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].bank_digital_sum) || 0.0 : 0.0;
+  const vfcashDigitalSum =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].vfcash_digital_sum) || 0.0 : 0.0
+  const instapayDigitalSum =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].instapay_digital_sum) || 0.0 : 0.0
+  const bankDigitalSum =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].bank_digital_sum) || 0.0 : 0.0
 
-  const totalDigitalImpact = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].total_digital) || 0.0 : 0.0;
-  const totalCashImpact = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].total_cash) || 0.0 : 0.0;
-  const totalCommission = (totalsRes && totalsRes.length > 0) ? parseFloat(totalsRes[0].total_commission) || 0.0 : 0.0;
+  const totalDigitalImpact =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_digital) || 0.0 : 0.0
+  const totalCashImpact =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_cash) || 0.0 : 0.0
+  const totalCommission =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_commission) || 0.0 : 0.0
 
   return {
     startBalance, // Specifically Vodafone Cash starting balance

@@ -3,7 +3,13 @@ import { executeQuery } from '../lib/db'
 import { escapeSql, getFriendlyErrorMessage, hashPin } from '../lib/utils'
 import { logEvent } from '../lib/dao/logs.dao'
 
-export function useUsersManager({ currentUser, fetchStats, fetchAdminData, triggerCustomAlert, triggerCustomConfirm }) {
+export function useUsersManager({
+  currentUser,
+  fetchStats,
+  fetchAdminData,
+  triggerCustomAlert,
+  triggerCustomConfirm
+}) {
   const [usersList, setUsersList] = useState([])
   const [showAddUserModal, setShowAddUserModal] = useState(false)
   const [showEditUserModal, setShowEditUserModal] = useState(false)
@@ -12,10 +18,12 @@ export function useUsersManager({ currentUser, fetchStats, fetchAdminData, trigg
 
   const fetchUsersList = async () => {
     try {
-      const res = await executeQuery("SELECT id, username, password_hash, role FROM users ORDER BY username ASC;")
+      const res = await executeQuery(
+        'SELECT id, username, password_hash, role FROM users ORDER BY username ASC;'
+      )
       setUsersList(res || [])
     } catch (e) {
-      console.error("Failed to fetch users list:", e)
+      console.error('Failed to fetch users list:', e)
     }
   }
 
@@ -37,7 +45,9 @@ export function useUsersManager({ currentUser, fetchStats, fetchAdminData, trigg
         await fetchUsersList()
       } catch (err) {
         if (err.message && err.message.includes('FOREIGN KEY')) {
-          triggerCustomAlert('لا يمكن حذف هذا المستخدم لأنه قام بفتح ورديات أو تسجيل حركات سابقة بالنظام.')
+          triggerCustomAlert(
+            'لا يمكن حذف هذا المستخدم لأنه قام بفتح ورديات أو تسجيل حركات سابقة بالنظام.'
+          )
         } else {
           triggerCustomAlert('فشل حذف الحساب: ' + getFriendlyErrorMessage(err))
         }
@@ -49,11 +59,9 @@ export function useUsersManager({ currentUser, fetchStats, fetchAdminData, trigg
     triggerCustomConfirm(
       'ستُحذف جميع الفواتير والورديات والعملاء والموردين والشيكات.\n\nالمنتجات والمستخدمون يبقون كما هم.\n\nهل أنت متأكد؟',
       () => {
-        triggerCustomConfirm(
-          'تأكيد أخير: العملية لا يمكن التراجع عنها. متابعة؟',
-          async () => {
-            try {
-              await executeQuery(`BEGIN TRANSACTION;
+        triggerCustomConfirm('تأكيد أخير: العملية لا يمكن التراجع عنها. متابعة؟', async () => {
+          try {
+            await executeQuery(`BEGIN TRANSACTION;
 DELETE FROM sale_items;
 DELETE FROM sales;
 DELETE FROM safe_ledger;
@@ -72,20 +80,19 @@ DELETE FROM shifts;
 DELETE FROM sqlite_sequence WHERE name IN ('sale_items','sales','shifts','safe_ledger','client_ledger','clients','supplier_ledger','supplier_purchases','suppliers','checks_register','expenses','damaged_goods','shift_audits','momkn_transactions','mobile_money_transactions');
 UPDATE products SET stock_qty = 0 WHERE stock_qty < 0;
 COMMIT;`)
-              await logEvent({
-                userId: currentUser?.id,
-                username: currentUser?.username,
-                actionType: 'system_reset',
-                description: 'إعادة تهيئة كاملة لبيانات النظام والبدء من الصفر'
-              })
-              triggerCustomAlert('تم إعادة الضبط بنجاح! النظام جاهز للبدء الفعلي.')
-              if (fetchStats) await fetchStats()
-              if (fetchAdminData) await fetchAdminData()
-            } catch (err) {
-              triggerCustomAlert('فشلت عملية إعادة الضبط: ' + getFriendlyErrorMessage(err))
-            }
+            await logEvent({
+              userId: currentUser?.id,
+              username: currentUser?.username,
+              actionType: 'system_reset',
+              description: 'إعادة تهيئة كاملة لبيانات النظام والبدء من الصفر'
+            })
+            triggerCustomAlert('تم إعادة الضبط بنجاح! النظام جاهز للبدء الفعلي.')
+            if (fetchStats) await fetchStats()
+            if (fetchAdminData) await fetchAdminData()
+          } catch (err) {
+            triggerCustomAlert('فشلت عملية إعادة الضبط: ' + getFriendlyErrorMessage(err))
           }
-        )
+        })
       }
     )
   }
@@ -102,15 +109,21 @@ COMMIT;`)
       return
     }
     try {
-      const dupName = await executeQuery(`SELECT * FROM users WHERE username = '${escapeSql(username)}' LIMIT 1;`)
+      const dupName = await executeQuery(
+        `SELECT * FROM users WHERE username = '${escapeSql(username)}' LIMIT 1;`
+      )
       if (dupName.length > 0) {
         triggerCustomAlert('اسم المستخدم هذا مسجل مسبقاً! يرجى اختيار اسم آخر.')
         return
       }
       const hashedPin = await hashPin(pin)
-      const dupPin = await executeQuery(`SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapeSql(pin)}') LIMIT 1;`)
+      const dupPin = await executeQuery(
+        `SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapeSql(pin)}') LIMIT 1;`
+      )
       if (dupPin.length > 0) {
-        triggerCustomAlert('رمز المرور (PIN) هذا مستخدم مسبقاً من قبل موظف آخر! يرجى اختيار رمز مختلف.')
+        triggerCustomAlert(
+          'رمز المرور (PIN) هذا مستخدم مسبقاً من قبل موظف آخر! يرجى اختيار رمز مختلف.'
+        )
         return
       }
 
@@ -147,9 +160,13 @@ COMMIT;`)
     try {
       if (pin && pin !== '••••') {
         const hashedPin = await hashPin(pin)
-        const dupPin = await executeQuery(`SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapeSql(pin)}') AND id != ${id} LIMIT 1;`)
+        const dupPin = await executeQuery(
+          `SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapeSql(pin)}') AND id != ${id} LIMIT 1;`
+        )
         if (dupPin.length > 0) {
-          triggerCustomAlert('رمز المرور (PIN) هذا مستخدم مسبقاً من قبل موظف آخر! يرجى اختيار رمز مختلف.')
+          triggerCustomAlert(
+            'رمز المرور (PIN) هذا مستخدم مسبقاً من قبل موظف آخر! يرجى اختيار رمز مختلف.'
+          )
           return
         }
         await executeQuery(`

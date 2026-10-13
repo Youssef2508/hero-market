@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import { executeQuery } from '../lib/db'
-import { escapeSql, getNowStr, getFriendlyErrorMessage} from '../lib/utils'
+import { escapeSql, getNowStr, getFriendlyErrorMessage } from '../lib/utils'
 
-export function useDamagedGoodsManager({ currentShift, fetchAdminData, triggerCustomAlert, triggerCustomConfirm }) {
+export function useDamagedGoodsManager({
+  currentShift,
+  fetchAdminData,
+  triggerCustomAlert,
+  triggerCustomConfirm
+}) {
   const [damagedGoodsList, setDamagedGoodsList] = useState([])
   const [showAddDamagedModal, setShowAddDamagedModal] = useState(false)
-  const [newDamagedForm, setNewDamagedForm] = useState({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
+  const [newDamagedForm, setNewDamagedForm] = useState({
+    barcode: '',
+    quantity: '',
+    reason: 'انتهاء صلاحية'
+  })
 
   const fetchDamagedGoods = async () => {
     try {
@@ -47,7 +56,9 @@ export function useDamagedGoodsManager({ currentShift, fetchAdminData, triggerCu
 
       const product = prodRes[0]
       if (product.stock_qty < qtyVal) {
-        triggerCustomAlert(`الكمية التالفة المدخلة (${qtyVal}) أكبر من المخزون المتوفر حالياً (${product.stock_qty})!`)
+        triggerCustomAlert(
+          `الكمية التالفة المدخلة (${qtyVal}) أكبر من المخزون المتوفر حالياً (${product.stock_qty})!`
+        )
         return
       }
 
@@ -70,7 +81,7 @@ export function useDamagedGoodsManager({ currentShift, fetchAdminData, triggerCu
       await executeQuery(sql)
       setShowAddDamagedModal(false)
       setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
-      
+
       await fetchDamagedGoods()
       if (fetchAdminData) await fetchAdminData()
       triggerCustomAlert('تم تسجيل الهالك بنجاح وخصم الكمية من المخزن وتأثيرها المالي من الأرباح!')
@@ -80,26 +91,29 @@ export function useDamagedGoodsManager({ currentShift, fetchAdminData, triggerCu
   }
 
   const handleDeleteDamaged = async (item) => {
-    triggerCustomConfirm('هل أنت متأكد من حذف هذا السجل وإعادة الكمية التالفة إلى المخزن؟', async () => {
-      try {
-        let sql = 'BEGIN TRANSACTION;\n'
-        
-        // Return quantity to product stock
-        sql += `UPDATE products SET stock_qty = stock_qty + ${item.quantity} WHERE barcode = '${escapeSql(item.product_barcode)}';\n`
-        
-        // Delete record from damaged_goods
-        sql += `DELETE FROM damaged_goods WHERE id = ${item.id};\n`
-        
-        sql += 'COMMIT;\n'
+    triggerCustomConfirm(
+      'هل أنت متأكد من حذف هذا السجل وإعادة الكمية التالفة إلى المخزن؟',
+      async () => {
+        try {
+          let sql = 'BEGIN TRANSACTION;\n'
 
-        await executeQuery(sql)
-        await fetchDamagedGoods()
-        if (fetchAdminData) await fetchAdminData()
-        triggerCustomAlert('تم إلغاء سجل الهالك وإرجاع الكمية إلى المخزن بنجاح!')
-      } catch (err) {
-        triggerCustomAlert('فشل حذف سجل الهالك: ' + getFriendlyErrorMessage(err))
+          // Return quantity to product stock
+          sql += `UPDATE products SET stock_qty = stock_qty + ${item.quantity} WHERE barcode = '${escapeSql(item.product_barcode)}';\n`
+
+          // Delete record from damaged_goods
+          sql += `DELETE FROM damaged_goods WHERE id = ${item.id};\n`
+
+          sql += 'COMMIT;\n'
+
+          await executeQuery(sql)
+          await fetchDamagedGoods()
+          if (fetchAdminData) await fetchAdminData()
+          triggerCustomAlert('تم إلغاء سجل الهالك وإرجاع الكمية إلى المخزن بنجاح!')
+        } catch (err) {
+          triggerCustomAlert('فشل حذف سجل الهالك: ' + getFriendlyErrorMessage(err))
+        }
       }
-    })
+    )
   }
 
   return {

@@ -74,12 +74,10 @@ export async function getMomknShiftSummary(shiftId) {
     WHERE id = ${cleanShiftId} 
     LIMIT 1;
   `)
-  const startBalance = (shiftRes && shiftRes.length > 0) 
-    ? parseFloat(shiftRes[0].momkn_start_balance) || 0.0 
-    : 0.0
-  const startCash = (shiftRes && shiftRes.length > 0) 
-    ? parseFloat(shiftRes[0].momkn_start_cash) || 0.0 
-    : 0.0
+  const startBalance =
+    shiftRes && shiftRes.length > 0 ? parseFloat(shiftRes[0].momkn_start_balance) || 0.0 : 0.0
+  const startCash =
+    shiftRes && shiftRes.length > 0 ? parseFloat(shiftRes[0].momkn_start_cash) || 0.0 : 0.0
 
   const totalsRes = await executeQuery(`
     SELECT 
@@ -90,15 +88,12 @@ export async function getMomknShiftSummary(shiftId) {
     WHERE shift_id = ${cleanShiftId};
   `)
 
-  const totalDigitalImpact = (totalsRes && totalsRes.length > 0)
-    ? parseFloat(totalsRes[0].total_digital) || 0.0
-    : 0.0
-  const totalCashImpact = (totalsRes && totalsRes.length > 0)
-    ? parseFloat(totalsRes[0].total_cash) || 0.0
-    : 0.0
-  const totalCommission = (totalsRes && totalsRes.length > 0)
-    ? parseFloat(totalsRes[0].total_commission) || 0.0
-    : 0.0
+  const totalDigitalImpact =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_digital) || 0.0 : 0.0
+  const totalCashImpact =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_cash) || 0.0 : 0.0
+  const totalCommission =
+    totalsRes && totalsRes.length > 0 ? parseFloat(totalsRes[0].total_commission) || 0.0 : 0.0
 
   return {
     startBalance,
