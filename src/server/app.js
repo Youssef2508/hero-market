@@ -85,7 +85,7 @@ async function createService(cfg) {
     operations.set(def.name, def)
     app.post(
       `/api/${def.name}`,
-      { schema: def.schema ? { body: def.schema } : undefined },
+      { schema: def.schema ? { body: def.schema } : undefined, bodyLimit: def.bodyLimit },
       async (req) => {
         let auth = null
         if (!def.public) {

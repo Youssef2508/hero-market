@@ -59,7 +59,17 @@ async function findUserByPin(db, secret, pin) {
     'SELECT id FROM users WHERE pin_lookup IS NULL AND is_active AND (password_hash = $1 OR password_hash = $2) ORDER BY id',
     [sha, plain]
   )
-  if (legacy.rows.length !== 1) return null // none, or ambiguous duplicate legacy PINs
+  if (legacy.rows.length !== 1) {
+    // Keyed lookups made with another server secret (backup restored on another installation,
+    // or a rotated secret): verify against the scrypt hashes and re-key the match.
+    const keyed = await db.query(
+      'SELECT id, pin_hash FROM users WHERE is_active AND pin_hash IS NOT NULL ORDER BY id LIMIT 200'
+    )
+    const hit = keyed.rows.find((u) => verifyPin(pin, u.pin_hash))
+    if (!hit) return null
+    await db.query('UPDATE users SET pin_lookup = $1 WHERE id = $2', [lookup, hit.id])
+    return hit.id
+  }
   const id = legacy.rows[0].id
   await db.query(
     'UPDATE users SET pin_lookup = $1, pin_hash = $2, password_hash = NULL, updated_at = LOCALTIMESTAMP(0) WHERE id = $3',

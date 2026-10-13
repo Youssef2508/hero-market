@@ -7,6 +7,7 @@
 //  - a client-generated key makes retries return the same sale instead of a second one (G-21).
 const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
+const { maskCost } = require('./catalog')
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
@@ -38,7 +39,7 @@ module.exports = function posModule(app) {
         'SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1',
         [codes]
       )
-      return rows[0] || null
+      return rows[0] ? maskCost(ctx, rows)[0] : null
     }
   })
 
@@ -52,12 +53,15 @@ module.exports = function posModule(app) {
       properties: { suffix: { type: 'string', minLength: 1, maxLength: 64 } }
     },
     handler: async (ctx, { suffix }) =>
-      (
-        await ctx.pool.query(
-          `SELECT * FROM products WHERE barcode LIKE '%' || $1 ESCAPE '\\' LIMIT 5`,
-          [likeEscape(suffix)]
-        )
-      ).rows
+      maskCost(
+        ctx,
+        (
+          await ctx.pool.query(
+            `SELECT * FROM products WHERE barcode LIKE '%' || $1 ESCAPE '\\' LIMIT 5`,
+            [likeEscape(suffix)]
+          )
+        ).rows
+      )
   })
 
   app.operation({
@@ -70,12 +74,15 @@ module.exports = function posModule(app) {
     },
     handler: async (ctx, { term }) => {
       const t = likeEscape(term)
-      return (
-        await ctx.pool.query(
-          `SELECT * FROM products WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 8`,
-          [t]
-        )
-      ).rows
+      return maskCost(
+        ctx,
+        (
+          await ctx.pool.query(
+            `SELECT * FROM products WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 8`,
+            [t]
+          )
+        ).rows
+      )
     }
   })
 
