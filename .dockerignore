@@ -1,0 +1,35 @@
+# Keep the build context small and free of local data / binaries / secrets.
+node_modules
+out
+dist
+.git
+.github
+.vscode
+.eslintcache
+*.log*
+
+# Local databases and test artefacts – never copied into images
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+tests/temp_test.db*
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Windows-only binaries (not usable in a Linux container)
+sqlite3.exe
+typst.exe
+*.bat
+
+# Docs, reports and generated assets not needed to lint/build/test
+.docs
+docs
+pdf
+scratch
+AUDIT_REPORT.md
+BUSINESS_AUDIT_REPORT.md
+implementation_plan.md

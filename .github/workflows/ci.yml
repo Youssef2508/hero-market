@@ -1,0 +1,131 @@
+# HeroMarket POS – continuous integration.
+# Runs on every push to main / feature branches and on pull requests into main.
+# See .docs/CI_CD.md for what each job proves and how to configure branch protection.
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**', 'chore/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, format, build & tests (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Lint/build/tests do not need the Electron binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install sqlite3 CLI (used by the SQL simulation tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends sqlite3
+
+      - name: Install dependencies (lockfile, no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Build main, preload and renderer
+        run: npm run build
+
+      - name: SQL simulation tests (fresh database)
+        run: npm run test:fresh
+
+      - name: Dependency audit (report)
+        # Report-only: known advisories are tracked in .docs/SECURITY_AND_RELEASE.md and
+        # resolved through reviewed Dependabot PRs. The summary is published on every run.
+        continue-on-error: true
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high > audit.txt 2>&1
+          status=$?
+          {
+            echo '### npm audit (runtime dependencies)'
+            echo '```'
+            tail -n 40 audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+  windows:
+    name: Windows build, tests & packaging check
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (lockfile)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: SQL simulation tests with the bundled sqlite3.exe
+        run: npm run test:fresh
+
+      - name: Package unpacked app (unsigned, no installer)
+        run: npx electron-builder --win --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Verify packaged executable metadata
+        shell: pwsh
+        run: |
+          $exe = 'dist/win-unpacked/HeroMarket-POS.exe'
+          if (-not (Test-Path $exe)) { throw "Packaged executable not found: $exe" }
+          $info = (Get-Item $exe).VersionInfo
+          $info | Format-List ProductName, FileDescription, ProductVersion
+          if ($info.ProductName -ne 'HeroMarket POS') { throw "Unexpected ProductName '$($info.ProductName)'" }
+
+  docker:
+    name: Docker validation image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build validation image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: heromarket-ci:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run lint, build and tests inside the container (non-root)
+        run: docker run --rm heromarket-ci:${{ github.sha }}

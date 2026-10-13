@@ -1,0 +1,40 @@
+# Dependabot opens reviewable PRs only – nothing is merged automatically.
+# Major versions are not grouped; each arrives as its own PR for a compatibility review.
+# Electron majors are deliberately NOT ignored: the current Electron line has security
+# advisories fixed only in newer majors (see .docs/SECURITY_AND_RELEASE.md).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      runtime-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      tooling-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ci]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, docker]

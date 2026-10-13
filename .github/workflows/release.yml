@@ -1,0 +1,118 @@
+# HeroMarket POS – release pipeline.
+# Triggered by pushing a version tag (vX.Y.Z) that matches package.json, or manually for an
+# existing tag. Builds an UNSIGNED Windows installer after lint + tests pass, and attaches it
+# to a DRAFT GitHub Release. A maintainer reviews and publishes the draft manually.
+# See .docs/CI_CD.md and .docs/SECURITY_AND_RELEASE.md.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build, e.g. v1.4.0'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build-windows:
+    name: Verify & build Windows installer
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Tag must match package.json version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne "v$version") { throw "Tag $env:RELEASE_TAG does not match package.json version $version" }
+
+      - name: Install dependencies (lockfile)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: SQL simulation tests (fresh database)
+        run: npm run test:fresh
+
+      - name: Generate first-run seed database (schema + one admin, no sample data)
+        run: node scripts/init-dev-db.js --db market_unified.db --reset --release-seed
+
+      - name: Build installer (unsigned)
+        run: npm run build:win -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Filter *.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.Name)" | Out-File -FilePath dist/SHA256SUMS.txt -Append -Encoding ascii
+          }
+          Get-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: heromarket-pos-windows
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  draft-release:
+    name: Create draft GitHub Release
+    needs: build-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: heromarket-pos-windows
+          path: release
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          notes=$(printf '%s\n' \
+            "Unsigned Windows build of HeroMarket POS ${RELEASE_TAG}." \
+            'Windows SmartScreen may warn because the installer is not code-signed.' \
+            'First installation creates a database with one account: admin / PIN 1234 - change it immediately (Users screen).' \
+            'Verify downloads with SHA256SUMS.txt.')
+          if is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            # Only a draft may be refreshed; a published release is never modified by CI.
+            if [ "$is_draft" != "true" ]; then
+              echo "::error::Release $RELEASE_TAG is already published; refusing to replace its assets. Tag a new version instead."
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* --draft --verify-tag --title "HeroMarket POS ${RELEASE_TAG}" --notes "$notes"
+          fi
