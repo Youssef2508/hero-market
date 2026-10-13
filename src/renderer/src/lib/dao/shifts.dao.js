@@ -1,9 +1,9 @@
 import { executeQuery } from '../db'
-import { escapeSql } from '../utils'
+import { escapeSql, getNowStr, hashPin } from '../utils'
 
 /**
  * Find active open shift if exists.
- * 
+ *
  * @returns {Promise<object|null>}
  */
 export async function getActiveShift() {
@@ -14,12 +14,12 @@ export async function getActiveShift() {
     WHERE s.status = 'open'
     LIMIT 1;
   `)
-  return (activeShifts && activeShifts.length > 0) ? activeShifts[0] : null
+  return activeShifts && activeShifts.length > 0 ? activeShifts[0] : null
 }
 
 /**
  * Get all closed shifts history with cashier info.
- * 
+ *
  * @returns {Promise<object[]>}
  */
 export async function getClosedShiftsHistory() {
@@ -34,29 +34,34 @@ export async function getClosedShiftsHistory() {
 
 /**
  * Open a new shift.
- * 
- * @param {object} params 
+ *
+ * @param {object} params
  * @returns {Promise<object|null>}
  */
-export async function openShift({ userId, startingCash, momknStartBalance = 0, vfcashStartBalance = 0 }) {
+export async function openShift({
+  userId,
+  startingCash,
+  momknStartBalance = 0,
+  vfcashStartBalance = 0
+}) {
   const nowStr = getNowStr()
   await executeQuery(`
     INSERT INTO shifts (user_id, start_time, initial_cash, expected_end_cash, actual_end_cash, status, momkn_start_balance, vfcash_start_balance)
     VALUES (${userId}, '${nowStr}', ${startingCash}, ${startingCash}, 0, 'open', ${momknStartBalance}, ${vfcashStartBalance});
   `)
-  
+
   const latestShift = await executeQuery(`
     SELECT * FROM shifts WHERE user_id = ${userId} AND status = 'open' ORDER BY id DESC LIMIT 1;
   `)
-  return (latestShift && latestShift.length > 0) ? latestShift[0] : null
+  return latestShift && latestShift.length > 0 ? latestShift[0] : null
 }
 
 /**
  * Calculate expected cash drawer balance for a shift.
  * Formula: Initial + Cash Sales + Inflows (e.g. client repayments) - Outflows (e.g. supplier repayments)
- * 
- * @param {number} shiftId 
- * @param {number} initialCash 
+ *
+ * @param {number} shiftId
+ * @param {number} initialCash
  * @returns {Promise<number>}
  */
 export async function calculateExpectedShiftCash(shiftId, initialCash) {
@@ -79,14 +84,14 @@ export async function calculateExpectedShiftCash(shiftId, initialCash) {
   const salesTotal = parseFloat(salesRes[0]?.total) || 0
   const repayTotal = parseFloat(repayRes[0]?.total) || 0
   const refundTotal = parseFloat(refundRes[0]?.total) || 0
-  
+
   return initialCash + salesTotal + repayTotal - refundTotal
 }
 
 /**
  * Close an active shift.
- * 
- * @param {object} params 
+ *
+ * @param {object} params
  * @returns {Promise<void>}
  */
 export async function closeShift({ shiftId, expectedCash, actualCash, difference }) {
@@ -100,30 +105,34 @@ export async function closeShift({ shiftId, expectedCash, actualCash, difference
 
 /**
  * Authenticate user by PIN code.
- * 
- * @param {string} pin 
+ *
+ * @param {string} pin
  * @returns {Promise<object|null>}
  */
 export async function authenticateUser(pin) {
   const cleanPin = escapeSql(pin.trim())
   const hashedPin = await hashPin(pin.trim())
-  const users = await executeQuery(`SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${cleanPin}') LIMIT 1;`)
-  return (users && users.length > 0) ? users[0] : null
+  const users = await executeQuery(
+    `SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${cleanPin}') LIMIT 1;`
+  )
+  return users && users.length > 0 ? users[0] : null
 }
 
 /**
  * Get users list.
- * 
+ *
  * @returns {Promise<object[]>}
  */
 export async function getUsersList() {
-  return await executeQuery("SELECT id, username, password_hash, role FROM users ORDER BY username ASC;")
+  return await executeQuery(
+    'SELECT id, username, password_hash, role FROM users ORDER BY username ASC;'
+  )
 }
 
 /**
  * Add a new user account.
- * 
- * @param {object} user 
+ *
+ * @param {object} user
  * @returns {Promise<void>}
  */
 export async function addUser({ username, pin, role }) {
@@ -135,8 +144,8 @@ export async function addUser({ username, pin, role }) {
 
 /**
  * Update an existing user.
- * 
- * @param {object} user 
+ *
+ * @param {object} user
  * @returns {Promise<void>}
  */
 export async function updateUser({ id, username, pin, role }) {
@@ -150,8 +159,8 @@ export async function updateUser({ id, username, pin, role }) {
 
 /**
  * Delete a user account.
- * 
- * @param {number} id 
+ *
+ * @param {number} id
  * @returns {Promise<void>}
  */
 export async function deleteUser(id) {
@@ -160,9 +169,9 @@ export async function deleteUser(id) {
 
 /**
  * Check if a username is already taken.
- * 
- * @param {string} username 
- * @param {number|null} excludeId 
+ *
+ * @param {string} username
+ * @param {number|null} excludeId
  * @returns {Promise<boolean>}
  */
 export async function checkDuplicateUser(username, excludeId = null) {
@@ -176,9 +185,9 @@ export async function checkDuplicateUser(username, excludeId = null) {
 
 /**
  * Check if a PIN is already taken.
- * 
- * @param {string} pin 
- * @param {number|null} excludeId 
+ *
+ * @param {string} pin
+ * @param {number|null} excludeId
  * @returns {Promise<boolean>}
  */
 export async function checkDuplicatePin(pin, excludeId = null) {

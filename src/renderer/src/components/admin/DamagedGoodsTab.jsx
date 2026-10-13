@@ -1,21 +1,29 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { executeQuery } from '../../lib/db'
-import { AlertTriangle, Trash2, Plus, Calendar, DollarSign, Layers, Tag, X } from 'lucide-react'
+import { PackageX, Trash2, Plus, Layers, Banknote, X } from 'lucide-react'
+import { EmptyState, StatCard } from '../ui'
+import { formatMoney } from '../../lib/utils'
 
+// Reason values are stored in damaged_goods.reason – keep them unchanged.
+const REASONS = ['انتهاء صلاحية', 'تلف / كسر', 'عيب مصنعي', 'سرقة / فقدان', 'أخرى']
+
+/**
+ * Damaged goods / write-offs. Data and mutations come from useDamagedGoodsManager.
+ */
 export default function DamagedGoodsTab({
   damagedGoodsList,
   showAddDamagedModal,
   setShowAddDamagedModal,
   newDamagedForm,
   setNewDamagedForm,
-  fetchDamagedGoods,
   handleAddDamaged,
   handleDeleteDamaged
 }) {
   const [resolvedProductName, setResolvedProductName] = useState('')
   const [resolvedProductStock, setResolvedProductStock] = useState(null)
+  const [productMissing, setProductMissing] = useState(false)
 
-  // Resolve product info as barcode is typed/scanned
+  // Resolve product info as the barcode is typed/scanned (unchanged lookup).
   useEffect(() => {
     let active = true
     const resolveProduct = async () => {
@@ -24,6 +32,7 @@ export default function DamagedGoodsTab({
         if (active) {
           setResolvedProductName('')
           setResolvedProductStock(null)
+          setProductMissing(false)
         }
         return
       }
@@ -35,15 +44,15 @@ export default function DamagedGoodsTab({
           if (res && res.length > 0) {
             setResolvedProductName(res[0].name)
             setResolvedProductStock(res[0].stock_qty)
+            setProductMissing(false)
           } else {
-            setResolvedProductName('⚠️ الصنف غير موجود')
+            setResolvedProductName('الصنف غير موجود')
             setResolvedProductStock(null)
+            setProductMissing(true)
           }
         }
       } catch (e) {
-        if (active) {
-          console.error(e)
-        }
+        if (active) console.error(e)
       }
     }
     resolveProduct()
@@ -52,313 +61,222 @@ export default function DamagedGoodsTab({
     }
   }, [newDamagedForm.barcode])
 
-  // Compute stats
   const totalItems = damagedGoodsList.reduce((sum, item) => sum + item.quantity, 0)
   const totalLoss = damagedGoodsList.reduce((sum, item) => sum + item.quantity * item.cost_price, 0)
 
-  const handleBarcodeKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      document.getElementById('damaged-quantity-input')?.focus()
-    }
+  const closeModal = () => {
+    setShowAddDamagedModal(false)
+    setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', direction: 'rtl' }}>
-      
-      {/* Header section */}
-      <div className="admin-card" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              background: 'rgba(220, 38, 38, 0.1)',
-              color: 'var(--accent-rose)',
-              padding: '10px',
-              borderRadius: '10px'
-            }}>
-              <AlertTriangle size={24} />
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>إدارة الهوالك وتالف البضائع</h3>
-              <p style={{ margin: '2px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                سجل السلع التالفة أو المنتهية الصلاحية لخصمها تلقائياً من المخزن والربح الصافي للمحل.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowAddDamagedModal(true)}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'var(--accent-rose)',
-              color: '#fff',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 10px rgba(220, 38, 38, 0.2)'
-            }}
-          >
-            <Plus size={18} />
-            تسجيل هالك جديد
-          </button>
-        </div>
+    <>
+      <div className="page-intro">
+        <p>
+          سجّل السلع التالفة أو منتهية الصلاحية؛ تُخصم الكمية من المخزون وتُحتسب قيمتها كخسارة من
+          صافي الربح.
+        </p>
+        <button
+          type="button"
+          className="btn btn-danger"
+          onClick={() => setShowAddDamagedModal(true)}
+        >
+          <Plus size={17} aria-hidden="true" />
+          تسجيل هالك جديد
+        </button>
       </div>
 
-      {/* KPI stats */}
-      <div className="admin-stats-grid">
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-amber)' }}>
-            <Layers size={24} />
-          </div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-label">إجمالي كمية الهوالك</span>
-            <span className="admin-stat-value">{totalItems?.toFixed(2)} وحدة</span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-              تم خصمها من رصيد المخزن الفعلي
-            </span>
-          </div>
-        </div>
-
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: 'rgba(220, 38, 38, 0.1)', color: 'var(--accent-rose)' }}>
-            <DollarSign size={24} />
-          </div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-label">قيمة خسائر الهوالك</span>
-            <span className="admin-stat-value" style={{ color: 'var(--accent-rose)' }}>
-              {totalLoss?.toFixed(2)} ج.م
-            </span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-              مخصومة مباشرة من صافي الأرباح
-            </span>
-          </div>
-        </div>
+      <div className="stat-grid stat-grid-2">
+        <StatCard
+          icon={Layers}
+          tone="warning"
+          label="إجمالي كمية الهوالك"
+          value={`${totalItems?.toFixed(2)} وحدة`}
+          meta="مخصومة من رصيد المخزون الفعلي"
+        />
+        <StatCard
+          icon={Banknote}
+          tone="danger"
+          label="قيمة خسائر الهوالك"
+          value={`${formatMoney(totalLoss)} ج.م`}
+          meta="مخصومة من صافي الأرباح"
+        />
       </div>
 
-      {/* Table section */}
-      <div className="admin-card" style={{ padding: '20px' }}>
-        <h4 style={{ margin: '0 0 14px 0', fontSize: '1rem', fontWeight: 700 }}>سجل العمليات التاريخي للهوالك</h4>
-        
-        {damagedGoodsList.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '30px' }}>
-            لا يوجد أي سجل للهوالك حالياً.
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ padding: '12px 8px' }}>الصنف</th>
-                  <th style={{ padding: '12px 8px' }}>الرمز</th>
-                  <th style={{ padding: '12px 8px' }}>الكمية</th>
-                  <th style={{ padding: '12px 8px' }}>السبب</th>
-                  <th style={{ padding: '12px 8px' }}>تكلفة الوحدة</th>
-                  <th style={{ padding: '12px 8px' }}>إجمالي الخسارة</th>
-                  <th style={{ padding: '12px 8px' }}>تاريخ التسجيل</th>
-                  <th style={{ padding: '12px 8px', textAlign: 'center' }}>إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {damagedGoodsList.map((item) => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: 600 }}>{item.product_name}</td>
-                    <td style={{ padding: '12px 8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{item.product_barcode}</td>
-                    <td style={{ padding: '12px 8px', fontWeight: 700, color: 'var(--accent-rose)' }}>{item.quantity} {item.unit}</td>
-                    <td style={{ padding: '12px 8px' }}>
-                      <span style={{
-                        background: item.reason === 'انتهاء صلاحية' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(220, 38, 38, 0.1)',
-                        color: item.reason === 'انتهاء صلاحية' ? 'var(--accent-amber)' : 'var(--accent-rose)',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700
-                      }}>
-                        {item.reason}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px' }}>{item.cost_price?.toFixed(2)} ج.م</td>
-                    <td style={{ padding: '12px 8px', fontWeight: 700 }}>{(item.quantity * item.cost_price)?.toFixed(2)} ج.م</td>
-                    <td style={{ padding: '12px 8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Calendar size={12} />
-                        {item.timestamp}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleDeleteDamaged(item)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--accent-rose)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          borderRadius: '4px'
-                        }}
-                        title="حذف وإلغاء تسجيل الهالك"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">
+            <PackageX size={18} aria-hidden="true" />
+            سجل الهوالك
+          </h2>
+        </div>
+        <div className="card-body">
+          {damagedGoodsList.length === 0 ? (
+            <EmptyState
+              icon={PackageX}
+              title="لا يوجد هوالك مسجلة"
+              text="لم يتم تسجيل أي بضاعة تالفة حتى الآن."
+            />
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>الصنف</th>
+                    <th className="num">الكمية</th>
+                    <th>السبب</th>
+                    <th className="num">تكلفة الوحدة</th>
+                    <th className="num">إجمالي الخسارة</th>
+                    <th>تاريخ التسجيل</th>
+                    <th>
+                      <span className="visually-hidden">إجراءات</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Add Damaged Goods Modal */}
-      {showAddDamagedModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div className="admin-card" style={{
-            width: '420px',
-            padding: '24px',
-            borderRadius: '16px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-rose)' }}>تسجيل بضاعة تالفة / هالك</h3>
-              <button
-                onClick={() => {
-                  setShowAddDamagedModal(false)
-                  setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
-                }}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
+                </thead>
+                <tbody>
+                  {damagedGoodsList.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <span className="cell-strong">{item.product_name}</span>
+                        <span className="cell-sub mono">{item.product_barcode}</span>
+                      </td>
+                      <td className="num money-strong text-danger">
+                        {item.quantity} {item.unit}
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${item.reason === 'انتهاء صلاحية' ? 'badge-warning' : 'badge-danger'}`}
+                        >
+                          {item.reason}
+                        </span>
+                      </td>
+                      <td className="num">{formatMoney(item.cost_price)}</td>
+                      <td className="num money-strong">
+                        {formatMoney(item.quantity * item.cost_price)}
+                      </td>
+                      <td className="num nowrap cell-muted">{item.timestamp}</td>
+                      <td>
+                        <div className="cell-actions">
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            onClick={() => handleDeleteDamaged(item)}
+                            aria-label="حذف وإلغاء تسجيل الهالك"
+                            title="حذف وإرجاع الكمية للمخزون"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
+        </div>
+      </section>
 
-            <form onSubmit={handleAddDamaged} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              
-              {/* Barcode input */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 700 }}>باركود الصنف:</label>
+      {showAddDamagedModal && (
+        <div className="modal-overlay">
+          <form
+            className="modal-content tone-danger"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="damaged-title"
+            onSubmit={handleAddDamaged}
+          >
+            <div className="modal-header">
+              <span className="modal-icon" aria-hidden="true">
+                <PackageX size={22} />
+              </span>
+              <h2 id="damaged-title">تسجيل بضاعة تالفة / هالك</h2>
+              <p>تُخصم الكمية فوراً من المخزون.</p>
+            </div>
+            <button
+              type="button"
+              className="icon-btn modal-close"
+              aria-label="إغلاق"
+              onClick={closeModal}
+            >
+              <X size={18} />
+            </button>
+            <div className="modal-body">
+              <label className="field">
+                <span className="field-label">باركود الصنف</span>
                 <input
                   type="text"
                   required
+                  className="input mono-input"
                   value={newDamagedForm.barcode}
-                  onChange={(e) => setNewDamagedForm({ ...newDamagedForm, barcode: e.target.value })}
-                  onKeyDown={handleBarcodeKeyDown}
-                  placeholder="مرر الباركود أو اكتبه هنا..."
-                  style={{
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-input)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem'
+                  onChange={(e) =>
+                    setNewDamagedForm({ ...newDamagedForm, barcode: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      document.getElementById('damaged-quantity-input')?.focus()
+                    }
                   }}
+                  placeholder="امسح الباركود أو اكتبه هنا"
                   autoFocus
                 />
-                
-                {/* Dynamically resolved product info */}
                 {newDamagedForm.barcode && (
-                  <div style={{
-                    marginTop: '2px',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    color: resolvedProductName.startsWith('⚠️') ? 'var(--accent-rose)' : 'var(--accent-emerald)',
-                    display: 'flex',
-                    justifyContent: 'space-between'
-                  }}>
+                  <span className={`field-resolve ${productMissing ? 'is-missing' : ''}`}>
                     <span>{resolvedProductName}</span>
                     {resolvedProductStock !== null && (
-                      <span style={{ color: 'var(--text-secondary)' }}>
-                        المخزون الحالي: {resolvedProductStock}
+                      <span className="cell-muted">
+                        المخزون الحالي: <span className="num">{resolvedProductStock}</span>
                       </span>
                     )}
-                  </div>
+                  </span>
                 )}
+              </label>
+              <div className="form-grid">
+                <label className="field">
+                  <span className="field-label">الكمية التالفة</span>
+                  <input
+                    id="damaged-quantity-input"
+                    type="number"
+                    step="any"
+                    required
+                    className="input num"
+                    value={newDamagedForm.quantity}
+                    onChange={(e) =>
+                      setNewDamagedForm({ ...newDamagedForm, quantity: e.target.value })
+                    }
+                    placeholder="عدد الوحدات أو الوزن"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">سبب التلف</span>
+                  <select
+                    className="input"
+                    value={newDamagedForm.reason}
+                    onChange={(e) =>
+                      setNewDamagedForm({ ...newDamagedForm, reason: e.target.value })
+                    }
+                  >
+                    {REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
-
-              {/* Quantity input */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 700 }}>الكمية التالفة:</label>
-                <input
-                  id="damaged-quantity-input"
-                  type="number"
-                  step="any"
-                  required
-                  value={newDamagedForm.quantity}
-                  onChange={(e) => setNewDamagedForm({ ...newDamagedForm, quantity: e.target.value })}
-                  placeholder="أدخل عدد الوحدات أو الوزن..."
-                  style={{
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-input)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem'
-                  }}
-                />
-              </div>
-
-              {/* Reason selection */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 700 }}>سبب التلف:</label>
-                <select
-                  value={newDamagedForm.reason}
-                  onChange={(e) => setNewDamagedForm({ ...newDamagedForm, reason: e.target.value })}
-                  style={{
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-input)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem'
-                  }}
-                >
-                  <option value="انتهاء صلاحية">انتهاء صلاحية</option>
-                  <option value="تلف / كسر">تلف / كسر</option>
-                  <option value="عيب مصنعي">عيب مصنعي</option>
-                  <option value="سرقة / فقدان">سرقة / فقدان</option>
-                  <option value="أخرى">أخرى</option>
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                style={{
-                  marginTop: '10px',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'var(--accent-rose)',
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.2s'
-                }}
-              >
+            </div>
+            <div className="modal-footer">
+              <button type="submit" className="btn btn-danger" style={{ flex: 1 }}>
                 تأكيد وتسجيل الهالك
               </button>
-
-            </form>
-          </div>
+              <button type="button" className="btn btn-secondary" onClick={closeModal}>
+                إلغاء
+              </button>
+            </div>
+          </form>
         </div>
       )}
-
-    </div>
+    </>
   )
 }

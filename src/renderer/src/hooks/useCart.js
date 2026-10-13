@@ -3,12 +3,12 @@ import { round2 } from '../lib/utils'
 
 /**
  * Custom hook for POS checkout cart state management.
- * 
+ *
  * @param {object} params
  * @param {function} params.playSound
  * @param {function} params.triggerCustomAlert
  */
-export function useCart({ playSound, triggerCustomAlert }) {
+export function useCart({ playSound }) {
   const [cart, setCart] = useState([])
   const [discount, setDiscount] = useState(0)
   const [paidAmount, setPaidAmount] = useState('')
@@ -21,10 +21,12 @@ export function useCart({ playSound, triggerCustomAlert }) {
 
   // Derived state: Cart subtotal before discount and credit
   const subTotal = round2(cart.reduce((sum, item) => sum + (item.total || 0), 0))
-  
+
   // Derived state: Cart total after discount and applied credit
-  const cartTotal = round2(Math.max(0, subTotal - (parseFloat(discount) || 0) - (parseFloat(appliedCredit) || 0)))
- 
+  const cartTotal = round2(
+    Math.max(0, subTotal - (parseFloat(discount) || 0) - (parseFloat(appliedCredit) || 0))
+  )
+
   // Derived state: Change due back to customer
   const changeDue = paidAmount ? round2(Math.max(0, (parseFloat(paidAmount) || 0) - cartTotal)) : 0
 
@@ -67,10 +69,8 @@ export function useCart({ playSound, triggerCustomAlert }) {
       return
     }
     setCart((prev) => {
-      return prev.map((item) => 
-        item.barcode === barcode 
-          ? { ...item, qty, total: round2(qty * item.price) }
-          : item
+      return prev.map((item) =>
+        item.barcode === barcode ? { ...item, qty, total: round2(qty * item.price) } : item
       )
     })
   }

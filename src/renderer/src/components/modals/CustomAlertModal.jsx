@@ -1,27 +1,48 @@
-import React from 'react'
+import { CircleCheck, CircleAlert, TriangleAlert } from 'lucide-react'
+
+// Callers only pass free text; infer a visual tone so success messages are not shown as errors.
+function alertTone(title = '', message = '') {
+  const t = `${title} ${message}`
+  if (/فشل|خطأ|غير صحيح|مرفوض|لا يمكن|خاطئ/.test(t)) return 'danger'
+  if (/نجاح|بنجاح|تم\s|تمت|تم$/.test(t)) return 'success'
+  return 'warning'
+}
+
+const ICONS = { success: CircleCheck, danger: CircleAlert, warning: TriangleAlert }
 
 const CustomAlertModal = ({ customAlert, closeCustomAlert }) => {
   if (!customAlert) return null
+  const tone = alertTone(customAlert.title, customAlert.message)
+  const Icon = ICONS[tone]
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1000 }}>
-      <div className="modal-content" style={{ border: '2px solid var(--accent-rose)', maxWidth: '400px', textAlign: 'center', background: 'var(--bg-card)' }}>
+    <div className="modal-overlay" style={{ zIndex: 100005 }}>
+      <div
+        className={`modal-content dialog-alert tone-${tone}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="alert-title"
+        aria-describedby="alert-message"
+        style={{ width: 420 }}
+      >
         <div className="modal-header">
-          <span style={{ fontSize: '3rem', display: 'block', marginBottom: '10px' }}>⚠️</span>
-          <h2 style={{ color: 'var(--accent-rose)', fontSize: '1.4rem', margin: 0 }}>{customAlert.title}</h2>
+          <span className="modal-icon" aria-hidden="true">
+            <Icon size={24} />
+          </span>
+          <h2 id="alert-title">{customAlert.title}</h2>
         </div>
-        <div style={{ margin: '20px 0', fontSize: '1.15rem', fontWeight: 'bold', color: 'var(--text-main)', lineHeight: '1.6' }}>
+        <p id="alert-message" className="dialog-message">
           {customAlert.message}
-        </div>
-        <div style={{ marginTop: '20px' }}>
-          <button 
-            type="button" 
-            className="btn btn-danger" 
-            style={{ width: '100%', padding: '12px 0', fontSize: '1.05rem', fontWeight: 'bold', background: 'var(--accent-rose)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+        </p>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn btn-primary btn-lg btn-block"
             onClick={closeCustomAlert}
             autoFocus
           >
-            موافق (Enter)
+            حسناً
+            <span className="kbd">Enter</span>
           </button>
         </div>
       </div>

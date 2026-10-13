@@ -1,5 +1,3 @@
-import { formatMoney } from './utils'
-
 export function generateReceiptHtml({
   storeName = 'سوبر ماركت النجدي',
   branchName = 'الفرع الرئيسي',
@@ -49,12 +47,13 @@ export function generateReceiptHtml({
           </tr>
         </thead>
         <tbody>
-          ${cart.map(item => {
-            const qty = item.qty || item.quantity || 1
-            const price = item.price || item.unit_price || 0
-            const total = item.total || (qty * price) || 0
-            const name = item.name || item.product_name || 'صنف'
-            return `
+          ${cart
+            .map((item) => {
+              const qty = item.qty || item.quantity || 1
+              const price = item.price || item.unit_price || 0
+              const total = item.total || qty * price || 0
+              const name = item.name || item.product_name || 'صنف'
+              return `
               <tr>
                 <td style="text-align: right; padding: 2px 0;">${name}</td>
                 <td style="text-align: center;">${qty}</td>
@@ -62,7 +61,8 @@ export function generateReceiptHtml({
                 <td style="text-align: left;">${total.toFixed(2)}</td>
               </tr>
             `
-          }).join('')}
+            })
+            .join('')}
         </tbody>
       </table>
       
@@ -73,12 +73,16 @@ export function generateReceiptHtml({
         <span>${cartTotal.toFixed(2)} ج.م</span>
       </div>
       
-      ${finalDiscount > 0 ? `
+      ${
+        finalDiscount > 0
+          ? `
         <div style="font-size: 10px; display: flex; justify-content: space-between; margin: 2px 0;">
           <span>خصم الفاتورة:</span>
           <span>-${finalDiscount.toFixed(2)} ج.م</span>
         </div>
-      ` : ''}
+      `
+          : ''
+      }
 
       <div style="font-size: 10px; display: flex; justify-content: space-between; margin: 2px 0;">
         <span>المدفوع:</span>
@@ -144,23 +148,25 @@ export function generateReprintHtml({
           </tr>
         </thead>
         <tbody>
-          ${items.map(item => {
-            const retQty = item.returned_qty || 0
-            const qty = item.quantity || 1
-            const isItemReturned = retQty >= qty
-            const isItemPartReturned = retQty > 0 && !isItemReturned
-            const displayQty = isItemReturned ? 0 : (isItemPartReturned ? (qty - retQty) : qty)
-            const unitPrice = Number(item.unit_price) || 0
-            const totalPrice = Number(item.total_price) || (qty * unitPrice)
-            
-            let nameLabel = item.product_name || item.name || `باركود ${item.product_barcode || ''}`
-            if (isItemReturned) {
-              nameLabel = `<span style="text-decoration: line-through;">${nameLabel}</span> (مرتجع)`
-            } else if (isItemPartReturned) {
-              nameLabel = `${nameLabel} (مرتجع ${retQty})`
-            }
+          ${items
+            .map((item) => {
+              const retQty = item.returned_qty || 0
+              const qty = item.quantity || 1
+              const isItemReturned = retQty >= qty
+              const isItemPartReturned = retQty > 0 && !isItemReturned
+              const displayQty = isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty
+              const unitPrice = Number(item.unit_price) || 0
+              const totalPrice = Number(item.total_price) || qty * unitPrice
 
-            return `
+              let nameLabel =
+                item.product_name || item.name || `باركود ${item.product_barcode || ''}`
+              if (isItemReturned) {
+                nameLabel = `<span style="text-decoration: line-through;">${nameLabel}</span> (مرتجع)`
+              } else if (isItemPartReturned) {
+                nameLabel = `${nameLabel} (مرتجع ${retQty})`
+              }
+
+              return `
               <tr style="${isItemReturned ? 'color: #888;' : ''}">
                 <td style="text-align: right; padding: 2px 0;">${nameLabel}</td>
                 <td style="text-align: center;">${displayQty}</td>
@@ -168,7 +174,8 @@ export function generateReprintHtml({
                 <td style="text-align: left; ${isItemReturned ? 'text-decoration: line-through;' : ''}">${totalPrice.toFixed(2)}</td>
               </tr>
             `
-          }).join('')}
+            })
+            .join('')}
         </tbody>
       </table>
       
@@ -179,12 +186,16 @@ export function generateReprintHtml({
         <span>${Number(s.total_amount || 0).toFixed(2)} ج.م</span>
       </div>
       
-      ${s.discount > 0 ? `
+      ${
+        s.discount > 0
+          ? `
         <div style="font-size: 10px; display: flex; justify-content: space-between; margin: 2px 0;">
           <span>خصم الفاتورة:</span>
           <span>-${Number(s.discount).toFixed(2)} ج.م</span>
         </div>
-      ` : ''}
+      `
+          : ''
+      }
 
       <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
       <div style="text-align: center; font-size: 10px; margin-top: 4px; font-style: italic;">
@@ -194,7 +205,7 @@ export function generateReprintHtml({
   `
 }
 
-export function generateMomknReportHtml({ shift, transactions = [], summary = {} }) {
+export function generateMomknReportHtml({ shift, summary = {} }) {
   return `
     <div style="font-family: 'Courier New', monospace; width: 80mm; padding: 5px; direction: rtl; font-size: 11px; color: #000; background: #fff;">
       <div style="text-align: center; margin-bottom: 8px;">
@@ -220,7 +231,7 @@ export function generateMomknReportHtml({ shift, transactions = [], summary = {}
   `
 }
 
-export function generateMobileMoneyReportHtml({ shift, transactions = [], summary = {} }) {
+export function generateMobileMoneyReportHtml({ shift, summary = {} }) {
   return `
     <div style="font-family: 'Courier New', monospace; width: 80mm; padding: 5px; direction: rtl; font-size: 11px; color: #000; background: #fff;">
       <div style="text-align: center; margin-bottom: 8px;">

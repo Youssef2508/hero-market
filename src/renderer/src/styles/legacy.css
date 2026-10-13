@@ -1,0 +1,69 @@
+/* ─────────────────────────────────────────────────────────────
+   Remaining pre-redesign class names that still appear in markup.
+   Kept small on purpose: prefer the classes in components.css /
+   screens.css when editing a screen, then delete the rule here.
+   ───────────────────────────────────────────────────────────── */
+
+.inventory-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--danger-text);
+  transition: var(--transition-smooth);
+}
+.delete-btn:hover {
+  background: var(--danger-soft);
+}
+
+.glassmorphism-card {
+  background: var(--surface-raised);
+}
+
+.bs-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--success-soft);
+  color: var(--success-text);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loading {
+  color: var(--text-3);
+}
+
+/* Error boundary full screen */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg);
+  overflow: hidden;
+}

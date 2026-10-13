@@ -1,46 +1,49 @@
-import React from 'react'
-import { HelpCircle } from 'lucide-react'
+import { CircleHelp, TriangleAlert } from 'lucide-react'
+
+const isDestructive = (text = '') =>
+  /حذف|إلغاء|إرجاع|لا يمكن التراجع|نهائياً|إعادة الضبط/.test(text)
 
 const CustomConfirmModal = ({ customConfirm, closeCustomConfirm }) => {
   if (!customConfirm) return null
+  const destructive = isDestructive(`${customConfirm.title} ${customConfirm.message}`)
+  const Icon = destructive ? TriangleAlert : CircleHelp
 
   return (
     <div className="modal-overlay" style={{ zIndex: 100001 }}>
-      <div className="modal-content" style={{ border: '2px solid var(--accent-blue)', maxWidth: '400px', textAlign: 'center', background: 'var(--bg-card)' }}>
-        <div className="modal-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            background: 'rgba(59, 130, 246, 0.1)',
-            color: 'var(--accent-blue)',
-            padding: '12px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <HelpCircle size={32} />
-          </div>
-          <h2 style={{ color: 'var(--accent-blue)', fontSize: '1.25rem', margin: '4px 0 0 0', fontWeight: 'bold' }}>{customConfirm.title}</h2>
+      <div
+        className={`modal-content dialog-alert tone-${destructive ? 'danger' : 'info'}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        aria-describedby="confirm-message"
+        style={{ width: 440 }}
+      >
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <Icon size={24} />
+          </span>
+          <h2 id="confirm-title">{customConfirm.title}</h2>
         </div>
-        <div style={{ margin: '15px 0 20px 0', fontSize: '1.05rem', fontWeight: '500', color: 'var(--text-primary)', lineHeight: '1.6' }}>
+        <p id="confirm-message" className="dialog-message">
           {customConfirm.message}
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            type="button" 
-            className="btn btn-secondary" 
-            style={{ flex: 1, padding: '10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}
+        </p>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn btn-secondary btn-lg"
             onClick={() => closeCustomConfirm(false)}
           >
             إلغاء
           </button>
-          <button 
-            type="button" 
-            className="btn btn-primary" 
-            style={{ flex: 1, padding: '10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}
+          <button
+            type="button"
+            className={`btn btn-lg ${destructive ? 'btn-danger' : 'btn-primary'}`}
+            style={{ flex: 1 }}
             onClick={() => closeCustomConfirm(true)}
             autoFocus
           >
-            تأكيد (Enter)
+            تأكيد
+            <span className="kbd">Enter</span>
           </button>
         </div>
       </div>

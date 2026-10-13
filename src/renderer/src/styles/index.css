@@ -1,0 +1,8 @@
+/* HeroMarket POS – stylesheet entry. Order matters: tokens → base → components → layout → screens. */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './shell.css';
+@import './pos.css';
+@import './screens.css';
+@import './legacy.css';

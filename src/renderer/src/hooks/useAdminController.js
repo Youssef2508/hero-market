@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { executeQuery } from '../lib/db'
-import { parseLocaleDateString, getNowStr } from '../lib/utils'
+import { getNowStr } from '../lib/utils'
 import { useClientsManager } from './useClientsManager'
 import { useSuppliersManager } from './useSuppliersManager'
 import { useChecksManager } from './useChecksManager'
@@ -11,7 +11,13 @@ import { useExpensesManager } from './useExpensesManager'
 import { useBestSellersManager } from './useBestSellersManager'
 import { useDamagedGoodsManager } from './useDamagedGoodsManager'
 
-export function useAdminController({ currentShift, currentUser, setToastMessage, triggerCustomAlert, triggerCustomConfirm }) {
+export function useAdminController({
+  currentShift,
+  currentUser,
+  setToastMessage,
+  triggerCustomAlert,
+  triggerCustomConfirm
+}) {
   // Shared states
   const [analytics, setAnalytics] = useState({ totalSales: 0, netProfit: 0 })
   const [statsPeriod, setStatsPeriod] = useState('weekly')
@@ -31,13 +37,17 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
   const fetchStats = async () => {
     try {
       const totalRes = await executeQuery('SELECT count(*) as count FROM products;')
-      const lowRes = await executeQuery('SELECT name, stock_qty, reorder_limit, unit FROM products WHERE stock_qty <= reorder_limit AND reorder_limit > 0;')
-      setDbStats({ 
-        totalItems: totalRes[0]?.count || 0, 
+      const lowRes = await executeQuery(
+        'SELECT name, stock_qty, reorder_limit, unit FROM products WHERE stock_qty <= reorder_limit AND reorder_limit > 0;'
+      )
+      setDbStats({
+        totalItems: totalRes[0]?.count || 0,
         lowStock: lowRes.length || 0,
         lowStockItems: lowRes || []
       })
-    } catch (e) { console.error('fetchStats:', e) }
+    } catch (e) {
+      console.error('fetchStats:', e)
+    }
   }
 
   const fetchAnalytics = async (period = 'weekly') => {
@@ -56,7 +66,9 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
         sinceDate.setHours(0, 0, 0, 0)
 
         const sinceStr = getNowStr(sinceDate)
-        const matchingShifts = await executeQuery(`SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`)
+        const matchingShifts = await executeQuery(
+          `SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`
+        )
         const ids = matchingShifts.map((sh) => sh.id)
         if (ids.length > 0) {
           shiftIdsFilter = ids.join(',')
@@ -158,7 +170,9 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
         netCashFlow
       })
       setAnalytics({ totalSales, netProfit })
-    } catch (e) { console.error('fetchAnalytics:', e) }
+    } catch (e) {
+      console.error('fetchAnalytics:', e)
+    }
   }
 
   const fetchShiftsHistory = async () => {
@@ -169,7 +183,9 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
         WHERE s.status = 'closed' ORDER BY s.id DESC;
       `)
       setShiftsHistory(res)
-    } catch (e) { console.error('fetchShiftsHistory:', e) }
+    } catch (e) {
+      console.error('fetchShiftsHistory:', e)
+    }
   }
 
   const [shiftAudits, setShiftAudits] = useState([])
@@ -184,7 +200,9 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
         ORDER BY a.id DESC;
       `)
       setShiftAudits(res)
-    } catch (e) { console.error('fetchShiftAudits:', e) }
+    } catch (e) {
+      console.error('fetchShiftAudits:', e)
+    }
   }
 
   // Sub-managers declared BEFORE fetchAdminData so it can call their methods.
@@ -211,10 +229,10 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
     triggerCustomConfirm
   })
 
-  const suppliersManager = useSuppliersManager({ 
+  const suppliersManager = useSuppliersManager({
     currentShift,
     triggerCustomAlert,
-    triggerCustomConfirm 
+    triggerCustomConfirm
   })
 
   const checksManager = useChecksManager({
@@ -263,13 +281,22 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
   }
 
   return {
-    analytics, setAnalytics,
-    statsPeriod, setStatsPeriod,
+    analytics,
+    setAnalytics,
+    statsPeriod,
+    setStatsPeriod,
     periodicAnalytics,
-    shiftsHistory, setShiftsHistory,
-    shiftAudits, setShiftAudits,
-    dbStats, setDbStats,
-    fetchStats, fetchAnalytics, fetchShiftsHistory, fetchShiftAudits, fetchAdminData,
+    shiftsHistory,
+    setShiftsHistory,
+    shiftAudits,
+    setShiftAudits,
+    dbStats,
+    setDbStats,
+    fetchStats,
+    fetchAnalytics,
+    fetchShiftsHistory,
+    fetchShiftAudits,
+    fetchAdminData,
 
     // productsManager
     adminProducts: productsManager.adminProducts,
@@ -313,7 +340,7 @@ export function useAdminController({ currentShift, currentUser, setToastMessage,
     handleReturnEntireSale: salesManager.handleReturnEntireSale,
     salesPage: salesManager.salesPage,
     salesTotalCount: salesManager.salesTotalCount,
-    itemsPerPage: salesManager.itemsPerPage,
+    // itemsPerPage (12) is shared with productsManager above; both managers use the same page size.
 
     // clientsManager
     clientsList: clientsManager.clientsList,

@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { Wallet, CircleAlert } from 'lucide-react'
 
-const MobileMoneyOperationModal = ({
-  isOpen,
-  onClose,
-  onSubmit
-}) => {
+const MobileMoneyOperationModal = ({ isOpen, onClose, onSubmit }) => {
   const [platform, setPlatform] = useState('vodafone_cash') // 'vodafone_cash', 'instapay', 'bank_transfer'
   const [operationType, setOperationType] = useState('withdraw_from_client') // 'withdraw_from_client', 'deposit_to_client'
   const [digitalAmount, setDigitalAmount] = useState('')
@@ -13,6 +10,7 @@ const MobileMoneyOperationModal = ({
   const [recipientName, setRecipientName] = useState('')
   const [phoneOrAccount, setPhoneOrAccount] = useState('')
   const [notes, setNotes] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
     if (isOpen) {
@@ -24,6 +22,7 @@ const MobileMoneyOperationModal = ({
       setRecipientName('')
       setPhoneOrAccount('')
       setNotes('')
+      setErrorMsg('')
     }
   }, [isOpen])
 
@@ -60,10 +59,10 @@ const MobileMoneyOperationModal = ({
 
     if (operationType === 'deposit_to_client') {
       digitalImpact = -digVal // digital wallet balance decreases
-      cashImpact = cashVal    // cash drawer increases (received cash)
+      cashImpact = cashVal // cash drawer increases (received cash)
     } else if (operationType === 'withdraw_from_client') {
-      digitalImpact = digVal  // digital wallet balance increases
-      cashImpact = -cashVal   // cash drawer decreases (paid cash)
+      digitalImpact = digVal // digital wallet balance increases
+      cashImpact = -cashVal // cash drawer decreases (paid cash)
     }
 
     onSubmit({
@@ -78,43 +77,31 @@ const MobileMoneyOperationModal = ({
     })
   }
 
-  const inputStyle = {
-    backgroundColor: '#ffffff',
-    color: '#111827',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    padding: '10px 12px',
-    fontSize: '0.95rem',
-    width: '100%'
-  }
-
-  const computedInputStyle = {
-    backgroundColor: '#f3f4f6',
-    color: '#111827',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    padding: '10px 12px',
-    fontSize: '0.95rem',
-    width: '100%',
-    fontWeight: 'bold'
-  }
-
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '480px', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', backgroundColor: '#ffffff', color: '#111827', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
-        <div className="modal-header" style={{ marginBottom: '16px' }}>
-          <h2 style={{ color: '#111827', margin: 0, fontSize: '1.4rem' }}>تسجيل حركة محفظة / تحويل</h2>
-          <p style={{ color: '#6b7280', fontSize: '0.88rem', marginTop: '4px' }}>سجل حركة سحب أو إيداع لربط الكاش والأرصدة الرقمية</p>
+      <div
+        className="modal-content modal-auto-scroll"
+        role="dialog"
+        aria-modal="true"
+        style={{ width: 480 }}
+      >
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <Wallet size={22} />
+          </span>
+          <h2>تسجيل حركة محفظة / تحويل</h2>
+          <p>سجل حركة سحب أو إيداع لربط الكاش والأرصدة الرقمية</p>
         </div>
-        <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          
+        <form
+          onSubmit={handleFormSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+        >
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>المنصة / الوسيلة *</label>
-            <select 
+            <label>المنصة / الوسيلة *</label>
+            <select
               className="form-input"
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
-              style={inputStyle}
             >
               <option value="vodafone_cash">فودافون كاش (Vodafone Cash)</option>
               <option value="instapay">انستا باي (Instapay)</option>
@@ -123,22 +110,54 @@ const MobileMoneyOperationModal = ({
           </div>
 
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>نوع العملية *</label>
+            <label>نوع العملية *</label>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <label style={{ flex: 1, padding: '10px', border: '1px solid #d1d5db', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', backgroundColor: operationType === 'withdraw_from_client' ? '#ecfdf5' : '#ffffff', color: '#111827' }}>
-                <input 
-                  type="radio" 
-                  name="opType" 
-                  value="withdraw_from_client" 
+              <label
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  backgroundColor:
+                    operationType === 'withdraw_from_client'
+                      ? 'var(--success-soft)'
+                      : 'var(--surface-raised)',
+                  color: 'var(--text)'
+                }}
+              >
+                <input
+                  type="radio"
+                  name="opType"
+                  value="withdraw_from_client"
                   checked={operationType === 'withdraw_from_client'}
                   onChange={() => setOperationType('withdraw_from_client')}
                 />
                 سحب من الزبون (المحل بيستلم رصيد وبيطلع كاش)
               </label>
-              <label style={{ flex: 1, padding: '10px', border: '1px solid #d1d5db', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', backgroundColor: operationType === 'deposit_to_client' ? '#ecfdf5' : '#ffffff', color: '#111827' }}>
-                <input 
-                  type="radio" 
-                  name="opType" 
+              <label
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  backgroundColor:
+                    operationType === 'deposit_to_client'
+                      ? 'var(--success-soft)'
+                      : 'var(--surface-raised)',
+                  color: 'var(--text)'
+                }}
+              >
+                <input
+                  type="radio"
+                  name="opType"
                   value="deposit_to_client"
                   checked={operationType === 'deposit_to_client'}
                   onChange={() => setOperationType('deposit_to_client')}
@@ -149,91 +168,102 @@ const MobileMoneyOperationModal = ({
           </div>
 
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>مبلغ العملية الأساسي (الرصيد الرقمي) *</label>
-            <input 
-              type="number" 
+            <label>مبلغ العملية الأساسي (الرصيد الرقمي) *</label>
+            <input
+              type="number"
               step="0.01"
-              className="form-input" 
+              className="form-input"
               value={digitalAmount}
               onChange={(e) => setDigitalAmount(e.target.value)}
               required
               placeholder="0.00"
-              style={inputStyle}
             />
           </div>
 
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>عمولة المعاملة *</label>
-            <input 
-              type="number" 
+            <label>عمولة المعاملة *</label>
+            <input
+              type="number"
               step="0.01"
-              className="form-input" 
+              className="form-input"
               value={commission}
               onChange={(e) => setCommission(e.target.value)}
               required
               placeholder="0.00"
-              style={inputStyle}
             />
           </div>
 
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>المبلغ المتأثر به الدرج كاش (الفلوس الورق) *</label>
-            <input 
-              type="number" 
-              className="form-input" 
+            <label>المبلغ المتأثر به الدرج كاش (الفلوس الورق) *</label>
+            <input
+              type="number"
+              className="form-input"
               value={cashAmount}
               readOnly
-              style={computedInputStyle}
+              data-computed="true"
               placeholder="0.00"
             />
-            <small style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
-              {operationType === 'deposit_to_client' && 'المستلم كاش من الزبون = رصيد التحويل + العمولة'}
-              {operationType === 'withdraw_from_client' && 'المسحوب كاش للزبون من الدرج = رصيد التحويل - العمولة'}
+            <small
+              style={{
+                color: 'var(--text-3)',
+                fontSize: '0.8rem',
+                marginTop: '4px',
+                display: 'block'
+              }}
+            >
+              {operationType === 'deposit_to_client' &&
+                'المستلم كاش من الزبون = رصيد التحويل + العمولة'}
+              {operationType === 'withdraw_from_client' &&
+                'المسحوب كاش للزبون من الدرج = رصيد التحويل - العمولة'}
             </small>
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <div className="form-group" style={{ flex: 1 }}>
-              <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>رقم الهاتف / الحساب</label>
-              <input 
-                type="text" 
-                className="form-input" 
+              <label>رقم الهاتف / الحساب</label>
+              <input
+                type="text"
+                className="form-input"
                 value={phoneOrAccount}
                 onChange={(e) => setPhoneOrAccount(e.target.value)}
                 placeholder="مثال: 01012345678"
-                style={inputStyle}
               />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
-              <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>اسم الزبون / المستلم</label>
-              <input 
-                type="text" 
-                className="form-input" 
+              <label>اسم الزبون / المستلم</label>
+              <input
+                type="text"
+                className="form-input"
                 value={recipientName}
                 onChange={(e) => setRecipientName(e.target.value)}
                 placeholder="اسم العميل"
-                style={inputStyle}
               />
             </div>
           </div>
 
           <div className="form-group">
-            <label style={{ color: '#374151', fontWeight: '600', marginBottom: '6px', display: 'block' }}>ملاحظات إضافية</label>
-            <textarea 
-              className="form-input" 
+            <label>ملاحظات إضافية</label>
+            <textarea
+              className="form-input"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="مثال: اسم المحول منه، تفاصيل التحويل..."
               rows={2}
-              style={inputStyle}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-            <button type="button" className="btn btn-secondary" style={{ flex: 1, padding: '10px' }} onClick={onClose}>
+          {errorMsg && (
+            <div className="notice notice-danger" role="alert">
+              <CircleAlert size={16} aria-hidden="true" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
               إلغاء
             </button>
-            <button type="submit" className="btn btn-success" style={{ flex: 1, padding: '10px' }}>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
               حفظ الحركة
             </button>
           </div>

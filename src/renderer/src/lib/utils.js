@@ -9,9 +9,7 @@
  */
 export function escapeSql(str) {
   if (!str) return ''
-  return str.toString()
-    .replace(/\0/g, '')
-    .replace(/'/g, "''")
+  return str.toString().replace(/\0/g, '').replace(/'/g, "''")
 }
 
 /**
@@ -23,7 +21,7 @@ export async function hashPin(pin) {
   const data = encoder.encode(pin.toString().trim())
   const hashBuffer = await window.crypto.subtle.digest('SHA-256', data)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
@@ -32,12 +30,12 @@ export async function hashPin(pin) {
  */
 export function normalizeDigits(str) {
   if (!str) return ''
-  const arabicDigits  = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
   let res = str.toString()
   for (let i = 0; i < 10; i++) {
     res = res
-      .replace(new RegExp(arabicDigits[i],  'g'), i)
+      .replace(new RegExp(arabicDigits[i], 'g'), i)
       .replace(new RegExp(persianDigits[i], 'g'), i)
   }
   return res
@@ -65,7 +63,7 @@ export function playSound(type) {
     if (!ctx) return
 
     if (type === 'success') {
-      const osc  = ctx.createOscillator()
+      const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.connect(gain)
       gain.connect(ctx.destination)
@@ -73,7 +71,6 @@ export function playSound(type) {
       gain.gain.setValueAtTime(0.05, ctx.currentTime)
       osc.start()
       osc.stop(ctx.currentTime + 0.08)
-
     } else if (type === 'chime') {
       const osc1 = ctx.createOscillator()
       const osc2 = ctx.createOscillator()
@@ -89,9 +86,8 @@ export function playSound(type) {
       osc2.start()
       osc1.stop(ctx.currentTime + 0.35)
       osc2.stop(ctx.currentTime + 0.35)
-
     } else if (type === 'error') {
-      const osc  = ctx.createOscillator()
+      const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.connect(gain)
       gain.connect(ctx.destination)
@@ -116,8 +112,8 @@ export function parseLocaleDateString(str) {
   if (!str) return null
   let clean = normalizeDigits(str.toString())
   clean = clean.replace(/[\u200e\u200f]/g, '') // Remove RTL/LTR marks
-  
-  const dateMatch = clean.match(/(\d+)[\/\-](\d+)[\/\-](\d+)/)
+
+  const dateMatch = clean.match(/(\d+)[/-](\d+)[/-](\d+)/)
   if (!dateMatch) return null
 
   let day, month, year
@@ -131,7 +127,9 @@ export function parseLocaleDateString(str) {
     year = parseInt(dateMatch[3], 10)
   }
 
-  let hours = 0, minutes = 0, seconds = 0
+  let hours = 0,
+    minutes = 0,
+    seconds = 0
   const timeMatch = clean.match(/(\d+):(\d+):?(\d+)?/)
   if (timeMatch) {
     hours = parseInt(timeMatch[1], 10)
@@ -173,10 +171,18 @@ export function getFriendlyErrorMessage(err) {
   if (msg.includes('FOREIGN KEY constraint failed')) {
     return 'خطأ: لا يمكن إتمام العملية أو الحذف لارتباط هذا السجل ببيانات أخرى مسجلة بالنظام.'
   }
-  if (msg.includes('prevent_negative_stock') || msg.includes('نفاد الكمية') || msg.includes('stock')) {
+  if (
+    msg.includes('prevent_negative_stock') ||
+    msg.includes('نفاد الكمية') ||
+    msg.includes('stock')
+  ) {
     return 'خطأ: كمية الصنف المطلوبة غير متوفرة بالكامل في المخزن.'
   }
-  if (msg.includes('prevent_sale_on_closed_shift') || msg.includes('وردية مغلقة') || msg.includes('closed')) {
+  if (
+    msg.includes('prevent_sale_on_closed_shift') ||
+    msg.includes('وردية مغلقة') ||
+    msg.includes('closed')
+  ) {
     return 'خطأ: لا يمكن التسجيل لأن الوردية مغلقة حالياً. يرجى فتح وردية جديدة.'
   }
   if (msg.includes('prevent_multiple_open_shifts') || msg.includes('وردية مفتوحة بالفعل')) {
@@ -197,5 +203,8 @@ export function round2(n) {
  * Formats a number to a money string (e.g., 1,234.56).
  */
 export function formatMoney(amount) {
-  return (parseFloat(amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (parseFloat(amount) || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 }

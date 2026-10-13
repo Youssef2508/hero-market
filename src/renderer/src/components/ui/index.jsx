@@ -1,0 +1,176 @@
+// Shared presentation primitives. Styling lives in styles/components.css and
+// styles/screens.css; these components only standardise markup.
+import { Moon, Sun, Inbox } from 'lucide-react'
+import { useTheme } from '../../theme/ThemeProvider'
+
+export function PageHeader({ icon: Icon, title, description, actions, children }) {
+  return (
+    <header className="page-header">
+      <div className="page-header-main">
+        {Icon && (
+          <span className="page-header-icon" aria-hidden="true">
+            <Icon size={22} />
+          </span>
+        )}
+        <div className="page-header-text">
+          <h1 className="page-title">{title}</h1>
+          {description && <p className="page-description">{description}</p>}
+        </div>
+      </div>
+      {(actions || children) && <div className="page-header-actions">{actions || children}</div>}
+    </header>
+  )
+}
+
+export function StatCard({
+  icon: Icon,
+  label,
+  value,
+  meta,
+  tone = 'accent',
+  onClick,
+  textValue = false
+}) {
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      className={`stat-card tone-${tone}${onClick ? ' is-clickable' : ''}${textValue ? ' is-text' : ''}`}
+      onClick={onClick}
+    >
+      {Icon && (
+        <span className="stat-icon" aria-hidden="true">
+          <Icon size={22} />
+        </span>
+      )}
+      <span className="stat-info">
+        <span className="stat-label">{label}</span>
+        <span className="stat-value" title={typeof value === 'string' ? value : undefined}>
+          {value}
+        </span>
+        {meta && <span className="stat-meta">{meta}</span>}
+      </span>
+    </Tag>
+  )
+}
+
+export function EmptyState({ icon: Icon = Inbox, title, text, children }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-state-icon" aria-hidden="true">
+        <Icon size={26} />
+      </span>
+      {title && <div className="empty-state-title">{title}</div>}
+      {text && <div className="empty-state-text">{text}</div>}
+      {children}
+    </div>
+  )
+}
+
+export function Kbd({ children }) {
+  return <kbd className="kbd">{children}</kbd>
+}
+
+export function Section({
+  title,
+  icon: Icon,
+  actions,
+  children,
+  className = '',
+  bodyClassName = ''
+}) {
+  return (
+    <section className={`card section ${className}`}>
+      {(title || actions) && (
+        <div className="card-header">
+          <h2 className="card-title">
+            {Icon && <Icon size={18} aria-hidden="true" />}
+            {title}
+          </h2>
+          {actions && <div className="row">{actions}</div>}
+        </div>
+      )}
+      <div className={`card-body ${bodyClassName}`}>{children}</div>
+    </section>
+  )
+}
+
+export function ThemeToggle({ compact = false, className = '' }) {
+  const { resolvedTheme, toggleTheme } = useTheme()
+  const isDark = resolvedTheme === 'dark'
+  const label = isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن'
+  return (
+    <button
+      type="button"
+      className={`theme-toggle ${compact ? 'is-compact' : ''} ${className}`}
+      onClick={toggleTheme}
+      aria-label={label}
+      title={label}
+      aria-pressed={isDark}
+    >
+      <span className="theme-toggle-icon" aria-hidden="true">
+        {isDark ? <Sun size={18} /> : <Moon size={18} />}
+      </span>
+      {!compact && (
+        <span className="theme-toggle-label">{isDark ? 'الوضع الفاتح' : 'الوضع الداكن'}</span>
+      )}
+    </button>
+  )
+}
+
+export function SortableTh({ field, label, sortField, sortAsc, onSort, className = '' }) {
+  const active = sortField === field
+  return (
+    <th
+      className={`sortable ${active ? 'is-sorted' : ''} ${className}`}
+      onClick={() => onSort(field)}
+      aria-sort={active ? (sortAsc ? 'ascending' : 'descending') : 'none'}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSort(field)
+        }
+      }}
+    >
+      <span className="th-sort">
+        {label}
+        <span className="sort-indicator" aria-hidden="true">
+          {active ? (sortAsc ? '▲' : '▼') : ''}
+        </span>
+      </span>
+    </th>
+  )
+}
+
+export function Pagination({ page, total, perPage, shown, noun = 'سجل', onPrev, onNext }) {
+  const pages = Math.max(1, Math.ceil((total || 0) / perPage))
+  return (
+    <div className="pagination-controls">
+      <div className="pagination-info">
+        عرض <strong className="num">{shown}</strong> من أصل <strong className="num">{total}</strong>{' '}
+        {noun}
+      </div>
+      <div className="pagination-buttons">
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          disabled={page <= 1}
+          onClick={onPrev}
+        >
+          السابق
+        </button>
+        <span className="pagination-page num">
+          صفحة {page} من {pages}
+        </span>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          disabled={page >= pages}
+          onClick={onNext}
+        >
+          التالي
+        </button>
+      </div>
+    </div>
+  )
+}

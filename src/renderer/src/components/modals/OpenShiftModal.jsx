@@ -1,5 +1,4 @@
-import React from 'react'
-import { Clock, Store, Smartphone, Wallet } from 'lucide-react'
+import { PlayCircle, Store, Smartphone, Wallet } from 'lucide-react'
 
 const OpenShiftModal = ({
   openShiftModal,
@@ -17,140 +16,120 @@ const OpenShiftModal = ({
   handleStartShift
 }) => {
   if (!openShiftModal) return null
-
-  const inputStyle = {
-    fontSize: '1.1rem',
-    fontWeight: '700',
-    textAlign: 'center',
-    backgroundColor: '#ffffff',
-    color: '#111827',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    padding: '8px'
-  }
+  const isAdmin = currentUser?.role === 'admin'
 
   return (
-    <div className="modal-overlay" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 99999 }}>
-      <div 
-        className="modal-content" 
-        style={{ 
-          maxWidth: 480, 
-          width: '95%', 
-          maxHeight: '92vh',
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: '#ffffff',
-          color: '#111827',
-          borderRadius: '12px',
-          padding: '20px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          overflow: 'hidden'
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
+      <form
+        className="modal-content modal-scroll"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="open-shift-title"
+        style={{ width: 500 }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          handleStartShift()
         }}
       >
-        {/* Header */}
-        <div className="modal-header" style={{ paddingBottom: 10, borderBottom: '1px solid #e5e7eb', marginBottom: 12, flexShrink: 0 }}>
-          <Clock size={34} style={{ color: '#2563eb', margin: '0 auto 6px auto', display: 'block' }} />
-          <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#111827', textAlign: 'center' }}>فتح وردية مبيعات جديدة</h2>
-          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem', textAlign: 'center' }}>البائع الحالي: <strong>{currentUser?.username}</strong></p>
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <PlayCircle size={24} />
+          </span>
+          <h2 id="open-shift-title">فتح وردية مبيعات جديدة</h2>
+          <p>
+            الكاشير الحالي: <strong>{currentUser?.username}</strong>
+          </p>
         </div>
 
-        {/* Scrollable Body */}
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          
-          {/* Section 1: Supermarket Drawer */}
-          <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-            <label style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <Store size={16} /> كاش درج السوبر ماركت (العهدة الافتتاحية) *
-            </label>
-            <input 
-              type="number" 
-              className="form-input" 
-              style={inputStyle}
-              value={startingCash} 
+        <div className="modal-body">
+          <section className="till-section">
+            <h3 className="till-section-title">
+              <Store size={16} aria-hidden="true" />
+              درج السوبر ماركت — العهدة الافتتاحية *
+            </h3>
+            <input
+              type="number"
+              className="input input-lg input-money"
+              value={startingCash}
               onChange={(e) => setStartingCash(e.target.value)}
               placeholder="200"
+              aria-label="العهدة الافتتاحية لدرج السوبر ماركت"
               autoFocus
             />
-            <small style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
-              الفكة أو العهدة النقدية التي تبدأ بها ورديتك بالدرج الأساسي
-            </small>
-          </div>
+            <span className="field-hint">
+              الفكة أو العهدة النقدية التي تبدأ بها ورديتك في الدرج الأساسي.
+            </span>
+          </section>
 
-          {currentUser?.role === 'admin' && (
+          {isAdmin && (
             <>
-              {/* Section 2: Momkn Till (Admin only) */}
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12 }}>
-                <label style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1e40af', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <Smartphone size={16} /> 2. درج ماكينة ممكن (الديجيتال والسيولة) *
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', color: '#1e3a8a', display: 'block', marginBottom: 4 }}>📱 رصيد المكنة (ديجيتال):</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      style={inputStyle}
-                      value={momknStartBalance} 
+              <section className="till-section tone-info">
+                <h3 className="till-section-title">
+                  <Smartphone size={16} aria-hidden="true" />
+                  درج ماكينة ممكن *
+                </h3>
+                <div className="form-grid">
+                  <label className="field">
+                    <span className="field-label">رصيد الماكينة (رقمي)</span>
+                    <input
+                      type="number"
+                      className="input input-money"
+                      value={momknStartBalance}
                       onChange={(e) => setMomknStartBalance(e.target.value)}
                       placeholder="0.00"
                     />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', color: '#1e3a8a', display: 'block', marginBottom: 4 }}>💵 كاش الدرج (الفلوس الورق):</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      style={inputStyle}
-                      value={momknStartCash} 
+                  </label>
+                  <label className="field">
+                    <span className="field-label">كاش الدرج (ورقي)</span>
+                    <input
+                      type="number"
+                      className="input input-money"
+                      value={momknStartCash}
                       onChange={(e) => setMomknStartCash(e.target.value)}
                       placeholder="0.00"
                     />
-                  </div>
+                  </label>
                 </div>
-              </div>
+              </section>
 
-              {/* Section 3: Mobile Money Till (Admin only) */}
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 8, padding: 12 }}>
-                <label style={{ fontSize: '0.88rem', fontWeight: '700', color: '#047857', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <Wallet size={16} /> 3. درج المحافظ والتحويلات (الديجيتال والسيولة) *
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', color: '#065f46', display: 'block', marginBottom: 4 }}>📱 رصيد فودافون (ديجيتال):</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      style={inputStyle}
-                      value={vfcashStartBalance} 
+              <section className="till-section tone-success">
+                <h3 className="till-section-title">
+                  <Wallet size={16} aria-hidden="true" />
+                  درج المحافظ والتحويلات *
+                </h3>
+                <div className="form-grid">
+                  <label className="field">
+                    <span className="field-label">رصيد فودافون (رقمي)</span>
+                    <input
+                      type="number"
+                      className="input input-money"
+                      value={vfcashStartBalance}
                       onChange={(e) => setVfcashStartBalance(e.target.value)}
                       placeholder="0.00"
                     />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', color: '#065f46', display: 'block', marginBottom: 4 }}>💵 كاش الدرج (الفلوس الورق):</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      style={inputStyle}
-                      value={vfcashStartCash} 
+                  </label>
+                  <label className="field">
+                    <span className="field-label">كاش الدرج (ورقي)</span>
+                    <input
+                      type="number"
+                      className="input input-money"
+                      value={vfcashStartCash}
                       onChange={(e) => setVfcashStartCash(e.target.value)}
                       placeholder="0.00"
                     />
-                  </div>
+                  </label>
                 </div>
-              </div>
+              </section>
             </>
           )}
-
         </div>
 
-        {/* Footer */}
-        <div style={{ paddingTop: '12px', borderTop: '1px solid #e5e7eb', marginTop: '10px', flexShrink: 0 }}>
-          <button className="btn btn-success" onClick={handleStartShift} style={{ width: '100%', padding: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
+        <div className="modal-footer">
+          <button type="submit" className="btn btn-primary btn-lg btn-block">
             تأكيد فتح الوردية وبدء العمل
           </button>
         </div>
-      </div>
+      </form>
     </div>
   )
 }

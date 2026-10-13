@@ -1,0 +1,293 @@
+/* ─────────────────────────────────────────────────────────────
+   HeroMarket POS – design tokens
+   The only place raw colour / size values live. Components use these
+   variables (see .docs/UI_UX_DESIGN_SPEC.md).
+   Theme is selected by [data-theme] on <html> (set pre-paint in index.html).
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* Typography */
+  --font-sans: 'Cairo Variable', 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Consolas', 'Segoe UI Mono', monospace;
+  --fs-xs: 0.75rem; /* 12 */
+  --fs-sm: 0.8125rem; /* 13 */
+  --fs-md: 0.875rem; /* 14 */
+  --fs-base: 0.9375rem; /* 15 */
+  --fs-lg: 1rem; /* 16 */
+  --fs-xl: 1.25rem; /* 20 */
+  --fs-2xl: 1.625rem; /* 26 */
+  --fs-3xl: 2rem; /* 32 */
+  --fs-display: 2.5rem; /* 40 */
+  --lh-tight: 1.25;
+  --lh-normal: 1.55;
+  --fw-regular: 450;
+  --fw-medium: 550;
+  --fw-semibold: 650;
+  --fw-bold: 750;
+  --fw-heavy: 850;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Sizing */
+  --ctl-sm: 32px;
+  --ctl-md: 40px;
+  --ctl-lg: 48px;
+  --ctl-xl: 56px;
+  --sidebar-w: 240px;
+  --sidebar-w-compact: 72px;
+  --topbar-h: 56px;
+
+  /* Radius */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 160ms;
+  --dur-slow: 220ms;
+
+  /* Layers */
+  --z-sidebar: 20;
+  --z-topbar: 15;
+  --z-popover: 500;
+  --z-modal: 1000;
+  --z-toast: 3000;
+
+  /* Brand (theme independent) */
+  --brand: #153b32;
+  --brand-2: #1c4a3f;
+  --brand-emerald: #159a72;
+  --brand-emerald-bright: #2fc08e;
+  --brand-cream: #f4f6f3;
+}
+
+/* ── Light theme (default) ─────────────────────────────────── */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f6f3;
+  --surface: #fbfcfa;
+  --surface-raised: #ffffff;
+  --surface-sunken: #edf1ec;
+  --surface-hover: #eef3ef;
+  --surface-selected: #e3f4ec;
+  --overlay: rgba(12, 22, 19, 0.48);
+
+  --border: #dce3dd;
+  --border-strong: #c3cdc5;
+  --border-focus: #12825f;
+
+  --text: #17231f;
+  --text-2: #4a5953;
+  --text-3: #5f6e67;
+  --text-disabled: #98a59f;
+  --text-inverse: #ffffff;
+
+  --accent: #12825f;
+  --accent-hover: #0e6e50;
+  --accent-pressed: #0b5c43;
+  --on-accent: #ffffff;
+  --accent-soft: #e3f4ec;
+  --accent-soft-hover: #d3ede1;
+  --accent-text: #0e6b4f;
+  --accent-border: #9fd6bf;
+
+  --success: #1f8a4c;
+  --success-soft: #e4f4ea;
+  --success-text: #17703d;
+  --success-border: #a8d9b8;
+
+  --warning: #b8650b;
+  --warning-soft: #fcf1e3;
+  --warning-text: #9a5a0b;
+  --warning-border: #efc58f;
+
+  --danger: #c2362b;
+  --danger-hover: #a92d23;
+  --danger-soft: #fbeae8;
+  --danger-text: #a23b2e;
+  --danger-border: #f0b7b0;
+
+  --info: #2563a6;
+  --info-soft: #e6eff8;
+  --info-text: #1f5590;
+  --info-border: #b3cbe6;
+
+  --purple-soft: #efeafa;
+  --purple-text: #5b3fa6;
+
+  --on-solid: #ffffff;
+
+  --shadow-1: 0 1px 2px rgba(16, 32, 26, 0.05), 0 1px 1px rgba(16, 32, 26, 0.03);
+  --shadow-2: 0 6px 18px rgba(16, 32, 26, 0.1), 0 2px 4px rgba(16, 32, 26, 0.05);
+  --shadow-3: 0 24px 48px rgba(10, 24, 19, 0.2), 0 4px 12px rgba(10, 24, 19, 0.08);
+  --focus-ring: 0 0 0 3px rgba(21, 154, 114, 0.38);
+
+  --sidebar-bg: #153b32;
+  --sidebar-border: #10302a;
+  --sidebar-text: #c2d3cb;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-muted: #86a398;
+  --sidebar-hover: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: rgba(47, 192, 142, 0.16);
+  --sidebar-active-text: #ffffff;
+  --sidebar-active-bar: #2fc08e;
+
+  --scrollbar: rgba(23, 35, 31, 0.18);
+  --scrollbar-hover: rgba(23, 35, 31, 0.32);
+
+  --chart-1: #12825f;
+  --chart-2: #2563a6;
+  --chart-3: #b8650b;
+  --chart-4: #5b3fa6;
+  --chart-5: #c2362b;
+  --chart-track: #e5ebe6;
+}
+
+/* ── Dark theme ────────────────────────────────────────────── */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0d1412;
+  --surface: #131c19;
+  --surface-raised: #18231f;
+  --surface-sunken: #0f1714;
+  --surface-hover: #1d2a25;
+  --surface-selected: #133328;
+  --overlay: rgba(2, 6, 5, 0.66);
+
+  --border: #26332e;
+  --border-strong: #35463f;
+  --border-focus: #34c391;
+
+  --text: #e7eeea;
+  --text-2: #a9b7b0;
+  --text-3: #8a9993;
+  --text-disabled: #5d6b65;
+  --text-inverse: #0d1412;
+
+  --accent: #34c391;
+  --accent-hover: #4bd3a2;
+  --accent-pressed: #27a97b;
+  --on-accent: #06231a;
+  --accent-soft: #123329;
+  --accent-soft-hover: #164135;
+  --accent-text: #5fd3a6;
+  --accent-border: #23624d;
+
+  --success: #2c9a5b;
+  --success-soft: #11291c;
+  --success-text: #6cd497;
+  --success-border: #245c3b;
+
+  --warning: #c27a1f;
+  --warning-soft: #2b2112;
+  --warning-text: #e9a64b;
+  --warning-border: #5f4420;
+
+  --danger: #c9473c;
+  --danger-hover: #d9584c;
+  --danger-soft: #2e1715;
+  --danger-text: #f08a7e;
+  --danger-border: #6b2c26;
+
+  --info: #3a7cc2;
+  --info-soft: #132233;
+  --info-text: #86b6ea;
+  --info-border: #284868;
+
+  --purple-soft: #221b33;
+  --purple-text: #b9a3f0;
+
+  --on-solid: #ffffff;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 22px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-3: 0 28px 56px rgba(0, 0, 0, 0.6), 0 6px 16px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 3px rgba(52, 195, 145, 0.42);
+
+  --sidebar-bg: #0a110f;
+  --sidebar-border: #1c2723;
+  --sidebar-text: #a9b9b2;
+  --sidebar-text-strong: #f0f5f2;
+  --sidebar-muted: #6f817a;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active-bg: rgba(52, 195, 145, 0.14);
+  --sidebar-active-text: #ffffff;
+  --sidebar-active-bar: #34c391;
+
+  --scrollbar: rgba(231, 238, 234, 0.16);
+  --scrollbar-hover: rgba(231, 238, 234, 0.3);
+
+  --chart-1: #34c391;
+  --chart-2: #6aa6e6;
+  --chart-3: #e9a64b;
+  --chart-4: #b9a3f0;
+  --chart-5: #f08a7e;
+  --chart-track: #22302b;
+}
+
+/* Fallback when the pre-paint script could not run: follow the OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #0d1412;
+    --surface: #131c19;
+    --surface-raised: #18231f;
+    --surface-sunken: #0f1714;
+    --border: #26332e;
+    --border-strong: #35463f;
+    --text: #e7eeea;
+    --text-2: #a9b7b0;
+    --text-3: #8a9993;
+  }
+}
+
+/* ── Legacy aliases ────────────────────────────────────────────
+   Pre-redesign components reference these names inline. They now
+   resolve to semantic tokens so both themes render correctly.
+   New code must use the semantic names above. */
+:root {
+  --bg-primary: var(--surface-sunken);
+  --bg-secondary: var(--surface-raised);
+  --bg-card: var(--surface-raised);
+  --bg-main: var(--surface-sunken);
+  --bg-input: var(--surface-raised);
+  --border-color: var(--border);
+  --border-active: var(--border-focus);
+  --text-primary: var(--text);
+  --text-main: var(--text);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --accent-blue: var(--info-text);
+  --accent-blue-hover: var(--info);
+  --accent-emerald: var(--accent-text);
+  --accent-rose: var(--danger-text);
+  --accent-amber: var(--warning-text);
+  --accent-purple: var(--purple-text);
+  --accent-primary: var(--accent);
+  --accent-danger: var(--danger);
+  --glass-bg: var(--surface-raised);
+  --glass-border: var(--border);
+  --glass-shadow: var(--shadow-1);
+  --blur-effect: none;
+  --font-family: var(--font-sans);
+  --transition-smooth:
+    background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}

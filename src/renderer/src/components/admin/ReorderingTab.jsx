@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { executeQuery } from '../../lib/db'
-import { parseLocaleDateString, getNowStr } from '../../lib/utils'
 import {
-  Cpu,
   ShoppingCart,
-  TrendingUp,
-  DollarSign,
-  AlertTriangle,
+  Banknote,
   Copy,
   Check,
   Search,
-  RefreshCw
+  RefreshCw,
+  Printer,
+  FileDown,
+  CalendarDays,
+  PackageCheck
 } from 'lucide-react'
+import { EmptyState, StatCard } from '../ui'
+import { formatMoney, getNowStr } from '../../lib/utils'
 
 export default function ReorderingTab() {
   const [loading, setLoading] = useState(false)
@@ -27,7 +29,8 @@ export default function ReorderingTab() {
     try {
       // 1. Fetch all products
       const allProducts = await executeQuery(
-        'SELECT barcode, name, stock_qty as stock, reorder_limit, unit, cost_price as cost, price FROM products;'
+        // D-009: products has no `price` column (the original query failed); the field is unused but kept as an alias.
+        'SELECT barcode, name, stock_qty as stock, reorder_limit, unit, cost_price as cost, retail_price as price FROM products;'
       )
 
       // 2. Fetch shifts in the last 30 days
@@ -36,7 +39,9 @@ export default function ReorderingTab() {
       sinceDate.setHours(0, 0, 0, 0)
 
       const sinceStr = getNowStr(sinceDate)
-      const matchingShifts = await executeQuery(`SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`)
+      const matchingShifts = await executeQuery(
+        `SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`
+      )
       const shiftIds = matchingShifts.map((sh) => sh.id)
 
       // 3. Fetch sales quantity for these shifts
@@ -65,42 +70,47 @@ export default function ReorderingTab() {
     } finally {
       setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
     calculateReordering()
   }, [])
 
   // Process data based on targetDays
-  const items = products.map((p) => {
-    const sold30 = salesMap[p.barcode] || 0
-    const dailyVelocity = sold30 / 30
-    const neededForPeriod = dailyVelocity * targetDays
-    
-    let recommended = Math.ceil(neededForPeriod - p.stock)
-    
-    // Safety check: if product is below reorder limit, recommend ordering at least 2x limit
-    if (p.stock <= p.reorder_limit) {
-      const safetyAmt = p.reorder_limit > 0 ? p.reorder_limit * 2 : 5
-      recommended = Math.max(recommended, safetyAmt)
-    }
+  const items = products
+    .map((p) => {
+      const sold30 = salesMap[p.barcode] || 0
+      const dailyVelocity = sold30 / 30
+      const neededForPeriod = dailyVelocity * targetDays
 
-    recommended = Math.max(0, recommended)
-    const estCost = recommended * (p.cost || 0)
+      let recommended = Math.ceil(neededForPeriod - p.stock)
 
-    return {
-      ...p,
-      sold30,
-      dailyVelocity,
-      recommended,
-      estCost
-    }
-  }).filter(item => {
-    // Only show items that have a recommended order quantity > 0
-    if (item.recommended <= 0) return false
-    if (searchQuery.trim() === '') return true
-    return item.name.toLowerCase().includes(searchQuery.toLowerCase()) || item.barcode.includes(searchQuery)
-  })
+      // Safety check: if product is below reorder limit, recommend ordering at least 2x limit
+      if (p.stock <= p.reorder_limit) {
+        const safetyAmt = p.reorder_limit > 0 ? p.reorder_limit * 2 : 5
+        recommended = Math.max(recommended, safetyAmt)
+      }
+
+      recommended = Math.max(0, recommended)
+      const estCost = recommended * (p.cost || 0)
+
+      return {
+        ...p,
+        sold30,
+        dailyVelocity,
+        recommended,
+        estCost
+      }
+    })
+    .filter((item) => {
+      // Only show items that have a recommended order quantity > 0
+      if (item.recommended <= 0) return false
+      if (searchQuery.trim() === '') return true
+      return (
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.barcode.includes(searchQuery)
+      )
+    })
 
   // Aggregates
   const totalItemsToOrder = items.length
@@ -108,7 +118,7 @@ export default function ReorderingTab() {
 
   const handleCopyOrder = () => {
     if (items.length === 0) return
-    let text = `📋 طلبية شراء مقترحة - سوبر ماركت النجدي\n`
+    let text = `طلبية شراء مقترحة - هيرو ماركت\n`
     text += `تاريخ الطلب: ${new Date().toLocaleDateString('ar-EG')}\n`
     text += `فترة التغطية المطلوبة: ${targetDays} يوم\n`
     text += `===================================\n`
@@ -155,240 +165,168 @@ export default function ReorderingTab() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', direction: 'rtl' }}>
-      
-      {/* Header controls */}
-      <div className="admin-card" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              background: 'rgba(5, 150, 105, 0.1)',
-              color: 'var(--accent-emerald)',
-              padding: '10px',
-              borderRadius: '10px'
-            }}>
-              <Cpu size={24} />
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>مساعد الطلبيات الذكي (AI Reorder)</h3>
-              <p style={{ margin: '2px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                يقوم النظام بتحليل حركة مبيعات البضائع خلال الـ 30 يوماً الماضية واقتراح الكميات المناسبة للشراء.
-              </p>
-            </div>
-          </div>
-          <button
-            className="btn-refresh"
-            onClick={calculateReordering}
-            disabled={loading}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-input)',
-              color: 'var(--text-main)',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <RefreshCw size={16} className={loading ? 'spin' : ''} />
-            تحديث البيانات
-          </button>
+    <>
+      <div className="page-intro">
+        <p>
+          يحلل النظام حركة مبيعات كل صنف خلال آخر 30 يوماً ويقترح الكمية المطلوب شراؤها لتغطية
+          الفترة التي تختارها.
+        </p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={calculateReordering}
+          disabled={loading}
+        >
+          <RefreshCw size={16} className={loading ? 'spin' : ''} aria-hidden="true" />
+          تحديث البيانات
+        </button>
+      </div>
+
+      <div className="toolbar">
+        <span className="field-label">فترة التغطية المطلوبة</span>
+        <div className="segmented segmented-lg" role="group" aria-label="فترة التغطية">
+          {[7, 15, 30, 45].map((days) => (
+            <button
+              key={days}
+              type="button"
+              className={targetDays === days ? 'active' : ''}
+              aria-pressed={targetDays === days}
+              onClick={() => setTargetDays(days)}
+            >
+              <CalendarDays size={15} aria-hidden="true" />
+              {days} يوم
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Adjust cover days */}
-      <div className="admin-card" style={{ padding: '16px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>فترة التغطية المطلوبة للبضاعة:</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {[7, 15, 30, 45].map((days) => (
-              <button
-                key={days}
-                onClick={() => setTargetDays(days)}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: '6px',
-                  border: '2px solid',
-                  borderColor: targetDays === days ? 'var(--accent-emerald)' : 'var(--border)',
-                  background: targetDays === days ? 'var(--accent-emerald)' : 'transparent',
-                  color: targetDays === days ? '#fff' : 'var(--text-secondary)',
-                  fontWeight: 700,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  transition: 'all .2s'
-                }}
-              >
-                📅 {days} يوم
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="stat-grid stat-grid-2">
+        <StatCard
+          icon={ShoppingCart}
+          tone="warning"
+          label="أصناف بحاجة للطلب"
+          value={`${totalItemsToOrder} صنف`}
+          meta="مخزونها الحالي لا يكفي فترة التغطية"
+        />
+        <StatCard
+          icon={Banknote}
+          tone="accent"
+          label="التكلفة التقديرية للشراء"
+          value={`${formatMoney(totalEstimatedCost)} ج.م`}
+          meta="محسوبة على سعر التكلفة"
+        />
       </div>
 
-      {/* KPI stats */}
-      <div className="admin-stats-grid">
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-amber)' }}>
-            <ShoppingCart size={24} />
-          </div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-label">أصناف بحاجة للطلب</span>
-            <span className="admin-stat-value">{totalItemsToOrder} صنف</span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-              مخزونها الحالي لا يكفي فترة التغطية
-            </span>
-          </div>
-        </div>
-
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: 'rgba(5, 150, 105, 0.1)', color: 'var(--accent-emerald)' }}>
-            <DollarSign size={24} />
-          </div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-label">التكلفة التقديرية للشراء</span>
-            <span className="admin-stat-value" style={{ color: 'var(--accent-emerald)' }}>
-              {totalEstimatedCost?.toFixed(2)} ج.م
-            </span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-              محسوبة بناءً على سعر تكلفة الجملة
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content table */}
-      <div className="admin-card" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-          {/* Search bar */}
-          <div style={{ position: 'relative', width: '300px' }}>
+      <section className="card">
+        <div className="card-header toolbar">
+          <div className="search-field">
+            <Search size={17} aria-hidden="true" />
             <input
               type="text"
-              placeholder="ابحث عن صنف بالاسم أو الباركود..."
+              className="input"
+              placeholder="ابحث عن صنف بالاسم أو الباركود"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px 8px 36px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-input)',
-                color: 'var(--text-main)',
-                fontSize: '0.85rem'
-              }}
+              aria-label="البحث في الطلبية المقترحة"
             />
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           </div>
-
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button
-              onClick={handlePrintInstant}
-              disabled={items.length === 0}
-              style={{
-                padding: '8px 18px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'var(--accent-blue)',
-                color: '#fff',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.85rem'
-              }}
-            >
-              🖨️ طباعة فورية (حراري)
-            </button>
-            <button
-              onClick={handleExportPDF}
-              disabled={items.length === 0}
-              style={{
-                padding: '8px 18px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-main)',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.85rem'
-              }}
-            >
-              📑 حفظ PDF
-            </button>
-            <button
-              onClick={handleCopyOrder}
-              disabled={items.length === 0}
-              style={{
-                padding: '8px 18px',
-                borderRadius: '8px',
-                border: 'none',
-                background: copied ? 'var(--accent-emerald)' : 'var(--accent-blue)',
-                color: '#fff',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.85rem',
-                transition: 'background-color 0.2s'
-              }}
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? 'تم نسخ الطلبية!' : 'نسخ قائمة الطلبية (واتساب)'}
-            </button>
-          </div>
+          <div className="spacer" />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handlePrintInstant}
+            disabled={items.length === 0}
+          >
+            <Printer size={16} aria-hidden="true" />
+            طباعة حرارية
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleExportPDF}
+            disabled={items.length === 0}
+          >
+            <FileDown size={16} aria-hidden="true" />
+            حفظ PDF
+          </button>
+          <button
+            type="button"
+            className={`btn ${copied ? 'btn-success' : 'btn-primary'}`}
+            onClick={handleCopyOrder}
+            disabled={items.length === 0}
+          >
+            {copied ? (
+              <Check size={16} aria-hidden="true" />
+            ) : (
+              <Copy size={16} aria-hidden="true" />
+            )}
+            {copied ? 'تم نسخ الطلبية' : 'نسخ الطلبية (واتساب)'}
+          </button>
         </div>
 
-        {items.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '30px' }}>
-            لا توجد أصناف بحاجة للطلب حالياً. مخزونك ممتاز!
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ padding: '12px 8px' }}>الصنف</th>
-                  <th style={{ padding: '12px 8px' }}>الرمز</th>
-                  <th style={{ padding: '12px 8px' }}>المخزون الحالي</th>
-                  <th style={{ padding: '12px 8px' }}>حد الطلب</th>
-                  <th style={{ padding: '12px 8px' }}>المبيعات (30 يوم)</th>
-                  <th style={{ padding: '12px 8px', color: 'var(--accent-emerald)' }}>الطلب المقترح</th>
-                  <th style={{ padding: '12px 8px' }}>سعر التكلفة</th>
-                  <th style={{ padding: '12px 8px' }}>التكلفة الكلية</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => {
-                  const isLow = row.stock <= row.reorder_limit
-                  return (
-                    <tr key={row.barcode} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '12px 8px', fontWeight: 600 }}>{row.name}</td>
-                      <td style={{ padding: '12px 8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{row.barcode}</td>
-                      <td style={{ padding: '12px 8px', color: isLow ? 'var(--accent-rose)' : 'var(--text-main)', fontWeight: isLow ? 700 : 'normal' }}>
-                        {row.stock} {row.unit}
-                        {isLow && <span style={{ fontSize: '0.7rem', marginRight: '6px', background: 'rgba(220, 38, 38, 0.1)', color: 'var(--accent-rose)', padding: '2px 6px', borderRadius: '4px' }}>ناقص</span>}
-                      </td>
-                      <td style={{ padding: '12px 8px' }}>{row.reorder_limit} {row.unit}</td>
-                      <td style={{ padding: '12px 8px' }}>{row.sold30?.toFixed(1)}</td>
-                      <td style={{ padding: '12px 8px', fontWeight: 700, color: 'var(--accent-emerald)' }}>{row.recommended} {row.unit}</td>
-                      <td style={{ padding: '12px 8px' }}>{(row.cost || 0).toFixed(2)} ج.م</td>
-                      <td style={{ padding: '12px 8px', fontWeight: 700 }}>{row.estCost?.toFixed(2)} ج.م</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-    </div>
+        <div className="card-body">
+          {items.length === 0 ? (
+            loading ? (
+              <div className="loading-state">
+                <span className="spinner" aria-hidden="true" />
+                جاري تحليل المبيعات...
+              </div>
+            ) : (
+              <EmptyState
+                icon={PackageCheck}
+                title="لا توجد أصناف بحاجة للطلب"
+                text="مخزونك يكفي فترة التغطية المحددة."
+              />
+            )
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>الصنف</th>
+                    <th className="num">المخزون الحالي</th>
+                    <th className="num">حد الطلب</th>
+                    <th className="num">مبيعات 30 يوم</th>
+                    <th className="num">الطلب المقترح</th>
+                    <th className="num">سعر التكلفة</th>
+                    <th className="num">التكلفة الكلية</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((row) => {
+                    const isLow = row.stock <= row.reorder_limit
+                    return (
+                      <tr key={row.barcode}>
+                        <td>
+                          <span className="cell-strong">{row.name}</span>
+                          <span className="cell-sub mono">{row.barcode}</span>
+                        </td>
+                        <td className="num nowrap">
+                          <span className={isLow ? 'text-danger fw-bold' : ''}>
+                            {row.stock} {row.unit}
+                          </span>
+                          {isLow && <span className="badge badge-danger ms-2">ناقص</span>}
+                        </td>
+                        <td className="num nowrap cell-muted">
+                          {row.reorder_limit} {row.unit}
+                        </td>
+                        <td className="num">{row.sold30?.toFixed(1)}</td>
+                        <td className="num nowrap">
+                          <span className="badge badge-accent">
+                            {row.recommended} {row.unit}
+                          </span>
+                        </td>
+                        <td className="num">{formatMoney(row.cost || 0)}</td>
+                        <td className="num money-strong">{formatMoney(row.estCost)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
   )
 }

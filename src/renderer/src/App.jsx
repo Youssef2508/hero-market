@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react'
-import {
-  ShoppingCart, Lock, User, Clock, CheckCircle, AlertTriangle, Key, LogOut
-} from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { CircleCheck, TriangleAlert, ClipboardCheck, NotebookPen } from 'lucide-react'
+import packageInfo from '../../../package.json'
 
-import { playSound, getNowStr} from './lib/utils'
+import { playSound, getNowStr } from './lib/utils'
 import { executeQuery } from './lib/db'
 
 // Import Custom Hooks
@@ -17,10 +16,7 @@ import { usePOSController } from './hooks/usePOSController'
 // Import POS Components
 import CheckoutTerminal from './components/pos/CheckoutTerminal'
 import LockScreen from './components/pos/LockScreen'
-import AppHeader from './components/pos/AppHeader'
-
-// Import Print Templates
-import { generateReceiptHtml, generateReprintHtml } from './lib/printTemplates'
+import AppShell from './components/shell/AppShell'
 
 // Import Admin Dashboard Components
 import AdminDashboard from './components/admin/AdminDashboard'
@@ -28,6 +24,7 @@ import TillsManagerTab from './components/admin/TillsManagerTab'
 
 // Import Modals Components
 import AppModals from './components/modals/AppModals'
+import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePinModal from './components/modals/ChangePinModal'
 
 function App() {
@@ -39,16 +36,6 @@ function App() {
   const addProductBarcodeRef = useRef(null)
   // Stable ref so usePOSController can call parseScaleBarcode before useBarcode is declared
   const parseScaleBarcodeFnRef = useRef((bc) => ({ barcode: bc, isWeighted: false, qty: 1 }))
-
-  // Global override for native window.alert to prevent blocking Electron popups
-  useEffect(() => {
-    window.alert = (msg) => {
-      console.warn('[Alert Suppressed]:', msg)
-      if (triggerCustomAlert) {
-        triggerCustomAlert(String(msg || ''))
-      }
-    }
-  }, [])
 
   // useShift hook
   const {
@@ -92,6 +79,16 @@ function App() {
   const triggerCustomAlert = (message, title = 'تنبيه', onClose = null) => {
     setCustomAlert({ message, title, onClose })
   }
+
+  // Global override for native window.alert to prevent blocking Electron popups
+  useEffect(() => {
+    window.alert = (msg) => {
+      console.warn('[Alert Suppressed]:', msg)
+      if (triggerCustomAlert) {
+        triggerCustomAlert(String(msg || ''))
+      }
+    }
+  }, [])
   const closeCustomAlert = () => {
     if (customAlert && customAlert.onClose) {
       customAlert.onClose()
@@ -157,8 +154,6 @@ function App() {
   const [adminTab, setAdminTab] = useState('menu')
   const [toastMessage, setToastMessage] = useState(null)
 
-
-
   // useAdminController hook to manage all admin features & DB reports
   const adminController = useAdminController({
     currentShift,
@@ -167,7 +162,6 @@ function App() {
     triggerCustomAlert,
     triggerCustomConfirm
   })
-
 
   // usePOSController hook — all checkout terminal handlers & states
   const {
@@ -191,9 +185,7 @@ function App() {
     clientAddress,
     setClientAddress,
     selectedClient,
-    setSelectedClient,
     clientSearchResults,
-    setClientSearchResults,
     handleClientNameChange,
     handleClientPhoneChange,
     selectClient,
@@ -287,8 +279,11 @@ function App() {
     setAdminSearch: adminController.setAdminSearch,
     setNewProduct: adminController.setNewProduct
   })
-  // Keep the ref up-to-date so usePOSController always calls the real function
-  parseScaleBarcodeFnRef.current = parseScaleBarcode
+  // Keep the ref up-to-date so usePOSController always calls the real function.
+  // It is only read from event handlers, which run after this effect.
+  useEffect(() => {
+    parseScaleBarcodeFnRef.current = parseScaleBarcode
+  })
 
   // --- Periodic Cash Audit System ---
   const [showAuditModal, setShowAuditModal] = useState(false)
@@ -299,8 +294,16 @@ function App() {
   const [auditDeficitReason, setAuditDeficitReason] = useState('')
   const [reasonAuditId, setReasonAuditId] = useState(null)
   const [auditBreakdown, setAuditBreakdown] = useState(null)
-  const lastActivityTime = useRef(Date.now())
-  const lastAuditTime = useRef(Date.now())
+  const lastActivityTime = useRef(0)
+  const lastAuditTime = useRef(0)
+
+  // Start both clocks at mount (same semantics as the original render-time Date.now()).
+  // Declared before the effects below, which read them.
+  useEffect(() => {
+    const now = Date.now()
+    lastActivityTime.current = now
+    lastAuditTime.current = now
+  }, [])
 
   // Track keyboard/mouse activity to prevent interrupting active checkout
   useEffect(() => {
@@ -320,22 +323,39 @@ function App() {
   const triggerAuditCheck = async () => {
     if (!currentShift) return
     try {
-      const grossRes = await executeQuery(`SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id};`)
-      const debtRes = await executeQuery(`SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type = 'آجل';`)
-      const digitalRes = await executeQuery(`SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type NOT IN ('نقدي', 'آجل');`)
-      const repayRes = await executeQuery(`SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'inflow';`)
-      const refundRes = await executeQuery(`SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow';`)
-      
+      const grossRes = await executeQuery(
+        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id};`
+      )
+      const debtRes = await executeQuery(
+        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type = 'آجل';`
+      )
+      const digitalRes = await executeQuery(
+        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type NOT IN ('نقدي', 'آجل');`
+      )
+      const repayRes = await executeQuery(
+        `SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'inflow';`
+      )
+      const refundRes = await executeQuery(
+        `SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow';`
+      )
+
       const grossSales = parseFloat(grossRes[0]?.total) || 0
       const debtSales = parseFloat(debtRes[0]?.total) || 0
       const digitalSales = parseFloat(digitalRes[0]?.total) || 0
       const repayTotal = parseFloat(repayRes[0]?.total) || 0
       const refundTotal = parseFloat(refundRes[0]?.total) || 0
       const initialCash = parseFloat(currentShift.initial_cash) || 0
-      
-      const expected = initialCash + grossSales - debtSales - digitalSales + repayTotal - refundTotal
+
+      const expected =
+        initialCash + grossSales - debtSales - digitalSales + repayTotal - refundTotal
       setAuditExpectedCash(expected)
-      setAuditBreakdown({ grossSales, debtSales: debtSales + digitalSales, refunds: refundTotal, repay: repayTotal, initialCash })
+      setAuditBreakdown({
+        grossSales,
+        debtSales: debtSales + digitalSales,
+        refunds: refundTotal,
+        repay: repayTotal,
+        initialCash
+      })
       setAuditActualCash('')
       setAuditNotes('')
       setShowAuditModal(true)
@@ -348,26 +368,42 @@ function App() {
   // Periodic check timer (every 10 seconds)
   useEffect(() => {
     if (isLocked || !currentShift) return
-    
+
     const interval = setInterval(async () => {
       const now = Date.now()
       const timeSinceLastAudit = now - lastAuditTime.current
-      
+
       // If 1 hour has passed (3600000 ms)
       if (timeSinceLastAudit >= 3600000) {
         const idleTime = now - lastActivityTime.current
         const isCartEmpty = cart.length === 0
-        const isModalOpen = openShiftModal || closeShiftModal || managerApprovalModal || showAuditModal || customAlert || customConfirm
-        
+        const isModalOpen =
+          openShiftModal ||
+          closeShiftModal ||
+          managerApprovalModal ||
+          showAuditModal ||
+          customAlert ||
+          customConfirm
+
         // Idle for 20 seconds, empty cart, no modals open
         if (idleTime >= 20000 && isCartEmpty && !isModalOpen) {
           triggerAuditCheck()
         }
       }
     }, 10000)
-    
+
     return () => clearInterval(interval)
-  }, [isLocked, currentShift, cart, openShiftModal, closeShiftModal, managerApprovalModal, showAuditModal, customAlert, customConfirm])
+  }, [
+    isLocked,
+    currentShift,
+    cart,
+    openShiftModal,
+    closeShiftModal,
+    managerApprovalModal,
+    showAuditModal,
+    customAlert,
+    customConfirm
+  ])
 
   const submitAudit = async () => {
     const actual = parseFloat(auditActualCash)
@@ -375,11 +411,11 @@ function App() {
       triggerCustomAlert('الرجاء إدخال مبلغ فعلي صحيح.')
       return
     }
-    
+
     try {
       const diff = actual - auditExpectedCash
       const nowStr = getNowStr()
-      
+
       // Insert record
       await executeQuery(`
         INSERT INTO shift_audits (shift_id, timestamp, expected_cash, actual_cash, difference, notes)
@@ -389,7 +425,7 @@ function App() {
       // Fetch last inserted audit row id
       const lastInsertRes = await executeQuery(`SELECT last_insert_rowid() as id;`)
       const auditId = lastInsertRes[0]?.id
-      
+
       setShowAuditModal(false)
       lastAuditTime.current = Date.now() // reset hourly timer
       adminController.fetchAdminData()
@@ -430,9 +466,6 @@ function App() {
     triggerCustomAlert('تم تخطي الجرد الدوري لهذه الساعة.')
   }
 
-
-
-
   // On App Mount
   useEffect(() => {
     adminController.fetchStats()
@@ -454,124 +487,168 @@ function App() {
     triggerDeleteItem
   })
 
-  // Render Pin Authenticator Screen
+  // Sidebar navigation → original state values (see components/shell/navigation.js)
+  const handleNavigate = (item) => {
+    if (item.view === 'admin') {
+      const enteringAdmin = currentView !== 'admin'
+      setCurrentView('admin')
+      setAdminTab(item.tab)
+      // The original "management" header button reloaded all admin data on entry;
+      // each section card then ran its own loader. Both are preserved.
+      if (enteringAdmin && item.tab !== 'menu') adminController.fetchAdminData()
+      try {
+        item.onEnter?.(adminController)
+      } catch (e) {
+        console.error('[NAV] onEnter failed:', e)
+      }
+    } else {
+      setCurrentView(item.view)
+    }
+  }
+
+  const toastIsError = typeof toastMessage === 'object' && toastMessage?.type === 'error'
+  const auditRows = [
+    { label: 'إجمالي مبيعات الفواتير', value: auditBreakdown?.grossSales || 0, sign: '' },
+    {
+      label: 'مبيعات آجل ورقمية (لم تدخل الدرج)',
+      value: auditBreakdown?.debtSales || 0,
+      sign: '−',
+      tone: 'warning'
+    },
+    {
+      label: 'مرتجعات ومصروفات (خارج)',
+      value: auditBreakdown?.refunds || 0,
+      sign: '−',
+      tone: 'danger'
+    },
+    {
+      label: 'تحصيل ديون عملاء (داخل)',
+      value: auditBreakdown?.repay || 0,
+      sign: '+',
+      tone: 'info'
+    },
+    {
+      label: 'كاش الفكة الافتتاحي',
+      value: auditBreakdown?.initialCash || 0,
+      sign: '+',
+      tone: 'info'
+    }
+  ]
+
+  // Render Pin Authenticator Screen (the alert dialog must stay visible here, e.g. wrong PIN)
   if (isLocked) {
-    return <LockScreen pin={pin} setPin={setPin} handlePinSubmit={handlePinSubmit} />
+    return (
+      <>
+        <LockScreen pin={pin} setPin={setPin} handlePinSubmit={handlePinSubmit} />
+        <CustomAlertModal customAlert={customAlert} closeCustomAlert={closeCustomAlert} />
+      </>
+    )
   }
 
   return (
-    <div className="app-container">
-      {/* Toast Notification */}
+    <>
       {toastMessage && (
-        <div style={{
-          position: 'fixed',
-          top: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          backgroundColor: (typeof toastMessage === 'object' && toastMessage.type === 'error') ? 'var(--accent-rose)' : 'var(--accent-emerald)',
-          color: '#fff',
-          padding: '16px 32px',
-          borderRadius: '8px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-          zIndex: 99999,
-          fontSize: '1.2rem',
-          fontWeight: 'bold',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          border: '1px solid rgba(255,255,255,0.2)'
-        }}>
-          {(typeof toastMessage === 'object' && toastMessage.type === 'error') ? <AlertTriangle size={24} /> : <CheckCircle size={24} />}
+        <div
+          className={`toast ${toastIsError ? 'toast-error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="toast-icon" aria-hidden="true">
+            {toastIsError ? <TriangleAlert size={18} /> : <CircleCheck size={18} />}
+          </span>
           {typeof toastMessage === 'object' ? toastMessage.text : toastMessage}
         </div>
       )}
-      {/* Top Header */}
-      <AppHeader
+
+      <AppShell
         currentUser={currentUser}
         currentView={currentView}
-        setCurrentView={setCurrentView}
+        adminTab={adminTab}
+        onNavigate={handleNavigate}
         currentShift={currentShift}
-        setCloseShiftModal={setCloseShiftModal}
-        setOpenShiftModal={setOpenShiftModal}
-        handleLock={handleLock}
-        fetchAdminData={adminController.fetchAdminData}
-        setShowChangePinModal={setShowChangePinModal}
-        onManualAuditTrigger={triggerAuditCheck}
-      />
-
-      {currentView === 'admin' && (currentUser?.role === 'admin' || currentUser?.role === 'manager') ? (
-        <AdminDashboard
-          currentUser={currentUser}
-          currentShift={currentShift}
-          triggerCustomAlert={triggerCustomAlert}
-          triggerCustomConfirm={triggerCustomConfirm}
-          adminTab={adminTab}
-          setAdminTab={setAdminTab}
-          adminSearchInputRef={adminSearchInputRef}
-          handleReprintSale={handleReprintSale}
-          {...adminController}
-        />
-      ) : currentView === 'tills' ? (
-        <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
-          <TillsManagerTab
+        onOpenShift={() => setOpenShiftModal(true)}
+        onCloseShift={() => setCloseShiftModal(true)}
+        onAudit={triggerAuditCheck}
+        onLock={handleLock}
+        onChangePin={() => setShowChangePinModal(true)}
+        version={packageInfo.version}
+      >
+        {currentView === 'admin' &&
+        (currentUser?.role === 'admin' || currentUser?.role === 'manager') ? (
+          <AdminDashboard
             currentUser={currentUser}
             currentShift={currentShift}
             triggerCustomAlert={triggerCustomAlert}
             triggerCustomConfirm={triggerCustomConfirm}
+            adminTab={adminTab}
+            setAdminTab={setAdminTab}
+            adminSearchInputRef={adminSearchInputRef}
+            handleReprintSale={handleReprintSale}
+            onNavigate={handleNavigate}
+            {...adminController}
           />
-        </div>
-      ) : (
-        <CheckoutTerminal
-          cart={cart}
-          triggerClearCart={triggerClearCart}
-          qtyInputRefs={qtyInputRefs}
-          handleQtyChangeAttempt={handleQtyChangeAttempt}
-          triggerDeleteItem={triggerDeleteItem}
-          cartSubtotal={cartSubtotal}
-          discount={discount}
-          setDiscount={setDiscount}
-          paidAmount={paidAmount}
-          setPaidAmount={setPaidAmount}
-          changeRemaining={changeDue}
-          isDelivery={isDelivery}
-          setIsDelivery={setIsDelivery}
-          clientName={clientName}
-          handleClientNameChange={handleClientNameChange}
-          clientPhone={clientPhone}
-          handleClientPhoneChange={handleClientPhoneChange}
-          clientAddress={clientAddress}
-          setClientAddress={setClientAddress}
-          clientSearchResults={clientSearchResults}
-          selectClient={selectClient}
-          paymentType={paymentType}
-          setPaymentType={setPaymentType}
-          cartTotal={cartTotal}
-          depositChange={depositChange}
-          setDepositChange={setDepositChange}
-          appliedCredit={appliedCredit}
-          setAppliedCredit={setAppliedCredit}
-          selectedClient={selectedClient}
-          handleCheckout={handleCheckout}
-          barcodeInputRef={barcodeInputRef}
-          barcodeInput={barcodeInput}
-          setBarcodeInput={setBarcodeInput}
-          handleBarcodeSubmit={handleBarcodeSubmit}
-          dbStats={adminController.dbStats}
-          noPrint={noPrint}
-          setNoPrint={setNoPrint}
-          searchInputRef={searchInputRef}
-          searchInput={searchInput}
-          handleSearchChange={handleSearchChange}
-          handleSearchKeyDown={handleSearchKeyDown}
-          searchResults={searchResults}
-          selectedSearchIndex={selectedSearchIndex}
-          addToCart={addToCart}
-          setSearchInput={setSearchInput}
-          setSearchResults={setSearchResults}
-          setSelectedSearchIndex={setSelectedSearchIndex}
-          triggerCustomAlert={triggerCustomAlert}
-        />
-      )}
+        ) : currentView === 'tills' ? (
+          <div className="admin-container">
+            <TillsManagerTab
+              currentUser={currentUser}
+              currentShift={currentShift}
+              triggerCustomAlert={triggerCustomAlert}
+              triggerCustomConfirm={triggerCustomConfirm}
+            />
+          </div>
+        ) : (
+          <CheckoutTerminal
+            cart={cart}
+            triggerClearCart={triggerClearCart}
+            qtyInputRefs={qtyInputRefs}
+            handleQtyChangeAttempt={handleQtyChangeAttempt}
+            triggerDeleteItem={triggerDeleteItem}
+            cartSubtotal={cartSubtotal}
+            discount={discount}
+            setDiscount={setDiscount}
+            paidAmount={paidAmount}
+            setPaidAmount={setPaidAmount}
+            changeRemaining={changeDue}
+            isDelivery={isDelivery}
+            setIsDelivery={setIsDelivery}
+            clientName={clientName}
+            handleClientNameChange={handleClientNameChange}
+            clientPhone={clientPhone}
+            handleClientPhoneChange={handleClientPhoneChange}
+            clientAddress={clientAddress}
+            setClientAddress={setClientAddress}
+            clientSearchResults={clientSearchResults}
+            selectClient={selectClient}
+            paymentType={paymentType}
+            setPaymentType={setPaymentType}
+            cartTotal={cartTotal}
+            depositChange={depositChange}
+            setDepositChange={setDepositChange}
+            appliedCredit={appliedCredit}
+            setAppliedCredit={setAppliedCredit}
+            selectedClient={selectedClient}
+            handleCheckout={handleCheckout}
+            barcodeInputRef={barcodeInputRef}
+            barcodeInput={barcodeInput}
+            setBarcodeInput={setBarcodeInput}
+            handleBarcodeSubmit={handleBarcodeSubmit}
+            dbStats={adminController.dbStats}
+            noPrint={noPrint}
+            setNoPrint={setNoPrint}
+            searchInputRef={searchInputRef}
+            searchInput={searchInput}
+            handleSearchChange={handleSearchChange}
+            handleSearchKeyDown={handleSearchKeyDown}
+            searchResults={searchResults}
+            selectedSearchIndex={selectedSearchIndex}
+            addToCart={addToCart}
+            setSearchInput={setSearchInput}
+            setSearchResults={setSearchResults}
+            setSelectedSearchIndex={setSelectedSearchIndex}
+            triggerCustomAlert={triggerCustomAlert}
+          />
+        )}
+      </AppShell>
 
       <AppModals
         openShiftModal={openShiftModal}
@@ -614,140 +691,86 @@ function App() {
         setCurrentUser={setCurrentUser}
       />
 
-      {/* Periodic Safe Audit Dialog Modal */}
+      {/* Periodic drawer audit */}
       {showAuditModal && (
-        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 99999 }}>
-          <div 
-            className="modal-content" 
-            style={{ 
-              maxWidth: 480, 
-              width: '95%', 
-              backgroundColor: '#ffffff', 
-              color: '#111827',
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-            }}
+        <div className="modal-overlay" style={{ zIndex: 99999 }}>
+          <div
+            className="modal-content tone-accent"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audit-title"
+            style={{ width: 500 }}
           >
-            <div className="modal-header" style={{ borderBottom: '1px solid #e5e7eb', paddingBottom: '10px', marginBottom: '12px' }}>
-              <h2 style={{ fontSize: '1.25rem', color: '#111827', margin: 0, textAlign: 'center' }}>🕒 جرد درج كاشير السوبر ماركت الدوري</h2>
-              <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '0.82rem', textAlign: 'center' }}>
-                مطابقة مبيعات الكاشير للوردية رقم #{currentShift?.id}
+            <div className="modal-header">
+              <span className="modal-icon" aria-hidden="true">
+                <ClipboardCheck size={24} />
+              </span>
+              <h2 id="audit-title">الجرد الدوري للدرج</h2>
+              <p>
+                مرحباً <strong>{currentUser?.username}</strong>، طابق النقدية في الدرج للوردية رقم{' '}
+                <span className="num">#{currentShift?.id}</span> لتفادي أي عجز.
               </p>
             </div>
-            
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <p style={{ textAlign: 'center', fontSize: '0.92rem', color: '#374151', margin: 0 }}>
-                مرحباً <strong>{currentUser?.username}</strong>، يرجى مطابقة وتأكيد كاش مبيعات السوبرماركت بالدرج لتفادي أي عجز بالوردية.
-              </p>
-              
-              <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                <div style={{ fontSize: '0.84rem', color: '#374151', marginBottom: '8px', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px dashed #6ee7b7' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <span>إجمالي مبيعات الفواتير:</span>
-                    <strong>{(auditBreakdown?.grossSales || 0).toFixed(2)} ج.م</strong>
-                  </div>
-                  {(auditBreakdown?.debtSales || 0) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#d97706', marginBottom: '3px' }}>
-                      <span>- مبيعات آجل (ديون لم تدخل الدرج):</span>
-                      <strong>-{(auditBreakdown?.debtSales || 0).toFixed(2)} ج.م</strong>
-                    </div>
-                  )}
-                  {(auditBreakdown?.refunds || 0) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#dc2626', marginBottom: '3px' }}>
-                      <span>- مرتجع مبيعات / مصروفات (خارج):</span>
-                      <strong>-{(auditBreakdown?.refunds || 0).toFixed(2)} ج.م</strong>
-                    </div>
-                  )}
-                  {(auditBreakdown?.repay || 0) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2563eb', marginBottom: '3px' }}>
-                      <span>+ تحصيل ديون عملاء (كاش داخل):</span>
-                      <strong>+{(auditBreakdown?.repay || 0).toFixed(2)} ج.م</strong>
-                    </div>
-                  )}
-                  {(auditBreakdown?.initialCash || 0) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2563eb', marginBottom: '3px' }}>
-                      <span>+ كاش الفكة الافتتاحي بالدرج:</span>
-                      <strong>+{(auditBreakdown?.initialCash || 0).toFixed(2)} ج.م</strong>
-                    </div>
-                  )}
-                </div>
 
-                <span style={{ fontSize: '0.9rem', color: '#047857', display: 'block', fontWeight: 'bold', textAlign: 'center' }}>
-                  = صافي الكاش الورق المتوقع بالدرج: {(auditExpectedCash || 0).toFixed(2)} ج.م
-                </span>
+            <div className="modal-body">
+              <div className="audit-summary">
+                <dl className="kv">
+                  {auditRows
+                    .filter((r) => r.sign === '' || r.value > 0)
+                    .map((r) => (
+                      <div key={r.label} style={{ display: 'contents' }}>
+                        <dt>{r.label}</dt>
+                        <dd className={r.tone ? `text-${r.tone}` : ''}>
+                          {r.sign} {r.value.toFixed(2)} ج.م
+                        </dd>
+                      </div>
+                    ))}
+                </dl>
+                <div className="audit-expected">
+                  <span>صافي الكاش المتوقع بالدرج</span>
+                  <strong className="money">{(auditExpectedCash || 0).toFixed(2)} ج.م</strong>
+                </div>
                 <button
                   type="button"
+                  className="btn btn-accent-soft btn-sm btn-block"
                   onClick={() => setAuditActualCash((auditExpectedCash || 0).toFixed(2))}
-                  style={{
-                    marginTop: '8px',
-                    width: '100%',
-                    padding: '6px',
-                    borderRadius: '6px',
-                    border: '1px solid #059669',
-                    background: '#ffffff',
-                    color: '#059669',
-                    fontWeight: 'bold',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer'
-                  }}
                 >
-                  ← تعبئة صافي الكاش المتوقع تلقائياً ({(auditExpectedCash || 0).toFixed(2)} ج.م)
+                  تعبئة المبلغ المتوقع تلقائياً
                 </button>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#111827', display: 'block', marginBottom: '4px' }}>
-                  المبلغ النقدي الفعلي في الدرج حالياً (ج.م) *
-                </label>
-                <input 
-                  type="number" 
-                  className="form-input" 
+              <label className="field">
+                <span className="field-label">المبلغ النقدي الفعلي في الدرج حالياً (ج.م) *</span>
+                <input
+                  type="number"
+                  className="input input-lg input-money"
                   placeholder="0.00"
                   value={auditActualCash}
                   onChange={(e) => setAuditActualCash(e.target.value)}
-                  style={{
-                    fontSize: '1.4rem',
-                    textAlign: 'center',
-                    fontWeight: 'bold',
-                    backgroundColor: '#ffffff',
-                    color: '#111827',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    padding: '8px'
-                  }}
                   autoFocus
                 />
-              </div>
+              </label>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: '0.82rem', color: '#4b5563', display: 'block', marginBottom: '4px' }}>ملاحظات الجرد (اختياري)</label>
-                <textarea 
-                  className="form-input" 
+              <label className="field">
+                <span className="field-label">ملاحظات الجرد (اختياري)</span>
+                <textarea
+                  className="input"
                   placeholder="مثال: تم الجرد الدوري والدرج مطابق..."
                   value={auditNotes}
                   onChange={(e) => setAuditNotes(e.target.value)}
                   rows={2}
-                  style={{
-                    fontSize: '0.85rem',
-                    backgroundColor: '#ffffff',
-                    color: '#111827',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    padding: '6px'
-                  }}
                 />
-              </div>
+              </label>
             </div>
-            
-            <div className="modal-footer" style={{ display: 'flex', gap: '8px', marginTop: '14px', paddingTop: '10px', borderTop: '1px solid #e5e7eb' }}>
-              <button className="btn btn-primary" style={{ flex: 1, padding: '10px' }} onClick={submitAudit}>
+
+            <div className="modal-footer">
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitAudit}>
                 تأكيد وحفظ الجرد
               </button>
-              <button className="btn btn-secondary" style={{ padding: '10px' }} onClick={snoozeAudit}>
-                تأجيل (5 دقائق)
+              <button className="btn btn-secondary" onClick={snoozeAudit}>
+                تأجيل 5 دقائق
               </button>
-              <button className="btn btn-secondary" style={{ color: '#ef4444', borderColor: '#fca5a5', padding: '10px' }} onClick={skipAudit}>
+              <button className="btn btn-ghost" onClick={skipAudit}>
                 تخطي
               </button>
             </div>
@@ -755,36 +778,45 @@ function App() {
         </div>
       )}
 
-      {/* Deficit Reason Modal */}
+      {/* Deficit reason */}
       {showReasonModal && (
         <div className="modal-overlay" style={{ zIndex: 100000 }}>
-          <div className="modal-content glassmorphism-card" style={{ maxWidth: '400px' }}>
+          <div
+            className="modal-content tone-warning"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reason-title"
+            style={{ width: 440 }}
+          >
             <div className="modal-header">
-              <h2>تسجيل سبب العجز 📝</h2>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>توضيح سبب الفارق المالي بالدرج</span>
+              <span className="modal-icon" aria-hidden="true">
+                <NotebookPen size={24} />
+              </span>
+              <h2 id="reason-title">تسجيل سبب العجز</h2>
+              <p>توضيح سبب الفارق المالي بالدرج</p>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label>سبب أو ملاحظة العجز (اختياري):</label>
-                <textarea 
-                  className="form-control" 
+              <label className="field">
+                <span className="field-label">سبب أو ملاحظة العجز (اختياري)</span>
+                <textarea
+                  className="input"
                   placeholder="مثال: عجز فكة، أو زبون متبقي له حساب، إلخ..."
                   value={auditDeficitReason}
                   onChange={(e) => setAuditDeficitReason(e.target.value)}
                   rows={3}
                   autoFocus
                 />
-              </div>
+              </label>
             </div>
-            <div className="modal-footer" style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button 
-                className="btn btn-primary" 
-                style={{ flex: 1 }} 
+            <div className="modal-footer">
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
                 onClick={async () => {
                   try {
                     await executeQuery(`
-                      UPDATE shift_audits 
-                      SET notes = '${auditDeficitReason.replace(/'/g, "''")}' 
+                      UPDATE shift_audits
+                      SET notes = '${auditDeficitReason.replace(/'/g, "''")}'
                       WHERE id = ${reasonAuditId};
                     `)
                     triggerCustomAlert('تم تسجيل سبب العجز بنجاح.', 'تم الحفظ')
@@ -797,17 +829,14 @@ function App() {
               >
                 حفظ التوضيح
               </button>
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => setShowReasonModal(false)}
-              >
+              <button className="btn btn-secondary" onClick={() => setShowReasonModal(false)}>
                 إلغاء
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
