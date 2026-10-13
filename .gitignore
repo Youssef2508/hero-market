@@ -1,11 +1,30 @@
+# Dependencies & build output
 node_modules
 dist
 out
 node-portable
 tools_archive
-tests/temp_test.db
+
+# Local databases (never commit real data) – includes SQLite WAL/SHM side files
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
+tests/temp_test.db*
+
+# Logs, caches, OS files
 *.log*
-.DS_Store
 .eslintcache
+.DS_Store
+Thumbs.db
+
+# Environment & secrets (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# Generated reports / QA artefacts
 pdf/
+coverage/
+playwright-report/
+test-results/
