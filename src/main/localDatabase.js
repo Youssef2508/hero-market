@@ -12,6 +12,7 @@ import fs from 'fs'
 import net from 'net'
 import crypto from 'crypto'
 import pg from 'pg'
+import { isToolSafePath, asciiMachineDir, runnablePgsqlRoot } from './pgPaths'
 
 const DB_NAME = 'heromarket'
 const DB_USER = 'heromarket'
@@ -23,10 +24,9 @@ const DB_USER = 'heromarket'
  */
 function chooseBaseDir() {
   const userData = app.getPath('userData')
-  if (/^[\x20-\x7e]*$/.test(userData)) return userData
-  const programData = process.env.ProgramData || 'C:\\ProgramData'
+  if (isToolSafePath(userData)) return userData
   const id = crypto.createHash('sha256').update(userData).digest('hex').slice(0, 10)
-  return join(programData, 'HeroMarket', `store-${id}`)
+  return asciiMachineDir(`store-${id}`)
 }
 
 const paths = (base) => ({
@@ -35,17 +35,31 @@ const paths = (base) => ({
   log: join(base, 'logs', 'postgres.log')
 })
 
-function binDir() {
-  if (app.isPackaged) return join(process.resourcesPath, 'pgsql', 'bin')
+/** The shipped PostgreSQL tree (bin/, lib/, share/). */
+function pgsqlRoot() {
+  if (app.isPackaged) return join(process.resourcesPath, 'pgsql')
   const platform = process.platform === 'win32' ? 'windows' : process.platform
   return join(
     app.getAppPath(),
     'node_modules',
     '@embedded-postgres',
     `${platform}-${process.arch}`,
-    'native',
-    'bin'
+    'native'
   )
+}
+
+// The tools cannot start from a non-ASCII install path (K-34): they run from an ASCII copy then.
+let runnableRoot = null
+function binDir() {
+  if (!runnableRoot) {
+    const src = pgsqlRoot()
+    if (!fs.existsSync(join(src, 'bin'))) throw new Error(`PostgreSQL binaries not found in ${src}`)
+    runnableRoot = runnablePgsqlRoot(src, {
+      cacheRoot: asciiMachineDir('runtime'),
+      stamp: app.getVersion()
+    })
+  }
+  return join(runnableRoot, 'bin')
 }
 
 function exe(name) {
