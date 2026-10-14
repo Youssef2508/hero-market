@@ -238,3 +238,40 @@ Format: context → decision → reason → consequences (→ alternatives).
   - One extra file per till at setup.
   - The `caddy_data` volume must be backed up with the database.
   - Plain `http://` remains possible for development or a server on the same PC.
+
+## D-040 Offline selling on cashier terminals: designed, not enabled (G-20)
+
+- **Context**:
+  - In client mode a till sells through the store server. When the server or LAN is down, every operation fails with "تعذر الاتصال بخادم HeroMarket" and nothing is recorded. That is safe, but the till stops.
+  - Local-mode stores are unaffected.
+- **What the current code already guarantees**:
+  - Checkout is idempotent: a client-generated `client_ref`, a unique index and an advisory lock mean a retried request returns the stored sale and never records it twice.
+  - The service recomputes prices and refuses stale ones.
+  - Stock can never go negative (trigger).
+- **Analysis: what offline selling would have to decide**
+
+| Question                            | Finding                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which operations could work offline | Cash sales of known products only. Credit and partial-payment sales (customer balances), returns (need the original sale), customer repayments, supplier, expense and till movements, shift open/close and anything in the back office **cannot** be done safely offline: they depend on balances other tills change at the same time. |
+| Stale prices                        | The till would sell at its last known price. The service currently **refuses** a checkout whose price differs from the database. Offline replay therefore needs a rule: accept the till's price for sales made offline, and log the difference. That is a pricing policy.                                                              |
+| Stale permissions                   | A role change or a disabled account would not reach an offline till. Offline mode would have to be limited to a time window (for example the current shift) and to the user already signed in.                                                                                                                                         |
+| Stock conflicts                     | Two tills selling the last unit while one is offline leads to a replay that hits `stock_qty < 0`. Either replays may drive stock negative (a policy change to the inventory rule), or the sale is held in a **conflict queue** for a manager, while the customer already has the goods.                                                |
+| Duplicates on reconnect             | Solved by `client_ref`: the outbox replays each sale with its original key, and the server returns the existing sale if it was already stored before the link dropped.                                                                                                                                                                 |
+| Reconciliation                      | The outbox must be durable on the till (local file, append-only, fsync) and replayed in order. The till must keep showing "N sales waiting for the server" until every replay is acknowledged. A sale that cannot be replayed (conflict) needs a manager screen.                                                                       |
+| Cash drawer                         | Offline cash sales change the drawer; the shift cannot close until the outbox is empty, otherwise the expected-cash figure is wrong.                                                                                                                                                                                                   |
+
+- **Proposed architecture (if the owner wants it)**:
+  1. Each till downloads a **price/stock snapshot** at login and on a timer.
+  2. When the server is unreachable, the till may sell **cash sales only**, for the signed-in user, within the open shift.
+  3. Each sale is written to an **encrypted, append-only outbox** in `%APPDATA%\HeroMarket\outbox` with its `client_ref`, before the receipt prints.
+  4. On reconnect the outbox replays in order through a new `pos.checkoutOffline` operation that:
+     - accepts the till's prices and records the difference;
+     - records `offline=true` and the offline time;
+     - on insufficient stock, either allows negative stock (policy A) or parks the sale in `offline_conflicts` (policy B).
+  5. Shift close is blocked while the outbox or conflicts are non-empty. A manager screen lists and resolves conflicts.
+  6. Tests: duplicate replay, crash during replay, two tills racing for the last unit, outbox corruption, permission revoked while offline.
+- **Decision now**: keep the explicit failure. Implementing the design requires three owner policies: offline prices, negative stock or a conflict queue, and the offline time window. A partial implementation without them would risk silent stock or cash discrepancies, which the mission forbids.
+- **Mitigations available today**:
+  - Run the main till in **local mode** on the server PC: it keeps selling through LAN outages.
+  - Put the server and switch on a UPS.
+  - Checkout's idempotency already makes "retry after the link comes back" safe.
