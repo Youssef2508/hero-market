@@ -194,6 +194,6 @@ export function Timestamp({ value }) {
  * parenthesised codes are isolated so the sentence keeps its reading order in RTL.
  */
 export function BidiText({ text }) {
-  const parts = String(text ?? '').split(/("[^"]*"|([^)]*))/)
+  const parts = String(text ?? '').split(/("[^"]*"|\([^)]*\))/)
   return parts.map((p, i) => (i % 2 ? <bdi key={i}>{p}</bdi> : p))
 }

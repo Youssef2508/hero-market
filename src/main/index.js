@@ -59,10 +59,6 @@ if (app.isPackaged) {
   }
 }
 
-// Chromium UI locale: the native date/time pickers then show 14/10/2026 18:30 (as the top bar does)
-// instead of the US month/day order with AM/PM.
-app.commandLine.appendSwitch('lang', 'en-GB')
-
 // One instance per PC: a second copy would share – and on quit stop – the local database.
 if (!app.requestSingleInstanceLock()) {
   app.exit(0)

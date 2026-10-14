@@ -191,8 +191,18 @@ test('after import, the earlier default store name becomes HeroMarket (logged); 
       (await q("SELECT value FROM settings WHERE key = 'store_name'"))[0].value,
       'هيرو ماركت'
     )
-    const log = await q("SELECT details FROM system_logs WHERE action_type = 'settings_update'")
-    assert.equal(JSON.parse(log[0].details).from, 'سوبر ماركت النجدي')
+    const log = await q(
+      "SELECT description, details FROM system_logs WHERE action_type = 'settings_update'"
+    )
+    assert.equal(
+      JSON.parse(log[0].details).from,
+      'سوبر ماركت النجدي',
+      'previous value kept for audit'
+    )
+    assert.ok(
+      !log[0].description.includes('النجدي'),
+      'the visible log text does not repeat the old name'
+    )
     assert.equal(await rebrandStoreName(target.pool), null, 'runs once')
     await target.pool.query("UPDATE settings SET value = 'ماركت الأمل' WHERE key = 'store_name'")
     assert.equal(await rebrandStoreName(target.pool), null, 'a name the store chose is kept')
