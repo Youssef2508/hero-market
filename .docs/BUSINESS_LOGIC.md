@@ -162,6 +162,6 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 
 ## 12. Unknowns and open decisions
 
-- K-24: the simple and detailed close dialogs use different legacy formulas – the owner must choose one.
+- K-24: decided (option 1). Expected drawer cash = opening cash + cash sales as sold + cash inflows − every cash outflow; both close dialogs show this service figure.
 - K-10: when a supervisor's approval should be required.
 - Behaviour on the store's physical printer (verified to PDF only).
