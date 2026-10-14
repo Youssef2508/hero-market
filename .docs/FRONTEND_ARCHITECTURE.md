@@ -80,3 +80,8 @@ See `REPOSITORY_MAP.md#where-to-change-things`.
 - **New screens:** `RolesTab`, `SettingsTab`, `ReceiptDesignerTab` (block editor with zones, alignment segmented control, bold/size toggles, drag-and-drop, live thermal preview parsing the printer tags, sandboxed A4 iframe).
 - **Shared primitives:** `Timestamp` (date-times kept left-to-right, date first), `BidiText` (isolates quoted names and codes in mixed Arabic/Latin messages), `StatCard` keeps amounts and currency together.
 - **Accessibility:** product search is a `combobox`; the roles list uses pressed buttons; axe-core reports 0 WCAG 2.2 A/AA violations on all screens in both themes.
+
+## Stage 3 changes
+
+- **Code-splitting (G-19):** `AdminDashboard` loads every back-office screen with `React.lazy` inside one `Suspense` boundary ("جاري التحميل..."). The lock screen, cashier screen and tills view stay in the main chunk. Measured on the packaged app: main chunk 1,263 → 947 KB (gzip 217 → 165 KB), DOMContentLoaded 158 → 96 ms.
+- **Production CSP:** see [SECURITY_AND_RELEASE.md](SECURITY_AND_RELEASE.md) §1 (hash-allowed theme script, no `unsafe-eval`).

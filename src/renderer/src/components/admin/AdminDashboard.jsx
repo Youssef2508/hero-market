@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import {
   Banknote,
   ChartColumn,
@@ -13,27 +14,29 @@ import {
 import { StatCard, EmptyState } from '../ui'
 import { visibleGroups } from '../shell/navigation'
 import { formatMoney } from '../../lib/utils'
-import StatsTab from './StatsTab'
-import InventoryTab from './InventoryTab'
-import ShiftsTab from './ShiftsTab'
-import SalesTab from './SalesTab'
-import ClientsTab from './ClientsTab'
-import SuppliersTab from './SuppliersTab'
-import ChecksTab from './ChecksTab'
-import UsersTab from './UsersTab'
-import ExpensesTab from './ExpensesTab'
-import BestSellersTab from './BestSellersTab'
-import BackupTab from './BackupTab'
-import ReorderingTab from './ReorderingTab'
-import DamagedGoodsTab from './DamagedGoodsTab'
-import AdvancedStatsTab from './AdvancedStatsTab'
-import CashierPerformanceTab from './CashierPerformanceTab'
-import LogsTab from './LogsTab'
-import RolesTab from './RolesTab'
-import SettingsTab from './SettingsTab'
-import ReceiptDesignerTab from './ReceiptDesignerTab'
 import { canOpenTab } from '../shell/navigation'
-import TillsManagerTab from './TillsManagerTab'
+
+// Back-office screens load on first use, so the cashier screen starts without them (G-19).
+const StatsTab = lazy(() => import('./StatsTab'))
+const InventoryTab = lazy(() => import('./InventoryTab'))
+const ShiftsTab = lazy(() => import('./ShiftsTab'))
+const SalesTab = lazy(() => import('./SalesTab'))
+const ClientsTab = lazy(() => import('./ClientsTab'))
+const SuppliersTab = lazy(() => import('./SuppliersTab'))
+const ChecksTab = lazy(() => import('./ChecksTab'))
+const UsersTab = lazy(() => import('./UsersTab'))
+const ExpensesTab = lazy(() => import('./ExpensesTab'))
+const BestSellersTab = lazy(() => import('./BestSellersTab'))
+const BackupTab = lazy(() => import('./BackupTab'))
+const ReorderingTab = lazy(() => import('./ReorderingTab'))
+const DamagedGoodsTab = lazy(() => import('./DamagedGoodsTab'))
+const AdvancedStatsTab = lazy(() => import('./AdvancedStatsTab'))
+const CashierPerformanceTab = lazy(() => import('./CashierPerformanceTab'))
+const LogsTab = lazy(() => import('./LogsTab'))
+const RolesTab = lazy(() => import('./RolesTab'))
+const SettingsTab = lazy(() => import('./SettingsTab'))
+const ReceiptDesignerTab = lazy(() => import('./ReceiptDesignerTab'))
+const TillsManagerTab = lazy(() => import('./TillsManagerTab'))
 
 function Overview({
   currentUser,
@@ -194,52 +197,61 @@ export default function AdminDashboard(props) {
 
   return (
     <div className={`admin-container admin-${adminTab}`}>
-      {adminTab === 'menu' && <Overview {...props} />}
-      {adminTab === 'stats' && <StatsTab {...props} />}
-      {adminTab === 'inventory' && <InventoryTab {...props} />}
-      {adminTab === 'shifts' && (
-        <ShiftsTab shiftsHistory={props.shiftsHistory} shiftAudits={props.shiftAudits} />
-      )}
-      {adminTab === 'sales' && <SalesTab {...props} />}
-      {adminTab === 'suppliers' && <SuppliersTab {...props} />}
-      {adminTab === 'checks' && <ChecksTab {...props} />}
-      {adminTab === 'expenses' && <ExpensesTab {...props} />}
-      {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
-      {adminTab === 'users' && <UsersTab {...props} />}
-      {adminTab === 'roles' && (
-        <RolesTab
-          currentUser={currentUser}
-          triggerCustomAlert={props.triggerCustomAlert}
-          triggerCustomConfirm={props.triggerCustomConfirm}
-        />
-      )}
-      {adminTab === 'settings' && (
-        <SettingsTab
-          triggerCustomAlert={props.triggerCustomAlert}
-          onSettingsChanged={props.onSettingsChanged}
-        />
-      )}
-      {adminTab === 'receipts' && (
-        <ReceiptDesignerTab
-          triggerCustomAlert={props.triggerCustomAlert}
-          triggerCustomConfirm={props.triggerCustomConfirm}
-        />
-      )}
-      {adminTab === 'clients' && <ClientsTab {...props} />}
-      {adminTab === 'backup' && <BackupTab />}
-      {adminTab === 'reordering' && <ReorderingTab />}
-      {adminTab === 'advanced-stats' && <AdvancedStatsTab />}
-      {adminTab === 'cashier-performance' && <CashierPerformanceTab />}
-      {adminTab === 'damaged' && <DamagedGoodsTab {...props} />}
-      {adminTab === 'logs' && <LogsTab />}
-      {adminTab === 'tills' && (
-        <TillsManagerTab
-          currentUser={props.currentUser}
-          currentShift={props.currentShift}
-          triggerCustomAlert={props.triggerCustomAlert}
-          triggerCustomConfirm={props.triggerCustomConfirm}
-        />
-      )}
+      <Suspense
+        fallback={
+          <div className="loading-state" role="status">
+            <span className="spinner" aria-hidden="true" />
+            جاري التحميل...
+          </div>
+        }
+      >
+        {adminTab === 'menu' && <Overview {...props} />}
+        {adminTab === 'stats' && <StatsTab {...props} />}
+        {adminTab === 'inventory' && <InventoryTab {...props} />}
+        {adminTab === 'shifts' && (
+          <ShiftsTab shiftsHistory={props.shiftsHistory} shiftAudits={props.shiftAudits} />
+        )}
+        {adminTab === 'sales' && <SalesTab {...props} />}
+        {adminTab === 'suppliers' && <SuppliersTab {...props} />}
+        {adminTab === 'checks' && <ChecksTab {...props} />}
+        {adminTab === 'expenses' && <ExpensesTab {...props} />}
+        {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
+        {adminTab === 'users' && <UsersTab {...props} />}
+        {adminTab === 'roles' && (
+          <RolesTab
+            currentUser={currentUser}
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
+        {adminTab === 'settings' && (
+          <SettingsTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            onSettingsChanged={props.onSettingsChanged}
+          />
+        )}
+        {adminTab === 'receipts' && (
+          <ReceiptDesignerTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
+        {adminTab === 'clients' && <ClientsTab {...props} />}
+        {adminTab === 'backup' && <BackupTab />}
+        {adminTab === 'reordering' && <ReorderingTab />}
+        {adminTab === 'advanced-stats' && <AdvancedStatsTab />}
+        {adminTab === 'cashier-performance' && <CashierPerformanceTab />}
+        {adminTab === 'damaged' && <DamagedGoodsTab {...props} />}
+        {adminTab === 'logs' && <LogsTab />}
+        {adminTab === 'tills' && (
+          <TillsManagerTab
+            currentUser={props.currentUser}
+            currentShift={props.currentShift}
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }
