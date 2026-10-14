@@ -252,8 +252,9 @@ export default function RolesTab({ currentUser, triggerCustomAlert, triggerCusto
               </label>
               <label className="field">
                 <span className="field-label">الوصف</span>
-                <input
+                <textarea
                   className="input"
+                  rows={2}
                   value={draft.description || ''}
                   disabled={locked}
                   maxLength={300}

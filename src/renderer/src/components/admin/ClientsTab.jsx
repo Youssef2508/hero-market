@@ -18,7 +18,7 @@ import {
   X
 } from 'lucide-react'
 import { api } from '../../lib/api'
-import { EmptyState, SortableTh, StatCard } from '../ui'
+import { EmptyState, SortableTh, StatCard, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
@@ -402,7 +402,9 @@ export default function ClientsTab({
                               </td>
                               <td className="num money-strong">{formatMoney(l.amount)}</td>
                               <td>{l.description}</td>
-                              <td className="num nowrap cell-muted">{l.timestamp}</td>
+                              <td className="nowrap cell-muted">
+                                <Timestamp value={l.timestamp} />
+                              </td>
                               <td>
                                 {saleId && (
                                   <div className="cell-actions">
@@ -441,7 +443,9 @@ export default function ClientsTab({
                             <td>
                               شراء ({p.payment_type}) – {p.items_count} أصناف
                             </td>
-                            <td className="num nowrap cell-muted">{p.timestamp}</td>
+                            <td className="nowrap cell-muted">
+                              <Timestamp value={p.timestamp} />
+                            </td>
                             <td>
                               <div className="cell-actions">
                                 <button
@@ -513,15 +517,18 @@ export default function ClientsTab({
                   </table>
                 </div>
               ) : (
-                <p className="cell-muted text-center" style={{ padding: 'var(--sp-5)' }}>
-                  لا توجد مبيعات مسجلة لعملاء خلال الشهر الحالي حتى الآن.
+                <EmptyState
+                  icon={Users}
+                  title="لا توجد مشتريات لعملاء هذا الشهر بعد"
+                  text="اختر عميلاً من الدليل لعرض كشف الحساب والديون والمشتريات ونقاط الولاء."
+                />
+              )}
+              {monthlyClientsReport && monthlyClientsReport.length > 0 && (
+                <p className="field-hint">
+                  اختر عميلاً من الدليل أو من الترتيب لعرض كشف الحساب والديون والمشتريات ونقاط
+                  الولاء.
                 </p>
               )}
-              <EmptyState
-                icon={Users}
-                title="اختر عميلاً"
-                text="اختر عميلاً من الدليل لعرض كشف الحساب والديون والمشتريات ونقاط الولاء."
-              />
             </div>
           </section>
         )}
@@ -558,7 +565,9 @@ export default function ClientsTab({
               </div>
               <div>
                 <dt>التاريخ والوقت</dt>
-                <dd className="num">{activeInvoice.timestamp}</dd>
+                <dd>
+                  <Timestamp value={activeInvoice.timestamp} />
+                </dd>
               </div>
               <div>
                 <dt>طريقة الدفع</dt>

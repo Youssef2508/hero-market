@@ -1,0 +1,60 @@
+# HeroMarket – server for a multi-till store: PostgreSQL + the HeroMarket service.
+#
+#   copy .env.example .env            set POSTGRES_PASSWORD and HEROMARKET_SECRET (see the file)
+#   docker compose up -d              PostgreSQL + HeroMarket server
+#   docker compose logs server        first start: shows the one-time setup code for the administrator
+#
+# The test environment (lint, build and every test suite on a throwaway database) is separate:
+#   docker compose -f docker-compose.test.yml run --rm --build tests
+#
+# The database port is never published. The server listens on HEROMARKET_BIND:8787 (default: this
+# machine only); set HEROMARKET_BIND to the server's LAN address so the tills can reach it.
+# See .docs/DOCKER.md and .docs/DATABASE_ARCHITECTURE.md.
+name: heromarket
+
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: heromarket
+      POSTGRES_USER: heromarket
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # UTF-8 with byte-order collation: Arabic text, ordering identical to the original SQLite.
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U heromarket -d heromarket']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    image: heromarket-server:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HEROMARKET_DATABASE_URL: postgres://heromarket:${POSTGRES_PASSWORD}@db:5432/heromarket
+      HEROMARKET_SECRET: ${HEROMARKET_SECRET:?set HEROMARKET_SECRET in .env (at least 32 characters)}
+      HEROMARKET_TIMEZONE: ${HEROMARKET_TIMEZONE:-Africa/Cairo}
+      HEROMARKET_LOG_LEVEL: ${HEROMARKET_LOG_LEVEL:-info}
+    ports:
+      - '${HEROMARKET_BIND:-127.0.0.1}:8787:8787'
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata:

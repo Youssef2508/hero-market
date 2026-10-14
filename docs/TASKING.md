@@ -1,6 +1,6 @@
 # Tasking & Roadmap
 
-This document outlines the development status of the **Elnagdi POS** system, showing completed modules, ongoing revisions, and planned features.
+This document outlines the development status of the **HeroMarket POS** system, showing completed modules, ongoing revisions, and planned features.
 
 ---
 

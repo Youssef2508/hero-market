@@ -39,12 +39,13 @@ async function freshDatabase() {
   }
 }
 
-async function startService(databaseUrl) {
+async function startService(databaseUrl, options = {}) {
   const svc = await createService({
     databaseUrl,
     secret: TEST_SECRET,
     logger: false,
-    timeZone: 'Africa/Cairo'
+    timeZone: 'Africa/Cairo',
+    ...options
   })
   await svc.prepare()
   await svc.app.ready()

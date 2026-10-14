@@ -2,7 +2,7 @@
 // Import a legacy SQLite database into PostgreSQL and verify parity.
 //
 //   node scripts/import-sqlite.js --sqlite <file.db> --database-url <postgres://…> [--dry-run]
-//        [--backup-dir <dir>] [--report <report.json>]
+//        [--backup-dir <dir>] [--report <report.json>] [--keep-store-name]
 //
 // The database URL can also come from HEROMARKET_DATABASE_URL. The target is migrated first.
 // Exit code 0 only when parity verification passes. See .docs/DATABASE_MIGRATION.md.
@@ -11,7 +11,7 @@ const fs = require('fs')
 const path = require('path')
 const { createPool } = require('../src/server/db/pool')
 const { migrate } = require('../src/server/db/migrate')
-const { importLegacy } = require('../src/server/db/legacy-import')
+const { importLegacy, rebrandStoreName } = require('../src/server/db/legacy-import')
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
@@ -53,6 +53,15 @@ async function main() {
     const fkBad = Object.entries(report.foreignKeyViolations || {}).filter(([, n]) => n > 0)
     console.log(`\nForeign-key violations: ${fkBad.length ? JSON.stringify(fkBad) : 'none'}`)
     console.log(`Parity: ${report.parity.ok ? 'PASSED' : 'FAILED'}`)
+    // After a verified import only: the pre-rebrand default store name becomes HeroMarket (logged).
+    if (
+      report.mode === 'import' &&
+      report.parity.ok &&
+      !process.argv.includes('--keep-store-name')
+    ) {
+      const renamed = await rebrandStoreName(pool)
+      if (renamed) console.log(`Store name: "${renamed.from}" → "${renamed.to}" (logged)`)
+    }
     process.exitCode = report.parity.ok && !fkBad.length ? 0 : 1
   } finally {
     await pool.end()

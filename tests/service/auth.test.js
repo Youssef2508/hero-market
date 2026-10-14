@@ -17,13 +17,19 @@ after(async () => {
 
 test('first run: setup is required, creates a super admin once, then is refused', async (t) => {
   if (!requireDb(t)) return
-  assert.deepEqual((await svc.call('auth.status')).body, { needsSetup: true })
+  assert.deepEqual((await svc.call('auth.status')).body, {
+    needsSetup: true,
+    setupCodeRequired: false
+  })
   const res = await svc.call('auth.setup', { username: 'owner', pin: '4821' })
   assert.equal(res.status, 200)
   assert.ok(res.body.token)
   assert.equal(res.body.user.roleKey, 'super_admin')
   assert.ok(res.body.user.permissions.includes('roles.manage'))
-  assert.deepEqual((await svc.call('auth.status')).body, { needsSetup: false })
+  assert.deepEqual((await svc.call('auth.status')).body, {
+    needsSetup: false,
+    setupCodeRequired: false
+  })
   const again = await svc.call('auth.setup', { username: 'intruder', pin: '1111' })
   assert.equal(again.status, 409)
 })
@@ -50,6 +56,26 @@ test('five wrong PINs lock the terminal out, even for the right PIN', async (t) 
     'x-heromarket-terminal': 'other'
   })
   assert.equal(other.status, 200, 'other terminals are not affected')
+})
+
+test('rotating terminal names does not bypass the lockout: the source address is limited too', async (t) => {
+  if (!requireDb(t)) return
+  const from = (remoteAddress, terminal, pin) =>
+    svc.app.inject({
+      method: 'POST',
+      url: '/api/auth.login',
+      payload: { pin },
+      remoteAddress,
+      headers: { 'x-heromarket-terminal': terminal }
+    })
+  for (let i = 0; i < 20; i++) await from('10.0.0.9', `fake-${i}`, '9999')
+  assert.equal((await from('10.0.0.9', 'fresh-name', '4821')).statusCode, 429)
+  assert.equal(
+    (await from('10.0.0.10', 'fresh-name', '4821')).statusCode,
+    200,
+    'other addresses unaffected'
+  )
+  svc.app.loginGuard.clear()
 })
 
 test('legacy SHA-256 and plain-text PINs log in once and are upgraded', async (t) => {
@@ -106,4 +132,34 @@ test('change PIN verifies the current PIN and keeps PINs unique', async (t) => {
   assert.equal(ok.status, 200)
   assert.equal((await svc.call('auth.login', { pin: '7777' })).status, 200)
   assert.equal((await svc.call('auth.login', { pin: '5050' })).status, 401)
+})
+
+test('networked server: first-run setup needs the one-time code from the server log', async (t) => {
+  if (!requireDb(t)) return
+  const db2 = await freshDatabase()
+  const net = await startService(db2.url, { setupCode: '48213377' })
+  try {
+    assert.deepEqual((await net.call('auth.status')).body, {
+      needsSetup: true,
+      setupCodeRequired: true
+    })
+    const noCode = await net.call('auth.setup', { username: 'intruder', pin: '4821' })
+    assert.equal(noCode.status, 401)
+    const wrong = await net.call('auth.setup', {
+      username: 'intruder',
+      pin: '4821',
+      setupCode: '11111111'
+    })
+    assert.equal(wrong.status, 401)
+    const ok = await net.call('auth.setup', {
+      username: 'owner',
+      pin: '4821',
+      setupCode: '48213377'
+    })
+    assert.equal(ok.status, 200)
+    assert.equal((await net.call('auth.status')).body.setupCodeRequired, false)
+  } finally {
+    await net.close()
+    await db2.dispose()
+  }
 })

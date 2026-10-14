@@ -2,7 +2,7 @@
 
 ## Purpose
 
-HeroMarket POS is an offline-first point-of-sale and back-office system for a single supermarket, running as a Windows desktop application. It originated as **Elnagdi POS** (`https://github.com/3bkader-gpt/elnagdi-pos`, preserved as the `upstream` remote) and is now developed in the private repository `Youssef2508/hero-market`.
+HeroMarket POS is the point-of-sale and back-office system of Hero Market (هيرو ماركت), a supermarket, running as a Windows desktop application on a PostgreSQL service. It started from an open-source point-of-sale code base (fetch-only `upstream` remote) and is developed in the private repository `Youssef2508/hero-market`.
 
 ## Users and roles (Verified – `users.role`)
 

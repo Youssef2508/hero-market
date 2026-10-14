@@ -46,7 +46,7 @@ export default function UsersTab({
                 <tr>
                   <th style={{ width: 80 }}>المعرّف</th>
                   <th>اسم المستخدم</th>
-                  <th>رمز المرور</th>
+                  <th>الحالة</th>
                   <th>الصلاحية</th>
                   <th>
                     <span className="visually-hidden">الإجراءات</span>
@@ -74,14 +74,17 @@ export default function UsersTab({
                           <span className="cell-strong">{u.username}</span>
                           {isMe && <span className="badge ms-2">أنت</span>}
                         </td>
-                        <td className="mono cell-muted" aria-label="مخفي">
-                          ••••
+                        <td>
+                          {u.is_active ? (
+                            <span className="badge badge-success">نشط</span>
+                          ) : (
+                            <span className="badge badge-danger">معطل</span>
+                          )}
                         </td>
                         <td>
                           <span className={`badge ${badge.className}`}>
                             {u.role_name || badge.label}
                           </span>
-                          {!u.is_active && <span className="badge badge-danger ms-2">معطل</span>}
                         </td>
                         <td>
                           <div className="cell-actions">

@@ -4,6 +4,7 @@
 //   npm run pg:dev            start (creates the cluster on first run) and keep running; Ctrl+C stops it
 //   npm run pg:dev -- url     print the connection URL for the development database
 //   npm run pg:dev -- url heromarket_test
+//   npm run pg:dev -- stop    stop the server (Windows; it runs detached under pg_ctl)
 //
 // Listens on 127.0.0.1:54329 only. A random password is generated on first run and kept in
 // .pgdata/credentials.json. Never use this for a real store – see .docs/DATABASE_ARCHITECTURE.md.
@@ -11,6 +12,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { spawnSync } = require('child_process')
 
 const root = path.join(__dirname, '..')
 const base = path.join(root, '.pgdata')
@@ -56,7 +58,35 @@ async function start() {
     console.log('[pg-dev] creating cluster in', dataDir)
     await pg.initialise()
   }
-  await pg.start()
+  // Windows: start through pg_ctl, which drops administrator rights (postgres.exe refuses to run
+  // elevated, e.g. on CI runners). The server keeps running if this script is killed; `stop` ends it.
+  const win = process.platform === 'win32' ? await import('@embedded-postgres/windows-x64') : null
+  // The started server inherits pg_ctl's handles, so `start` must not capture output (it would never
+  // finish); its errors go to .pgdata/postgres.log.
+  const ctl = (args, stdio = 'pipe') =>
+    spawnSync(win.pg_ctl, args, { encoding: 'utf8', windowsHide: true, stdio })
+  if (win) {
+    if (ctl(['status', '-D', dataDir]).status !== 0) {
+      const res = ctl(
+        [
+          'start',
+          '-D',
+          dataDir,
+          '-w',
+          '-t',
+          '90',
+          '-l',
+          path.join(base, 'postgres.log'),
+          '-o',
+          `-p ${c.port} -c listen_addresses=127.0.0.1`
+        ],
+        'ignore'
+      )
+      if (res.status !== 0) throw new Error('pg_ctl start failed, see .pgdata/postgres.log')
+    }
+  } else {
+    await pg.start()
+  }
   const client = pg.getPgClient('postgres', '127.0.0.1')
   await client.connect()
   for (const db of DATABASES) {
@@ -75,7 +105,8 @@ async function start() {
   console.log('[pg-dev] full URL: npm run pg:dev -- url')
   const shutdown = async () => {
     console.log('[pg-dev] stopping…')
-    await pg.stop()
+    if (win) ctl(['stop', '-D', dataDir, '-m', 'fast', '-w'])
+    else await pg.stop()
     process.exit(0)
   }
   process.on('SIGINT', shutdown)
@@ -86,6 +117,12 @@ async function start() {
 if (require.main === module) {
   if (process.argv[2] === 'url') {
     console.log(url(process.argv[3]))
+  } else if (process.argv[2] === 'stop') {
+    import('@embedded-postgres/windows-x64')
+      .then(({ pg_ctl }) =>
+        spawnSync(pg_ctl, ['stop', '-D', dataDir, '-m', 'fast', '-w'], { stdio: 'inherit' })
+      )
+      .catch((e) => console.error('[pg-dev]', e.message))
   } else {
     start().catch((e) => {
       console.error('[pg-dev] failed:', e && e.message ? e.message : e)

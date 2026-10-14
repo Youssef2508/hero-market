@@ -1,6 +1,6 @@
 # Design System & UI Specifications
 
-This document defines the styling tokens, visual typography rules, component layouts, and right-to-left (RTL) Arabic text configurations for **Elnagdi POS**.
+This document defines the styling tokens, visual typography rules, component layouts, and right-to-left (RTL) Arabic text configurations for **HeroMarket POS**.
 
 ---
 

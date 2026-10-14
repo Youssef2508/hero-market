@@ -1,6 +1,6 @@
 # HeroMarket POS – Engineering Documentation
 
-Current, source-verified documentation for HeroMarket POS (Arabic RTL supermarket point of sale, Electron + React + SQLite). The older `docs/` folder and the root audit reports are inherited from the original Elnagdi POS project and kept for reference only.
+Current, source-verified documentation for HeroMarket POS (Arabic RTL supermarket point of sale, Electron + React + a PostgreSQL service). The older `docs/` folder and the root audit reports are inherited from the original code base and kept for reference only.
 
 Statements are marked **Verified** (read in code or observed in the running app), **Implemented** (added by the redesign), or **Assumed** (inferred, not exercised) where it matters.
 

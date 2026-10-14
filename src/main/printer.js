@@ -1,6 +1,6 @@
 import { ipcMain, app, BrowserWindow, dialog } from 'electron'
 import { exec } from 'child_process'
-import { writeFileSync, unlinkSync, existsSync } from 'fs'
+import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { getPrintSettings } from './printSettings'
@@ -79,7 +79,7 @@ function brandLogoPath() {
 }
 
 function logoFileFor(settings, tpl) {
-  if (!tpl.header.showLogo) return ''
+  if (!tpl.blocks.some((b) => b.type === 'logo' && b.visible)) return ''
   if (settings.logo && settings.logo.startsWith('data:image/png;base64,')) {
     const p = join(tmpdir(), `heromarket_logo_${process.pid}.png`)
     writeFileSync(p, Buffer.from(settings.logo.split(',')[1], 'base64'))
@@ -90,7 +90,7 @@ function logoFileFor(settings, tpl) {
 
 export function runPrintScript(
   lines,
-  { printerName, fontSize = 8, paper = '80mm', logoFile = '' }
+  { printerName, fontSize = 8, paper = '80mm', logoFile = '', templateLayout = false }
 ) {
   return new Promise((resolve, reject) => {
     const txt = join(
@@ -105,7 +105,8 @@ export function runPrintScript(
         `-PrinterName "${String(printerName).replace(/"/g, '')}"`,
         `-FontSize ${Number(fontSize) || 8}`,
         `-Paper "${paper === '58mm' ? '58mm' : '80mm'}"`,
-        `-LogoFile "${String(logoFile || '').replace(/"/g, '')}"`
+        `-LogoFile "${String(logoFile || '').replace(/"/g, '')}"`,
+        ...(templateLayout ? ['-TemplateLayout'] : [])
       ]
       const cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass ${args.join(' ')}`
       exec(cmd, { timeout: 20000 }, (err, stdout) => {
@@ -142,7 +143,8 @@ export function registerSalePrinting({ callOperation }) {
       printerName: settings.printerName,
       fontSize: tpl.style.fontSize,
       paper,
-      logoFile: logoFileFor(settings, tpl)
+      logoFile: logoFileFor(settings, tpl),
+      templateLayout: true
     })
   })
 
@@ -156,7 +158,8 @@ export function registerSalePrinting({ callOperation }) {
       printerName: settings.printerName,
       fontSize: tpl.style.fontSize,
       paper: tpl.paper,
-      logoFile: logoFileFor(settings, tpl)
+      logoFile: logoFileFor(settings, tpl),
+      templateLayout: true
     })
     return { success: true }
   })
@@ -167,7 +170,13 @@ export function registerSalePrinting({ callOperation }) {
     const tpl = config
       ? normalizeTemplate({ ...config, paper: 'A4' }).value
       : templateFor(settings, 'A4')
-    const html = buildReceiptHtml(tpl, data, settings.store, { logoDataUrl: settings.logo || '' })
+    // Same logo as the thermal receipt: the store's own, otherwise the HeroMarket mark.
+    const brand = existsSync(brandLogoPath())
+      ? `data:image/png;base64,${readFileSync(brandLogoPath()).toString('base64')}`
+      : ''
+    const html = buildReceiptHtml(tpl, data, settings.store, {
+      logoDataUrl: settings.logo || brand
+    })
     const win = new BrowserWindow({
       show: false,
       webPreferences: { sandbox: true, javascript: false }

@@ -1,5 +1,5 @@
 export function generateReceiptHtml({
-  storeName = 'سوبر ماركت النجدي',
+  storeName = 'هيرو ماركت',
   branchName = 'الفرع الرئيسي',
   displaySaleId,
   datePart,
@@ -103,7 +103,7 @@ export function generateReceiptHtml({
 }
 
 export function generateReprintHtml({
-  storeName = 'سوبر ماركت النجدي',
+  storeName = 'هيرو ماركت',
   branchName = 'الفرع الرئيسي',
   displaySaleId,
   datePart,
@@ -226,7 +226,7 @@ export function generateMomknReportHtml({ shift, summary = {} }) {
         <span>${(summary.expectedCashBalance || 0).toFixed(2)} ج.م</span>
       </div>
       <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
+      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - HeroMarket POS</p>
     </div>
   `
 }
@@ -252,7 +252,7 @@ export function generateMobileMoneyReportHtml({ shift, summary = {} }) {
         <span>${(summary.expectedCashBalance || 0).toFixed(2)} ج.م</span>
       </div>
       <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
+      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - HeroMarket POS</p>
     </div>
   `
 }
@@ -275,7 +275,7 @@ export function generateGrandShiftReportHtml({ shift, salesStats = {}, user = {}
         <span>${(salesStats.cash || 0).toFixed(2)} ج.م</span>
       </div>
       <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
+      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - HeroMarket POS</p>
     </div>
   `
 }

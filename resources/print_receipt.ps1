@@ -1,4 +1,7 @@
-param([string]$TextFile, [string]$PrinterName, [int]$FontSize = 8, [string]$Paper = '80mm', [string]$LogoFile = '', [string]$OutFile = '')
+﻿# Prints a receipt written in the line language of src/shared/receipt.mjs.
+# -TemplateLayout: the lines come from a receipt template ([LOGO] places the logo; no automatic logo
+# at the top and no automatic bold total).
+param([string]$TextFile, [string]$PrinterName, [int]$FontSize = 8, [string]$Paper = '80mm', [string]$LogoFile = '', [string]$OutFile = '', [switch]$TemplateLayout)
 
 Add-Type -AssemblyName System.Drawing
 
@@ -42,6 +45,8 @@ $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(15
 if ($FontSize -lt 7 -or $FontSize -gt 11) { $FontSize = 8 }
 $font = New-Object System.Drawing.Font("Arial", $FontSize, [System.Drawing.FontStyle]::Regular)
 $fontBold = New-Object System.Drawing.Font("Arial", $FontSize, [System.Drawing.FontStyle]::Bold)
+$fontBig = New-Object System.Drawing.Font("Arial", ($FontSize + 4), [System.Drawing.FontStyle]::Regular)
+$fontBigBold = New-Object System.Drawing.Font("Arial", ($FontSize + 4), [System.Drawing.FontStyle]::Bold)
 
 # Reusable string formats
 $sfRight  = New-Object System.Drawing.StringFormat
@@ -56,8 +61,8 @@ $sfLeft.Alignment = [System.Drawing.StringAlignment]::Near
 $doc.add_PrintPage({
     param($s, $e)
     $g   = $e.Graphics
-    $lh  = [int]($font.GetHeight($g)) + 2
     $y   = [int]$e.MarginBounds.Y
+    $top = $y
     $x   = [int]$e.MarginBounds.X
     $w   = [int]$e.MarginBounds.Width
     $bot = [int]($e.MarginBounds.Y + $e.MarginBounds.Height)
@@ -65,8 +70,8 @@ $doc.add_PrintPage({
     $k = [Math]::Max(0.6, [Math]::Min(1.2, $w / 265.0))
     $cQty = [int](30 * $k); $cPrice = [int](40 * $k); $cTotal = [int](50 * $k); $cVal = [int](70 * $k)
 
-    # 1. Draw logo at the very top (only on first page)
-    if (-not $script:logoPrinted) {
+    # Legacy callers: logo at the very top of the first page. Template receipts place it with [LOGO].
+    if (-not $TemplateLayout -and -not $script:logoPrinted) {
         $logoPath = if ($LogoFile) { $LogoFile } else { Join-Path $PSScriptRoot "logo.png" }
         if (Test-Path $logoPath) {
             try {
@@ -85,98 +90,95 @@ $doc.add_PrintPage({
     }
 
     while ($script:lineIdx -lt $script:lines.Count) {
-        if (($y + $lh) -gt $bot) { $e.HasMorePages = $true; return }
         $line = $script:lines[$script:lineIdx]
-        
-        # [B] marks a bold label | value row (template totals)
-        $boldRow = $false
-        if ($line.StartsWith("[B]")) { $boldRow = $true; $line = $line.Substring(3) }
 
-        # Check if it's a split table row
+        # Leading tags (see src/shared/receipt.mjs): [C] [R] [L] [B] [N] [BIG] [SMALL] [BOX] [LOGO]
+        $tags = @{}
+        while ($line -match '^\[(C|R|L|B|N|BIG|SMALL|BOX|LOGO)\]') {
+            $tags[$Matches[1]] = $true
+            $line = $line.Substring($Matches[0].Length)
+        }
+        $big = [bool]$tags['BIG']
+
+        if ($tags['LOGO']) {
+            $logoW = 120
+            if ($tags['SMALL']) { $logoW = 80 } elseif ($big) { $logoW = 170 }
+            $logoW = [Math]::Min($logoW, $w)
+            if ($LogoFile -and (Test-Path $LogoFile)) {
+                try {
+                    $img = [System.Drawing.Image]::FromFile($LogoFile)
+                    $logoH = [int]($img.Height * ($logoW / $img.Width))
+                    if ((($y + $logoH) -gt $bot) -and ($y -gt $top)) { $img.Dispose(); $e.HasMorePages = $true; return }
+                    $lx = [int]($x + ($w - $logoW) / 2)
+                    if ($tags['L']) { $lx = $x } elseif ($tags['R']) { $lx = $x + $w - $logoW }
+                    $g.DrawImage($img, $lx, $y, $logoW, $logoH)
+                    $y += $logoH + 10
+                    $img.Dispose()
+                } catch {
+                    # A missing or unreadable logo never blocks the receipt
+                }
+            }
+            $script:lineIdx++
+            continue
+        }
+
+        # Weight: [C] is bold unless [N] (legacy); [B] is bold anywhere. Boxes are bold unless [N].
+        $bold = ($tags['C'] -and -not $tags['N']) -or $tags['B']
+        if ($tags['BOX']) { $bold = -not $tags['N'] }
+        $f = $font
+        if ($big -and $bold) { $f = $fontBigBold } elseif ($big) { $f = $fontBig } elseif ($bold) { $f = $fontBold }
+        $lh = [int]($f.GetHeight($g)) + 2
+        if (($y + $lh) -gt $bot) { $e.HasMorePages = $true; return }
+
+        if ($tags['BOX']) {
+            $boxLines = @($line.Split('~'))
+            $lineCount = $boxLines.Count
+            $boxH = ($lh * $lineCount) + 6
+            if ((($y + $boxH) -gt $bot) -and ($y -gt $top)) { $e.HasMorePages = $true; return }
+            $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
+            $g.DrawRectangle($pen, $x, $y, $w, $boxH)
+            $pen.Dispose()
+            $sfBox = $sfCenter
+            if ($tags['R']) { $sfBox = $sfRight } elseif ($tags['L']) { $sfBox = $sfLeft }
+            for ($i = 0; $i -lt $lineCount; $i++) {
+                $lineRect = New-Object System.Drawing.RectangleF(($x + 4), ($y + 3 + ($i * $lh)), ($w - 8), $lh)
+                $g.DrawString($boxLines[$i].Trim(), $f, [System.Drawing.Brushes]::Black, $lineRect, $sfBox)
+            }
+            $y += $boxH
+            $script:lineIdx++
+            continue
+        }
+
         if ($line -like '*|*') {
             $parts = $line.Split('|')
             if ($parts.Count -eq 4) {
-                # Table Row: ItemName | Qty | Price | Total
-                # Define column bounds
-                # Col 0 (Name): X=0 to X = w-120
+                # Table row: ItemName | Qty | Price | Total
                 $nameW = $w - ($cQty + $cPrice + $cTotal)
                 $rName = New-Object System.Drawing.RectangleF($x, $y, $nameW, $lh)
                 $rQty  = New-Object System.Drawing.RectangleF(($x + $nameW), $y, $cQty, $lh)
                 $rPrice = New-Object System.Drawing.RectangleF(($x + $nameW + $cQty), $y, $cPrice, $lh)
                 $rTotal = New-Object System.Drawing.RectangleF(($x + $w - $cTotal), $y, $cTotal, $lh)
-
-                # Draw columns
-                $g.DrawString($parts[0].Trim(), $font, [System.Drawing.Brushes]::Black, $rName, $sfRight)
-                $g.DrawString($parts[1].Trim(), $font, [System.Drawing.Brushes]::Black, $rQty, $sfCenter)
-                $g.DrawString($parts[2].Trim(), $font, [System.Drawing.Brushes]::Black, $rPrice, $sfCenter)
-                $g.DrawString($parts[3].Trim(), $font, [System.Drawing.Brushes]::Black, $rTotal, $sfLeft)
+                $g.DrawString($parts[0].Trim(), $f, [System.Drawing.Brushes]::Black, $rName, $sfRight)
+                $g.DrawString($parts[1].Trim(), $f, [System.Drawing.Brushes]::Black, $rQty, $sfCenter)
+                $g.DrawString($parts[2].Trim(), $f, [System.Drawing.Brushes]::Black, $rPrice, $sfCenter)
+                $g.DrawString($parts[3].Trim(), $f, [System.Drawing.Brushes]::Black, $rTotal, $sfLeft)
             }
             elseif ($parts.Count -eq 2) {
-                # Label Value: Label | Value
-                $rLabel = New-Object System.Drawing.RectangleF($x, $y, ($w - $cVal), $lh)
-                $rValue = New-Object System.Drawing.RectangleF(($x + $w - $cVal), $y, $cVal, $lh)
-                
-                # Check for Bold values (e.g. Total sum)
-                $f = $font
-                if ($boldRow -or $parts[0] -like '*الإجمالي*') { $f = $fontBold }
-
+                # Label | Value across the width. Legacy callers: the total label is always bold.
+                if (-not $TemplateLayout -and $parts[0] -like '*الإجمالي*') {
+                    if ($big) { $f = $fontBigBold } else { $f = $fontBold }
+                }
+                $valueW = [int]($cVal * ($f.Size / $font.Size))
+                $rLabel = New-Object System.Drawing.RectangleF($x, $y, ($w - $valueW), $lh)
+                $rValue = New-Object System.Drawing.RectangleF(($x + $w - $valueW), $y, $valueW, $lh)
                 $g.DrawString($parts[0].Trim(), $f, [System.Drawing.Brushes]::Black, $rLabel, $sfRight)
                 $g.DrawString($parts[1].Trim(), $f, [System.Drawing.Brushes]::Black, $rValue, $sfLeft)
             }
         } else {
-            # Single line alignment parsing
-            if ($line.StartsWith("[BOX]")) {
-                $cleanLine = $line.Substring(5)
-                
-                $boxLines = @()
-                if ($cleanLine -like '*~*') {
-                    $boxLines = $cleanLine.Split('~')
-                } else {
-                    $boxLines = @($cleanLine)
-                }
-                
-                $lineCount = $boxLines.Count
-                $boxH = ($lh * $lineCount) + 6
-                $rect = New-Object System.Drawing.RectangleF($x, $y, $w, $boxH)
-                
-                $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
-                $g.DrawRectangle($pen, $x, $y, $w, $boxH)
-                $pen.Dispose()
-                
-                $sfBox = New-Object System.Drawing.StringFormat
-                $sfBox.Alignment = [System.Drawing.StringAlignment]::Center
-                
-                for ($i = 0; $i -lt $lineCount; $i++) {
-                    $lineY = $y + 3 + ($i * $lh)
-                    $lineRect = New-Object System.Drawing.RectangleF($x, $lineY, $w, $lh)
-                    $g.DrawString($boxLines[$i].Trim(), $fontBold, [System.Drawing.Brushes]::Black, $lineRect, $sfBox)
-                }
-                $sfBox.Dispose()
-                
-                $y += $boxH
-                $script:lineIdx++
-                continue
-            }
-
             $sf = $sfRight # Default to right-aligned
-            $cleanLine = $line
-            $f = $font
-
-            if ($line.StartsWith("[C]")) {
-                $sf = $sfCenter
-                $cleanLine = $line.Substring(3)
-                $f = $fontBold
-            } elseif ($line.StartsWith("[R]")) {
-                $sf = $sfRight
-                $cleanLine = $line.Substring(3)
-            } elseif ($line.StartsWith("[L]")) {
-                $sf = $sfLeft
-                $cleanLine = $line.Substring(3)
-            }
-
-            # Draw single line
+            if ($tags['C']) { $sf = $sfCenter } elseif ($tags['L']) { $sf = $sfLeft }
             $rect = New-Object System.Drawing.RectangleF($x, $y, $w, $lh)
-            $g.DrawString($cleanLine, $f, [System.Drawing.Brushes]::Black, $rect, $sf)
+            $g.DrawString($line, $f, [System.Drawing.Brushes]::Black, $rect, $sf)
         }
 
         $y += $lh
@@ -189,6 +191,8 @@ $doc.Print()
 $doc.Dispose()
 $font.Dispose()
 $fontBold.Dispose()
+$fontBig.Dispose()
+$fontBigBold.Dispose()
 $sfRight.Dispose()
 $sfCenter.Dispose()
 $sfLeft.Dispose()

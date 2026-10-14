@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# ─────────────────────────────────────────────────────────────
+# HeroMarket server – the HeroMarket service for a multi-till store.
+#
+# One PostgreSQL database, one server, several desktop tills in "cashier terminal" mode.
+# Runs as the unprivileged `node` user, contains no secrets: the database URL and the
+# server secret come from the environment or Docker secrets (*_FILE variables).
+#
+#   docker compose up -d          (see docker-compose.yml and .docs/DOCKER.md)
+# ─────────────────────────────────────────────────────────────
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+
+ENV NODE_ENV=production \
+    ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    npm_config_fund=false \
+    npm_config_update_notifier=false \
+    HOST=0.0.0.0 \
+    PORT=8787
+
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+# Runtime dependencies only, exactly as locked; install scripts are not run.
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+# The service and the shared receipt engine it validates templates with.
+COPY --chown=node:node src/server ./src/server
+COPY --chown=node:node src/shared ./src/shared
+
+EXPOSE 8787
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "src/server/cli.js", "health"]
+CMD ["node", "src/server/cli.js", "serve"]

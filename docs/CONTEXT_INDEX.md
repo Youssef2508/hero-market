@@ -1,6 +1,6 @@
 # Context Index
 
-This file acts as a central reference index for the **Elnagdi POS** codebase, outlining the directories, core modules, and system documentation.
+This file acts as a central reference index for the **HeroMarket POS** codebase, outlining the directories, core modules, and system documentation.
 
 ---
 
@@ -9,23 +9,23 @@ All project documentation files are structured inside the `docs/` folder:
 
 | Document | Purpose |
 |---|---|
-| [PROJECT_BRIEF.md](file:///e:/new_sys/alshorouk-pos/docs/PROJECT_BRIEF.md) | High-level requirements, project vision, and feature lists. |
-| [ARCHITECTURE.md](file:///e:/new_sys/alshorouk-pos/docs/ARCHITECTURE.md) | System topology, database CLI bridge, and printing design. |
-| [DATABASE.md](file:///e:/new_sys/alshorouk-pos/docs/DATABASE.md) | Full SQLite schemas, relations, ledgers, and database triggers. |
-| [DESIGN_SYSTEM.md](file:///e:/new_sys/alshorouk-pos/docs/DESIGN_SYSTEM.md) | UI patterns, Arabic RTL layout guides, and components styling. |
-| [GIT_WORKFLOW.md](file:///e:/new_sys/alshorouk-pos/docs/GIT_WORKFLOW.md) | Repository branching strategies, tagging, and versioning rules. |
-| [TASKING.md](file:///e:/new_sys/alshorouk-pos/docs/TASKING.md) | Current implementation checklist and future roadmap items. |
-| [AI_HANDOFF.md](file:///e:/new_sys/alshorouk-pos/docs/AI_HANDOFF.md) | Critical constraints, anti-patterns, and instructions for incoming AI agents. |
-| [rules.md](file:///e:/new_sys/alshorouk-pos/docs/rules.md) | Strict operational rules (blocking UI dialogs, portable environment path). |
-| [multi_till_implementation_plan.md](file:///e:/new_sys/alshorouk-pos/docs/multi_till_implementation_plan.md) | Preserved blueprint for implementing multi-till drawer features. |
-| [ALL_FAWATER.md](file:///e:/new_sys/alshorouk-pos/docs/ALL_FAWATER.md) | Reference log of imported supplier invoices. |
+| [PROJECT_BRIEF.md](PROJECT_BRIEF.md) | High-level requirements, project vision, and feature lists. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System topology, database CLI bridge, and printing design. |
+| [DATABASE.md](DATABASE.md) | Full SQLite schemas, relations, ledgers, and database triggers. |
+| [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | UI patterns, Arabic RTL layout guides, and components styling. |
+| [GIT_WORKFLOW.md](GIT_WORKFLOW.md) | Repository branching strategies, tagging, and versioning rules. |
+| [TASKING.md](TASKING.md) | Current implementation checklist and future roadmap items. |
+| [AI_HANDOFF.md](AI_HANDOFF.md) | Critical constraints, anti-patterns, and instructions for incoming AI agents. |
+| [rules.md](rules.md) | Strict operational rules (blocking UI dialogs, portable environment path). |
+| [multi_till_implementation_plan.md](multi_till_implementation_plan.md) | Preserved blueprint for implementing multi-till drawer features. |
+| [ALL_FAWATER.md](ALL_FAWATER.md) | Reference log of imported supplier invoices. |
 
 ---
 
 ## 2. Directory Structure & Source Files Map
 
 ```
-alshorouk-pos/
+hero-market/
 ├── build/                 # Installers assets and icons
 ├── dist/                  # Compiled output installers (ignored)
 ├── docs/                  # Unified project documentation files

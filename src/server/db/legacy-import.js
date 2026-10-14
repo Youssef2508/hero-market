@@ -1,5 +1,5 @@
 'use strict'
-// One-off import of a legacy HeroMarket/Elnagdi SQLite database into PostgreSQL, with parity verification.
+// One-off import of a legacy (pre-PostgreSQL) HeroMarket SQLite database into PostgreSQL, with parity verification.
 // Guarantees (see .docs/DATABASE_MIGRATION.md):
 //  - the SQLite file is opened read-only and copied to a backup first;
 //  - every row and column is copied with its original id; nothing is dropped or regenerated;
@@ -450,8 +450,50 @@ async function countFkViolations(client) {
   return out
 }
 
+// Owner decision (2026-10-14): the store is "هيرو ماركت" (HeroMarket). Installations of the earlier
+// versions carry the original project's default store name in their settings; after a verified import
+// it is replaced once and the change is logged. Only that exact shipped default is replaced – a name
+// the store chose itself is never changed. The previous value stays in the log details, the import
+// report and the untouched SQLite file; the visible log text does not repeat it.
+const HEROMARKET_STORE_NAME = 'هيرو ماركت'
+const PRE_REBRAND_DEFAULT_NAMES = new Set(['سوبر ماركت النجدي'])
+
+async function rebrandStoreName(pool) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(
+      "SELECT value FROM settings WHERE key = 'store_name' FOR UPDATE"
+    )
+    const current = rows[0]?.value
+    if (!current || !PRE_REBRAND_DEFAULT_NAMES.has(current.trim())) {
+      await client.query('ROLLBACK')
+      return null
+    }
+    await client.query("UPDATE settings SET value = $1 WHERE key = 'store_name'", [
+      HEROMARKET_STORE_NAME
+    ])
+    await client.query(
+      `INSERT INTO system_logs (timestamp, user_id, username, action_type, description, details)
+       VALUES (LOCALTIMESTAMP(0), NULL, 'system', 'settings_update', $1, $2)`,
+      [
+        `تعيين اسم المتجر "${HEROMARKET_STORE_NAME}" بدلاً من الاسم الافتراضي للنسخة السابقة`,
+        JSON.stringify({ key: 'store_name', from: current, to: HEROMARKET_STORE_NAME })
+      ]
+    )
+    await client.query('COMMIT')
+    return { from: current, to: HEROMARKET_STORE_NAME }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
 module.exports = {
   importLegacy,
+  rebrandStoreName,
   verifyParity,
   LEGACY_TABLES,
   canonicalSource,

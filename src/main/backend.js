@@ -1,6 +1,9 @@
 // Connects the desktop app to the HeroMarket service (see .docs/ARCHITECTURE.md).
 //
-//   standalone – this PC runs the service in-process against a PostgreSQL database (single-till store);
+//   local      – single-till store: the app runs its own private PostgreSQL (localDatabase.js) and the
+//                service in-process. Default for a new or upgraded installation; the old SQLite database
+//                is imported once, with verified parity, and left untouched.
+//   standalone – the service runs in-process against a PostgreSQL server the store manages;
 //   client     – this PC is a till that talks to a central HeroMarket server over the LAN.
 //
 // The renderer never sees SQL, database credentials or the session token: it sends an operation
@@ -11,6 +14,8 @@ import { join } from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import os from 'os'
+import { ensureLocalDatabase, stopLocalDatabase, localUrl } from './localDatabase'
+import { legacyDatabaseFile } from './userDataPath'
 
 const nodeRequire = createRequire(import.meta.url)
 const isDev = !app.isPackaged
@@ -19,6 +24,9 @@ const configFile = () => join(app.getPath('userData'), 'heromarket.json')
 let backend = null // { mode, call(op, body, headers) }
 let token = null
 let lastError = null
+let starting = null // in-flight startBackend() promise
+let stage = null // what the startup is doing, for the waiting screen
+let localStarted = null // the managed cluster this session started (stopped on quit or mode change)
 
 function serverDir() {
   return join(app.getAppPath(), 'src', 'server')
@@ -53,26 +61,46 @@ function devConfig() {
 }
 
 export function readConfig() {
-  if (isDev && !fs.existsSync(configFile())) return devConfig()
-  if (!fs.existsSync(configFile())) return null
-  try {
-    return JSON.parse(fs.readFileSync(configFile(), 'utf8'))
-  } catch {
-    return null
+  if (!fs.existsSync(configFile())) {
+    // Development uses the npm run pg:dev cluster unless the managed local database is requested.
+    if (isDev && process.env.HEROMARKET_LOCAL_DB !== '1') return devConfig()
+    return { mode: 'local' }
   }
+  // A damaged file (e.g. power cut during a write) falls back to the copy kept by writeConfig.
+  for (const file of [configFile(), `${configFile()}.bak`]) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch {
+      /* try the backup */
+    }
+  }
+  return null
 }
 
 /** Persist the machine configuration. The secret is generated once and never sent to the renderer. */
 export function writeConfig(cfg) {
   const current = readConfig() || {}
   const next = {
-    mode: cfg.mode === 'client' ? 'client' : 'standalone',
-    databaseUrl: cfg.mode === 'client' ? undefined : cfg.databaseUrl,
+    mode: ['client', 'local'].includes(cfg.mode) ? cfg.mode : 'standalone',
+    databaseUrl: cfg.mode === 'standalone' ? cfg.databaseUrl : undefined,
     serverUrl: cfg.mode === 'client' ? cfg.serverUrl : undefined,
     terminalName: cfg.terminalName || current.terminalName || os.hostname(),
-    secret: current.secret || crypto.randomBytes(32).toString('base64url')
+    secret: current.secret || crypto.randomBytes(32).toString('base64url'),
+    // Credentials of the managed local cluster are kept even when switching modes, so it can be reopened.
+    local: cfg.local || current.local
   }
-  fs.writeFileSync(configFile(), JSON.stringify(next, null, 2), { mode: 0o600 })
+  // Atomic replace (temp file + rename) and a copy of the previous version: this file holds the only
+  // copy of the local database password.
+  const tmp = `${configFile()}.tmp`
+  const fd = fs.openSync(tmp, 'w', 0o600)
+  try {
+    fs.writeFileSync(fd, JSON.stringify(next, null, 2))
+    fs.fsyncSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
+  if (fs.existsSync(configFile())) fs.copyFileSync(configFile(), `${configFile()}.bak`)
+  fs.renameSync(tmp, configFile())
   return next
 }
 
@@ -122,27 +150,111 @@ function startClient(cfg) {
   }
 }
 
-export async function startBackend() {
+/**
+ * First start of local mode on a machine that ran the SQLite version: import its database once.
+ * Skipped when an import already completed or the new database is already in use. Any problem stops
+ * the start-up with the reason; the SQLite file is only read (after a verified backup copy).
+ */
+async function importLegacyIfPresent(databaseUrl) {
+  const legacy = legacyDatabaseFile()
+  if (!fs.existsSync(legacy)) return null
+  const { createPool } = nodeRequire(join(serverDir(), 'db', 'pool.js'))
+  const { migrate } = nodeRequire(join(serverDir(), 'db', 'migrate.js'))
+  const { importLegacy, rebrandStoreName } = nodeRequire(
+    join(serverDir(), 'db', 'legacy-import.js')
+  )
+  const quiet = { info: (m) => console.log(m), warn: console.warn, error: console.error }
+  const pool = createPool(databaseUrl, { max: 2 })
+  try {
+    await migrate(pool, { logger: quiet })
+    const done = await pool.query(
+      "SELECT to_regclass('legacy_import_runs') IS NOT NULL AS has_runs, (SELECT count(*)::int FROM users) AS users"
+    )
+    const imported =
+      done.rows[0].has_runs &&
+      (await pool.query("SELECT 1 FROM legacy_import_runs WHERE status = 'completed'")).rowCount > 0
+    // Idempotent: completes the store rename if an earlier start stopped right after the import.
+    if (imported) await rebrandStoreName(pool)
+    if (imported || done.rows[0].users > 0) return null
+    stage = 'importing'
+    const backups = join(app.getPath('userData'), 'backups')
+    const report = await importLegacy(pool, legacy, {
+      backupDir: join(backups, 'legacy-sqlite'),
+      logger: quiet
+    })
+    report.storeName = await rebrandStoreName(pool)
+    fs.writeFileSync(
+      join(backups, `legacy-import-${new Date().toISOString().replace(/[:.]/g, '-')}.json`),
+      JSON.stringify(report, null, 2)
+    )
+    console.log('[backend] legacy SQLite database imported, parity', report.parity.ok)
+    return report
+  } catch (e) {
+    throw new Error(
+      `تعذر نقل بيانات النسخة السابقة إلى قاعدة البيانات الجديدة. لم يتم تعديل ملف البيانات القديم. (${e.message})`
+    )
+  } finally {
+    await pool.end()
+  }
+}
+
+async function doStart() {
   lastError = null
-  const cfg = readConfig()
+  let cfg = readConfig()
   if (
     !cfg ||
-    (cfg.mode !== 'client' && !cfg.databaseUrl) ||
+    (cfg.mode === 'standalone' && !cfg.databaseUrl) ||
     (cfg.mode === 'client' && !cfg.serverUrl)
   ) {
     backend = null
     lastError = 'not_configured'
-    return status()
+    return
   }
   try {
     if (backend) await backend.close().catch(() => {})
-    backend = cfg.mode === 'client' ? startClient(cfg) : await startStandalone(cfg)
+    backend = null
+    if (cfg.mode !== 'local' && localStarted) {
+      // Switched away from this computer's database: stop the cluster this session started.
+      await stopLocalDatabase(localStarted).catch(() => {})
+      localStarted = null
+    }
+    if (cfg.mode === 'local') {
+      stage = 'database'
+      const local = await ensureLocalDatabase(cfg.local, (value) => {
+        cfg = writeConfig({ ...cfg, local: value })
+      })
+      if (!fs.existsSync(configFile())) cfg = writeConfig({ ...cfg, local })
+      localStarted = local
+      const databaseUrl = localUrl(local)
+      await importLegacyIfPresent(databaseUrl)
+      stage = 'service'
+      backend = await startStandalone({ ...cfg, databaseUrl })
+    } else {
+      backend = cfg.mode === 'client' ? startClient(cfg) : await startStandalone(cfg)
+    }
   } catch (e) {
     backend = null
     lastError = e.message
     console.error('[backend] failed to start:', e.message)
+  } finally {
+    stage = null
   }
+}
+
+export async function startBackend() {
+  if (!starting) starting = doStart().finally(() => (starting = null))
+  await starting
   return status()
+}
+
+/** Status for the renderer; waits for a start-up in progress so the UI never sees a half-started state. */
+export async function waitForStatus() {
+  if (starting) await starting
+  return status()
+}
+
+export function startupStage() {
+  return stage
 }
 
 export function status() {
@@ -157,8 +269,11 @@ export function status() {
 }
 
 export async function stopBackend() {
+  if (starting) await starting.catch(() => {})
   if (backend) await backend.close().catch(() => {})
   backend = null
+  if (localStarted) await stopLocalDatabase(localStarted).catch(() => {})
+  localStarted = null
 }
 
 /**

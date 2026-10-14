@@ -51,7 +51,7 @@ function Overview({
   }
   const pa = periodicAnalytics || {}
   const dueChecks = checksDueToday?.length || 0
-  const today = new Date().toLocaleDateString('ar-EG', {
+  const today = new Date().toLocaleDateString('ar-EG-u-nu-latn', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',

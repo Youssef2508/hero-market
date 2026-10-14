@@ -7,7 +7,7 @@ import {
   startBackend,
   stopBackend,
   callOperation,
-  status as backendStatus,
+  waitForStatus as backendStatus,
   writeConfig,
   clearSession
 } from './backend'
@@ -58,6 +58,22 @@ if (app.isPackaged) {
     )
   }
 }
+
+// Chromium UI locale: the native date/time pickers then show 14/10/2026 18:30 (as the top bar does)
+// instead of the US month/day order with AM/PM.
+app.commandLine.appendSwitch('lang', 'en-GB')
+
+// One instance per PC: a second copy would share – and on quit stop – the local database.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+}
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+})
 
 function createWindow() {
   // Create the browser window.
@@ -115,8 +131,7 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  // Unchanged on purpose: Windows ties taskbar pinning/notifications to this id.
-  electronApp.setAppUserModelId('com.elnagdi.pos')
+  electronApp.setAppUserModelId('com.heromarket.pos')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -309,8 +324,17 @@ ${tableRows}  )
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
-app.on('before-quit', () => {
+// The managed local PostgreSQL is stopped cleanly before the app exits (fast shutdown, no data loss).
+let stopped = false
+app.on('before-quit', (event) => {
+  if (stopped) return
+  event.preventDefault()
   stopBackend()
+    .catch((e) => console.error('[backend] stop failed:', e.message))
+    .finally(() => {
+      stopped = true
+      app.quit()
+    })
 })
 
 app.on('window-all-closed', () => {

@@ -29,8 +29,14 @@ const UNIQUE_MESSAGES = {
   receipt_templates_name_key: 'يوجد قالب فاتورة بنفس الاسم بالفعل.'
 }
 
+// Lost or refused connections (server stopped, network reset, pool timeout) are temporary: 503,
+// so terminals show "try again" instead of a generic failure.
+const CONNECTION_LOST =
+  /Connection terminated|timeout exceeded when trying to connect|ECONNRESET|ECONNABORTED|EPIPE|Client has encountered a connection error/i
+
 function fromDatabaseError(err) {
   if (err instanceof ServiceError) return err
+  if (!err.code && CONNECTION_LOST.test(String(err.message))) err = { code: 'ECONNRESET' }
   switch (err.code) {
     case 'P0001': // RAISE EXCEPTION from a business trigger – message is already Arabic
       return conflict(err.message)
@@ -45,7 +51,10 @@ function fromDatabaseError(err) {
     case '22003':
       return badRequest('بيانات غير صالحة.')
     case 'ECONNREFUSED':
+    case 'ECONNRESET':
+    case 'ETIMEDOUT':
     case '57P01':
+    case '57P02':
     case '57P03':
       return new ServiceError(
         503,

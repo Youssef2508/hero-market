@@ -5,18 +5,22 @@ copyright: Copyright © HeroMarket
 directories:
   buildResources: build
 files:
+  - '**/*'
   - '!**/.vscode/*'
   - '!src/*'
+  # The HeroMarket service runs inside the main process (local and standalone modes).
+  - 'src/server/**'
+  - 'src/shared/**'
+  # Never package local data, credentials, backups or development material.
+  - '!{.pgdata,.migration-backups,.docs,docs,tests,scripts,scratch,pdf,dist,coverage,build}/**'
+  - '!**/*.{db,db-wal,db-shm,db-journal,log}'
+  - '!{sqlite3.exe,typst.exe,*.bat,AUDIT_REPORT.md,BUSINESS_AUDIT_REPORT.md,implementation_plan.md,fix_tofixed*.js,Dockerfile*,docker-compose*.yml,.dockerignore}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
 extraResources:
-  - from: "./sqlite3.exe"
-    to: "sqlite3.exe"
   - from: "./typst.exe"
     to: "typst.exe"
-  - from: "./market_unified.db"
-    to: "market_unified.db"
   - from: "resources/print_receipt.ps1"
     to: "print_receipt.ps1"
   - from: "resources/logo.png"
@@ -28,6 +32,16 @@ asarUnpack:
 win:
   executableName: HeroMarket-POS
   icon: build/icon.ico
+  # PostgreSQL server binaries for the managed local database (src/main/localDatabase.js).
+  # The pgAdmin GUI libraries and link-time .lib files are not needed to run the server.
+  extraResources:
+    - from: node_modules/@embedded-postgres/windows-x64/native
+      to: pgsql
+      filter:
+        - '**/*'
+        - '!bin/wx*.dll'
+        - '!bin/testplug.dll'
+        - '!lib/*.lib'
 nsis:
   oneClick: true
   perMachine: false

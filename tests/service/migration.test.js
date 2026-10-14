@@ -13,7 +13,7 @@ const { requireDb, freshDatabase, startService } = require('./helpers')
 const { buildLegacyFixture } = require('../../scripts/init-dev-db')
 const { createPool } = require('../../src/server/db/pool')
 const { migrate } = require('../../src/server/db/migrate')
-const { importLegacy } = require('../../src/server/db/legacy-import')
+const { importLegacy, rebrandStoreName } = require('../../src/server/db/legacy-import')
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} }
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')
@@ -167,6 +167,35 @@ test('refuses a target that already holds other data, and sources with invalid v
     await assert.rejects(importLegacy(target.pool, orphan, { logger: quiet }), /orphans/)
     const { rows } = await target.pool.query('SELECT count(*)::int AS n FROM users')
     assert.equal(rows[0].n, 0, 'nothing written by refused imports')
+  } finally {
+    await target.close()
+  }
+})
+
+test('after import, the earlier default store name becomes HeroMarket (logged); chosen names are kept', async (t) => {
+  if (!requireDb(t)) return
+  const old = makeSource(
+    'old-name.db',
+    "UPDATE settings SET value = 'سوبر ماركت النجدي' WHERE key = 'store_name';"
+  )
+  const target = await migratedDatabase()
+  try {
+    const r = await importLegacy(target.pool, old, { logger: quiet })
+    assert.ok(r.parity.ok, 'parity is checked on the data exactly as it was')
+    assert.deepEqual(await rebrandStoreName(target.pool), {
+      from: 'سوبر ماركت النجدي',
+      to: 'هيرو ماركت'
+    })
+    const q = async (sql) => (await target.pool.query(sql)).rows
+    assert.equal(
+      (await q("SELECT value FROM settings WHERE key = 'store_name'"))[0].value,
+      'هيرو ماركت'
+    )
+    const log = await q("SELECT details FROM system_logs WHERE action_type = 'settings_update'")
+    assert.equal(JSON.parse(log[0].details).from, 'سوبر ماركت النجدي')
+    assert.equal(await rebrandStoreName(target.pool), null, 'runs once')
+    await target.pool.query("UPDATE settings SET value = 'ماركت الأمل' WHERE key = 'store_name'")
+    assert.equal(await rebrandStoreName(target.pool), null, 'a name the store chose is kept')
   } finally {
     await target.close()
   }

@@ -23,6 +23,7 @@ function sha256(s) {
  * @param {string} [cfg.timeZone]   store time zone for LOCALTIMESTAMP (default: this machine's)
  * @param {string} [cfg.migrationsDir]
  * @param {object|boolean} [cfg.logger] fastify/pino logger options
+ * @param {string} [cfg.setupCode] one-time code required by auth.setup (networked servers)
  */
 async function createService(cfg) {
   if (!cfg.secret || String(cfg.secret).length < 32)
@@ -124,7 +125,8 @@ async function createService(cfg) {
               ]
             ),
           sessionHours: SESSION_HOURS,
-          secret: cfg.secret
+          secret: cfg.secret,
+          setupCode: cfg.setupCode || null
         }
         const result = await def.handler(ctx, req.body || {})
         return result === undefined ? { ok: true } : result

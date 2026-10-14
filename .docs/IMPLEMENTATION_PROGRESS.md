@@ -1,7 +1,7 @@
 # Implementation Progress
 
 Requirements: `.docs/MASTER ENGINEERING MISSION — HERO MARKET POS.md` (the master mission) plus the earlier redesign brief.
-Repository: `origin` = `Youssef2508/hero-market` (private); `upstream` = `3bkader-gpt/elnagdi-pos` (fetch only).
+Repository: `origin` = `Youssef2508/hero-market` (private); `upstream` = the original open-source code base (fetch only, push disabled).
 Resume checkpoint: [PAUSED_TASK_STATE.md](PAUSED_TASK_STATE.md).
 
 ## Stage 1 – UI redesign, brand, DevOps foundation (branch `feature/heromarket-ui-redesign`)

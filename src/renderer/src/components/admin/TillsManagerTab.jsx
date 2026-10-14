@@ -160,6 +160,8 @@ const TillsManagerTab = ({
       .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }
 
+  // A + or − only on non-zero amounts ("-0.00" reads like an error).
+  const sign = (v, s) => (Math.abs(Number(v) || 0) >= 0.005 ? s : '')
   const signedMoney = (v) => `${(v || 0) >= 0 ? '+' : ''}${formatVal(v)}`
   const toneOfSigned = (v) => ((v || 0) >= 0 ? 'text-success' : 'text-danger')
   const SUBTABS = [
@@ -231,33 +233,33 @@ const TillsManagerTab = ({
               icon={ReceiptText}
               tone="success"
               label="إجمالي مبيعات الفواتير"
-              value={`+${formatVal(mainDrawerSummary.allSales)} ج.م`}
+              value={`${sign(mainDrawerSummary.allSales, '+')}${formatVal(mainDrawerSummary.allSales)} ج.م`}
             />
             {(mainDrawerSummary.debtSales > 0 || mainDrawerSummary.digitalSales > 0) && (
               <StatCard
                 icon={Smartphone}
                 tone="warning"
                 label="آجل وتحويلات (لم تدخل الدرج)"
-                value={`-${formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م`}
+                value={`${sign(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales, '-')}${formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م`}
               />
             )}
             <StatCard
               icon={HandCoins}
               tone="success"
               label="سداد ديون عملاء (داخل)"
-              value={`+${formatVal(mainDrawerSummary.inflows)} ج.م`}
+              value={`${sign(mainDrawerSummary.inflows, '+')}${formatVal(mainDrawerSummary.inflows)} ج.م`}
             />
             <StatCard
               icon={Truck}
               tone="danger"
               label="مدفوعات موردين (خارج)"
-              value={`-${formatVal(mainDrawerSummary.supplierPayments)} ج.م`}
+              value={`${sign(mainDrawerSummary.supplierPayments, '-')}${formatVal(mainDrawerSummary.supplierPayments)} ج.م`}
             />
             <StatCard
               icon={NotebookPen}
               tone="danger"
               label="مصروفات ونثريات (خارج)"
-              value={`-${formatVal(mainDrawerSummary.expenses)} ج.م`}
+              value={`${sign(mainDrawerSummary.expenses, '-')}${formatVal(mainDrawerSummary.expenses)} ج.م`}
             />
           </div>
           <div className="balance-banner is-clear drawer-expected">

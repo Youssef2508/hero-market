@@ -8,10 +8,10 @@ _Last updated: 2026-10-13 (end of stage 1)._
 
 - **Workspace:** `D:\Youssef\Brands\HeroMarket`
 - **Branch:** `feature/heromarket-ui-redesign` (from `main` @ `6b7c838`)
-- **Remotes:** `origin` → `https://github.com/Youssef2508/hero-market.git` (push here); `upstream` → `3bkader-gpt/elnagdi-pos` (push disabled)
+- **Remotes:** `origin` → `https://github.com/Youssef2508/hero-market.git` (push here); `upstream` → the original open-source code base (push disabled)
 - **Databases (SQLite, current operational store):**
   - Dev: `market_unified_testing.db` (repo root, git-ignored)
-  - Installed app on this machine: `%APPDATA%\elnagdi-pos\market_unified.db` (do not modify; backup in the session scratchpad `appdata-backup/`)
+  - Installed earlier version on this machine: its SQLite file in the pre-PostgreSQL data folder under `%APPDATA%` (read only; never modify; backup in the session scratchpad `appdata-backup/`)
   - QA copies used by automation live outside the repo
 - **Running app for manual testing:** `HEROMARKET_DB_PATH=<qa.db> env -u ELECTRON_RUN_AS_NODE npx electron-vite dev --remoteDebuggingPort 9222`
 

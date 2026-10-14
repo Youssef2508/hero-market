@@ -8,12 +8,13 @@ dist
 .eslintcache
 *.log*
 
-# Local databases and test artefacts – never copied into images
+# Local databases, development PostgreSQL and migration backups (real data) – never copied into images
 *.db
 *.db-wal
 *.db-shm
 *.db-journal
-tests/temp_test.db*
+.pgdata
+.migration-backups
 
 # Secrets
 .env
@@ -33,5 +34,3 @@ scratch
 AUDIT_REPORT.md
 BUSINESS_AUDIT_REPORT.md
 implementation_plan.md
-
-.pgdata

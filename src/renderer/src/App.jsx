@@ -457,7 +457,9 @@ function App() {
 
   // On App Mount: check the service connection and whether the first administrator exists.
   // The till always starts locked; an open shift is resumed after PIN login (G-16).
-  const checkStartup = async () => {
+  // A temporarily unreachable database or server (503) is retried for about half a minute before
+  // the connection settings are shown; the settings screen is for configuration problems.
+  const checkStartup = async (attempt = 0) => {
     try {
       const st = window.api?.backend ? await window.api.backend.status() : { ready: false }
       setBackendInfo(st)
@@ -468,6 +470,11 @@ function App() {
       const auth = await api('auth.status')
       setStartupPhase(auth.needsSetup ? 'setup' : 'ready')
     } catch (e) {
+      if (e.status === 503 && attempt < 15) {
+        setStartupPhase('checking')
+        setTimeout(() => checkStartup(attempt + 1), 2000)
+        return
+      }
       setBackendInfo((b) => ({ ...(b || {}), error: e.message }))
       setStartupPhase('connect')
     }

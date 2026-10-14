@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Database, Server, ShieldCheck, Loader2, UserPlus, Monitor } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Database, Server, ShieldCheck, Loader2, UserPlus, Monitor, HardDrive } from 'lucide-react'
 import { BrandMark, Wordmark } from '../brand/BrandMark'
 import { ThemeToggle } from '../ui'
 import { api } from '../../lib/api'
@@ -10,7 +10,9 @@ import { api } from '../../lib/api'
  *   setup   – the database has no users yet: create the first administrator (no default password).
  */
 function ConnectForm({ backendInfo, onRetry }) {
-  const [mode, setMode] = useState(backendInfo?.mode === 'client' ? 'client' : 'standalone')
+  const [mode, setMode] = useState(
+    ['client', 'standalone'].includes(backendInfo?.mode) ? backendInfo.mode : 'local'
+  )
   const [databaseUrl, setDatabaseUrl] = useState('')
   const [serverUrl, setServerUrl] = useState('')
   const [terminalName, setTerminalName] = useState(backendInfo?.terminalName || '')
@@ -44,13 +46,24 @@ function ConnectForm({ backendInfo, onRetry }) {
         <button
           type="button"
           role="radio"
+          aria-checked={mode === 'local'}
+          className={`setup-mode ${mode === 'local' ? 'is-active' : ''}`}
+          onClick={() => setMode('local')}
+        >
+          <HardDrive size={20} aria-hidden="true" />
+          <strong>هذا الجهاز فقط</strong>
+          <span>قاعدة بيانات مدمجة على هذا الجهاز (متجر بكاشير واحد). الخيار الموصى به.</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
           aria-checked={mode === 'standalone'}
           className={`setup-mode ${mode === 'standalone' ? 'is-active' : ''}`}
           onClick={() => setMode('standalone')}
         >
           <Database size={20} aria-hidden="true" />
-          <strong>جهاز رئيسي</strong>
-          <span>يتصل مباشرة بقاعدة بيانات PostgreSQL (متجر بكاشير واحد أو جهاز الخادم).</span>
+          <strong>خادم قاعدة بيانات</strong>
+          <span>يتصل بخادم PostgreSQL يديره المتجر (جهاز الخادم).</span>
         </button>
         <button
           type="button"
@@ -64,7 +77,7 @@ function ConnectForm({ backendInfo, onRetry }) {
           <span>يتصل بخادم HeroMarket على شبكة المتجر.</span>
         </button>
       </div>
-      {mode === 'standalone' ? (
+      {mode === 'local' ? null : mode === 'standalone' ? (
         <label className="field">
           <span className="field-label">عنوان قاعدة البيانات</span>
           <input
@@ -124,8 +137,16 @@ function SetupForm({ onSetupDone }) {
   const [username, setUsername] = useState('')
   const [pin, setPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
+  const [setupCode, setSetupCode] = useState('')
+  const [codeRequired, setCodeRequired] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    api('auth.status')
+      .then((s) => setCodeRequired(!!s.setupCodeRequired))
+      .catch(() => {})
+  }, [])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -136,7 +157,11 @@ function SetupForm({ onSetupDone }) {
       return setError('اختر رمزاً غير متوقع (ليس 0000 أو 1234 أو 1111).')
     setBusy(true)
     try {
-      const res = await api('auth.setup', { username: username.trim(), pin })
+      const res = await api('auth.setup', {
+        username: username.trim(),
+        pin,
+        ...(codeRequired ? { setupCode: setupCode.trim() } : {})
+      })
       onSetupDone(res.user)
     } catch (err) {
       setError(err.message)
@@ -151,6 +176,23 @@ function SetupForm({ onSetupDone }) {
         <h1>إعداد المتجر لأول مرة</h1>
         <p>أنشئ حساب مدير النظام. لا يوجد حساب أو رمز افتراضي.</p>
       </header>
+      {codeRequired && (
+        <label className="field">
+          <span className="field-label">رمز الإعداد من الخادم</span>
+          <input
+            className="input"
+            inputMode="numeric"
+            value={setupCode}
+            onChange={(e) => setSetupCode(e.target.value)}
+            required
+            maxLength={64}
+            aria-describedby="setup-code-hint"
+          />
+          <span id="setup-code-hint" className="field-hint">
+            يظهر في سجل تشغيل خادم HeroMarket عند أول تشغيل.
+          </span>
+        </label>
+      )}
       <label className="field">
         <span className="field-label">اسم المستخدم</span>
         <input
@@ -224,7 +266,10 @@ export default function StartupGate({ phase, backendInfo, onRetry, onSetupDone }
           {phase === 'checking' && (
             <div className="setup-checking" role="status">
               <Loader2 size={28} className="spin" aria-hidden="true" />
-              <p>جاري الاتصال بقاعدة البيانات…</p>
+              <p>جاري تجهيز قاعدة البيانات…</p>
+              <p className="setup-checking-hint">
+                قد يستغرق أول تشغيل بعد التحديث دقيقة لنقل بيانات النسخة السابقة. لا تغلق البرنامج.
+              </p>
             </div>
           )}
           {phase === 'connect' && <ConnectForm backendInfo={backendInfo} onRetry={onRetry} />}

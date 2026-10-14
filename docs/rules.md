@@ -1,6 +1,6 @@
-# Al-Shorouk POS Development Rules for AI Agents
+# HeroMarket POS Development Rules for AI Agents
 
-This document outlines the strict rules, architectural patterns, constraints, and pitfalls that every AI agent MUST follow when working on the **Al-Shorouk POS** project. These rules have been established to prevent UI freezes, database locks, build failures, and ledger discrepancies.
+This document outlines the strict rules, architectural patterns, constraints, and pitfalls that every AI agent MUST follow when working on the **HeroMarket POS** project. These rules have been established to prevent UI freezes, database locks, build failures, and ledger discrepancies.
 
 ---
 
@@ -42,7 +42,7 @@ This document outlines the strict rules, architectural patterns, constraints, an
     *   Always use the local portable node under `node-portable`.
     *   Before executing any Node.js or npm script, add `node-portable` to the environment path:
         ```powershell
-        $env:Path = "e:\new_sys\alshorouk-pos\node-portable;" + $env:Path
+        $env:Path = "<project folder>\node-portable;" + $env:Path
         ```
     *   Do not run raw `npm` or `npm.ps1` commands directly in PowerShell due to system execution policies. Use `npm.cmd` instead:
         ```powershell

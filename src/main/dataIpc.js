@@ -25,7 +25,7 @@ export function registerDataIpc({
   // First-run / connection settings screen. Only the mode, addresses and terminal name come from the UI.
   ipcMain.handle('backend:configure', async (_event, cfg) => {
     if (!cfg || typeof cfg !== 'object') return { ready: false, error: 'bad_request' }
-    const mode = cfg.mode === 'client' ? 'client' : 'standalone'
+    const mode = ['client', 'local'].includes(cfg.mode) ? cfg.mode : 'standalone'
     if (mode === 'standalone' && !/^postgres(ql)?:\/\//i.test(String(cfg.databaseUrl || ''))) {
       return { ready: false, error: 'عنوان قاعدة البيانات يجب أن يبدأ بـ postgres://' }
     }

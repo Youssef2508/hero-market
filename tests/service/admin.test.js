@@ -280,7 +280,14 @@ test('receipt templates: validated, saved, activated per paper size', async (t) 
   assert.equal(saved.status, 200)
   assert.equal((await svc.call('receipts.activate', { id: saved.body.id }, owner)).status, 200)
   const pub = (await svc.call('settings.public', {}, cashier)).body
-  assert.equal(pub.receiptTemplates['58mm'].config.items.showUnitPrice, false)
+  // A template in the version-1 format is stored as a version-2 block layout with the same choices.
+  const active = pub.receiptTemplates['58mm'].config
+  assert.equal(active.version, 2)
+  assert.equal(active.blocks.find((b) => b.type === 'items').showUnitPrice, false)
+  assert.equal(
+    active.blocks.find((b) => b.type === 'text' && b.zone === 'bottom').text,
+    'نسعد بخدمتكم'
+  )
   assert.equal(
     (await svc.call('receipts.delete', { id: saved.body.id }, owner)).status,
     409,

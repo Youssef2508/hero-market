@@ -19,12 +19,27 @@ concurrency:
 
 jobs:
   quality:
-    name: Lint, format, build & tests (Linux)
+    name: Lint, format, build & tests on PostgreSQL (Linux)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          # Disposable service container, reachable only from this job.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       # Lint/build/tests do not need the Electron binary.
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      HEROMARKET_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,9 +49,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Install sqlite3 CLI (used by the SQL simulation tests)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends sqlite3
 
       - name: Install dependencies (lockfile, no install scripts)
         run: npm ci --ignore-scripts
@@ -50,8 +62,8 @@ jobs:
       - name: Build main, preload and renderer
         run: npm run build
 
-      - name: SQL simulation tests (fresh database)
-        run: npm run test:fresh
+      - name: Unit, service, migration and business-flow tests (PostgreSQL 17)
+        run: npm test
 
       - name: Dependency audit (report)
         # Report-only: known advisories are tracked in .docs/SECURITY_AND_RELEASE.md and
@@ -70,7 +82,7 @@ jobs:
           exit $status
 
   windows:
-    name: Windows build, tests & packaging check
+    name: Windows tests on the bundled PostgreSQL & packaging check
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
@@ -89,15 +101,29 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: SQL simulation tests with the bundled sqlite3.exe
-        run: npm run test:fresh
+      - name: Start the bundled PostgreSQL (same binaries the installer ships)
+        shell: pwsh
+        run: |
+          Start-Process -FilePath node -ArgumentList 'scripts/pg-dev.js' -NoNewWindow `
+            -RedirectStandardOutput pg-dev.log -RedirectStandardError pg-dev.err
+          for ($i = 0; $i -lt 90; $i++) {
+            if ((Test-Path pg-dev.log) -and (Select-String -Path pg-dev.log -Pattern 'PostgreSQL ready' -Quiet)) { break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not (Select-String -Path pg-dev.log -Pattern 'PostgreSQL ready' -Quiet)) {
+            Get-Content pg-dev.log, pg-dev.err -ErrorAction SilentlyContinue
+            throw 'PostgreSQL did not start'
+          }
+
+      - name: Unit, service, migration and business-flow tests (Windows)
+        run: npm test
 
       - name: Package unpacked app (unsigned, no installer)
         run: npx electron-builder --win --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Verify packaged executable metadata
+      - name: Verify the package (metadata, PostgreSQL binaries, service code, no local data)
         shell: pwsh
         run: |
           $exe = 'dist/win-unpacked/HeroMarket-POS.exe'
@@ -105,27 +131,46 @@ jobs:
           $info = (Get-Item $exe).VersionInfo
           $info | Format-List ProductName, FileDescription, ProductVersion
           if ($info.ProductName -ne 'HeroMarket POS') { throw "Unexpected ProductName '$($info.ProductName)'" }
+          foreach ($f in 'pg_ctl.exe', 'initdb.exe', 'postgres.exe') {
+            if (-not (Test-Path "dist/win-unpacked/resources/pgsql/bin/$f")) { throw "Missing PostgreSQL binary $f" }
+          }
+          node scripts/verify-package.js dist/win-unpacked/resources/app.asar
 
   docker:
-    name: Docker validation image
+    name: Docker – tests in containers & server image
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Lint, build and every test suite inside the validation image
+        run: docker compose -f docker-compose.test.yml run --rm --build tests
 
-      - name: Build validation image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          push: false
-          load: true
-          tags: heromarket-ci:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Server image – start with PostgreSQL and probe health
+        env:
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          HEROMARKET_SECRET: ci-secret-${{ github.run_id }}-${{ github.run_attempt }}-0123456789abcdef
+        run: |
+          docker compose up -d --build --wait db server
+          curl --fail --silent http://127.0.0.1:8787/api/health
+          curl --silent -X POST -H 'content-type: application/json' -d '{}' http://127.0.0.1:8787/api/auth.status | tee status.json
+          grep -q '"setupCodeRequired":true' status.json
+          docker compose logs server | grep -q 'first-run setup code'
 
-      - name: Run lint, build and tests inside the container (non-root)
-        run: docker run --rm heromarket-ci:${{ github.sha }}
+      - name: Server logs
+        if: always()
+        env:
+          POSTGRES_PASSWORD: unused
+          HEROMARKET_SECRET: unused-unused-unused-unused-unused
+        run: docker compose logs --no-color server db | tail -n 80
+
+      - name: Tear down
+        if: always()
+        env:
+          POSTGRES_PASSWORD: unused
+          HEROMARKET_SECRET: unused-unused-unused-unused-unused
+        run: |
+          docker compose down -v
+          docker compose -f docker-compose.test.yml down -v

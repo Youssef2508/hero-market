@@ -5,33 +5,60 @@ const { describeUser } = require('../auth/access')
 const { badRequest, unauthorized, conflict, tooMany } = require('../errors')
 const { sha256 } = require('../app')
 
-const MAX_FAILURES = 5
-const WINDOW_MS = 5 * 60 * 1000
-const LOCK_MS = 60 * 1000
-
-function guardKey(ctx) {
-  return `${ctx.terminal || 'unknown'}|${ctx.ip}`
+// Two layers: 5 failures in 5 min lock one terminal for 60 s (the original till behaviour), and
+// 20 failures in 15 min lock the whole source address for 15 min. The terminal name is chosen by the
+// client, so only the per-address limit stops a network client from rotating names to guess PINs.
+const LIMITS = {
+  terminal: { max: 5, windowMs: 5 * 60 * 1000, lockMs: 60 * 1000 },
+  address: { max: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
 }
 
-function checkGuard(guard, key) {
-  const g = guard.get(key)
-  if (g && g.lockedUntil && g.lockedUntil > Date.now()) {
-    const secs = Math.ceil((g.lockedUntil - Date.now()) / 1000)
-    throw tooMany(`محاولات دخول خاطئة كثيرة. حاول مرة أخرى بعد ${secs} ثانية.`)
-  }
+function guardKeys(ctx, prefix = '') {
+  return [
+    [`${prefix}t|${ctx.terminal || 'unknown'}|${ctx.ip}`, LIMITS.terminal],
+    [`${prefix}a|${ctx.ip}`, LIMITS.address]
+  ]
 }
 
-function recordFailure(guard, key) {
+function checkGuard(guard, keys) {
   const now = Date.now()
-  let g = guard.get(key)
-  if (!g || now - g.first > WINDOW_MS) g = { failures: 0, first: now, lockedUntil: 0 }
-  g.failures += 1
-  if (g.failures >= MAX_FAILURES) {
-    g.lockedUntil = now + LOCK_MS
-    g.failures = 0
-    g.first = now
+  for (const [key] of keys) {
+    const g = guard.get(key)
+    if (g && g.lockedUntil > now) {
+      const secs = Math.ceil((g.lockedUntil - now) / 1000)
+      throw tooMany(`محاولات دخول خاطئة كثيرة. حاول مرة أخرى بعد ${secs} ثانية.`)
+    }
   }
-  guard.set(key, g)
+}
+
+function recordFailure(guard, keys) {
+  const now = Date.now()
+  if (guard.size > 5000) {
+    for (const [k, g] of guard)
+      if (g.lockedUntil < now && now - g.first > LIMITS.address.windowMs) guard.delete(k)
+  }
+  for (const [key, limit] of keys) {
+    let g = guard.get(key)
+    if (!g || now - g.first > limit.windowMs) g = { failures: 0, first: now, lockedUntil: 0 }
+    g.failures += 1
+    if (g.failures >= limit.max) {
+      g.lockedUntil = now + limit.lockMs
+      g.failures = 0
+      g.first = now
+    }
+    guard.set(key, g)
+  }
+}
+
+function safeEqual(a, b) {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && crypto.timingSafeEqual(x, y)
+}
+
+/** A successful login clears the terminal counter only; address-level failures still count. */
+function clearTerminal(guard, keys) {
+  guard.delete(keys[0][0])
 }
 
 async function createSession(db, ctx, userId) {
@@ -97,7 +124,8 @@ module.exports = function authModule(app) {
     public: true,
     handler: async (ctx) => {
       const { rows } = await ctx.pool.query('SELECT count(*)::int AS n FROM users')
-      return { needsSetup: rows[0].n === 0 }
+      // A networked server requires the one-time setup code from its log (see src/server/cli.js).
+      return { needsSetup: rows[0].n === 0, setupCodeRequired: !!ctx.setupCode && rows[0].n === 0 }
     }
   })
 
@@ -108,9 +136,21 @@ module.exports = function authModule(app) {
     schema: {
       type: 'object',
       required: ['username', 'pin'],
-      properties: { username: { type: 'string', minLength: 2, maxLength: 40 }, pin: pinSchema }
+      properties: {
+        username: { type: 'string', minLength: 2, maxLength: 40 },
+        pin: pinSchema,
+        setupCode: { type: 'string', maxLength: 64 }
+      }
     },
-    handler: async (ctx, { username, pin }) => {
+    handler: async (ctx, { username, pin, setupCode }) => {
+      if (ctx.setupCode) {
+        const key = guardKeys(ctx, 'setup|')
+        checkGuard(app.loginGuard, key)
+        if (!safeEqual(String(setupCode || '').trim(), ctx.setupCode)) {
+          recordFailure(app.loginGuard, key)
+          throw unauthorized('رمز الإعداد غير صحيح. تجده في سجل تشغيل خادم HeroMarket.')
+        }
+      }
       return ctx.tx(async (db) => {
         await db.query('LOCK TABLE users IN EXCLUSIVE MODE')
         const { rows } = await db.query('SELECT count(*)::int AS n FROM users')
@@ -142,7 +182,7 @@ module.exports = function authModule(app) {
       properties: { pin: { type: 'string', maxLength: 16 } }
     },
     handler: async (ctx, { pin }) => {
-      const key = guardKey(ctx)
+      const key = guardKeys(ctx)
       checkGuard(app.loginGuard, key)
       const clean = String(pin).trim()
       if (!isValidPin(clean)) {
@@ -155,7 +195,7 @@ module.exports = function authModule(app) {
           recordFailure(app.loginGuard, key)
           throw unauthorized('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
         }
-        app.loginGuard.delete(key)
+        clearTerminal(app.loginGuard, key)
         const token = await createSession(db, ctx, userId)
         const user = await describeUser(db, userId)
         const shift = await db.query(
@@ -188,7 +228,7 @@ module.exports = function authModule(app) {
       properties: { pin: { type: 'string', maxLength: 16 } }
     },
     handler: async (ctx, { pin }) => {
-      const key = `approve|${guardKey(ctx)}`
+      const key = guardKeys(ctx, 'approve|')
       checkGuard(app.loginGuard, key)
       const clean = String(pin).trim()
       const approverId = isValidPin(clean)
@@ -199,7 +239,7 @@ module.exports = function authModule(app) {
         recordFailure(app.loginGuard, key)
         return { approved: false }
       }
-      app.loginGuard.delete(key)
+      clearTerminal(app.loginGuard, key)
       await ctx.audit(
         ctx.pool,
         'manager_approval',

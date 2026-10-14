@@ -53,7 +53,7 @@ const AddClientModal = ({
               className="form-input"
               value={newClientForm.address}
               onChange={(e) => setNewClientForm((prev) => ({ ...prev, address: e.target.value }))}
-              placeholder="مثال: الشروق، مجاورة 3"
+              placeholder="مثال: مدينة نصر، شارع عباس العقاد"
             />
           </div>
           <div className="modal-footer">
