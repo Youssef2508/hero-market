@@ -4,7 +4,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
-const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+const {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  seedProducts
+} = require('./helpers')
 
 let db, svc, admin
 const q = async (sql, p) => (await svc.pool.query(sql, p)).rows
@@ -31,12 +38,15 @@ before(async () => {
   db = await freshDatabase()
   svc = await startService(db.url)
   await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
-  await q(`INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
+  await seedProducts(
+    svc,
+    `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
     ('P80', 'منتج 80', 60, 80, 75, 100, 0, 'قطعة', 'عام'),
     ('P40', 'منتج 40', 30, 40, 38, 100, 0, 'قطعة', 'عام'),
     ('P20', 'منتج 20', 15, 20, 18, 100, 0, 'قطعة', 'عام'),
     ('P50', 'منتج 50', 35, 50, 45, 100, 0, 'قطعة', 'عام'),
-    ('P30', 'منتج 30', 20, 30, 28, 100, 0, 'قطعة', 'عام')`)
+    ('P30', 'منتج 30', 20, 30, 28, 100, 0, 'قطعة', 'عام')`
+  )
   admin = await login(svc, '8642')
 })
 after(async () => {

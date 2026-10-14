@@ -99,6 +99,10 @@ const EditProductModal = ({
                 value={editProduct.stock_qty}
                 onChange={(e) => setEditProduct((prev) => ({ ...prev, stock_qty: e.target.value }))}
               />
+              <span className="field-hint">
+                يُسجَّل الفرق كحركة تسوية في سجل المخزون، ولا تضيع المبيعات التي تمت أثناء فتح هذه
+                الشاشة. للاستلام من مورد استخدم فاتورة الشراء.
+              </span>
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

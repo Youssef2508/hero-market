@@ -5,6 +5,7 @@
 //  - the new sale id comes from INSERT … RETURNING, never MAX(id) (G-03);
 //  - a new customer is created inside the same transaction (K-12);
 //  - a client-generated key makes retries return the same sale instead of a second one (G-21).
+const { postMovement } = require('../inventory/stock')
 const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
@@ -307,11 +308,15 @@ module.exports = function posModule(app) {
             `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price) VALUES ($1, $2, $3, $4, $5, $6)`,
             [saleId, l.barcode, l.qty, l.price, l.total, l.cost]
           )
-          // prevent_negative_stock raises an Arabic error if stock would drop below zero.
-          await db.query('UPDATE products SET stock_qty = stock_qty - $1 WHERE barcode = $2', [
-            l.qty,
-            l.barcode
-          ])
+          // Negative stock is allowed (owner decision); the sale leaves at the line's cost.
+          await postMovement(db, ctx, {
+            barcode: l.barcode,
+            qty: -l.qty,
+            kind: 'sale',
+            unitCost: l.cost,
+            refType: 'sale',
+            refId: saleId
+          })
         }
 
         if (clientId) {

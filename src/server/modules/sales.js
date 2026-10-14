@@ -2,6 +2,7 @@
 // Invoices back office (useSalesManager): history, details, returns, reprint data.
 // Returns use the legacy refund formulas, now inside one locked transaction each.
 const { badRequest, notFound, conflict } = require('../errors')
+const { postMovement } = require('../inventory/stock')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -155,10 +156,14 @@ module.exports = function salesModule(app) {
         const discountShare = round2(gross * ratio)
         const netRefund = round2(gross - discountShare)
         const newReturned = already + quantity
-        await db.query('UPDATE products SET stock_qty = stock_qty + $1 WHERE barcode = $2', [
-          quantity,
-          item.product_barcode
-        ])
+        // Returned goods re-enter at the current average cost (the average does not change).
+        await postMovement(db, ctx, {
+          barcode: item.product_barcode,
+          qty: quantity,
+          kind: 'return',
+          refType: 'sale_item',
+          refId: item.id
+        })
         await db.query('UPDATE sale_items SET returned_qty = $1, total_price = $2 WHERE id = $3', [
           newReturned,
           (Number(item.quantity) - newReturned) * Number(item.unit_price),
@@ -229,10 +234,13 @@ module.exports = function salesModule(app) {
         for (const i of items) {
           const remaining = Number(i.quantity) - (Number(i.returned_qty) || 0)
           if (remaining > 0)
-            await db.query('UPDATE products SET stock_qty = stock_qty + $1 WHERE barcode = $2', [
-              remaining,
-              i.product_barcode
-            ])
+            await postMovement(db, ctx, {
+              barcode: i.product_barcode,
+              qty: remaining,
+              kind: 'return',
+              refType: 'sale_item',
+              refId: i.id
+            })
         }
         await db.query(
           'UPDATE sale_items SET returned_qty = quantity, total_price = 0 WHERE sale_id = $1',

@@ -20,7 +20,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     total_amount: '',
     paid_amount: '',
     payment_type: 'آجل',
-    notes: ''
+    notes: '',
+    items: []
   })
   const [supplierRepayAmount, setSupplierRepayAmount] = useState('')
 
@@ -68,7 +69,21 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
   const handleAddPurchase = async (e) => {
     if (e) e.preventDefault()
     if (!selectedSupplier) return
-    const total = parseFloat(newPurchaseForm.total_amount) || 0
+    // With item lines the total is their sum (the service checks it again).
+    const items = (newPurchaseForm.items || []).map((l) => ({
+      barcode: l.barcode,
+      qty: parseFloat(l.qty) || 0,
+      unitCost: parseFloat(l.unitCost) || 0
+    }))
+    if (items.some((l) => l.qty <= 0)) {
+      triggerCustomAlert('أدخل كمية صحيحة لكل صنف مستلم.')
+      return
+    }
+    const total = items.length
+      ? Math.round(
+          items.reduce((a, l) => a + Math.round(l.qty * l.unitCost * 100) / 100, 0) * 100
+        ) / 100
+      : parseFloat(newPurchaseForm.total_amount) || 0
     const paid = parseFloat(newPurchaseForm.paid_amount) || 0
     if (total <= 0) {
       triggerCustomAlert('يرجى إدخال مبلغ الفاتورة!')
@@ -82,7 +97,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         paid_amount: paid,
         payment_type: newPurchaseForm.payment_type,
         notes: newPurchaseForm.notes || '',
-        currentShiftId: currentShift ? currentShift.id : null
+        currentShiftId: currentShift ? currentShift.id : null,
+        ...(items.length ? { items } : {})
       })
       setShowAddPurchaseModal(false)
       setNewPurchaseForm({
@@ -90,7 +106,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         total_amount: '',
         paid_amount: '',
         payment_type: 'آجل',
-        notes: ''
+        notes: '',
+        items: []
       })
       if (updated) await fetchSupplierProfile(updated)
     } catch (err) {

@@ -6,6 +6,7 @@ module.exports = [
   require('./pos'),
   require('./reports'),
   require('./catalog'),
+  require('./catalog').registerInventory,
   require('./sales'),
   require('./customers'),
   require('./finance'),

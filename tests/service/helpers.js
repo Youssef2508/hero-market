@@ -78,4 +78,32 @@ async function login(svc, pin) {
   return r.body.token
 }
 
-module.exports = { requireDb, freshDatabase, startService, createUser, login, TEST_SECRET }
+/**
+ * Insert products with stock for a test, the way an import does: the rows are written as an
+ * administrative rebuild and their stock becomes opening movements (stock ledger, migration 0004).
+ */
+async function seedProducts(svc, insertSql, params = []) {
+  const c = await svc.pool.connect()
+  try {
+    await c.query('BEGIN')
+    await c.query("SELECT set_config('hm.ledger_rebuild', 'on', true)")
+    await c.query(insertSql, params)
+    await c.query("SELECT hm_post_opening_balances('test seed')")
+    await c.query('COMMIT')
+  } catch (e) {
+    await c.query('ROLLBACK')
+    throw e
+  } finally {
+    c.release()
+  }
+}
+
+module.exports = {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  seedProducts,
+  TEST_SECRET
+}

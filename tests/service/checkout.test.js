@@ -2,7 +2,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
-const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+const {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  seedProducts
+} = require('./helpers')
 
 let db, svc, cashier, inventoryUser, shift
 const ref = () => crypto.randomUUID()
@@ -14,10 +21,13 @@ before(async () => {
   svc = await startService(db.url)
   await createUser(svc, { username: 'cashier1', pin: '1111', roleKey: 'cashier' })
   await createUser(svc, { username: 'stock1', pin: '2222', roleKey: 'inventory' })
-  await q(`INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
+  await seedProducts(
+    svc,
+    `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
     ('A1', 'منتج أ', 8, 10.5, 9, 100, 5, 'قطعة', 'عام'),
     ('B2', 'منتج ب', 2, 3.25, 3, 5, 1, 'قطعة', 'عام'),
-    ('C3', 'جبنة', 150, 200, 190, 1.5, 0.5, 'كجم', 'ألبان')`)
+    ('C3', 'جبنة', 150, 200, 190, 1.5, 0.5, 'كجم', 'ألبان')`
+  )
   cashier = await login(svc, '1111')
   inventoryUser = await login(svc, '2222')
   shift = (await svc.call('shifts.open', { startingCash: 200 }, cashier)).body
@@ -160,9 +170,38 @@ test('a tampered or stale price is refused and nothing is written', async (t) =>
   assert.equal((await q('SELECT count(*)::int AS n FROM sales'))[0].n, salesBefore)
 })
 
-test('insufficient stock rolls the whole sale back with the Arabic trigger message', async (t) => {
+// Owner decision (2026-10-14): selling more than the recorded stock is allowed; stock goes negative.
+test('selling more than the recorded stock is allowed: stock goes negative and the ledger records it', async (t) => {
+  if (!requireDb(t)) return
+  const c3 = Number((await q("SELECT stock_qty FROM products WHERE barcode = 'C3'"))[0].stock_qty)
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      items: [{ barcode: 'C3', qty: c3 + 0.5 }]
+    },
+    cashier
+  )
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  const after = Number(
+    (await q("SELECT stock_qty FROM products WHERE barcode = 'C3'"))[0].stock_qty
+  )
+  assert.equal(after, -0.5)
+  const mv = await q(
+    "SELECT qty, kind, balance_after, ref_type, ref_id FROM stock_movements WHERE product_barcode = 'C3' ORDER BY id DESC LIMIT 1"
+  )
+  assert.deepEqual(
+    mv.map((m) => [Number(m.qty), m.kind, Number(m.balance_after), m.ref_type, m.ref_id]),
+    [[-(c3 + 0.5), 'sale', -0.5, 'sale', r.body.saleId]]
+  )
+})
+
+test('a failing line still rolls the whole sale back: no sale, no stock change, no movement', async (t) => {
   if (!requireDb(t)) return
   const salesBefore = (await q('SELECT count(*)::int AS n FROM sales'))[0].n
+  const movesBefore = (await q('SELECT count(*)::int AS n FROM stock_movements'))[0].n
   const a1 = Number((await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty)
   const r = await svc.call(
     'pos.checkout',
@@ -172,14 +211,14 @@ test('insufficient stock rolls the whole sale back with the Arabic trigger messa
       paymentType: 'نقدي',
       items: [
         { barcode: 'A1', qty: 1 },
-        { barcode: 'C3', qty: 2 }
+        { barcode: 'NOPE', qty: 1 }
       ]
     },
     cashier
   )
-  assert.equal(r.status, 409)
-  assert.match(r.body.error.message, /المخزون/)
+  assert.equal(r.status, 404)
   assert.equal((await q('SELECT count(*)::int AS n FROM sales'))[0].n, salesBefore)
+  assert.equal((await q('SELECT count(*)::int AS n FROM stock_movements'))[0].n, movesBefore)
   assert.equal(
     Number((await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty),
     a1,
@@ -236,9 +275,15 @@ test('discount bounds: cannot exceed the subtotal', async (t) => {
   assert.equal(r.status, 400)
 })
 
-test('concurrent checkouts never oversell and keep every item with its own sale', async (t) => {
+test('concurrent checkouts of the same product: every sale recorded once, stock = start − sold', async (t) => {
   if (!requireDb(t)) return
-  await q("UPDATE products SET stock_qty = 5 WHERE barcode = 'B2'")
+  // Bring B2 to 5 with a count movement (direct stock writes are refused by the ledger guard).
+  const cur = Number((await q("SELECT stock_qty FROM products WHERE barcode = 'B2'"))[0].stock_qty)
+  if (cur !== 5)
+    await q(
+      "INSERT INTO stock_movements (product_barcode, qty, kind, unit_cost, balance_after) VALUES ('B2', $1, 'count', 0, 0)",
+      [5 - cur]
+    )
   const results = await Promise.all(
     Array.from({ length: 10 }, () =>
       svc.call(
@@ -253,14 +298,23 @@ test('concurrent checkouts never oversell and keep every item with its own sale'
       )
     )
   )
-  const ok = results.filter((r) => r.status === 200)
-  assert.equal(ok.length, 5, 'exactly the available stock was sold')
-  assert.ok(results.filter((r) => r.status !== 200).every((r) => r.status === 409))
+  assert.ok(
+    results.every((r) => r.status === 200),
+    JSON.stringify(results.map((r) => r.status))
+  )
+  assert.equal(new Set(results.map((r) => r.body.saleId)).size, 10, 'ten distinct sales')
   assert.equal(
     Number((await q("SELECT stock_qty FROM products WHERE barcode = 'B2'"))[0].stock_qty),
-    0
+    -5
   )
-  for (const r of ok) {
+  // Balances after each movement form an unbroken sequence 4, 3, …, −5 (no lost update).
+  const balances = (
+    await q(
+      "SELECT balance_after FROM stock_movements WHERE product_barcode = 'B2' AND kind = 'sale' ORDER BY id DESC LIMIT 10"
+    )
+  ).map((m) => Number(m.balance_after))
+  assert.deepEqual(balances, [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4])
+  for (const r of results) {
     const items = await q('SELECT product_barcode FROM sale_items WHERE sale_id = $1', [
       r.body.saleId
     ])

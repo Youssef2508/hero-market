@@ -1,7 +1,9 @@
-import { useRef } from 'react'
-import { Pencil, Plus, Search, Trash2, PackageSearch } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Pencil, Plus, Search, Trash2, PackageSearch, History, AlertTriangle } from 'lucide-react'
 import { EmptyState, Pagination, SortableTh } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import { api } from '../../lib/api'
+import StockHistoryModal from '../modals/StockHistoryModal'
 
 /**
  * Products & stock screen. Data and mutations come from useProductsManager
@@ -24,6 +26,17 @@ export default function InventoryTab({
   productsSortAsc
 }) {
   const debounceRef = useRef(null)
+  const [historyFor, setHistoryFor] = useState(null)
+  const [negative, setNegative] = useState([])
+
+  // Negative stock is allowed (sold before the receipt was entered); list it so it gets fixed.
+  const loadNegative = () =>
+    api('inventory.negative')
+      .then((r) => setNegative(r || []))
+      .catch(() => setNegative([]))
+  useEffect(() => {
+    loadNegative()
+  }, [adminProducts])
 
   const handleSearchChange = (e) => {
     const val = e.target.value
@@ -47,6 +60,19 @@ export default function InventoryTab({
 
   return (
     <section className="card">
+      {negative.length > 0 && (
+        <div className="notice tone-danger" role="status">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            <strong>{negative.length} صنف رصيده بالسالب</strong> (بيع قبل تسجيل الاستلام):{' '}
+            {negative
+              .slice(0, 6)
+              .map((n) => `${n.name} (${Number(n.stock)})`)
+              .join('، ')}
+            {negative.length > 6 ? '…' : ''}. سجّل فاتورة الشراء أو الجرد لتصحيحه.
+          </span>
+        </div>
+      )}
       <form
         className="card-header toolbar"
         onSubmit={(e) => {
@@ -114,6 +140,7 @@ export default function InventoryTab({
               ) : (
                 adminProducts.map((p) => {
                   const low = p.stock_qty <= p.reorder_limit
+                  const isNegative = Number(p.stock_qty) < 0
                   return (
                     <tr key={p.barcode}>
                       <td className="mono cell-muted nowrap">{p.barcode}</td>
@@ -126,6 +153,7 @@ export default function InventoryTab({
                       <td className="num">
                         <span className={`badge ${low ? 'badge-danger' : 'badge-success'}`}>
                           {p.stock_qty} {p.unit}
+                          {isNegative ? ' · بالسالب' : ''}
                         </span>
                       </td>
                       <td className="num cell-muted">{p.reorder_limit}</td>
@@ -135,12 +163,21 @@ export default function InventoryTab({
                             type="button"
                             className="btn btn-sm btn-secondary"
                             onClick={() => {
-                              setEditProduct(p)
+                              setEditProduct({ ...p, stock_base: p.stock_qty })
                               setShowEditModal(true)
                             }}
                           >
                             <Pencil size={15} aria-hidden="true" />
                             تعديل
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            onClick={() => setHistoryFor(p)}
+                            aria-label={`سجل حركة ${p.name}`}
+                            title="سجل الحركة والجرد"
+                          >
+                            <History size={16} />
                           </button>
                           <button
                             type="button"
@@ -171,6 +208,16 @@ export default function InventoryTab({
           onNext={() => fetchInventoryPage(adminPage + 1, adminSearch)}
         />
       </div>
+      {historyFor && (
+        <StockHistoryModal
+          product={historyFor}
+          onClose={() => setHistoryFor(null)}
+          onChanged={() => {
+            fetchInventoryPage(adminPage, adminSearch)
+            loadNegative()
+          }}
+        />
+      )}
     </section>
   )
 }

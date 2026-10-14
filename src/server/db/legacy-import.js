@@ -399,6 +399,12 @@ async function importLegacy(
         for (const { plan, values } of plans) await insertRows(client, plan, values)
         for (const t of TRIGGER_TABLES) await client.query(`ALTER TABLE "${t}" ENABLE TRIGGER USER`)
         report.sequences = await resetSequences(client, db)
+        // Stock ledger: the imported stock becomes one opening movement per product (migration 0004).
+        report.openingStockMovements = (
+          await client.query('SELECT hm_post_opening_balances($1) AS n', [
+            'رصيد افتتاحي من النسخة السابقة (استيراد)'
+          ])
+        ).rows[0].n
         report.parity = await verifyParity(client, db)
         if (!report.parity.ok)
           throw new Error('Parity verification failed inside the import transaction')
