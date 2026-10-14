@@ -1,4 +1,4 @@
-param([string]$TextFile, [string]$PrinterName)
+param([string]$TextFile, [string]$PrinterName, [int]$FontSize = 8, [string]$Paper = '80mm', [string]$LogoFile = '', [string]$OutFile = '')
 
 Add-Type -AssemblyName System.Drawing
 
@@ -8,14 +8,27 @@ $script:logoPrinted = $false
 
 $doc = New-Object System.Drawing.Printing.PrintDocument
 $doc.PrinterSettings.PrinterName = $PrinterName
+# Verification aid: print silently to a file (e.g. with "Microsoft Print to PDF").
+if ($OutFile) {
+    $doc.PrinterSettings.PrintToFile = $true
+    $doc.PrinterSettings.PrintFileName = $OutFile
+}
 
-# Select the 80mm Receipt roll paper
-$receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object {
-    $_.PaperName -like '*Receipt*80*' -or $_.PaperName -like '*Receipt*3276*48*'
-} | Select-Object -First 1
-
-if (-not $receiptPaper) {
-    $receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object { $_.Width -eq 315 } | Sort-Object Height -Descending | Select-Object -First 1
+# Select the receipt roll paper (80mm by default, 58mm when requested)
+if ($Paper -eq '58mm') {
+    $receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object {
+        $_.PaperName -like '*Receipt*58*' -or $_.PaperName -like '*58*mm*'
+    } | Select-Object -First 1
+    if (-not $receiptPaper) {
+        $receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object { $_.Width -ge 220 -and $_.Width -le 232 } | Sort-Object Height -Descending | Select-Object -First 1
+    }
+} else {
+    $receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object {
+        $_.PaperName -like '*Receipt*80*' -or $_.PaperName -like '*Receipt*3276*48*'
+    } | Select-Object -First 1
+    if (-not $receiptPaper) {
+        $receiptPaper = $doc.PrinterSettings.PaperSizes | Where-Object { $_.Width -eq 315 } | Sort-Object Height -Descending | Select-Object -First 1
+    }
 }
 
 if ($receiptPaper) {
@@ -26,8 +39,9 @@ if ($receiptPaper) {
 # Margins
 $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(15, 35, 5, 5)
 
-$font = New-Object System.Drawing.Font("Arial", 8, [System.Drawing.FontStyle]::Regular)
-$fontBold = New-Object System.Drawing.Font("Arial", 8, [System.Drawing.FontStyle]::Bold)
+if ($FontSize -lt 7 -or $FontSize -gt 11) { $FontSize = 8 }
+$font = New-Object System.Drawing.Font("Arial", $FontSize, [System.Drawing.FontStyle]::Regular)
+$fontBold = New-Object System.Drawing.Font("Arial", $FontSize, [System.Drawing.FontStyle]::Bold)
 
 # Reusable string formats
 $sfRight  = New-Object System.Drawing.StringFormat
@@ -47,10 +61,13 @@ $doc.add_PrintPage({
     $x   = [int]$e.MarginBounds.X
     $w   = [int]$e.MarginBounds.Width
     $bot = [int]($e.MarginBounds.Y + $e.MarginBounds.Height)
+    # Column widths were tuned for 80mm (about 265 units printable); scale them for other widths.
+    $k = [Math]::Max(0.6, [Math]::Min(1.2, $w / 265.0))
+    $cQty = [int](30 * $k); $cPrice = [int](40 * $k); $cTotal = [int](50 * $k); $cVal = [int](70 * $k)
 
     # 1. Draw logo at the very top (only on first page)
     if (-not $script:logoPrinted) {
-        $logoPath = Join-Path $PSScriptRoot "logo.png"
+        $logoPath = if ($LogoFile) { $LogoFile } else { Join-Path $PSScriptRoot "logo.png" }
         if (Test-Path $logoPath) {
             try {
                 $img = [System.Drawing.Image]::FromFile($logoPath)
@@ -71,6 +88,10 @@ $doc.add_PrintPage({
         if (($y + $lh) -gt $bot) { $e.HasMorePages = $true; return }
         $line = $script:lines[$script:lineIdx]
         
+        # [B] marks a bold label | value row (template totals)
+        $boldRow = $false
+        if ($line.StartsWith("[B]")) { $boldRow = $true; $line = $line.Substring(3) }
+
         # Check if it's a split table row
         if ($line -like '*|*') {
             $parts = $line.Split('|')
@@ -78,13 +99,11 @@ $doc.add_PrintPage({
                 # Table Row: ItemName | Qty | Price | Total
                 # Define column bounds
                 # Col 0 (Name): X=0 to X = w-120
-                $rName = New-Object System.Drawing.RectangleF($x, $y, ($w - 120), $lh)
-                # Col 1 (Qty): X = w-120 to X = w-90
-                $rQty  = New-Object System.Drawing.RectangleF(($x + $w - 120), $y, 30, $lh)
-                # Col 2 (Price): X = w-90 to X = w-50
-                $rPrice = New-Object System.Drawing.RectangleF(($x + $w - 90), $y, 40, $lh)
-                # Col 3 (Total): X = w-50 to X = w
-                $rTotal = New-Object System.Drawing.RectangleF(($x + $w - 50), $y, 50, $lh)
+                $nameW = $w - ($cQty + $cPrice + $cTotal)
+                $rName = New-Object System.Drawing.RectangleF($x, $y, $nameW, $lh)
+                $rQty  = New-Object System.Drawing.RectangleF(($x + $nameW), $y, $cQty, $lh)
+                $rPrice = New-Object System.Drawing.RectangleF(($x + $nameW + $cQty), $y, $cPrice, $lh)
+                $rTotal = New-Object System.Drawing.RectangleF(($x + $w - $cTotal), $y, $cTotal, $lh)
 
                 # Draw columns
                 $g.DrawString($parts[0].Trim(), $font, [System.Drawing.Brushes]::Black, $rName, $sfRight)
@@ -94,12 +113,12 @@ $doc.add_PrintPage({
             }
             elseif ($parts.Count -eq 2) {
                 # Label Value: Label | Value
-                $rLabel = New-Object System.Drawing.RectangleF($x, $y, ($w - 70), $lh)
-                $rValue = New-Object System.Drawing.RectangleF(($x + $w - 70), $y, 70, $lh)
+                $rLabel = New-Object System.Drawing.RectangleF($x, $y, ($w - $cVal), $lh)
+                $rValue = New-Object System.Drawing.RectangleF(($x + $w - $cVal), $y, $cVal, $lh)
                 
                 # Check for Bold values (e.g. Total sum)
                 $f = $font
-                if ($parts[0] -like '*الإجمالي*') { $f = $fontBold }
+                if ($boldRow -or $parts[0] -like '*الإجمالي*') { $f = $fontBold }
 
                 $g.DrawString($parts[0].Trim(), $f, [System.Drawing.Brushes]::Black, $rLabel, $sfRight)
                 $g.DrawString($parts[1].Trim(), $f, [System.Drawing.Brushes]::Black, $rValue, $sfLeft)

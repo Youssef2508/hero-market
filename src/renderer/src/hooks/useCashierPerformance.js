@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { executeQuery } from '../lib/db'
+import { api } from '../lib/api'
 
 function pad(n) {
   return String(n).padStart(2, '0')
@@ -85,14 +85,9 @@ export function useCashierPerformance() {
       const from = fromDate.replace('T', ' ') + ':00'
       const to = toDate.replace('T', ' ') + ':59'
 
-      // 1. Shifts in range
-      const shiftsInRange = await executeQuery(
-        `SELECT s.id as shift_id, s.user_id, s.difference, s.start_time, s.end_time,
-                s.initial_cash, s.actual_end_cash, s.expected_end_cash, u.username
-         FROM shifts s JOIN users u ON s.user_id = u.id
-         WHERE s.start_time >= '${from}' AND s.start_time <= '${to}'
-         ORDER BY s.id ASC`
-      )
+      // 1–4. Shifts in range, sales, profit and expenses per shift (same queries, run by the service)
+      const perf = await api('reports.cashierPerformance', { from, to })
+      const shiftsInRange = perf.shifts || []
 
       if (!shiftsInRange || shiftsInRange.length === 0) {
         setCashiers([])
@@ -100,37 +95,9 @@ export function useCashierPerformance() {
         return
       }
 
-      const idsStr = shiftsInRange.map((s) => s.shift_id).join(',')
-      const shiftCond = `WHERE shift_id IN (${idsStr})`
-      const joinCond = `WHERE s.shift_id IN (${idsStr})`
-
-      // 2. Sales per shift
-      const salesRows = await executeQuery(
-        `SELECT shift_id,
-           COUNT(*) as invoices,
-           SUM(total_amount) as sales,
-           AVG(total_amount) as avg_invoice,
-           MAX(total_amount) as max_invoice,
-           SUM(CASE WHEN payment_type='آجل' THEN total_amount ELSE 0 END) as debt_sales
-         FROM sales ${shiftCond} GROUP BY shift_id`
-      )
-
-      // 3. Profit per shift — LEFT JOIN products for cost_price fallback (safe: won't hang on deleted products)
-      const profitRows = await executeQuery(
-        `SELECT s.shift_id,
-           SUM(si.total_price - ((si.quantity - COALESCE(si.returned_qty,0)) * COALESCE(NULLIF(si.cost_price,0), COALESCE(p.cost_price,0)))) as profit,
-           SUM(COALESCE(si.returned_qty, 0)) as returned_qty,
-           SUM(CASE WHEN COALESCE(si.returned_qty,0) > 0 THEN 1 ELSE 0 END) as return_count
-         FROM sale_items si
-         JOIN sales s ON si.sale_id = s.id
-         LEFT JOIN products p ON si.product_barcode = p.barcode
-         ${joinCond} GROUP BY s.shift_id`
-      )
-
-      // 4. Expenses per shift
-      const expRows = await executeQuery(
-        `SELECT shift_id, SUM(amount) as expenses FROM expenses ${shiftCond} GROUP BY shift_id`
-      )
+      const salesRows = perf.sales || []
+      const profitRows = perf.profit || []
+      const expRows = perf.expenses || []
 
       // Build lookup maps
       const salesMap = {}
@@ -261,34 +228,16 @@ export function useCashierPerformance() {
       const from = fromDate.replace('T', ' ') + ':00'
       const to = toDate.replace('T', ' ') + ':59'
 
-      const shiftsOfUser = await executeQuery(
-        `SELECT id as shift_id, start_time, end_time, difference, status
-         FROM shifts
-         WHERE user_id = ${cashier.user_id}
-           AND start_time >= '${from}' AND start_time <= '${to}'
-         ORDER BY id ASC`
-      )
+      const dd = await api('reports.cashierDrilldown', { userId: cashier.user_id, from, to })
+      const shiftsOfUser = dd.shifts || []
 
       if (!shiftsOfUser || shiftsOfUser.length === 0) {
         setDrilldown({ shifts: [], daily: [], topProducts: [], peakHours: [], payment: [] })
         return
       }
 
-      const ids = shiftsOfUser.map((s) => s.shift_id).join(',')
-      const sCond = `WHERE shift_id IN (${ids})`
-      const jCond = `WHERE s.shift_id IN (${ids})`
-
-      const shiftSales = await executeQuery(
-        `SELECT shift_id, COUNT(*) as invoices, SUM(total_amount) as sales FROM sales ${sCond} GROUP BY shift_id`
-      )
-      const shiftProfit = await executeQuery(
-        `SELECT s.shift_id,
-           SUM(si.total_price - ((si.quantity - COALESCE(si.returned_qty,0)) * COALESCE(NULLIF(si.cost_price,0), COALESCE(p.cost_price,0)))) as profit
-         FROM sale_items si
-         JOIN sales s ON si.sale_id = s.id
-         LEFT JOIN products p ON si.product_barcode = p.barcode
-         ${jCond} GROUP BY s.shift_id`
-      )
+      const shiftSales = dd.shiftSales || []
+      const shiftProfit = dd.shiftProfit || []
 
       const ssMap = {}
       shiftSales.forEach((r) => {
@@ -310,29 +259,10 @@ export function useCashierPerformance() {
             : null
       }))
 
-      const daily = await executeQuery(
-        `SELECT DATE(timestamp) as day, SUM(total_amount) as sales, COUNT(*) as invoices
-         FROM sales ${sCond} GROUP BY day ORDER BY day ASC`
-      )
-
-      const topProducts = await executeQuery(
-        `SELECT si.product_name,
-           SUM(si.quantity - COALESCE(si.returned_qty,0)) as qty,
-           SUM(si.total_price) as revenue
-         FROM sale_items si JOIN sales s ON si.sale_id = s.id ${jCond}
-         GROUP BY si.product_barcode ORDER BY qty DESC LIMIT 5`
-      )
-
-      const peakHours = await executeQuery(
-        `SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-           COUNT(*) as invoices, SUM(total_amount) as sales
-         FROM sales ${sCond} GROUP BY hour ORDER BY hour ASC`
-      )
-
-      const payment = await executeQuery(
-        `SELECT payment_type, COUNT(*) as count, SUM(total_amount) as total
-         FROM sales ${sCond} GROUP BY payment_type`
-      )
+      const daily = dd.daily || []
+      const topProducts = dd.topProducts || []
+      const peakHours = dd.peakHours || []
+      const payment = dd.payment || []
 
       setDrilldown({ shifts: shiftsDetail, daily, topProducts, peakHours, payment })
     } catch (e) {

@@ -1,0 +1,236 @@
+import { useState } from 'react'
+import { Database, Server, ShieldCheck, Loader2, UserPlus, Monitor } from 'lucide-react'
+import { BrandMark, Wordmark } from '../brand/BrandMark'
+import { ThemeToggle } from '../ui'
+import { api } from '../../lib/api'
+
+/**
+ * Shown before the lock screen:
+ *   connect – this till has no working connection (standalone database or central server);
+ *   setup   – the database has no users yet: create the first administrator (no default password).
+ */
+function ConnectForm({ backendInfo, onRetry }) {
+  const [mode, setMode] = useState(backendInfo?.mode === 'client' ? 'client' : 'standalone')
+  const [databaseUrl, setDatabaseUrl] = useState('')
+  const [serverUrl, setServerUrl] = useState('')
+  const [terminalName, setTerminalName] = useState(backendInfo?.terminalName || '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(
+    backendInfo && backendInfo.error && backendInfo.error !== 'not_configured'
+      ? backendInfo.error
+      : ''
+  )
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const st = await window.api.backend.configure({ mode, databaseUrl, serverUrl, terminalName })
+      if (st.ready) onRetry()
+      else setError(st.error || 'تعذر الاتصال. راجع البيانات وحاول مرة أخرى.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="setup-form" onSubmit={submit}>
+      <header className="lock-head">
+        <h1>الاتصال بقاعدة البيانات</h1>
+        <p>اختر دور هذا الجهاز في المتجر.</p>
+      </header>
+      <div className="setup-modes" role="radiogroup" aria-label="دور الجهاز">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'standalone'}
+          className={`setup-mode ${mode === 'standalone' ? 'is-active' : ''}`}
+          onClick={() => setMode('standalone')}
+        >
+          <Database size={20} aria-hidden="true" />
+          <strong>جهاز رئيسي</strong>
+          <span>يتصل مباشرة بقاعدة بيانات PostgreSQL (متجر بكاشير واحد أو جهاز الخادم).</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'client'}
+          className={`setup-mode ${mode === 'client' ? 'is-active' : ''}`}
+          onClick={() => setMode('client')}
+        >
+          <Server size={20} aria-hidden="true" />
+          <strong>جهاز كاشير</strong>
+          <span>يتصل بخادم HeroMarket على شبكة المتجر.</span>
+        </button>
+      </div>
+      {mode === 'standalone' ? (
+        <label className="field">
+          <span className="field-label">عنوان قاعدة البيانات</span>
+          <input
+            className="input ltr"
+            dir="ltr"
+            value={databaseUrl}
+            onChange={(e) => setDatabaseUrl(e.target.value)}
+            placeholder="postgres://heromarket:password@127.0.0.1:5432/heromarket"
+            required
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+      ) : (
+        <label className="field">
+          <span className="field-label">عنوان خادم HeroMarket</span>
+          <input
+            className="input ltr"
+            dir="ltr"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            placeholder="http://192.168.1.10:8787"
+            required
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+      )}
+      <label className="field">
+        <span className="field-label">اسم هذا الجهاز</span>
+        <input
+          className="input"
+          value={terminalName}
+          onChange={(e) => setTerminalName(e.target.value)}
+          placeholder="كاشير 1"
+          maxLength={40}
+        />
+      </label>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
+        {busy ? (
+          <Loader2 size={18} className="spin" aria-hidden="true" />
+        ) : (
+          <Monitor size={18} aria-hidden="true" />
+        )}
+        حفظ والاتصال
+      </button>
+    </form>
+  )
+}
+
+function SetupForm({ onSetupDone }) {
+  const [username, setUsername] = useState('')
+  const [pin, setPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!/^\d{4}$/.test(pin)) return setError('رمز المرور يجب أن يكون 4 أرقام.')
+    if (pin !== confirmPin) return setError('تأكيد رمز المرور غير متطابق.')
+    if (['0000', '1234', '1111'].includes(pin))
+      return setError('اختر رمزاً غير متوقع (ليس 0000 أو 1234 أو 1111).')
+    setBusy(true)
+    try {
+      const res = await api('auth.setup', { username: username.trim(), pin })
+      onSetupDone(res.user)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="setup-form" onSubmit={submit}>
+      <header className="lock-head">
+        <h1>إعداد المتجر لأول مرة</h1>
+        <p>أنشئ حساب مدير النظام. لا يوجد حساب أو رمز افتراضي.</p>
+      </header>
+      <label className="field">
+        <span className="field-label">اسم المستخدم</span>
+        <input
+          className="input"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+          minLength={2}
+          maxLength={40}
+          autoFocus
+        />
+      </label>
+      <div className="form-grid">
+        <label className="field">
+          <span className="field-label">رمز المرور (4 أرقام)</span>
+          <input
+            className="input input-lg pin-field"
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            required
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">تأكيد رمز المرور</span>
+          <input
+            className="input input-lg pin-field"
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            value={confirmPin}
+            onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+            required
+          />
+        </label>
+      </div>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
+        {busy ? (
+          <Loader2 size={18} className="spin" aria-hidden="true" />
+        ) : (
+          <UserPlus size={18} aria-hidden="true" />
+        )}
+        إنشاء مدير النظام
+      </button>
+    </form>
+  )
+}
+
+export default function StartupGate({ phase, backendInfo, onRetry, onSetupDone }) {
+  return (
+    <div className="lock">
+      <ThemeToggle compact className="lock-theme" />
+      <div className="lock-card">
+        <section className="lock-brand" aria-hidden="true">
+          <BrandMark size={72} />
+          <Wordmark />
+          <p className="lock-tagline">نظام نقاط البيع وإدارة السوبر ماركت</p>
+          <div className="lock-brand-foot">
+            <ShieldCheck size={16} />
+            كل عملية تمر بصلاحيات المستخدم على خادم المتجر
+          </div>
+        </section>
+        <section className="lock-form">
+          {phase === 'checking' && (
+            <div className="setup-checking" role="status">
+              <Loader2 size={28} className="spin" aria-hidden="true" />
+              <p>جاري الاتصال بقاعدة البيانات…</p>
+            </div>
+          )}
+          {phase === 'connect' && <ConnectForm backendInfo={backendInfo} onRetry={onRetry} />}
+          {phase === 'setup' && <SetupForm onSetupDone={onSetupDone} />}
+        </section>
+      </div>
+    </div>
+  )
+}

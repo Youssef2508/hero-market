@@ -178,6 +178,37 @@ module.exports = function authModule(app) {
 
   app.operation({ name: 'auth.me', handler: async (ctx) => ctx.user })
 
+  // Supervisor approval on a till: another user's PIN, checked here; the approver needs pos.approve.
+  app.operation({
+    name: 'auth.verifyApprover',
+    permission: 'pos.sell',
+    schema: {
+      type: 'object',
+      required: ['pin'],
+      properties: { pin: { type: 'string', maxLength: 16 } }
+    },
+    handler: async (ctx, { pin }) => {
+      const key = `approve|${guardKey(ctx)}`
+      checkGuard(app.loginGuard, key)
+      const clean = String(pin).trim()
+      const approverId = isValidPin(clean)
+        ? await ctx.tx((db) => findUserByPin(db, ctx.secret, clean))
+        : null
+      const approver = approverId ? await describeUser(ctx.pool, approverId) : null
+      if (!approver || !approver.permissions.includes('pos.approve')) {
+        recordFailure(app.loginGuard, key)
+        return { approved: false }
+      }
+      app.loginGuard.delete(key)
+      await ctx.audit(
+        ctx.pool,
+        'manager_approval',
+        `اعتماد عملية للكاشير "${ctx.user.username}" بواسطة "${approver.username}"`
+      )
+      return { approved: true, approver: approver.username }
+    }
+  })
+
   app.operation({
     name: 'auth.changePin',
     schema: {

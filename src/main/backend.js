@@ -176,6 +176,14 @@ export async function callOperation(op, body) {
     }
   }
   const headers = { 'x-heromarket-terminal': terminalName() }
+  // A new login on this till ends the previous session (e.g. after a renderer reload or a lock).
+  if ((op === 'auth.login' || op === 'auth.setup') && token) {
+    const previous = token
+    token = null
+    await backend
+      .call('auth.logout', {}, { ...headers, authorization: `Bearer ${previous}` })
+      .catch(() => {})
+  }
   if (token) headers.authorization = `Bearer ${token}`
   try {
     const res = await backend.call(op, body, headers)

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { executeQuery } from '../lib/db'
-import { escapeSql, getNowStr, getFriendlyErrorMessage } from '../lib/utils'
+import { api } from '../lib/api'
 
 export function useDamagedGoodsManager({
   currentShift,
@@ -18,12 +17,7 @@ export function useDamagedGoodsManager({
 
   const fetchDamagedGoods = async () => {
     try {
-      const res = await executeQuery(`
-        SELECT dg.*, p.name as product_name, p.unit 
-        FROM damaged_goods dg 
-        JOIN products p ON dg.product_barcode = p.barcode 
-        ORDER BY dg.id DESC;
-      `)
+      const res = await api('damaged.list')
       setDamagedGoodsList(res || [])
     } catch (err) {
       console.error('fetchDamagedGoods error:', err)
@@ -45,40 +39,13 @@ export function useDamagedGoodsManager({
     }
 
     try {
-      // 1. Verify product exists and check stock
-      const prodRes = await executeQuery(`
-        SELECT name, stock_qty, cost_price FROM products WHERE barcode = '${escapeSql(trimmedBarcode)}';
-      `)
-      if (!prodRes || prodRes.length === 0) {
-        triggerCustomAlert('لم يتم العثور على هذا المنتج في المخزن!')
-        return
-      }
-
-      const product = prodRes[0]
-      if (product.stock_qty < qtyVal) {
-        triggerCustomAlert(
-          `الكمية التالفة المدخلة (${qtyVal}) أكبر من المخزون المتوفر حالياً (${product.stock_qty})!`
-        )
-        return
-      }
-
-      const shiftId = currentShift ? currentShift.id : 'NULL'
-      const nowStr = getNowStr()
-      const costVal = product.cost_price || 0
-
-      // We will perform updates inside a transaction
-      let sql = 'BEGIN TRANSACTION;\n'
-
-      // Deduct from products table
-      sql += `UPDATE products SET stock_qty = stock_qty - ${qtyVal} WHERE barcode = '${escapeSql(trimmedBarcode)}';\n`
-
-      // Insert into damaged_goods table
-      sql += `INSERT INTO damaged_goods (shift_id, product_barcode, quantity, reason, cost_price, timestamp) 
-              VALUES (${shiftId}, '${escapeSql(trimmedBarcode)}', ${qtyVal}, '${escapeSql(newDamagedForm.reason)}', ${costVal}, '${nowStr}');\n`
-
-      sql += 'COMMIT;\n'
-
-      await executeQuery(sql)
+      // The service re-checks the product and its stock, deducts it and records the damage atomically.
+      await api('damaged.create', {
+        barcode: trimmedBarcode,
+        quantity: qtyVal,
+        reason: newDamagedForm.reason,
+        currentShiftId: currentShift ? currentShift.id : null
+      })
       setShowAddDamagedModal(false)
       setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
 
@@ -86,7 +53,7 @@ export function useDamagedGoodsManager({
       if (fetchAdminData) await fetchAdminData()
       triggerCustomAlert('تم تسجيل الهالك بنجاح وخصم الكمية من المخزن وتأثيرها المالي من الأرباح!')
     } catch (err) {
-      triggerCustomAlert('فشل تسجيل التالف: ' + getFriendlyErrorMessage(err))
+      triggerCustomAlert('فشل تسجيل التالف: ' + err.message)
     }
   }
 
@@ -95,22 +62,12 @@ export function useDamagedGoodsManager({
       'هل أنت متأكد من حذف هذا السجل وإعادة الكمية التالفة إلى المخزن؟',
       async () => {
         try {
-          let sql = 'BEGIN TRANSACTION;\n'
-
-          // Return quantity to product stock
-          sql += `UPDATE products SET stock_qty = stock_qty + ${item.quantity} WHERE barcode = '${escapeSql(item.product_barcode)}';\n`
-
-          // Delete record from damaged_goods
-          sql += `DELETE FROM damaged_goods WHERE id = ${item.id};\n`
-
-          sql += 'COMMIT;\n'
-
-          await executeQuery(sql)
+          await api('damaged.delete', { damagedId: item.id })
           await fetchDamagedGoods()
           if (fetchAdminData) await fetchAdminData()
           triggerCustomAlert('تم إلغاء سجل الهالك وإرجاع الكمية إلى المخزن بنجاح!')
         } catch (err) {
-          triggerCustomAlert('فشل حذف سجل الهالك: ' + getFriendlyErrorMessage(err))
+          triggerCustomAlert('فشل حذف سجل الهالك: ' + err.message)
         }
       }
     )

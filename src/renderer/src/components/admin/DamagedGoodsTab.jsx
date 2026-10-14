@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import { PackageX, Trash2, Plus, Layers, Banknote, X } from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
 import { formatMoney } from '../../lib/utils'
@@ -37,9 +37,8 @@ export default function DamagedGoodsTab({
         return
       }
       try {
-        const res = await executeQuery(
-          `SELECT name, stock_qty FROM products WHERE barcode = '${cleanBarcode}';`
-        )
+        const product = await api('products.get', { barcode: cleanBarcode })
+        const res = product ? [product] : []
         if (active) {
           if (res && res.length > 0) {
             setResolvedProductName(res[0].name)

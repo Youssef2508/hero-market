@@ -4,7 +4,9 @@
 // (currentView: 'pos' | 'tills' | 'admin', adminTab: …) because useBarcode
 // routes scanner input by those values. `onEnter` reproduces the data loads
 // the original management menu cards triggered (see AdminDashboard history).
-// Permissions mirror the original UI exactly.
+// `permission` lists the permissions that grant access (any of them). The defaults of the built-in
+// roles reproduce the original UI exactly (cashier: selling + tills; manager: everything but users).
+// The service enforces the same permissions on every operation; this only hides what is unusable.
 // ─────────────────────────────────────────────────────────────
 import {
   ScanBarcode,
@@ -25,27 +27,39 @@ import {
   Clock,
   UserCog,
   ScrollText,
-  DatabaseBackup
+  DatabaseBackup,
+  ShieldCheck,
+  Settings
 } from 'lucide-react'
-
-const MANAGERS = ['admin', 'manager']
 
 export const NAV_GROUPS = [
   {
     id: 'sell',
     label: 'البيع',
     items: [
-      { id: 'pos', label: 'شاشة الكاشير', icon: ScanBarcode, view: 'pos' },
-      { id: 'tills', label: 'الأدراج والتحويلات', icon: Wallet, view: 'tills' }
+      {
+        id: 'pos',
+        permission: ['pos.sell'],
+        label: 'شاشة الكاشير',
+        icon: ScanBarcode,
+        view: 'pos'
+      },
+      {
+        id: 'tills',
+        permission: ['tills.operate'],
+        label: 'الأدراج والتحويلات',
+        icon: Wallet,
+        view: 'tills'
+      }
     ]
   },
   {
     id: 'overview',
     label: 'نظرة عامة',
-    roles: MANAGERS,
     items: [
       {
         id: 'menu',
+        permission: ['reports.view'],
         label: 'لوحة الإدارة',
         icon: LayoutDashboard,
         view: 'admin',
@@ -58,10 +72,10 @@ export const NAV_GROUPS = [
   {
     id: 'reports',
     label: 'التقارير',
-    roles: MANAGERS,
     items: [
       {
         id: 'stats',
+        permission: ['reports.view'],
         label: 'الأداء والأرباح',
         icon: ChartColumn,
         view: 'admin',
@@ -71,6 +85,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'advanced-stats',
+        permission: ['reports.view'],
         label: 'التقارير المتقدمة',
         icon: ChartLine,
         view: 'admin',
@@ -79,6 +94,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'cashier-performance',
+        permission: ['reports.view'],
         label: 'تقييم الكاشيرات',
         icon: Award,
         view: 'admin',
@@ -87,6 +103,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'bestsellers',
+        permission: ['reports.view'],
         label: 'تقرير المنتجات',
         icon: Trophy,
         view: 'admin',
@@ -99,10 +116,10 @@ export const NAV_GROUPS = [
   {
     id: 'stock',
     label: 'المخزون',
-    roles: MANAGERS,
     items: [
       {
         id: 'inventory',
+        permission: ['products.view'],
         label: 'الأصناف والمخزن',
         icon: Package,
         view: 'admin',
@@ -115,6 +132,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'reordering',
+        permission: ['inventory.reorder'],
         label: 'مساعد الطلبيات',
         icon: ClipboardList,
         view: 'admin',
@@ -123,6 +141,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'damaged',
+        permission: ['inventory.damaged'],
         label: 'التوالف والهوالك',
         icon: PackageX,
         view: 'admin',
@@ -135,10 +154,10 @@ export const NAV_GROUPS = [
   {
     id: 'accounts',
     label: 'الحسابات',
-    roles: MANAGERS,
     items: [
       {
         id: 'sales',
+        permission: ['sales.view'],
         label: 'الفواتير والمرتجعات',
         icon: ReceiptText,
         view: 'admin',
@@ -148,6 +167,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'clients',
+        permission: ['customers.view', 'customers.manage'],
         label: 'العملاء والحسابات',
         icon: Users,
         view: 'admin',
@@ -161,6 +181,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'suppliers',
+        permission: ['suppliers.view', 'suppliers.manage'],
         label: 'الموردون والمشتريات',
         icon: Truck,
         view: 'admin',
@@ -173,6 +194,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'checks',
+        permission: ['checks.manage'],
         label: 'الشيكات',
         icon: Landmark,
         view: 'admin',
@@ -185,6 +207,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'expenses',
+        permission: ['expenses.manage'],
         label: 'المصروفات',
         icon: HandCoins,
         view: 'admin',
@@ -197,10 +220,10 @@ export const NAV_GROUPS = [
   {
     id: 'admin',
     label: 'الإدارة',
-    roles: MANAGERS,
     items: [
       {
         id: 'shifts',
+        permission: ['shifts.view_all'],
         label: 'سجل الورديات',
         icon: Clock,
         view: 'admin',
@@ -210,16 +233,44 @@ export const NAV_GROUPS = [
       },
       {
         id: 'users',
+        permission: ['users.manage'],
         label: 'المستخدمون',
         icon: UserCog,
         view: 'admin',
         tab: 'users',
-        roles: ['admin'],
         description: 'حسابات الكاشيرات والمشرفين وصلاحياتهم.',
         onEnter: (c) => c.fetchUsersList()
       },
       {
+        id: 'roles',
+        permission: ['roles.manage'],
+        label: 'الأدوار والصلاحيات',
+        icon: ShieldCheck,
+        view: 'admin',
+        tab: 'roles',
+        description: 'إنشاء الأدوار وتحديد صلاحيات كل دور.'
+      },
+      {
+        id: 'settings',
+        permission: ['settings.manage'],
+        label: 'إعدادات المتجر',
+        icon: Settings,
+        view: 'admin',
+        tab: 'settings',
+        description: 'بيانات المتجر والطابعة والجرد الدوري.'
+      },
+      {
+        id: 'receipts',
+        permission: ['settings.manage'],
+        label: 'تصميم الفاتورة',
+        icon: ReceiptText,
+        view: 'admin',
+        tab: 'receipts',
+        description: 'قوالب الفاتورة الحرارية و A4 مع معاينة مباشرة.'
+      },
+      {
         id: 'logs',
+        permission: ['logs.view'],
         label: 'سجل العمليات',
         icon: ScrollText,
         view: 'admin',
@@ -228,6 +279,7 @@ export const NAV_GROUPS = [
       },
       {
         id: 'backup',
+        permission: ['backup.manage'],
         label: 'النسخ الاحتياطي',
         icon: DatabaseBackup,
         view: 'admin',
@@ -240,13 +292,27 @@ export const NAV_GROUPS = [
 
 export const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g })))
 
-const allowed = (roles, user) => !roles || (user && roles.includes(user.role))
+const allowed = (item, user) =>
+  !!user &&
+  Array.isArray(user.permissions) &&
+  (!item.permission || item.permission.some((p) => user.permissions.includes(p)))
 
-/** Navigation groups visible to the given user (same rules as the original UI). */
+/** Navigation groups visible to the given user. */
 export function visibleGroups(user) {
-  return NAV_GROUPS.filter((g) => allowed(g.roles, user))
-    .map((g) => ({ ...g, items: g.items.filter((i) => allowed(i.roles, user)) }))
-    .filter((g) => g.items.length > 0)
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => allowed(i, user)) })).filter(
+    (g) => g.items.length > 0
+  )
+}
+
+/** Whether the user can open at least one management screen. */
+export function canAccessAdmin(user) {
+  return ALL_NAV_ITEMS.some((i) => i.view === 'admin' && allowed(i, user))
+}
+
+/** Whether the user may open this admin tab (used to guard the admin router). */
+export function canOpenTab(user, tab) {
+  const item = ALL_NAV_ITEMS.find((i) => i.view === 'admin' && i.tab === tab)
+  return !!item && allowed(item, user)
 }
 
 /** The nav item matching the current App state. */

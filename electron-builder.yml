@@ -19,6 +19,10 @@ extraResources:
     to: "market_unified.db"
   - from: "resources/print_receipt.ps1"
     to: "print_receipt.ps1"
+  - from: "resources/logo.png"
+    to: "logo.png"
+  - from: "resources/brand/png/heromarket-mark-256.png"
+    to: "brand-logo.png"
 asarUnpack:
   - resources/**
 win:

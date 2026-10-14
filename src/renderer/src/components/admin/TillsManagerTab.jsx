@@ -20,7 +20,7 @@ import {
   Landmark
 } from 'lucide-react'
 import { StatCard } from '../ui'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import { getFriendlyErrorMessage } from '../../lib/utils'
 import { useMomknTill } from '../../hooks/useMomknTill'
 import { useMobileMoneyTill } from '../../hooks/useMobileMoneyTill'
@@ -67,57 +67,16 @@ const TillsManagerTab = ({
     const initialCash = currentShift.initial_cash || 0
 
     try {
-      const allSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId};
-      `)
-      const cashSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type = 'نقدي';
-      `)
-      const debtRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type = 'آجل';
-      `)
-      const digitalSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type NOT IN ('نقدي', 'آجل');
-      `)
-      const repayRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'inflow';
-      `)
-
-      // Split outflows: Returns, Supplier Payments, General Expenses
-      const returnsRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description LIKE 'مرتجع%' OR description LIKE 'إرجاع%');
-      `)
-      const supplierRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%');
-      `)
-      const expensesRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'إرجاع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%');
-      `)
-
-      const allSalesTotal = parseFloat(allSalesRes[0]?.total) || 0
-      const cashSalesTotal = parseFloat(cashSalesRes[0]?.total) || 0
-      const debtSalesTotal = parseFloat(debtRes[0]?.total) || 0
-      const digitalSalesTotal = parseFloat(digitalSalesRes[0]?.total) || 0
-      const repayTotal = parseFloat(repayRes[0]?.total) || 0
-      const returnsTotal = parseFloat(returnsRes[0]?.total) || 0
-      const supplierTotal = parseFloat(supplierRes[0]?.total) || 0
-      const expensesTotal = parseFloat(expensesRes[0]?.total) || 0
+      // Same sums as before (sale value = original − discount, returns/suppliers/expenses split by ledger text).
+      const r = await api('tills.drawerSummary', { shiftId })
+      const allSalesTotal = r.allSalesTotal || 0
+      const cashSalesTotal = r.cashSalesTotal || 0
+      const debtSalesTotal = r.debtSalesTotal || 0
+      const digitalSalesTotal = r.digitalSalesTotal || 0
+      const repayTotal = r.repayTotal || 0
+      const returnsTotal = r.returnsTotal || 0
+      const supplierTotal = r.supplierTotal || 0
+      const expensesTotal = r.expensesTotal || 0
 
       const expected =
         initialCash +

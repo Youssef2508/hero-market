@@ -1,11 +1,20 @@
 import './userDataPath'
-import { app, shell, BrowserWindow, ipcMain, dialog, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initializeDatabase, executeSql, dbPath } from './db'
+import {
+  startBackend,
+  stopBackend,
+  callOperation,
+  status as backendStatus,
+  writeConfig,
+  clearSession
+} from './backend'
+import { getPrintSettings } from './printSettings'
 import fs from 'fs'
-import { initializePrinter } from './printer'
+import { initializePrinter, registerSalePrinting } from './printer'
+import { registerDataIpc } from './dataIpc'
 
 // Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
 if (app.isPackaged) {
@@ -82,8 +91,14 @@ function createWindow() {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (/^https?:\/\//i.test(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+  // The window only ever shows the bundled app (or the dev server).
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowed =
+      process.env['ELECTRON_RENDERER_URL'] && url.startsWith(process.env['ELECTRON_RENDERER_URL'])
+    if (!allowed) event.preventDefault()
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -110,9 +125,10 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Initialize DB and Printer
-  initializeDatabase()
-  initializePrinter()
+  // Data service (PostgreSQL via the HeroMarket service) and printer
+  registerDataIpc({ callOperation, backendStatus, startBackend, writeConfig, clearSession })
+  initializePrinter({ callOperation })
+  registerSalePrinting({ callOperation })
 
   // IPC Typst shortages PDF Generator
   ipcMain.handle('generate-shortages-pdf', async (event, items) => {
@@ -206,24 +222,7 @@ ${tableRows}  )
 
   // IPC Direct Shortages Printer
   ipcMain.handle('print-shortages-to-printer', async (event, items) => {
-    let storeName = 'هيرو ماركت'
-    let branchName = 'الفرع الرئيسي'
-    let printerName = 'CITIZEN CT-S300'
-    try {
-      const dbSettings = await executeSql(
-        "SELECT key, value FROM settings WHERE key IN ('store_name', 'branch_name', 'printer_name');"
-      )
-      if (Array.isArray(dbSettings)) {
-        const storeSetting = dbSettings.find((s) => s.key === 'store_name')
-        const branchSetting = dbSettings.find((s) => s.key === 'branch_name')
-        const printerSetting = dbSettings.find((s) => s.key === 'printer_name')
-        if (storeSetting) storeName = storeSetting.value
-        if (branchSetting) branchName = branchSetting.value
-        if (printerSetting) printerName = printerSetting.value
-      }
-    } catch (err) {
-      console.error('[PRINTER] Failed to fetch settings from DB:', err)
-    }
+    const { storeName, branchName, printerName } = await getPrintSettings(callOperation)
 
     const todayStr = new Date().toLocaleDateString('ar-EG', {
       year: 'numeric',
@@ -294,72 +293,10 @@ ${tableRows}  )
     })
   })
 
-  // IPC SQL Executor Bridge
-  ipcMain.handle('execute-sql', async (event, sqlQuery) => {
-    try {
-      if (typeof sqlQuery !== 'string' || !sqlQuery.trim()) {
-        throw new Error('Invalid SQL query input')
-      }
-      const forbidden =
-        /(DROP\s+TABLE|ALTER\s+TABLE|ATTACH\s+DATABASE|DETACH\s+DATABASE|DELETE\s+FROM\s+users)/i
-      if (forbidden.test(sqlQuery)) {
-        console.warn('[SECURITY] Blocked dangerous SQL operation:', sqlQuery)
-        throw new Error('Forbidden SQL operation')
-      }
-      return await executeSql(sqlQuery)
-    } catch (e) {
-      console.error('SQL Execution Error:', e.message)
-      throw e
-    }
-  })
-
-  // IPC Backup Database Bridge
-  ipcMain.handle('backup-database', async () => {
-    try {
-      const { filePath } = await dialog.showSaveDialog({
-        title: 'حفظ نسخة احتياطية من قاعدة البيانات',
-        defaultPath: `market_backup_${new Date().toISOString().split('T')[0]}.db`,
-        filters: [{ name: 'SQLite Database', extensions: ['db'] }]
-      })
-      if (filePath) {
-        try {
-          await executeSql('PRAGMA wal_checkpoint(FULL);')
-        } catch (_) {}
-        fs.copyFileSync(dbPath, filePath)
-        return { success: true, filePath }
-      }
-      return { success: false, error: 'User cancelled' }
-    } catch (e) {
-      console.error('Backup Error:', e)
-      return { success: false, error: e.message }
-    }
-  })
-
-  ipcMain.handle('restore-database', async () => {
-    try {
-      const { filePaths } = await dialog.showOpenDialog({
-        title: 'استيراد قاعدة بيانات (استرجاع نسخة احتياطية)',
-        filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-        properties: ['openFile']
-      })
-      if (filePaths && filePaths.length > 0) {
-        const sourcePath = filePaths[0]
-        try {
-          await executeSql('PRAGMA wal_checkpoint(TRUNCATE);')
-        } catch (_) {}
-        fs.copyFileSync(sourcePath, dbPath)
-        return { success: true, requiresRestart: true }
-      }
-      return { success: false, error: 'User cancelled' }
-    } catch (e) {
-      console.error('Restore Error:', e)
-      return { success: false, error: e.message }
-    }
-  })
-
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
+  startBackend().then((st) => console.log('[backend]', JSON.stringify(st)))
   createWindow()
 
   app.on('activate', function () {
@@ -372,6 +309,10 @@ ${tableRows}  )
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
+app.on('before-quit', () => {
+  stopBackend()
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()

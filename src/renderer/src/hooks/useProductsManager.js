@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { executeQuery } from '../lib/db'
-import { escapeSql, getFriendlyErrorMessage } from '../lib/utils'
+import { api } from '../lib/api'
 
 export function useProductsManager({
   fetchAdminData,
@@ -51,30 +50,17 @@ export function useProductsManager({
         'cost_price',
         'reorder_limit'
       ]
-      const activeSortField = allowedFields.includes(activeSortFieldRaw)
-        ? activeSortFieldRaw
-        : 'name'
-
-      if (sortField !== null) setProductsSortField(activeSortField)
+      // The service applies the same sortable-field whitelist (falls back to name).
+      const res = await api('products.page', {
+        page,
+        search: search || '',
+        sortField: allowedFields.includes(activeSortFieldRaw) ? activeSortFieldRaw : 'name',
+        sortAsc: activeSortAsc
+      })
+      if (sortField !== null) setProductsSortField(res.field)
       if (sortAsc !== null) setProductsSortAsc(activeSortAsc)
-
-      const offset = (page - 1) * itemsPerPage
-      const escapedSearch = escapeSql(search)
-      const whereClause = escapedSearch
-        ? `WHERE barcode LIKE '%${escapedSearch}%' OR name LIKE '%${escapedSearch}%'`
-        : ''
-
-      const countRes = await executeQuery(`SELECT count(*) as count FROM products ${whereClause};`)
-      const total = countRes?.[0]?.count || 0
-      setAdminTotalCount(total)
-
-      const products = await executeQuery(`
-        SELECT * FROM products 
-        ${whereClause} 
-        ORDER BY ${activeSortField} ${activeSortAsc ? 'ASC' : 'DESC'} 
-        LIMIT ${itemsPerPage} OFFSET ${offset};
-      `)
-      setAdminProducts(products || [])
+      setAdminTotalCount(res.total || 0)
+      setAdminProducts(res.rows || [])
       setAdminPage(page)
     } catch (err) {
       console.error('fetchInventoryPage error:', err)
@@ -102,10 +88,16 @@ export function useProductsManager({
 
     const saveProduct = async () => {
       try {
-        await executeQuery(`
-          INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit)
-          VALUES ('${escapeSql(barcode)}', '${escapeSql(name)}', ${cost}, ${retail}, ${parseFloat(wholesale_price) || 0}, ${parseFloat(stock_qty) || 0}, ${parseFloat(reorder_limit) || 0}, '${escapeSql(unit) || ''}');
-        `)
+        await api('products.create', {
+          barcode: String(barcode).trim(),
+          name,
+          cost_price: cost,
+          retail_price: retail,
+          wholesale_price: parseFloat(wholesale_price) || 0,
+          stock_qty: parseFloat(stock_qty) || 0,
+          reorder_limit: parseFloat(reorder_limit) || 0,
+          unit: unit || ''
+        })
         triggerCustomAlert('تمت إضافة المنتج بنجاح!')
         setShowAddModal(false)
         setNewProduct({
@@ -120,7 +112,7 @@ export function useProductsManager({
         })
         if (fetchAdminData) await fetchAdminData()
       } catch (err) {
-        triggerCustomAlert('فشل إضافة المنتج. ربما الباركود مكرر: ' + getFriendlyErrorMessage(err))
+        triggerCustomAlert('فشل إضافة المنتج. ربما الباركود مكرر: ' + err.message)
       }
     }
 
@@ -155,17 +147,16 @@ export function useProductsManager({
 
     const saveProduct = async () => {
       try {
-        await executeQuery(`
-          UPDATE products 
-          SET name = '${escapeSql(name)}', 
-              cost_price = ${cost}, 
-              retail_price = ${retail}, 
-              wholesale_price = ${parseFloat(wholesale_price) || 0}, 
-              stock_qty = ${parseFloat(stock_qty) || 0}, 
-              reorder_limit = ${parseFloat(reorder_limit) || 0}, 
-              unit = '${escapeSql(unit) || ''}'
-          WHERE barcode = '${escapeSql(barcode)}';
-        `)
+        await api('products.update', {
+          barcode,
+          name,
+          cost_price: cost,
+          retail_price: retail,
+          wholesale_price: parseFloat(wholesale_price) || 0,
+          stock_qty: parseFloat(stock_qty) || 0,
+          reorder_limit: parseFloat(reorder_limit) || 0,
+          unit: unit || ''
+        })
         if (setToastMessage) {
           setToastMessage('تم تحديث بيانات المنتج بنجاح!')
           setTimeout(() => setToastMessage(null), 2500)
@@ -173,7 +164,7 @@ export function useProductsManager({
         setShowEditModal(false)
         if (fetchAdminData) await fetchAdminData()
       } catch (err) {
-        triggerCustomAlert('فشل التحديث: ' + getFriendlyErrorMessage(err))
+        triggerCustomAlert('فشل التحديث: ' + err.message)
       }
     }
 
@@ -192,17 +183,12 @@ export function useProductsManager({
       'هل أنت متأكد من رغبتك في حذف هذا المنتج نهائياً من قاعدة البيانات؟',
       async () => {
         try {
-          await executeQuery(`DELETE FROM products WHERE barcode = '${escapeSql(barcode)}';`)
+          await api('products.delete', { barcode })
           triggerCustomAlert('تم حذف المنتج بنجاح!')
           if (fetchAdminData) await fetchAdminData()
         } catch (err) {
-          if (err.message && err.message.includes('FOREIGN KEY')) {
-            triggerCustomAlert(
-              'لا يمكن حذف هذا المنتج لأنه مرتبط بمبيعات أو فواتير سابقة في الداتا بيس.\nيمكنك بدلاً من حذفه تعديل كميته المتاحة إلى صفر.'
-            )
-          } else {
-            triggerCustomAlert('فشل الحذف: ' + getFriendlyErrorMessage(err))
-          }
+          // The service explains when the product is linked to past sales.
+          triggerCustomAlert(err.status === 409 ? err.message : 'فشل الحذف: ' + err.message)
         }
       }
     )

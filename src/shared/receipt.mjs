@@ -185,6 +185,7 @@ export function buildReceiptLines(tpl, d, store = {}) {
   if (t.header.showPhone && store.phone) push(`[C]${L.phone}: ${cleanText(store.phone, 30)}`)
   for (const l of t.header.extraLines) push(`[C]${l}`)
   if (t.header.showTitle) push(`[C]${L.title}`)
+  if (d.banner) push(`[C]${cleanText(d.banner)}`)
   if (t.info.showInvoiceNo) push(`[C]${L.invoiceNo} : ${d.saleId ?? '—'}`)
   push(sep)
 
@@ -308,6 +309,7 @@ ${t.header.showPhone && store.phone ? `<p>${esc(L.phone)}: ${esc(store.phone)}</
 ${t.header.extraLines.map((l) => `<p>${esc(l)}</p>`).join('')}
 </div>${t.header.showLogo && logoDataUrl ? `<img src="${esc(logoDataUrl)}" alt="">` : ''}</header>
 ${t.header.showTitle ? `<h2>${esc(L.title)}</h2>` : ''}
+${d.banner ? `<p><strong>${esc(d.banner)}</strong></p>` : ''}
 <dl>${info.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
 <table><thead><tr><th class="n">#</th><th>${esc(L.item)}</th><th class="num">${esc(L.qty)}</th>${t.items.showUnitPrice ? `<th class="num">${esc(L.price)}</th>` : ''}<th class="num">${esc(L.lineTotal)}</th></tr></thead>
 <tbody>${rows}</tbody></table>

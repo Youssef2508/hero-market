@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, ScrollText } from 'lucide-react'
 import { getSystemLogs } from '../../lib/dao/logs.dao'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import { EmptyState } from '../ui'
 
-// action_type values written by logs.dao#logEvent callers.
+// action_type values written by the service audit log (src/server).
 const ACTIONS = {
   user_create: { label: 'إنشاء موظف', tone: 'badge-info' },
   user_update: { label: 'تعديل موظف', tone: 'badge-info' },
@@ -37,10 +37,8 @@ export default function LogsTab() {
 
   const fetchUsers = async () => {
     try {
-      const res = await executeQuery(
-        'SELECT DISTINCT username FROM users UNION SELECT DISTINCT username FROM system_logs WHERE username IS NOT NULL;'
-      )
-      setUsers(res || [])
+      const res = await api('logs.list', { limit: 1 })
+      setUsers(res.usernames || [])
     } catch (e) {
       console.log(e)
     }

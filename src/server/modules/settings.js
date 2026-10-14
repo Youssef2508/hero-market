@@ -27,7 +27,8 @@ const SETTINGS = {
   audit_enabled: { default: 'true', type: 'bool', public: true },
   audit_interval_minutes: { default: '60', type: 'number', min: 10, max: 720, public: true },
   audit_idle_seconds: { default: '20', type: 'number', min: 5, max: 600, public: true },
-  print_receipt_default: { default: 'true', type: 'bool', public: true }
+  print_receipt_default: { default: 'true', type: 'bool', public: true },
+  receipt_paper: { default: '80mm', type: 'enum', values: ['80mm', '58mm'], public: true }
 }
 
 function normalise(key, raw) {
@@ -48,6 +49,9 @@ function normalise(key, raw) {
     }
     case 'bool':
       if (!['true', 'false'].includes(v)) throw badRequest('قيمة غير صالحة.')
+      return v
+    case 'enum':
+      if (!def.values.includes(v)) throw badRequest('قيمة غير صالحة.')
       return v
     case 'image':
       if (!v) return ''
@@ -223,7 +227,7 @@ module.exports = function settingsModule(app) {
 
   // Return to the built-in default for a paper size (no active custom template).
   app.operation({
-    name: 'receipts.useDefault',
+    name: 'receipts.restoreDefault',
     permission: 'settings.manage',
     schema: {
       type: 'object',

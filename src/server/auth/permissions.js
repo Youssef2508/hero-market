@@ -22,6 +22,12 @@ const PERMISSIONS = [
     label: 'منح خصم على الفاتورة',
     description: 'إدخال قيمة خصم عند البيع'
   },
+  {
+    key: 'pos.approve',
+    module: 'pos',
+    label: 'اعتماد عمليات الكاشير برمز المشرف',
+    description: 'الموافقة برمز المشرف على العمليات التي تتطلب ذلك على شاشة الكاشير'
+  },
   // Shifts and tills
   {
     key: 'shifts.operate',
@@ -223,14 +229,7 @@ const SYSTEM_ROLES = [
     key: 'cashier',
     name: 'كاشير',
     description: 'البيع وإدارة ورديته وحركات الأدراج.',
-    permissions: [
-      'pos.sell',
-      'pos.credit',
-      'pos.discount',
-      'shifts.operate',
-      'tills.operate',
-      'customers.view'
-    ]
+    permissions: ['pos.sell', 'pos.credit', 'pos.discount', 'shifts.operate', 'tills.operate']
   },
   {
     key: 'inventory',

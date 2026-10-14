@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import {
   ShoppingCart,
   Banknote,
@@ -13,7 +13,7 @@ import {
   PackageCheck
 } from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
-import { formatMoney, getNowStr } from '../../lib/utils'
+import { formatMoney } from '../../lib/utils'
 
 export default function ReorderingTab() {
   const [loading, setLoading] = useState(false)
@@ -27,35 +27,10 @@ export default function ReorderingTab() {
   const calculateReordering = async () => {
     setLoading(true)
     try {
-      // 1. Fetch all products
-      const allProducts = await executeQuery(
-        // D-009: products has no `price` column (the original query failed); the field is unused but kept as an alias.
-        'SELECT barcode, name, stock_qty as stock, reorder_limit, unit, cost_price as cost, retail_price as price FROM products;'
-      )
-
-      // 2. Fetch shifts in the last 30 days
-      const sinceDate = new Date()
-      sinceDate.setDate(sinceDate.getDate() - 30)
-      sinceDate.setHours(0, 0, 0, 0)
-
-      const sinceStr = getNowStr(sinceDate)
-      const matchingShifts = await executeQuery(
-        `SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`
-      )
-      const shiftIds = matchingShifts.map((sh) => sh.id)
-
-      // 3. Fetch sales quantity for these shifts
-      let salesData = []
-      if (shiftIds.length > 0) {
-        const query = `
-          SELECT product_barcode, SUM(quantity) as total_qty
-          FROM sale_items si
-          JOIN sales s ON si.sale_id = s.id
-          WHERE s.shift_id IN (${shiftIds.join(',')})
-          GROUP BY product_barcode;
-        `
-        salesData = await executeQuery(query)
-      }
+      // Products and quantities sold in shifts started within the last 30 days (service: inventory.reorderData)
+      const data = await api('inventory.reorderData')
+      const allProducts = data.products || []
+      const salesData = data.sales || []
 
       // Map sales
       const sMap = {}

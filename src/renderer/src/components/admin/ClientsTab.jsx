@@ -17,7 +17,7 @@ import {
   ShoppingBag,
   X
 } from 'lucide-react'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import { EmptyState, SortableTh, StatCard } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
@@ -74,15 +74,9 @@ export default function ClientsTab({
 
   const handleOpenInvoiceDetails = async (saleId) => {
     try {
-      const sale = await executeQuery(`SELECT * FROM sales WHERE id = ${saleId} LIMIT 1;`)
-      if (sale && sale.length > 0) {
-        const items = await executeQuery(`
-          SELECT si.*, p.name
-          FROM sale_items si
-          LEFT JOIN products p ON si.product_barcode = p.barcode
-          WHERE si.sale_id = ${saleId};
-        `)
-        setActiveInvoice(sale[0])
+      const { sale, items } = await api('sales.detail', { saleId })
+      if (sale) {
+        setActiveInvoice(sale)
         setActiveInvoiceItems(items || [])
       }
     } catch (err) {

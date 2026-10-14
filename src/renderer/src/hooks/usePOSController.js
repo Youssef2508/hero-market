@@ -1,25 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import {
-  escapeSql,
-  normalizeDigits,
-  playSound,
-  getNowStr,
-  getFriendlyErrorMessage,
-  hashPin,
-  round2
-} from '../lib/utils'
-import { executeQuery } from '../lib/db'
-import {
-  generateReceiptHtml,
-  generateReprintHtml,
-  generateGrandShiftReportHtml
-} from '../lib/printTemplates'
-import { logEvent } from '../lib/dao/logs.dao'
+import { normalizeDigits, playSound, round2 } from '../lib/utils'
+import { api, newClientRef } from '../lib/api'
+import { generateGrandShiftReportHtml } from '../lib/printTemplates'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
  * including shifts logging, barcode parsing, search suggestions, printing,
- * manager authorization, and SQLite checkout transaction execution.
+ * manager authorization and checkout. All data goes through the HeroMarket service (lib/api).
  */
 export function usePOSController({
   currentUser,
@@ -58,7 +45,6 @@ export function usePOSController({
   isDelivery,
   setIsDelivery,
   cartTotal,
-  cartSubtotal,
   addToCart,
   updateQty,
 
@@ -78,7 +64,9 @@ export function usePOSController({
   triggerCustomAlert,
   triggerCustomConfirm,
   parseScaleBarcode,
-  setCurrentView
+  setCurrentView,
+  appSettings,
+  onLoggedIn
 }) {
   const [pin, setPin] = useState('')
   const searchDebounceRef = useRef(null)
@@ -97,6 +85,8 @@ export function usePOSController({
   const [clientSearchResults, setClientSearchResults] = useState([])
 
   const handleLock = () => {
+    // Revoke the service session too (the till keeps no token after locking).
+    api('auth.logout').catch(() => {})
     rawHandleLock()
     setCart([])
     setPin('')
@@ -119,57 +109,39 @@ export function usePOSController({
       customPin = null
     }
     const cleanPin = normalizeDigits(customPin !== null ? customPin : pin)
+    if (!cleanPin) return
     try {
-      if (!cleanPin) {
-        return
+      const res = await api('auth.login', { pin: cleanPin })
+      const user = res.user
+      setCurrentUser(user)
+      setPin('')
+      if (onLoggedIn) onLoggedIn(user)
+      setIsLocked(false) // Unlock the screen layout
+      if (!user.permissions.includes('reports.view')) {
+        setCurrentView('pos')
       }
-      const escapedPin = escapeSql(cleanPin)
-      const hashedPin = await hashPin(cleanPin)
-      let users = await executeQuery(
-        `SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapedPin}') LIMIT 1;`
-      )
-
-      if (users.length > 0) {
-        const user = users[0]
-        setCurrentUser(user)
-        setPin('')
-
-        console.log('[AUTH FLOW] Checking for active open shift for user:', user.username)
-        const openShifts = await executeQuery(`
-          SELECT * FROM shifts WHERE user_id = ${user.id} AND status = 'open' LIMIT 1;
-        `)
-
-        console.log(`[AUTH FLOW] Open shifts query complete. Found: ${openShifts.length}`)
-        setIsLocked(false) // Unlock the screen layout
-        if (user.role === 'cashier') {
-          setCurrentView('pos')
+      if (res.openShift) {
+        setCurrentShift(res.openShift)
+        playSound('success')
+      } else if (user.permissions.includes('shifts.operate')) {
+        setCurrentShift(null)
+        try {
+          setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+        } catch {
+          /* setter unavailable */
         }
-        if (openShifts.length > 0) {
-          console.log(`[AUTH FLOW] Resuming open shift: ${JSON.stringify(openShifts[0])}`)
-          setCurrentShift(openShifts[0])
-          playSound('success')
-        } else {
-          console.log('[AUTH FLOW] No open shift found. Prompting to open a shift.')
-          setCurrentShift(null)
-          try {
-            setStartingCash('200')
-          } catch {
-            /* setter unavailable */
-          }
-          setOpenShiftModal(true)
-        }
+        setOpenShiftModal(true)
       } else {
-        console.warn(
-          `[AUTH FLOW] Authentication failed. No user found with password_hash = '${escapedPin}'`
-        )
-        playSound('error')
-        triggerCustomAlert('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
-        setPin('')
+        setCurrentShift(null)
       }
     } catch (err) {
-      console.error('[AUTH FLOW] Critical exception caught during login:', err)
-      triggerCustomAlert('خطأ في قاعدة البيانات: ' + getFriendlyErrorMessage(err))
       playSound('error')
+      if (err.status === 401) {
+        triggerCustomAlert('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
+      } else {
+        triggerCustomAlert(err.message)
+      }
+      setPin('')
     }
   }
 
@@ -194,30 +166,17 @@ export function usePOSController({
         triggerCustomAlert('يرجى تسجيل الدخول أولاً برمز المرور الخاص بك لفتح الوردية.')
         return
       }
-
-      const activeUser = currentUser
-      const nowStr = getNowStr()
-      await executeQuery(`
-        INSERT INTO shifts (user_id, start_time, initial_cash, expected_end_cash, actual_end_cash, status, momkn_start_balance, momkn_start_cash, vfcash_start_balance, vfcash_start_cash)
-        VALUES (${activeUser.id}, '${nowStr}', ${startingCashNum}, ${startingCashNum}, 0, 'open', ${momknStartNum}, ${momknCashNum}, ${vfcashStartNum}, ${vfcashCashNum});
-      `)
-
-      const latestShift = await executeQuery(`
-        SELECT * FROM shifts WHERE user_id = ${activeUser.id} AND status = 'open' ORDER BY id DESC LIMIT 1;
-      `)
-
-      if (latestShift.length > 0) {
-        await logEvent({
-          userId: activeUser.id,
-          username: activeUser.username,
-          actionType: 'shift_open',
-          description: `فتح وردية جديدة بمبلغ بداية ${startingCashNum?.toFixed(2)} ج.م`
-        })
-        setCurrentShift(latestShift[0])
-        setOpenShiftModal(false)
-        setIsLocked(false)
-        playSound('chime')
-      }
+      const shift = await api('shifts.open', {
+        startingCash: startingCashNum,
+        momknStartBalance: momknStartNum,
+        momknStartCash: momknCashNum,
+        vfcashStartBalance: vfcashStartNum,
+        vfcashStartCash: vfcashCashNum
+      })
+      setCurrentShift(shift)
+      setOpenShiftModal(false)
+      setIsLocked(false)
+      playSound('chime')
     } catch (e) {
       console.error('Failed to open shift:', e)
       playSound('error')
@@ -234,109 +193,43 @@ export function usePOSController({
     }
 
     try {
-      const combinedRes = await executeQuery(`
-        SELECT 
-          (SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) FROM sales WHERE shift_id = ${currentShift.id}) as salesTotal,
-          (SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) FROM sales WHERE shift_id = ${currentShift.id} AND payment_type = 'آجل') as debtSales,
-          (SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) FROM sales WHERE shift_id = ${currentShift.id} AND payment_type NOT IN ('نقدي', 'آجل')) as digitalSales,
-          (SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) FROM sales WHERE shift_id = ${currentShift.id} AND payment_type = 'نقدي') as cashSales,
-          (SELECT IFNULL(SUM(amount), 0) FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'inflow') as repayTotal,
-          (SELECT IFNULL(SUM(amount), 0) FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow' AND (description LIKE 'مرتجع%')) as returnsTotal,
-          (SELECT IFNULL(SUM(amount), 0) FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%')) as supplierTotal,
-          (SELECT IFNULL(SUM(amount), 0) FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%')) as expensesTotal,
-          (SELECT IFNULL(SUM(cash_impact), 0) FROM momkn_transactions WHERE shift_id = ${currentShift.id}) as momknCashImpact,
-          (SELECT IFNULL(SUM(cash_impact), 0) FROM mobile_money_transactions WHERE shift_id = ${currentShift.id}) as mobileMoneyCashImpact;
-      `)
-
-      const r = combinedRes[0] || {}
-      const initialCash = currentShift.initial_cash || 0
-      const cashSales = parseFloat(r.cashSales) || 0
-      const inflow = parseFloat(r.repayTotal) || 0
-      const returns = parseFloat(r.returnsTotal) || 0
-      const supplierOutflow = parseFloat(r.supplierTotal) || 0
-      const generalOutflow = parseFloat(r.expensesTotal) || 0
-
-      const expectedMainCash =
-        initialCash + cashSales + inflow - (returns + supplierOutflow + generalOutflow)
-
-      const expected = expectedMainCash
-
-      const d = {
-        cashSales,
-        inflow,
-        outflow: returns + supplierOutflow + generalOutflow
-      }
-
-      const difference = actual - expected
-      const nowStr = getNowStr()
-
       const finalizeShiftClose = async () => {
         try {
-          await executeQuery(`
-            UPDATE shifts 
-            SET end_time = '${nowStr}', expected_end_cash = ${expected}, actual_end_cash = ${actual}, difference = ${difference}, status = 'closed'
-            WHERE id = ${currentShift.id};
-          `)
-          await logEvent({
-            userId: currentUser?.id,
-            username: currentUser?.username,
-            actionType: 'shift_close',
-            description: `إغلاق الوردية رقم #${currentShift.id} (الفعلي: ${actual?.toFixed(2)} ج.م، المتوقع: ${expected?.toFixed(2)} ج.م، الفرق: ${difference?.toFixed(2)} ج.م)`
-          })
+          // The service computes the expected drawer cash with the legacy formula and closes the shift.
+          const closed = await api('shifts.close', { shiftId: currentShift.id, actualCash: actual })
+          const live = closed.live || {}
+          const shiftRow = closed.shift || currentShift
 
           // Trigger print report automatically!
           if (window.api && window.api.printer && window.api.printer.print) {
             try {
-              const momknRes = await executeQuery(`
-                SELECT 
-                  COALESCE((SELECT SUM(digital_impact) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as digitalImpact,
-                  COALESCE((SELECT SUM(cash_impact) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as cashImpact,
-                  COALESCE((SELECT SUM(commission) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as commission
-              `)
-              const mmRes = await executeQuery(`
-                SELECT 
-                  COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as digitalImpact,
-                  COALESCE((SELECT SUM(cash_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as cashImpact,
-                  COALESCE((SELECT SUM(commission) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as commission,
-                  COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='vodafone_cash'), 0) as vfcashDigitalImpact,
-                  COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='instapay'), 0) as instapayDigitalImpact,
-                  COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='bank_transfer'), 0) as bankDigitalImpact
-              `)
-
-              const mSum = momknRes[0] || {}
-              const mmSum = mmRes[0] || {}
-
               const momknSummary = {
                 expectedDigitalBalance:
-                  (currentShift.momkn_start_balance || 0) + (parseFloat(mSum.digitalImpact) || 0),
-                totalCashImpact: parseFloat(mSum.cashImpact) || 0,
-                totalCommission: parseFloat(mSum.commission) || 0,
-                startBalance: currentShift.momkn_start_balance || 0
+                  (shiftRow.momkn_start_balance || 0) + (Number(live.momkn_digital_impact) || 0),
+                totalCashImpact: Number(live.momkn_cash_impact) || 0,
+                totalCommission: Number(live.momkn_commission) || 0,
+                startBalance: shiftRow.momkn_start_balance || 0
               }
-
               const mobileMoneySummary = {
                 expectedVfcashDigitalBalance:
-                  (currentShift.vfcash_start_balance || 0) +
-                  (parseFloat(mmSum.vfcashDigitalImpact) || 0),
-                expectedInstapayDigitalBalance: parseFloat(mmSum.instapayDigitalImpact) || 0,
-                expectedBankDigitalBalance: parseFloat(mmSum.bankDigitalImpact) || 0,
-                totalCashImpact: parseFloat(mmSum.cashImpact) || 0,
-                totalCommission: parseFloat(mmSum.commission) || 0,
-                startBalance: currentShift.vfcash_start_balance || 0
+                  (shiftRow.vfcash_start_balance || 0) + (Number(live.vfcash_digital_impact) || 0),
+                expectedInstapayDigitalBalance: Number(live.instapay_digital_impact) || 0,
+                expectedBankDigitalBalance: Number(live.bank_digital_impact) || 0,
+                totalCashImpact: Number(live.mm_cash_impact) || 0,
+                totalCommission: Number(live.mm_commission) || 0,
+                startBalance: shiftRow.vfcash_start_balance || 0
               }
-
               const html = generateGrandShiftReportHtml({
-                shift: { ...currentShift, username: currentUser?.username },
-                salesTotal: d.cashSales,
-                repayTotal: d.inflow,
-                refundTotal: d.outflow,
+                shift: { ...shiftRow, username: currentUser?.username },
+                salesTotal: closed.figures.cashSales,
+                repayTotal: closed.figures.inflow,
+                refundTotal: closed.figures.outflow,
                 momknSummary,
                 mobileMoneySummary,
-                actualCash: actual,
-                expectedCash: expected,
-                difference
+                actualCash: closed.actual,
+                expectedCash: closed.expected,
+                difference: closed.difference
               })
-
               await window.api.printer.print(html)
             } catch (printErr) {
               console.error('Failed to print grand shift report:', printErr)
@@ -347,8 +240,9 @@ export function usePOSController({
           handleLock()
           setCloseShiftModal(false)
         } catch (e) {
-          console.error('Failed to close shift in DB:', e)
+          console.error('Failed to close shift:', e)
           playSound('error')
+          triggerCustomAlert('فشل إغلاق الوردية: ' + e.message)
         }
       }
 
@@ -359,12 +253,6 @@ export function usePOSController({
           if (window.api && window.api.db && window.api.db.backup) {
             const backupRes = await window.api.db.backup()
             if (backupRes && backupRes.success) {
-              await logEvent({
-                userId: currentUser?.id,
-                username: currentUser?.username,
-                actionType: 'database_backup',
-                description: `أخذ نسخة احتياطية من قاعدة البيانات بنجاح في: ${backupRes.filePath}`
-              })
               triggerCustomAlert(
                 `تم حفظ النسخة الاحتياطية بنجاح في:\n${backupRes.filePath}`,
                 'نجاح النسخ الاحتياطي',
@@ -409,38 +297,25 @@ export function usePOSController({
     if (!barcodeInput) return
 
     let rawInput = barcodeInput.trim()
-    const cleanRaw = escapeSql(rawInput)
     // Declared here (not inside the else-branch) because the suffix lookup below reads it.
     let parsed = { isWeighted: false, barcode: rawInput }
     try {
       let product = null
 
       // Try exact match, stripped leading zeros, or padded leading zero
-      const cleanRawStripped = cleanRaw.replace(/^0+/, '')
-      const cleanRawPadded = '0' + cleanRaw
-      const exactProducts = await executeQuery(`
-        SELECT * FROM products 
-        WHERE barcode = '${cleanRaw}' 
-           OR barcode = '${cleanRawStripped}' 
-           OR barcode = '${cleanRawPadded}' 
-        LIMIT 1;
-      `)
-      if (exactProducts.length > 0) {
-        product = exactProducts[0]
-      } else {
+      product = await api('pos.lookup', {
+        codes: [rawInput, rawInput.replace(/^0+/, ''), '0' + rawInput].filter(Boolean)
+      })
+      if (!product) {
         // If no exact match, check weighted scale barcode parsing
         parsed = parseScaleBarcode(rawInput)
         const lookupProduct = async (p) => {
           if (p.isWeighted) {
-            const code = escapeSql(p.barcode)
-            const cleanCode = escapeSql(String(p.barcode || '').replace(/^0+/, ''))
-            const products = await executeQuery(`
-              SELECT * FROM products 
-              WHERE barcode = '${code}' OR barcode = '${cleanCode}' 
-              LIMIT 1;
-            `)
-            if (products.length > 0) {
-              const item = products[0]
+            const code = String(p.barcode || '')
+            const item = await api('pos.lookup', {
+              codes: [code, code.replace(/^0+/, '')].filter(Boolean)
+            })
+            if (item) {
               let forcedQty = p.qty
               if (p.isPriceEmbedded && p.totalPrice && parseFloat(item.retail_price) > 0) {
                 forcedQty = round2(p.totalPrice / parseFloat(item.retail_price))
@@ -449,17 +324,10 @@ export function usePOSController({
             }
             return null
           } else {
-            const code = escapeSql(p.barcode)
-            const codeStripped = code.replace(/^0+/, '')
-            const codePadded = '0' + code
-            const products = await executeQuery(`
-              SELECT * FROM products 
-              WHERE barcode = '${code}' 
-                 OR barcode = '${codeStripped}' 
-                 OR barcode = '${codePadded}' 
-              LIMIT 1;
-            `)
-            return products.length > 0 ? products[0] : null
+            const code = String(p.barcode || '')
+            return api('pos.lookup', {
+              codes: [code, code.replace(/^0+/, ''), '0' + code].filter(Boolean)
+            })
           }
         }
 
@@ -467,12 +335,7 @@ export function usePOSController({
       }
 
       if (!product && !parsed.isWeighted && rawInput.length >= 6 && rawInput.length <= 12) {
-        const escaped = escapeSql(rawInput)
-        const candidates = await executeQuery(`
-          SELECT * FROM products
-          WHERE barcode LIKE '%${escaped}'
-          LIMIT 5;
-        `)
+        const candidates = await api('pos.suffixCandidates', { suffix: rawInput })
         if (candidates.length === 1) {
           product = candidates[0]
         } else if (candidates.length > 1) {
@@ -507,15 +370,8 @@ export function usePOSController({
     if (!managerPin) return
 
     try {
-      const escapedPin = escapeSql(managerPin)
-      const hashedPin = await hashPin(managerPin)
-      let managers = await executeQuery(`
-        SELECT * FROM users
-        WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapedPin}') AND (role = 'admin' OR role = 'manager')
-        LIMIT 1;
-      `)
-
-      if (managers.length > 0) {
+      const res = await api('auth.verifyApprover', { pin: managerPin })
+      if (res.approved) {
         playSound('success')
         if (pendingAction.type === 'DELETE_ITEM') {
           setCart((prev) => prev.filter((item) => item.barcode !== pendingAction.payload))
@@ -536,6 +392,7 @@ export function usePOSController({
     } catch (err) {
       console.error('Manager auth error:', err)
       playSound('error')
+      triggerCustomAlert(err.message)
     }
   }
 
@@ -557,12 +414,8 @@ export function usePOSController({
     searchDebounceRef.current = setTimeout(async () => {
       if (latestSearchRef.current !== val) return
       try {
-        const escaped = escapeSql(val)
-        const results = await executeQuery(`
-          SELECT * FROM products 
-          WHERE name LIKE '%${escaped}%' OR barcode LIKE '%${escaped}%'
-          LIMIT 8;
-        `)
+        if (latestSearchRef.current !== val) return
+        const results = await api('pos.searchProducts', { term: val })
         if (latestSearchRef.current !== val) return
         setSearchResults(results)
       } catch (err) {
@@ -605,7 +458,9 @@ export function usePOSController({
     }
   }
 
-  // Checkout Receipt generator & DB commit
+  // Checkout: the service validates, prices and commits the sale in one transaction.
+  // A pending flag + per-attempt idempotency key prevent double sales from repeated F1/clicks.
+  const checkoutPendingRef = useRef(null)
   const handleCheckout = async () => {
     if (cart.length === 0) {
       playSound('error')
@@ -621,136 +476,72 @@ export function usePOSController({
       )
       return
     }
+    if (checkoutPendingRef.current) return
+    const clientRef = newClientRef()
+    checkoutPendingRef.current = clientRef
 
     try {
-      const nowStr = getNowStr()
       const finalDiscount = parseFloat(discount) || 0
-
-      let clientId = null
-      if (clientName) {
-        if (selectedClient) {
-          clientId = selectedClient.id
-        } else {
-          const searchQ = clientPhone
-            ? `SELECT * FROM clients WHERE name = '${escapeSql(clientName)}' OR phone = '${escapeSql(clientPhone)}' LIMIT 1;`
-            : `SELECT * FROM clients WHERE name = '${escapeSql(clientName)}' LIMIT 1;`
-          const existing = await executeQuery(searchQ)
-          if (existing && existing.length > 0) {
-            clientId = existing[0].id
-          } else {
-            const phoneForInsert =
-              clientPhone && clientPhone.trim() ? `'${escapeSql(clientPhone.trim())}'` : 'NULL'
-            await executeQuery(`
-              INSERT INTO clients (name, phone, address, debt_balance, points, created_at)
-              VALUES ('${escapeSql(clientName)}', ${phoneForInsert}, '${escapeSql(clientAddress)}', 0.0, 0, '${nowStr}');
-            `)
-            const newClientRes = await executeQuery(`SELECT MAX(id) as id FROM clients;`)
-            clientId = newClientRes?.[0]?.id || null
-          }
-        }
-      }
-
-      let clientDbValue = clientName
-      if (clientName) {
-        if (clientPhone) clientDbValue += ` (${clientPhone})`
-        if (isDelivery && clientAddress) clientDbValue += ` - ${clientAddress}`
-      }
-
-      let sqlQuery = 'BEGIN TRANSACTION;\n'
-      sqlQuery += `INSERT INTO sales (shift_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id) VALUES (${currentShift.id}, '${nowStr}', ${cartTotal}, ${cartSubtotal || cartTotal}, ${finalDiscount}, '${escapeSql(paymentType)}', '${escapeSql(clientDbValue)}', ${clientId || 'NULL'});\n`
-
-      cart.forEach((item) => {
-        sqlQuery += `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price) VALUES ((SELECT MAX(id) FROM sales LIMIT 1), '${escapeSql(item.barcode)}', ${item.qty}, ${item.price}, ${item.total}, ${item.cost_price || 0.0});\n`
-        sqlQuery += `UPDATE products SET stock_qty = stock_qty - ${item.qty} WHERE barcode = '${escapeSql(item.barcode)}';\n`
+      const result = await api('pos.checkout', {
+        clientRef,
+        shiftId: currentShift.id,
+        items: cart.map((item) => ({
+          barcode: item.barcode,
+          qty: item.qty,
+          unitPrice: item.price
+        })),
+        discount: finalDiscount,
+        paymentType,
+        paidAmount: paidAmount ? parseFloat(paidAmount) || 0 : null,
+        appliedCredit: parseFloat(appliedCredit) || 0,
+        depositChange: parseFloat(depositChange) || 0,
+        isDelivery: !!isDelivery,
+        client: clientName
+          ? {
+              id: selectedClient ? selectedClient.id : null,
+              name: clientName,
+              phone: clientPhone || '',
+              address: clientAddress || ''
+            }
+          : null
       })
 
-      if (clientId) {
-        const pointsEarned = Math.floor(cartTotal / 100)
-        sqlQuery += `UPDATE clients SET points = points + ${pointsEarned} WHERE id = ${clientId};\n`
-        if (paymentType === 'آجل') {
-          sqlQuery += `UPDATE clients SET debt_balance = debt_balance + ${cartTotal} WHERE id = ${clientId};\n`
-          sqlQuery += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${clientId}, 'sale', ${cartTotal}, 'شراء آجل فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
-        } else if (paymentType === 'دفع جزئي') {
-          const upfrontPaid = Math.min(cartTotal, Math.max(0, parseFloat(paidAmount) || 0))
-          const remainingDebt = Math.max(0, cartTotal - upfrontPaid)
-          if (remainingDebt > 0) {
-            sqlQuery += `UPDATE clients SET debt_balance = debt_balance + ${remainingDebt} WHERE id = ${clientId};\n`
-            sqlQuery += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${clientId}, 'sale', ${remainingDebt}, 'متبقي بيع دفع جزئي فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
-          }
-          if (upfrontPaid > 0) {
-            sqlQuery += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${currentShift.id}, 'inflow', ${upfrontPaid}, 'مقدم نقدي بيع دفع جزئي فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
-          }
-        }
-
-        // استهلاك الرصيد كخصم (إذا تم استخدامه)
-        if (parseFloat(appliedCredit) > 0) {
-          sqlQuery += `UPDATE clients SET debt_balance = debt_balance + ${parseFloat(appliedCredit)} WHERE id = ${clientId};\n`
-          sqlQuery += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${clientId}, 'sale', ${parseFloat(appliedCredit)}, 'استهلاك رصيد كخصم في فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
-        }
-
-        // حفظ الباقي في رصيد العميل (إذا تم تحديده والـ paidAmount أكبر من الصافي)
-        const changeVal = paidAmount ? Math.max(0, (parseFloat(paidAmount) || 0) - cartTotal) : 0
-        const depositVal = Math.min(parseFloat(depositChange) || 0, changeVal)
-        if (depositVal > 0) {
-          sqlQuery += `UPDATE clients SET debt_balance = debt_balance - ${depositVal} WHERE id = ${clientId};\n`
-          sqlQuery += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${clientId}, 'payment', ${depositVal}, 'حفظ الباقي نقدي رصيد في فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
-        }
-      }
-
-      sqlQuery += 'COMMIT;\n'
-      await executeQuery(sqlQuery)
-
-      await logEvent({
-        userId: currentUser?.id,
-        username: currentUser?.username,
-        actionType: 'checkout_sale',
-        description: `إتمام عملية بيع فاتورة بقيمة ${cartTotal?.toFixed(2)} ج.م (طريقة الدفع: ${paymentType})`
-      })
-
-      const saleResult = await executeQuery(`SELECT id FROM sales ORDER BY id DESC LIMIT 1;`)
-      const rawSaleId =
-        saleResult && saleResult.length > 0 && saleResult[0]
-          ? saleResult[0].id || saleResult[0].ID || 0
-          : 0
-      const displaySaleId = parseInt(rawSaleId) > 0 ? rawSaleId : '—'
-
+      const displaySaleId = parseInt(result.saleId) > 0 ? result.saleId : '—'
       playSound('chime')
 
       const datePart = new Date().toLocaleDateString('ar-EG')
       const timePart = new Date().toLocaleTimeString('ar-EG')
+      const paidShown = paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal
 
-      const receiptHtml = generateReceiptHtml({
-        storeName: 'هيرو ماركت',
-        branchName: 'الفرع الرئيسي',
-        displaySaleId,
-        datePart,
-        timePart,
-        currentUser,
-        clientName,
-        clientPhone,
-        clientAddress,
-        cart,
-        cartTotal,
-        finalDiscount,
-        paidAmount: paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal,
-        changeRemaining: paidAmount ? Math.max(0, (parseFloat(paidAmount) || 0) - cartTotal) : 0,
-        paymentType: paymentType || 'نقدي'
-      })
-
-      if (!noPrint && window.api && window.api.printer && window.api.printer.print) {
-        console.log(
-          '[PRINT FLOW] Invoking printer.print with HTML content length:',
-          receiptHtml.length,
-          'mode silent:',
-          printSilent
-        )
+      if (!noPrint && window.api && window.api.printer && window.api.printer.printSale) {
         window.api.printer
-          .print(receiptHtml, { silent: printSilent })
-          .then(() => console.log('[PRINT FLOW] Receipt printed successfully on Citizen CT-S300.'))
+          .printSale(
+            {
+              saleId: displaySaleId,
+              date: datePart,
+              time: timePart,
+              cashier: currentUser?.username,
+              paymentType: paymentType || 'نقدي',
+              client: { name: clientName, phone: clientPhone, address: clientAddress },
+              items: cart.map((item) => ({
+                name: item.name || 'صنف',
+                barcode: item.barcode,
+                qty: item.qty,
+                price: item.price,
+                total: item.total
+              })),
+              subTotal: result.subTotal,
+              discount: finalDiscount,
+              total: result.total,
+              paid: paidShown,
+              change: paidAmount ? Math.max(0, (parseFloat(paidAmount) || 0) - result.total) : 0
+            },
+            { silent: printSilent }
+          )
           .catch((e) => {
             console.error('[PRINT FLOW] Printing failed:', e)
             triggerCustomAlert(
-              `تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${getFriendlyErrorMessage(e)}\nيرجى التحقق من اتصال الطابعة والتعريف.`
+              `تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${e.message}\nيرجى التحقق من اتصال الطابعة والتعريف.`
             )
           })
       }
@@ -783,72 +574,76 @@ export function usePOSController({
       console.error('[CHECKOUT ERROR]', e)
       playSound('error')
       const errText = String(e?.message || e || '')
-      if (
-        errText.includes('وردية مغلقة') ||
-        errText.includes('closed') ||
-        errText.includes('prevent_sale_on_closed_shift')
-      ) {
+      if (errText.includes('وردية مغلقة') || errText.includes('الوردية مغلقة')) {
         triggerCustomAlert(
           'فشل البيع: لا يمكن تسجيل المعاملة لأن الوردية مغلقة.\nيرجى فتح وردية جديدة للبدء.'
         )
-      } else if (errText.includes('stock') || errText.includes('المخزون')) {
+      } else if (errText.includes('المخزون')) {
         triggerCustomAlert(
           'فشل البيع: رصيد المخزون لا يكفي لأحد الأصناف في السلة.\nيرجى مراجعة الكميات المطلوبة أو تحديث المخزون.'
         )
-      } else if (errText.includes('busy') || errText.includes('locked')) {
+      } else if (e.status === 503) {
         triggerCustomAlert(
-          'فشلت المعاملة: قاعدة البيانات مشغولة مؤقتاً.\nيرجى إعادة المحاولة فوراً.'
+          `فشلت المعاملة: ${errText}\nلم يتم تسجيل الفاتورة. أعد المحاولة بعد عودة الاتصال.`
         )
       } else {
-        const friendly = getFriendlyErrorMessage(e)
         triggerCustomAlert(
-          `فشلت المعاملة أثناء حفظ الفاتورة!\nالسبب: ${friendly || errText.slice(0, 120)}\nيرجى المحاولة مرة أخرى.`
+          `فشلت المعاملة أثناء حفظ الفاتورة!\nالسبب: ${errText.slice(0, 200)}\nيرجى المحاولة مرة أخرى.`
         )
       }
+    } finally {
+      checkoutPendingRef.current = null
     }
   }
 
-  // Reprint Sale
+  // Reprint Sale (K-31: the legacy reprint passed the sale under the wrong key and printed no header data)
   const handleReprintSale = async (saleId) => {
     try {
-      const sale = await executeQuery(`
-        SELECT s.*, u.username 
-        FROM sales s
-        JOIN shifts sh ON s.shift_id = sh.id
-        JOIN users u ON sh.user_id = u.id
-        WHERE s.id = ${saleId} LIMIT 1;
-      `)
-      if (!sale || sale.length === 0) {
-        triggerCustomAlert('لم يتم العثور على الفاتورة!')
-        return
-      }
-      const s = sale[0]
-      const items = await executeQuery(`
-        SELECT si.*, p.name 
-        FROM sale_items si
-        LEFT JOIN products p ON si.product_barcode = p.barcode
-        WHERE si.sale_id = ${saleId};
-      `)
-
+      const { sale: s, items } = await api('sales.reprintData', { saleId })
       const displaySaleId = parseInt(s.id) > 0 ? ((parseInt(s.id) - 1) % 10000) + 1 : '?'
-      const receiptHtml = generateReprintHtml({
-        sale: {
-          ...s,
-          id: displaySaleId
-        },
-        items: items
+      const when = s.timestamp ? new Date(String(s.timestamp).replace(' ', 'T')) : null
+      const lines = items.map((item) => {
+        const retQty = item.returned_qty || 0
+        const qty = item.quantity || 1
+        const isItemReturned = retQty >= qty
+        const isItemPartReturned = retQty > 0 && !isItemReturned
+        let name = item.product_name || item.name || `باركود ${item.product_barcode || ''}`
+        if (isItemReturned) name = `${name} (مرتجع)`
+        else if (isItemPartReturned) name = `${name} (مرتجع ${retQty})`
+        return {
+          name,
+          barcode: item.product_barcode,
+          qty: isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty,
+          price: Number(item.unit_price) || 0,
+          total: Number(item.total_price) || 0
+        }
       })
-
-      if (!noPrint && window.api && window.api.printer && window.api.printer.print) {
+      const total = Number(s.total_amount) || 0
+      const data = {
+        saleId: displaySaleId,
+        banner: total === 0 ? '*** فاتورة مرتجعة بالكامل ***' : '*** نسخة معاد طباعتها ***',
+        date: when ? when.toLocaleDateString('ar-EG') : '',
+        time: when ? when.toLocaleTimeString('ar-EG') : '',
+        cashier: s.username,
+        paymentType: s.payment_type || 'نقدي',
+        client: { name: s.client_name || '' },
+        items: lines,
+        subTotal: Number(s.original_amount) || total,
+        discount: Number(s.discount) || 0,
+        total,
+        paid: total,
+        change: 0
+      }
+      if (!noPrint && window.api && window.api.printer && window.api.printer.printSale) {
         window.api.printer
-          .print(receiptHtml, { silent: printSilent })
+          .printSale(data, { silent: printSilent })
           .then(() => console.log('Historical receipt printed successfully.'))
-          .catch((e) => triggerCustomAlert(`فشلت الطباعة: ${getFriendlyErrorMessage(e)}`))
+          .catch((e) => triggerCustomAlert(`فشلت الطباعة: ${e.message}`))
       } else {
-        console.log(receiptHtml)
+        console.log(data)
       }
     } catch (e) {
-      triggerCustomAlert('حدث خطأ أثناء محاولة إعادة طباعة الفاتورة: ' + getFriendlyErrorMessage(e))
+      triggerCustomAlert('حدث خطأ أثناء محاولة إعادة طباعة الفاتورة: ' + e.message)
     }
   }
 
@@ -861,11 +656,7 @@ export function usePOSController({
       return
     }
     try {
-      const results = await executeQuery(`
-        SELECT * FROM clients 
-        WHERE name LIKE '%${escapeSql(val)}%' OR phone LIKE '%${escapeSql(val)}%' 
-        LIMIT 5;
-      `)
+      const results = await api('pos.searchClients', { term: val })
       setClientSearchResults(results)
     } catch (e) {
       console.error(e)
@@ -880,11 +671,7 @@ export function usePOSController({
       return
     }
     try {
-      const results = await executeQuery(`
-        SELECT * FROM clients 
-        WHERE phone LIKE '%${escapeSql(val)}%' OR name LIKE '%${escapeSql(val)}%' 
-        LIMIT 5;
-      `)
+      const results = await api('pos.searchClients', { term: val })
       setClientSearchResults(results)
     } catch (e) {
       console.error(e)

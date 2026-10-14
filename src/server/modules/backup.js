@@ -10,6 +10,7 @@ const { listMigrations } = require('../db/migrate')
 const TABLES = [
   'roles',
   'role_permissions',
+  'permission_catalog',
   'users',
   'products',
   'clients',

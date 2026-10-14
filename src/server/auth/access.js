@@ -1,6 +1,6 @@
 'use strict'
 // Roles, permissions and their invariants. All checks run in the service, never in the renderer.
-const { SYSTEM_ROLES, LEGACY_ROLE_MAP, KEYS, ROLE_TO_LEGACY } = require('./permissions')
+const { SYSTEM_ROLES, LEGACY_ROLE_MAP, KEYS, ALL, ROLE_TO_LEGACY } = require('./permissions')
 
 /**
  * Idempotent start-up step:
@@ -37,6 +37,26 @@ async function ensureAccessControl(client) {
       }
     }
   }
+  // Newly introduced permission keys: grant them once to built-in roles that include them by default.
+  const known = new Set(
+    (await client.query('SELECT key FROM permission_catalog')).rows.map((r) => r.key)
+  )
+  const firstRun = known.size === 0
+  const fresh = ALL.filter((k) => !known.has(k))
+  if (!firstRun) {
+    for (const r of SYSTEM_ROLES) {
+      for (const p of fresh.filter((k) => r.permissions.includes(k))) {
+        await client.query(
+          'INSERT INTO role_permissions (role_id, permission) SELECT id, $2 FROM roles WHERE key = $1 ON CONFLICT DO NOTHING',
+          [r.key, p]
+        )
+      }
+    }
+  }
+  for (const k of fresh)
+    await client.query('INSERT INTO permission_catalog (key) VALUES ($1) ON CONFLICT DO NOTHING', [
+      k
+    ])
   const unmapped = await client.query('SELECT id, role FROM users WHERE role_id IS NULL')
   for (const u of unmapped.rows) {
     const key = LEGACY_ROLE_MAP[u.role] || 'cashier' // unknown legacy text → least privilege

@@ -83,13 +83,15 @@ async function start() {
   setInterval(() => {}, 1 << 30) // stay alive
 }
 
-if (process.argv[2] === 'url') {
-  console.log(url(process.argv[3]))
-} else {
-  start().catch((e) => {
-    console.error('[pg-dev] failed:', e.message)
-    process.exit(1)
-  })
+if (require.main === module) {
+  if (process.argv[2] === 'url') {
+    console.log(url(process.argv[3]))
+  } else {
+    start().catch((e) => {
+      console.error('[pg-dev] failed:', e && e.message ? e.message : e)
+      process.exit(1)
+    })
+  }
 }
 
 module.exports = { url }
