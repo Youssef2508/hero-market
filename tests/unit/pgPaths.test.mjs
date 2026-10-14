@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { isToolSafePath, runnablePgsqlRoot } from '../../src/main/pgPaths.js'
+import { isToolSafePath, runnablePgsqlRoot, pgsqlStamp } from '../../src/main/pgPaths.js'
 
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), name))
 
@@ -36,6 +36,27 @@ test('non-ASCII install: the tree is copied once to the ASCII cache; an interrup
     runnablePgsqlRoot(src, { cacheRoot, stamp: '1.3.0' })
     assert.equal(fs.readFileSync(path.join(out, 'bin', 'pg_ctl.exe'), 'utf8'), 'x')
     assert.throws(() => runnablePgsqlRoot(src, { cacheRoot: path.join(base, 'كاش'), stamp: '1' }))
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('the copy is keyed by the server binary: new binaries under the same app version get a new copy', () => {
+  const base = tmp('hm-pg-')
+  const src = path.join(base, 'محمد user', 'pgsql')
+  fs.mkdirSync(path.join(src, 'bin'), { recursive: true })
+  fs.writeFileSync(path.join(src, 'bin', 'postgres.exe'), 'postgres 17.6')
+  const cacheRoot = path.join(base, 'cache')
+  try {
+    const first = runnablePgsqlRoot(src, { cacheRoot, stamp: pgsqlStamp(src, '1.3.0') })
+    assert.equal(pgsqlStamp(src, '1.3.0'), pgsqlStamp(src, '1.3.0'))
+    fs.writeFileSync(path.join(src, 'bin', 'postgres.exe'), 'postgres 17.10')
+    const second = runnablePgsqlRoot(src, { cacheRoot, stamp: pgsqlStamp(src, '1.3.0') })
+    assert.notEqual(second, first)
+    assert.equal(
+      fs.readFileSync(path.join(second, 'bin', 'postgres.exe'), 'utf8'),
+      'postgres 17.10'
+    )
   } finally {
     fs.rmSync(base, { recursive: true, force: true })
   }

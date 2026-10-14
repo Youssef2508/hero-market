@@ -12,7 +12,7 @@ import fs from 'fs'
 import net from 'net'
 import crypto from 'crypto'
 import pg from 'pg'
-import { isToolSafePath, asciiMachineDir, runnablePgsqlRoot } from './pgPaths'
+import { isToolSafePath, asciiMachineDir, runnablePgsqlRoot, pgsqlStamp } from './pgPaths'
 
 const DB_NAME = 'heromarket'
 const DB_USER = 'heromarket'
@@ -56,7 +56,7 @@ function binDir() {
     if (!fs.existsSync(join(src, 'bin'))) throw new Error(`PostgreSQL binaries not found in ${src}`)
     runnableRoot = runnablePgsqlRoot(src, {
       cacheRoot: asciiMachineDir('runtime'),
-      stamp: app.getVersion()
+      stamp: isToolSafePath(src) ? app.getVersion() : pgsqlStamp(src, app.getVersion())
     })
   }
   return join(runnableRoot, 'bin')

@@ -4,6 +4,7 @@
 // page. A path with characters outside it – e.g. a per-user install under C:\Users\محمد\… – arrives
 // as "????" and the tools fail ("program postgres is needed by initdb but was not found"). Such
 // paths are replaced by ASCII-only ones: the binaries are copied once to a cache folder.
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -20,8 +21,8 @@ export function asciiMachineDir(...parts) {
 
 /**
  * Return a directory the PostgreSQL tools can run from. `pgsqlRoot` holds bin/, lib/ and share/.
- * When its path is not tool-safe, the tree is copied to `cacheRoot` (once per `stamp`, e.g. the
- * app version) and that copy is returned. A marker file is written last, so an interrupted copy is
+ * When its path is not tool-safe, the tree is copied to `cacheRoot` (once per `stamp`, see
+ * pgsqlStamp) and that copy is returned. A marker file is written last, so an interrupted copy is
  * redone on the next start instead of being used half-finished.
  */
 export function runnablePgsqlRoot(pgsqlRoot, { cacheRoot, stamp }) {
@@ -38,4 +39,19 @@ export function runnablePgsqlRoot(pgsqlRoot, { cacheRoot, stamp }) {
     fs.writeFileSync(marker, `${pgsqlRoot}\n`)
   }
   return target
+}
+
+/**
+ * Copy key for runnablePgsqlRoot: the app version plus a hash of the server binary, so a release
+ * that ships different PostgreSQL binaries never reuses an older copy, even if the version number
+ * was not raised. Reads the binary (about 10 MB): call it only when a copy is needed.
+ */
+export function pgsqlStamp(pgsqlRoot, appVersion) {
+  const exe = ['postgres.exe', 'postgres']
+    .map((f) => path.join(pgsqlRoot, 'bin', f))
+    .find((f) => fs.existsSync(f))
+  const digest = exe
+    ? crypto.createHash('sha256').update(fs.readFileSync(exe)).digest('hex').slice(0, 12)
+    : 'nobin'
+  return `${appVersion}-${digest}`
 }
