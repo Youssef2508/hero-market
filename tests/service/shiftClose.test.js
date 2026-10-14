@@ -184,3 +184,32 @@ test('K-24: partial payment counts only the upfront cash; discounts count as sol
   assert.equal(closed.expected, 190)
   assert.equal(closed.difference, 0)
 })
+
+test('K-36: change kept as customer credit is counted as drawer cash; wallet deposits are not', async (t) => {
+  if (!requireDb(t)) return
+  const shift = ok(await svc.call('shifts.open', { startingCash: 0 }, admin))
+  // Cash sale of 80, customer pays 100 and keeps 20 as credit: the drawer holds 100.
+  const sale = ok(
+    await sell(shift.id, [{ barcode: 'P80', qty: 1, unitPrice: 80 }], 'نقدي', {
+      paidAmount: 100,
+      depositChange: 20,
+      client: { id: null, name: 'عميل رصيد', phone: '01000000003', address: '' }
+    })
+  )
+  assert.equal(sale.deposit, 20)
+  const client = (await q('SELECT debt_balance FROM clients WHERE id = $1', [sale.clientId]))[0]
+  assert.equal(client.debt_balance, -20, 'customer holds 20 credit')
+  // Wallet sale with an over-payment kept as credit: no drawer cash.
+  ok(
+    await sell(shift.id, [{ barcode: 'P30', qty: 1, unitPrice: 30 }], 'فودافون كاش', {
+      paidAmount: 40,
+      depositChange: 10,
+      client: { id: sale.clientId, name: 'عميل رصيد', phone: '01000000003', address: '' }
+    })
+  )
+  const live = ok(await svc.call('shifts.liveSummary', { shiftId: shift.id }, admin))
+  assert.equal(live.drawer.expected, 100)
+  const audit = ok(await svc.call('shifts.auditPreview', { shiftId: shift.id }, admin))
+  const closed = ok(await svc.call('shifts.close', { shiftId: shift.id, actualCash: 100 }, admin))
+  assert.deepEqual([audit.expected, closed.expected, closed.difference], [100, 100, 0])
+})

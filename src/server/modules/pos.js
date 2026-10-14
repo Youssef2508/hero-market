@@ -11,6 +11,7 @@ const { maskCost } = require('./catalog')
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
+const CASH_TENDER_TYPES = ['نقدي', 'دفع جزئي']
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 
@@ -359,6 +360,14 @@ module.exports = function posModule(app) {
               clientId
             ])
             await ledger('payment', deposit, `حفظ الباقي نقدي رصيد في فاتورة رقم #${saleId}`)
+            // K-36: the kept change is cash that stays in the drawer. Wallet payments never
+            // reach the drawer, so only cash tenders record it.
+            if (CASH_TENDER_TYPES.includes(b.paymentType)) {
+              await db.query(
+                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
+                [shift.id, deposit, `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`]
+              )
+            }
           }
         }
         await ctx.audit(
