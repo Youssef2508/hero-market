@@ -2,7 +2,7 @@
 
 Update this file at every milestone. When resuming, trust this file **and** `git status` / `git log` over memory.
 
-_Last updated: 2026-10-14 (stage 2 complete, PR #2 open)._
+_Last updated: 2026-10-15 (stage 3 started: closeout review, owner decision briefs, independent technical gaps)._
 
 ## Where things are
 
@@ -11,6 +11,14 @@ _Last updated: 2026-10-14 (stage 2 complete, PR #2 open)._
 - **Remotes:** `origin` → `https://github.com/Youssef2508/hero-market.git` (push here); `upstream` → the original open-source code base (push disabled). `gh` defaults to upstream: always pass `--repo Youssef2508/hero-market`.
 - **Databases (development):** `npm run pg:dev` cluster in `.pgdata/` (`heromarket`, `heromarket_test`, `heromarket_qa`, `heromarket_installed` = parity copy of the installed store). QA of local mode used scratch folders via `HEROMARKET_USER_DATA`.
 - **Installed earlier version on this machine:** its SQLite file under `%APPDATA%` (pre-PostgreSQL data folder). Read only – never modify.
+
+## Verified 2026-10-15 (before stage 3 work)
+
+- Working tree clean; `feature/postgres-service` = `origin` at `1f22e2d`.
+- PR #1 `feature/heromarket-ui-redesign` → `main` (7 commits, head `f07679a`, CI green on that head, mergeable, based on current `main`).
+- PR #2 `feature/postgres-service` → `feature/heromarket-ui-redesign` (10 commits, head `1f22e2d`, CI green on that head – push run, because the workflow's `pull_request` trigger only covers `main`; mergeable).
+- Merge order: PR #1 into `main`, then retarget PR #2 to `main` (GitHub does this automatically when the base branch is deleted after merging, otherwise change the base) and merge after its CI re-runs as a pull_request.
+- Owner decision briefs: [OWNER_DECISIONS.md](OWNER_DECISIONS.md) (K-24 measured: dialogs show 610 / 670 where the saved value and the drawer are 650).
 
 ## Done (stage 2)
 
