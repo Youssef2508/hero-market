@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { isToolSafePath, runnablePgsqlRoot, pgsqlStamp } from '../../src/main/pgPaths.js'
+import { isToolSafePath, runnablePgsqlRoot, pgsqlStamp, copyTree } from '../../src/main/pgPaths.js'
 
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), name))
 
@@ -75,7 +75,7 @@ test('Windows: the real initdb fails from an Arabic path and works from the ASCI
   const base = tmp('hm-pgreal-')
   const src = path.join(base, 'محمد', 'pgsql')
   try {
-    fs.cpSync(native, src, { recursive: true })
+    copyTree(native, src) // not fs.cpSync: Node 22 cannot copy into a non-ASCII path on Windows
     const pw = path.join(base, 'pw')
     fs.writeFileSync(pw, 'secret')
     const init = (root, dir) =>

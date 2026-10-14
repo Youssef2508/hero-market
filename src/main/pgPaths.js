@@ -19,6 +19,19 @@ export function asciiMachineDir(...parts) {
   return path.join(programData, 'HeroMarket', ...parts)
 }
 
+// Plain recursive copy. fs.cpSync is avoided on purpose: on Node 22 for Windows its native
+// implementation aborts the process (0xC0000409) for source paths with non-ASCII characters –
+// exactly the paths this module exists for.
+export function copyTree(from, to) {
+  fs.mkdirSync(to, { recursive: true })
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name)
+    const dst = path.join(to, entry.name)
+    if (entry.isDirectory()) copyTree(src, dst)
+    else fs.copyFileSync(src, dst)
+  }
+}
+
 /**
  * Return a directory the PostgreSQL tools can run from. `pgsqlRoot` holds bin/, lib/ and share/.
  * When its path is not tool-safe, the tree is copied to `cacheRoot` (once per `stamp`, see
@@ -35,7 +48,7 @@ export function runnablePgsqlRoot(pgsqlRoot, { cacheRoot, stamp }) {
   if (!fs.existsSync(marker)) {
     fs.rmSync(target, { recursive: true, force: true })
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.cpSync(pgsqlRoot, target, { recursive: true })
+    copyTree(pgsqlRoot, target)
     fs.writeFileSync(marker, `${pgsqlRoot}\n`)
   }
   return target
