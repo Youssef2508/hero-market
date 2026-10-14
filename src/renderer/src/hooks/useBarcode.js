@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
+import { createScannerState, endScan, recordScannerKey } from './scannerTiming'
 
 /**
  * Custom hook to handle global barcode scanner keyboard events.
- * Distinguishes high-speed hardware scanning from normal manual typing (diff <= 35ms).
+ * Distinguishes high-speed hardware scanning from normal manual typing (see scannerTiming.js).
  * Automatically handles focus redirection and character buffering.
  */
 export function useBarcode({
@@ -23,11 +24,7 @@ export function useBarcode({
   setAdminSearch,
   setNewProduct
 }) {
-  const scannerStateRef = useRef({
-    lastKeyTime: 0,
-    lastKeyChar: '',
-    isScanningActive: false
-  })
+  const scannerStateRef = useRef(createScannerState())
 
   // Auto-focus barcode scanner on POS view
   useEffect(() => {
@@ -55,6 +52,9 @@ export function useBarcode({
   // Global scanner active focus recovery & overwrite
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
+      // Scanners finish with Enter (or Tab): the next fast pair starts a new scan
+      if (e.key === 'Enter' || e.key === 'Tab') endScan(scannerStateRef.current)
+
       // Ignore if screen is locked or shift modals/alerts are open
       if (
         isLocked ||
@@ -72,12 +72,13 @@ export function useBarcode({
         return
       }
 
-      const currentTime = Date.now()
-      const state = scannerStateRef.current
-      const diff = currentTime - state.lastKeyTime
-      state.lastKeyTime = currentTime
-      const prevChar = state.lastKeyChar
-      state.lastKeyChar = e.key
+      // Event time (from the OS input event), not handler time: a busy renderer must not make a
+      // scanner look like manual typing
+      const { isScanner, startsScan, replacesField, prevChar } = recordScannerKey(
+        scannerStateRef.current,
+        e.key,
+        e.timeStamp || performance.now()
+      )
 
       // Determine correct barcode input based on current view/modals
       let targetInput = null
@@ -90,9 +91,6 @@ export function useBarcode({
       }
 
       if (!targetInput) return
-
-      // Barcode scanner typed characters very quickly (diff <= 35ms)
-      const isScanner = diff <= 35
 
       const updateTargetValue = (val) => {
         flushSync(() => {
@@ -114,7 +112,7 @@ export function useBarcode({
           const prevActive = document.activeElement
           targetInput.focus()
 
-          if (state.isScanningActive) {
+          if (!startsScan) {
             // We are already scanning. Just restore focus and put cursor at the end.
             targetInput.setSelectionRange(targetInput.value.length, targetInput.value.length)
           } else {
@@ -156,7 +154,6 @@ export function useBarcode({
 
             // Set the first two characters
             updateTargetValue(prevChar + e.key)
-            state.isScanningActive = true
           }
 
           e.preventDefault()
@@ -165,18 +162,13 @@ export function useBarcode({
         }
 
         // Case B: Scanner typing and target input is already focused, but this is a NEW scan
-        if (!state.isScanningActive) {
-          state.isScanningActive = true
+        // after Enter or a pause: replace leftover text. Digits typed in the same run are kept.
+        if (replacesField) {
           updateTargetValue(prevChar + e.key)
 
           e.preventDefault()
           e.stopPropagation()
           return
-        }
-      } else {
-        // Slow keypress (human typing). Reset scanning active flag if diff is large (e.g. > 100ms)
-        if (diff > 100) {
-          state.isScanningActive = false
         }
       }
     }

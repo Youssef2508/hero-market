@@ -64,8 +64,7 @@ On first start the app:
 
 1. Picks a free port from 54330 and a random 24-byte password, and saves both in `heromarket.json` **before** running `initdb`. If the first start is interrupted, the same credentials finish the job later.
 2. Runs `initdb` (UTF-8, `C` locale, scram-sha-256) in `%APPDATA%\HeroMarket\pgdata`. If the Windows profile path contains characters outside ASCII (for example an Arabic user name), it uses `%ProgramData%\HeroMarket\store-<hash>` instead. The PostgreSQL tools cannot open such paths: Windows passes them in the ANSI code page.
-   The PostgreSQL tools themselves also need an ASCII path: if the app is installed under a non-ASCII profile (default per-user install), they are copied once to `%ProgramData%HeroMarket
-untimepgsql-<version>` and run from there (`src/main/pgPaths.js`, K-34).
+   The PostgreSQL tools themselves also need an ASCII path: if the app is installed under a non-ASCII profile (default per-user install), they are copied once to `%ProgramData%\HeroMarket\runtime\pgsql-<version>` and run from there (`src/main/pgPaths.js`, K-34).
 3. Starts the server with `pg_ctl start -w`, listening on `127.0.0.1` only. `pg_ctl` drops administrator rights itself, so this works on admin accounts.
 4. Creates the `heromarket` database, runs the migrations, imports the earlier version's SQLite data once (see [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md)), and starts the service in-process.
 
