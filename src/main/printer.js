@@ -5,6 +5,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { getPrintSettings } from './printSettings'
 import { buildReceiptText } from '../shared/legacyReceiptText.mjs'
+import { REPORTS } from '../shared/reportLines.mjs'
 import {
   buildReceiptLines,
   buildReceiptHtml,
@@ -133,6 +134,22 @@ function templateFor(settings, paper) {
 }
 
 export function registerSalePrinting({ callOperation }) {
+  // Shift-close, Momkn and wallets reports, laid out in the printer's line language (K-32).
+  ipcMain.handle('print-report', async (_event, kind, data) => {
+    const build = Object.hasOwn(REPORTS, kind) ? REPORTS[kind] : null
+    if (!build || !data || typeof data !== 'object') throw new Error('Unknown report')
+    const settings = await getPrintSettings(callOperation)
+    const paper = settings.paper === '58mm' ? '58mm' : '80mm'
+    const printedAt = new Date().toLocaleString('en-GB', { hour12: false })
+    const lines = build(data, { store: settings.store, paper, printedAt })
+    return runPrintScript(lines, {
+      printerName: settings.printerName,
+      fontSize: 8,
+      paper,
+      templateLayout: true
+    })
+  })
+
   // Thermal (58/80 mm) printing of a sale with the active template.
   ipcMain.handle('print-sale', async (_event, data, opts = {}) => {
     const settings = await getPrintSettings(callOperation)

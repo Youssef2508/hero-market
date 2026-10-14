@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { normalizeDigits, playSound, round2 } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
-import { generateGrandShiftReportHtml } from '../lib/printTemplates'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
@@ -201,7 +200,7 @@ export function usePOSController({
           const shiftRow = closed.shift || currentShift
 
           // Trigger print report automatically!
-          if (window.api && window.api.printer && window.api.printer.print) {
+          if (window.api?.printer?.printReport) {
             try {
               const momknSummary = {
                 expectedDigitalBalance:
@@ -219,18 +218,17 @@ export function usePOSController({
                 totalCommission: Number(live.mm_commission) || 0,
                 startBalance: shiftRow.vfcash_start_balance || 0
               }
-              const html = generateGrandShiftReportHtml({
+              await window.api.printer.printReport('shift', {
                 shift: { ...shiftRow, username: currentUser?.username },
-                salesTotal: closed.figures.cashSales,
-                repayTotal: closed.figures.inflow,
-                refundTotal: closed.figures.outflow,
-                momknSummary,
-                mobileMoneySummary,
-                actualCash: closed.actual,
-                expectedCash: closed.expected,
-                difference: closed.difference
+                cashSales: closed.figures.cashSales,
+                inflow: closed.figures.inflow,
+                outflow: closed.figures.outflow,
+                expected: closed.expected,
+                actual: closed.actual,
+                difference: closed.difference,
+                momkn: momknSummary,
+                wallets: mobileMoneySummary
               })
-              await window.api.printer.print(html)
             } catch (printErr) {
               console.error('Failed to print grand shift report:', printErr)
             }

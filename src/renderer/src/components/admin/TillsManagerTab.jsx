@@ -26,7 +26,6 @@ import { useMomknTill } from '../../hooks/useMomknTill'
 import { useMobileMoneyTill } from '../../hooks/useMobileMoneyTill'
 import MomknOperationModal from '../modals/MomknOperationModal'
 import MobileMoneyOperationModal from '../modals/MobileMoneyOperationModal'
-import { generateMomknReportHtml, generateMobileMoneyReportHtml } from '../../lib/printTemplates'
 
 // Helper for ultra-safe currency formatting
 const formatVal = (val, dec = 2) => {
@@ -121,19 +120,17 @@ const TillsManagerTab = ({
       triggerCustomAlert('طباعة التقارير مخصصة للمدير فقط!')
       return
     }
-    if (!window.api || !window.api.printer || !window.api.printer.print) {
+    if (!window.api?.printer?.printReport) {
       triggerCustomAlert('طابعة الفواتير غير متصلة أو غير معرفة!')
       return
     }
 
-    const html = generateMomknReportHtml({
-      shift: { ...currentShift, username: currentUser.username },
-      transactions: momkn.transactions,
-      summary: momkn.summary
-    })
-
     window.api.printer
-      .print(html)
+      .printReport('momkn', {
+        shift: { ...currentShift, username: currentUser.username },
+        transactions: momkn.transactions,
+        summary: momkn.summary
+      })
       .then(() => triggerCustomAlert('تم إرسال تقرير ممكن للطابعة بنجاح.'))
       .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }
@@ -143,19 +140,17 @@ const TillsManagerTab = ({
       triggerCustomAlert('طباعة التقارير مخصصة للمدير فقط!')
       return
     }
-    if (!window.api || !window.api.printer || !window.api.printer.print) {
+    if (!window.api?.printer?.printReport) {
       triggerCustomAlert('طابعة الفواتير غير متصلة أو غير معرفة!')
       return
     }
 
-    const html = generateMobileMoneyReportHtml({
-      shift: { ...currentShift, username: currentUser.username },
-      transactions: mobileMoney.rawTransactions, // rawTransactions bypasses platformFilter
-      summary: mobileMoney.summary
-    })
-
     window.api.printer
-      .print(html)
+      .printReport('wallets', {
+        shift: { ...currentShift, username: currentUser.username },
+        transactions: mobileMoney.rawTransactions, // rawTransactions bypasses platformFilter
+        summary: mobileMoney.summary
+      })
       .then(() => triggerCustomAlert('تم إرسال تقرير المحافظ للطابعة بنجاح.'))
       .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }

@@ -14,8 +14,10 @@ const api = {
     restore: () => ipcRenderer.invoke('backup:restore')
   },
   printer: {
-    // Legacy HTML documents (shift and till reports)
+    // Legacy HTML sale receipts (reprint of old invoices)
     print: (htmlContent, options) => ipcRenderer.invoke('print-receipt', htmlContent, options),
+    // Shift-close, Momkn and wallets reports: kind = 'shift' | 'momkn' | 'wallets'
+    printReport: (kind, data) => ipcRenderer.invoke('print-report', kind, data),
     // Sale receipts through the active receipt template
     printSale: (data, options) => ipcRenderer.invoke('print-sale', data, options),
     saleToPdf: (data, config) => ipcRenderer.invoke('sale-pdf', data, config),
