@@ -1,5 +1,19 @@
 # Owner Decisions
 
+## Stage 4 decisions (owner, 2026-10-14) – approved, not to be asked again
+
+- **Deployment:** one cashier PC with its local database; no store server or LAN. The PC is the authority for in-store operations.
+- **Cloud:** owner only, with mandatory two-factor authentication; no staff accounts. Remote writes are limited to supplier invoices, stock receipts, product edits and price edits, queued while the shop is offline and never reported as applied before the PC applies them.
+- **Conflicts:** same-field edits are detected and shown; movements are never overwritten.
+- **K-24:** option 1 (done). **K-10:** cart edits never need approval. **K-36:** fix (done).
+- **Negative stock:** allowed for all products, with alerts and reports (done).
+- **Costing:** moving average; the negative-stock rule is defined and tested (done).
+- **Quantities:** kilograms with three decimals; no cash rounding of totals.
+- **Returns:** cashiers may return with supervisor approval and a mandatory reason.
+- **Discounts:** role limits; supervisor approval above them.
+- **Shift differences:** supervisor acknowledgement above EGP 50.
+- **Hosting:** the cheapest reliable option; no paid resource without explicit approval (recommendation in STAGE4_ARCHITECTURE_REVIEW.md §10).
+
 Two business policies are undecided. Current behaviour stays unchanged until the owner answers. Evidence was gathered on 2026-10-14 from the code and from a scripted scenario on a throw-away database (`k24.js` in the QA notes).
 
 ## K-24 / G-27 – Expected cash when closing a shift

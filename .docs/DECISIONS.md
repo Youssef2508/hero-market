@@ -275,3 +275,48 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Run the main till in **local mode** on the server PC: it keeps selling through LAN outages.
   - Put the server and switch on a UPS.
   - Checkout's idempotency already makes "retry after the link comes back" safe.
+
+## D-041 Stock movement ledger, negative stock and moving-average cost (stage 4, phase 1)
+
+- **Decision**:
+  - Stock is the sum of immutable `stock_movements`. `products.stock_qty` is a cached total maintained only by a trigger on the movements; a guard trigger refuses any other stock write.
+  - Negative stock is allowed (owner decision).
+  - Costing is moving average with a defined rule for zero or negative stock: the receipt cost becomes the average and earlier sales are not revalued (STAGE4_ARCHITECTURE_REVIEW.md §7.2).
+  - Product-form stock edits and counts post the difference against the stock the user saw (K-37). Purchase invoices can receive item lines into stock (K-38).
+- **Rejected**:
+  - Keeping `stock_qty` writable with application discipline only: K-37 showed how easily an absolute write slips in.
+  - FIFO or standard costing: the owner chose moving average; FIFO needs lot tracking the store does not do.
+- **Consequences**:
+  - Every stock change is explainable and synchronisable.
+  - Migration 0004 is forward-only; rollback means restoring the pre-upgrade backup.
+  - Tests must seed stock through movements (`tests/service/helpers.js#seedProducts`).
+
+## D-042 Single-PC deployment: one writer, row-change outbox, owner command queue (stage 4)
+
+- **Context**: The owner chose one cashier PC and an owner-only cloud. Revision 1 of the stage 4 review assumed two peers merging business events.
+- **Decision**:
+  - The PC is the only writer of store data.
+  - Store → cloud: triggers capture row changes into a transactional outbox with a store-wide row version. The cloud applies versioned idempotent upserts. Rows are acknowledged after the cloud commits, and per-table checksums are compared after each sync.
+  - Cloud → store: the owner's operations are commands with base values. The PC applies each exactly once (`applied_commands`), detects same-field conflicts at apply time, and reports results back through the outbox.
+  - A restored backup starts a new epoch and first recovers its own newer rows from the cloud.
+- **Rejected**:
+  - Two-way business-event merge (unnecessary with one writer).
+  - Database-level two-way replication (row overwrites).
+  - Cloud-authoritative designs (the store would depend on the internet).
+- **Consequences**:
+  - No global ids are needed; invoice numbers stay as they are.
+  - Remote writes are limited to supplier invoices, stock receipts, product edits and price edits.
+  - Anything involving drawer cash, sales, returns, shifts or counts stays local.
+
+## D-043 Cloud hosting recommendation: Google Cloud free-tier e2-micro, Hetzner fallback (pending owner approval)
+
+- **Context**:
+  - The owner treats cost as a hard constraint and wants no silent stops.
+  - Free tiers that sleep, pause, expire or reclaim idle machines (Oracle Always Free, Supabase, Neon, Render) can stop synchronisation silently, so they are rejected.
+- **Decision**:
+  - Recommend one Google Cloud free-tier e2-micro VM running the service and PostgreSQL: expected cost 0 USD, possibly about 3.65 USD/month for its IPv4 address; to be confirmed in billing.
+  - Fall back to the cheapest paid VPS, about 4–6 EUR/month.
+  - The cloud must be rebuildable from the PC.
+- **Status**:
+  - Nothing created.
+  - The owner must approve, and must create the billing account with their own card.
