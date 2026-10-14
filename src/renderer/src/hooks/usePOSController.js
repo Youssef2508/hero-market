@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { normalizeDigits, playSound, round2 } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
+import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
@@ -458,7 +459,9 @@ export function usePOSController({
 
   // Checkout: the service validates, prices and commits the sale in one transaction.
   // A pending flag + per-attempt idempotency key prevent double sales from repeated F1/clicks.
+  // An attempt whose outcome is unknown (reply lost) is retried under the same key (lib/checkoutRetry).
   const checkoutPendingRef = useRef(null)
+  const unresolvedCheckoutRef = useRef(null)
   const handleCheckout = async () => {
     if (cart.length === 0) {
       playSound('error')
@@ -475,13 +478,12 @@ export function usePOSController({
       return
     }
     if (checkoutPendingRef.current) return
-    const clientRef = newClientRef()
-    checkoutPendingRef.current = clientRef
+    checkoutPendingRef.current = true
+    let attempt = null
 
     try {
       const finalDiscount = parseFloat(discount) || 0
-      const result = await api('pos.checkout', {
-        clientRef,
+      const payload = {
         shiftId: currentShift.id,
         items: cart.map((item) => ({
           barcode: item.barcode,
@@ -502,7 +504,25 @@ export function usePOSController({
               address: clientAddress || ''
             }
           : null
-      })
+      }
+      const fingerprint = checkoutFingerprint(payload)
+      const plan = planCheckout(unresolvedCheckoutRef.current, fingerprint)
+      if (plan.checkFirst) {
+        // The cart changed after an attempt whose reply was lost: find out whether it was recorded.
+        const status = await api('pos.checkoutStatus', { clientRef: plan.checkFirst })
+        unresolvedCheckoutRef.current = null
+        if (status.recorded) {
+          playSound('error')
+          triggerCustomAlert(
+            `الفاتورة السابقة رقم ${status.saleId} (الإجمالي ${status.total}) سُجِّلت بالفعل قبل انقطاع الاتصال، والسلة الحالية مختلفة عنها.\nراجع الفاتورة رقم ${status.saleId} في الفواتير قبل البيع مرة أخرى.`,
+            'تنبيه الفاتورة'
+          )
+          return
+        }
+      }
+      attempt = { clientRef: plan.clientRef || newClientRef(), fingerprint }
+      const result = await api('pos.checkout', { clientRef: attempt.clientRef, ...payload })
+      unresolvedCheckoutRef.current = null
 
       const displaySaleId = parseInt(result.saleId) > 0 ? result.saleId : '—'
       playSound('chime')
@@ -544,7 +564,11 @@ export function usePOSController({
           })
       }
 
-      setToastMessage('تم إنهاء الفاتورة بنجاح!')
+      setToastMessage(
+        result.duplicate
+          ? `الفاتورة رقم ${displaySaleId} كانت قد سُجِّلت بالفعل، ولم تُسجَّل مرة ثانية.`
+          : 'تم إنهاء الفاتورة بنجاح!'
+      )
       setTimeout(() => setToastMessage(null), 3000)
       setCart([])
       setDiscount(0)
@@ -572,7 +596,13 @@ export function usePOSController({
       console.error('[CHECKOUT ERROR]', e)
       playSound('error')
       const errText = String(e?.message || e || '')
-      if (errText.includes('وردية مغلقة') || errText.includes('الوردية مغلقة')) {
+      const unknown = attempt && outcomeUnknown(e)
+      if (unknown) unresolvedCheckoutRef.current = attempt
+      if (unknown) {
+        triggerCustomAlert(
+          `تعذر التأكد من حفظ الفاتورة: ${errText.slice(0, 200)}\nلا تغيّر السلة. اضغط F1 مرة أخرى بعد عودة الاتصال؛ إذا كانت الفاتورة قد سُجِّلت فلن تُسجَّل مرة ثانية.`
+        )
+      } else if (errText.includes('وردية مغلقة') || errText.includes('الوردية مغلقة')) {
         triggerCustomAlert(
           'فشل البيع: لا يمكن تسجيل المعاملة لأن الوردية مغلقة.\nيرجى فتح وردية جديدة للبدء.'
         )

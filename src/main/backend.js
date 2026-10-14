@@ -369,7 +369,7 @@ export async function callOperation(op, body) {
     }
     // Node (ECONNREFUSED…) and Chromium (net::ERR_CONNECTION_REFUSED…) spellings of "unreachable".
     const offline =
-      /ECONNREFUSED|fetch failed|timeout|ENOTFOUND|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE|ERR_INTERNET_DISCONNECTED|ERR_TIMED_OUT|ERR_NETWORK/i.test(
+      /ECONNREFUSED|fetch failed|timeout|ENOTFOUND|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE|ERR_INTERNET_DISCONNECTED|ERR_TIMED_OUT|ERR_NETWORK|ERR_EMPTY_RESPONSE|ECONNRESET|socket hang up/i.test(
         msg
       )
     return {

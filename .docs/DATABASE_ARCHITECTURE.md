@@ -20,7 +20,7 @@ flowchart LR
 | Renderer      | `src/renderer/src/lib/api.js`                                | `api('pos.checkout', {...})`. Raises `ApiError` with status and code; a 401 fires `heromarket:session-expired`.                                                        |
 | Preload / IPC | `src/preload/index.js`, `src/main/dataIpc.js`                | `api:call` accepts only an operation name (`/^[a-zA-Z]+\.[a-zA-Z]+$/`) and a JSON body.                                                                                |
 | Main          | `src/main/backend.js`                                        | Starts or connects the service, stores the session token in memory, adds `authorization` and `x-heromarket-terminal`, and revokes the previous session on a new login. |
-| Service       | `src/server/app.js`, `src/server/modules/*.js`               | 89 named operations, each `POST /api/<op>` with a JSON schema. Every operation checks permissions and writes audit rows server-side.                                   |
+| Service       | `src/server/app.js`, `src/server/modules/*.js`               | 90 named operations, each `POST /api/<op>` with a JSON schema. Every operation checks permissions and writes audit rows server-side.                                   |
 | Data access   | `src/server/db/pool.js`                                      | One `pg` pool (max 10, idle 30 s, connect timeout 5 s). Queries are parameterised. `withTransaction` runs BEGIN/COMMIT/ROLLBACK.                                       |
 | Schema        | `src/server/db/migrations/*.sql`, `src/server/db/migrate.js` | Numbered SQL files with checksums, recorded in `schema_migrations`, applied under an advisory lock, one transaction per file.                                          |
 

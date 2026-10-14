@@ -105,6 +105,30 @@ module.exports = function posModule(app) {
     }
   })
 
+  // After a checkout whose reply was lost (timeout, dropped link) the till asks whether that attempt
+  // was recorded before it sells a changed cart. Waiting on the attempt's advisory lock makes an
+  // in-flight checkout with this key finish first, so the answer is final.
+  app.operation({
+    name: 'pos.checkoutStatus',
+    permission: 'pos.sell',
+    schema: {
+      type: 'object',
+      required: ['clientRef'],
+      properties: { clientRef: { type: 'string', minLength: 8, maxLength: 64 } }
+    },
+    handler: async (ctx, { clientRef }) =>
+      ctx.tx(async (db) => {
+        await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [clientRef])
+        const { rows } = await db.query(
+          'SELECT id, total_amount FROM sales WHERE client_ref = $1 AND user_id = $2',
+          [clientRef, ctx.user.id]
+        )
+        return rows.length
+          ? { recorded: true, saleId: rows[0].id, total: Number(rows[0].total_amount) }
+          : { recorded: false }
+      })
+  })
+
   app.operation({
     name: 'pos.checkout',
     permission: 'pos.sell',

@@ -23,7 +23,7 @@ flowchart LR
 | Renderer (`src/renderer/src`)    | UI only. Calls `api(op, body)` (`lib/api.js`); never sees SQL, database credentials or the session token.                                                                                                           |
 | Preload (`src/preload/index.js`) | Exposes `window.api`: `call`, `backend.status/configure`, `db.backup/restore`, `printer.print/printSale/printReport/saleToPdf/testTemplate`, shortages PDF.                                                         |
 | Main (`src/main`)                | Window, IPC, the service connection (`backend.js`), the managed local PostgreSQL (`localDatabase.js`), printing (`printer.js`), PDFs, backups to disk (`dataIpc.js`), single-instance lock.                         |
-| Service (`src/server`)           | 89 named operations in 12 modules (`modules/*.js`): validation, permissions, business rules, transactions, audit log. Runs in-process (local and standalone modes) or as a network server (`cli.js serve`, Docker). |
+| Service (`src/server`)           | 90 named operations in 12 modules (`modules/*.js`): validation, permissions, business rules, transactions, audit log. Runs in-process (local and standalone modes) or as a network server (`cli.js serve`, Docker). |
 | Shared (`src/shared`)            | Code used by main, renderer and service: `receipt.mjs` (receipt templates and both outputs), `reportLines.mjs` (printed reports), `legacyReceiptText.mjs` (legacy HTML-receipt converter).                          |
 
 ## 2. Main process (`src/main`)
