@@ -1,44 +1,20 @@
 /* eslint-disable */
 // ─────────────────────────────────────────────────────────────
-// Database bootstrap for development, CI and release seeding (NOT part of upstream).
+// Legacy SQLite fixture builder (NOT part of upstream).
 //
-// Initializes a clean, fully-migrated SQLite development database
-// for HeroMarket POS, with all tables, triggers, indices, and sample data.
+// HeroMarket now runs on PostgreSQL (see .docs/DATABASE_ARCHITECTURE.md). This script still creates a
+// database in the ORIGINAL SQLite format, with the original schema and sample data, so the legacy
+// importer can be developed and tested against a realistic source:
+//
+//   node scripts/init-dev-db.js [--db file.db] [--reset]
+//   node scripts/import-sqlite.js --sqlite file.db --database-url postgres://…
+//
+// It uses Node's built-in SQLite engine (the same one the importer reads with); no sqlite3 binary needed.
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs')
 const path = require('path')
-const { spawnSync } = require('child_process')
-const crypto = require('crypto')
 
 const root = path.join(__dirname, '..')
-// Windows: bundled sqlite3.exe. Elsewhere (CI/Docker): sqlite3 from PATH, or SQLITE3_BIN.
-const sqlite =
-  process.env.SQLITE3_BIN ||
-  (process.platform === 'win32' ? path.join(root, 'sqlite3.exe') : 'sqlite3')
-const args = process.argv.slice(2)
-const dbArgIdx = args.indexOf('--db')
-const dbPath =
-  dbArgIdx >= 0 ? path.resolve(args[dbArgIdx + 1]) : path.join(root, 'market_unified_testing.db')
-const reset = args.includes('--reset')
-// --release-seed: schema + settings + a single admin account, no sample/test data.
-// Used to produce resources/market_unified.db for installers (see .docs/SECURITY_AND_RELEASE.md).
-const releaseSeed = args.includes('--release-seed')
-
-if (path.isAbsolute(sqlite) && !fs.existsSync(sqlite)) {
-  console.error(`sqlite3 binary not found at ${sqlite}`)
-  process.exit(1)
-}
-
-if (reset) {
-  for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    if (fs.existsSync(f)) {
-      try {
-        fs.unlinkSync(f)
-      } catch (_) {}
-    }
-  }
-  console.log(`[init-dev-db] Reset dev DB: ${dbPath}`)
-}
 
 const schemaSql = `
 PRAGMA journal_mode = WAL;
@@ -313,31 +289,36 @@ INSERT OR IGNORE INTO products (barcode, name, cost_price, retail_price, wholesa
 
 `
 
-const footerSql = `
-COMMIT;
-
-SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM products) AS products, (SELECT COUNT(*) FROM clients) AS clients;
-`
-
-// Release seed admin: PIN 1234 stored as SHA-256 (the login accepts hashed PINs).
-// The PIN must be changed from Users management immediately after installation.
-const releaseAdminSql = `
-INSERT OR IGNORE INTO users (id, username, password_hash, role)
-VALUES (1, 'admin', '${crypto.createHash('sha256').update('1234').digest('hex')}', 'admin');
-`
-
-const script = schemaSql + (releaseSeed ? releaseAdminSql : sampleSql) + footerSql
-const res = spawnSync(sqlite, [dbPath, '-json'], { input: script, encoding: 'utf8' })
-if (res.status !== 0) {
-  console.error('[init-dev-db] sqlite3 failed:', res.stderr || res.error)
-  process.exit(1)
+/** Create (or complete) a legacy-format SQLite database at dbPath. Returns row counts. */
+function buildLegacyFixture(dbPath, { reset = false } = {}) {
+  if (reset) {
+    for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`])
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+  }
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(dbPath)
+  try {
+    db.exec(schemaSql + sampleSql + 'COMMIT;')
+    return db
+      .prepare(
+        'SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM products) AS products, (SELECT COUNT(*) FROM clients) AS clients'
+      )
+      .get()
+  } finally {
+    db.close()
+  }
 }
-console.log(`[init-dev-db] ${releaseSeed ? 'Release seed' : 'Dev DB'} ready at ${dbPath}`)
-console.log(`[init-dev-db] Counts: ${res.stdout.trim()}`)
-if (releaseSeed) {
-  console.log('[init-dev-db] Release seed login: admin / PIN 1234 – change it after installation.')
-} else {
+
+module.exports = { buildLegacyFixture }
+
+if (require.main === module) {
+  const args = process.argv.slice(2)
+  const i = args.indexOf('--db')
+  const dbPath = i >= 0 ? path.resolve(args[i + 1]) : path.join(root, 'market_unified_testing.db')
+  const counts = buildLegacyFixture(dbPath, { reset: args.includes('--reset') })
+  console.log(`[init-dev-db] Legacy SQLite fixture ready at ${dbPath}`)
+  console.log(`[init-dev-db] Counts: ${JSON.stringify(counts)}`)
   console.log(
-    '[init-dev-db] Dev logins (PIN): admin=1234, cashier1=1111, manager=9999, cashier_test=5555'
+    '[init-dev-db] Legacy PINs (upgraded on first login after import): admin=1234, cashier1=1111, manager=9999, cashier_test=5555'
   )
 }
