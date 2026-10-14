@@ -96,7 +96,7 @@ Search (scanner input is routed here automatically), sort, paginate → add (sca
 
 1. **New single-till store:** install → the app prepares its database ("جاري تجهيز قاعدة البيانات…") → **إعداد المتجر لأول مرة**: administrator name and a 4-digit PIN (not 0000/1234/1111) → lock screen.
 2. **Upgrade from the earlier version:** install → the app imports the old data once (can take a minute; the old file is not modified) → lock screen → log in with the **existing PIN**. If the import fails, the reason is shown and nothing changes; fix and restart.
-3. **Cashier terminal in a multi-till store:** first start → **جهاز كاشير** → server address `http://<server>:8787` and a terminal name → lock screen. The first terminal of a new server asks for the **setup code** from the server log.
+3. **Cashier terminal in a multi-till store:** first start → **جهاز كاشير** → server address `https://<server>:8443`, **اختيار الشهادة…** (the server's `root.crt`; compare the SHA-256 with the server) and a terminal name → lock screen. The first terminal of a new server asks for the **setup code** from the server log.
 4. **Connection lost:** the start screen retries for about 30 s; after that it shows the connection form with the reason. During work, operations show "تعذر الاتصال…" and can be retried; a sale retried after a timeout is never recorded twice.
 
 ## 12. Roles and users

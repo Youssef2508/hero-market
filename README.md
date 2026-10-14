@@ -81,11 +81,12 @@ If Electron fails to start with `app` undefined, your terminal exports `ELECTRON
 
 ```powershell
 copy .env.example .env      # set POSTGRES_PASSWORD and HEROMARKET_SECRET
-docker compose up -d        # PostgreSQL + HeroMarket server on port 8787
+docker compose up -d        # PostgreSQL + HeroMarket server + HTTPS proxy on port 8443
 docker compose logs server  # shows the one-time setup code for the first administrator
+docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./root.crt   # pinned by each till
 ```
 
-Each till then chooses **Cashier terminal** and enters `http://<server-ip>:8787`. See [.docs/DOCKER.md](.docs/DOCKER.md).
+Each till then chooses **Cashier terminal**, enters `https://<server-ip>:8443` and picks `root.crt`. See [.docs/DOCKER.md](.docs/DOCKER.md).
 
 ## Documentation
 

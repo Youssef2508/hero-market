@@ -148,23 +148,28 @@ jobs:
       - name: Lint, build and every test suite inside the validation image
         run: docker compose -f docker-compose.test.yml run --rm --build tests
 
-      - name: Server image – start with PostgreSQL and probe health
+      - name: Server stack – PostgreSQL, server and TLS proxy; HTTPS only, with the pinned root
         env:
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           HEROMARKET_SECRET: ci-secret-${{ github.run_id }}-${{ github.run_attempt }}-0123456789abcdef
         run: |
-          docker compose up -d --build --wait db server
-          curl --fail --silent http://127.0.0.1:8787/api/health
-          curl --silent -X POST -H 'content-type: application/json' -d '{}' http://127.0.0.1:8787/api/auth.status | tee status.json
+          docker compose up -d --build --wait db server proxy
+          curl --silent --insecure --output /dev/null https://127.0.0.1:8443/api/health || true
+          docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt root.crt
+          curl --fail --silent --cacert root.crt https://127.0.0.1:8443/api/health
+          curl --silent --cacert root.crt -X POST -H 'content-type: application/json' -d '{}' https://127.0.0.1:8443/api/auth.status | tee status.json
           grep -q '"setupCodeRequired":true' status.json
           docker compose logs server | grep -q 'first-run setup code'
+          # Without the store root the certificate must be refused, and the API port must not be published.
+          if curl --silent --output /dev/null https://127.0.0.1:8443/api/health; then echo 'untrusted certificate accepted' && exit 1; fi
+          if curl --silent --max-time 3 --output /dev/null http://127.0.0.1:8787/api/health; then echo 'plain API reachable' && exit 1; fi
 
       - name: Server logs
         if: always()
         env:
           POSTGRES_PASSWORD: unused
           HEROMARKET_SECRET: unused-unused-unused-unused-unused
-        run: docker compose logs --no-color server db | tail -n 80
+        run: docker compose logs --no-color server db proxy | tail -n 120
 
       - name: Tear down
         if: always()

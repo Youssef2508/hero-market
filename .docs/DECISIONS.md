@@ -223,3 +223,18 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 - **Decision**: The simple and detailed close dialogs keep their different legacy formulas, now computed server-side and covered by tests.
 - **Reason**: Changing cash-drawer accounting is a business decision. The owner must choose one formula.
+
+## D-039 HTTPS for cashier terminals with a pinned store root (G-24)
+
+- **Decision**:
+  - The multi-till server publishes only a Caddy TLS proxy (`tls internal`, local root CA in a volume).
+  - Each till pins that root certificate in its own configuration. Acceptance requires a chain signed up to the root, in date, with a matching name or IP. Windows-trusted certificates are accepted too.
+  - Requests use Chromium's network stack (`session.fetch`) in a dedicated session.
+  - `default_sni` covers tills that connect by IP.
+- **Rejected**:
+  - Installing the root into every till's Windows trust store: it needs admin rights per PC and widens trust machine-wide.
+  - Plain HTTP on the LAN: session tokens would be readable on a shared network.
+- **Consequences**:
+  - One extra file per till at setup.
+  - The `caddy_data` volume must be backed up with the database.
+  - Plain `http://` remains possible for development or a server on the same PC.

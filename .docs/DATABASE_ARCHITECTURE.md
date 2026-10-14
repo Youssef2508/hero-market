@@ -50,11 +50,11 @@ The 19 tables of the original application are ported one-to-one: same names, col
 
 ## 3. Deployment modes
 
-| Mode (`heromarket.json` → `mode`)   | Who                                                       | Where the database runs                                                   | How the till reaches it                          |
-| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
-| `local`: "هذا الجهاز فقط" (default) | One-till store; every new or upgraded install             | Private cluster created by the app (`src/main/localDatabase.js`)          | In-process                                       |
-| `standalone`: "خادم قاعدة بيانات"   | The store's main PC, or a PC next to a managed PostgreSQL | Any PostgreSQL 17 (`databaseUrl`)                                         | In-process                                       |
-| `client`: "جهاز كاشير"              | Extra tills in a multi-till store                         | The store server (`docker compose up`, or `node src/server/cli.js serve`) | HTTP on the LAN (`serverUrl`, default port 8787) |
+| Mode (`heromarket.json` → `mode`)   | Who                                                       | Where the database runs                                                   | How the till reaches it                                                            |
+| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `local`: "هذا الجهاز فقط" (default) | One-till store; every new or upgraded install             | Private cluster created by the app (`src/main/localDatabase.js`)          | In-process                                                                         |
+| `standalone`: "خادم قاعدة بيانات"   | The store's main PC, or a PC next to a managed PostgreSQL | Any PostgreSQL 17 (`databaseUrl`)                                         | In-process                                                                         |
+| `client`: "جهاز كاشير"              | Extra tills in a multi-till store                         | The store server (`docker compose up`, or `node src/server/cli.js serve`) | HTTPS on the LAN through the TLS proxy (`serverUrl`, port 8443, pinned store root) |
 
 ### 3.1 Local mode (managed PostgreSQL)
 
@@ -84,16 +84,16 @@ Safety rules in `localDatabase.js` / `backend.js`:
 ```
                 ┌───────────── store LAN ─────────────┐
   Till 1 ──┐    │                                     │
-  Till 2 ──┼──► HeroMarket server :8787 ──► PostgreSQL 17 (not exposed)
+  Till 2 ──┼──► Caddy TLS :8443 ──► HeroMarket server ──► PostgreSQL 17 (neither exposed)
   Till 3 ──┘    │   (Docker: docker-compose.yml)      │
                 └─────────────────────────────────────┘
 ```
 
 - `docker-compose.yml` runs `db` (PostgreSQL 17, volume `pgdata`, no published port) and `server` (`Dockerfile.server`: non-root, read-only filesystem, all capabilities dropped, health-checked). See [DOCKER.md](DOCKER.md).
 - Without Docker: install PostgreSQL 17 on the server PC, create a `heromarket` database and role, then run `node src/server/cli.js serve` with `HEROMARKET_DATABASE_URL` and `HEROMARKET_SECRET` (for example as a Windows service with NSSM).
-- Each till picks **جهاز كاشير** and enters `http://<server-ip>:8787`. Tills never hold database credentials.
+- Each till picks **جهاز كاشير**, enters `https://<server-ip>:8443` and pins the server's `root.crt`. Tills never hold database credentials.
 - First start of an empty server prints a **one-time setup code** in its log. The first administrator can only be created with it, so nobody else on the LAN can claim the store.
-- **Transport:** plain HTTP on the store LAN. Session tokens travel in clear text inside the LAN. Put the server behind a TLS reverse proxy (Caddy or nginx with an internal certificate) if the network is shared. This is open item G-24 in [GAP_ANALYSIS.md](GAP_ANALYSIS.md).
+- **Transport:** HTTPS through the Caddy proxy (`deploy/Caddyfile`, local CA). Each till pins the store root certificate instead of trusting it machine-wide (`src/main/tlsPin.js`, D-039). The HeroMarket API and PostgreSQL are not published. Details and verification: [DOCKER.md §2](DOCKER.md).
 
 ## 4. Outages: what keeps working
 

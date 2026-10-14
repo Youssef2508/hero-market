@@ -8,7 +8,7 @@
 //
 // The renderer never sees SQL, database credentials or the session token: it sends an operation
 // name + data over IPC, and this module attaches the token and terminal name.
-import { app } from 'electron'
+import { app, session } from 'electron'
 import { createRequire } from 'module'
 import { join } from 'path'
 import fs from 'fs'
@@ -16,6 +16,7 @@ import crypto from 'crypto'
 import os from 'os'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl } from './localDatabase'
 import { legacyDatabaseFile } from './userDataPath'
+import { verifyPinnedChain } from './tlsPin'
 
 const nodeRequire = createRequire(import.meta.url)
 const isDev = !app.isPackaged
@@ -26,6 +27,9 @@ let token = null
 let lastError = null
 let starting = null // in-flight startBackend() promise
 let stage = null // what the startup is doing, for the waiting screen
+// Client mode: the store server's certificate was refused (Chromium caches the verdict, so this
+// stays set until a request succeeds).
+let serverCertRefused = false
 let localStarted = null // the managed cluster this session started (stopped on quit or mode change)
 
 function serverDir() {
@@ -56,7 +60,10 @@ function devConfig() {
     mode: process.env.HEROMARKET_SERVER_URL ? 'client' : 'standalone',
     databaseUrl,
     secret,
-    serverUrl: process.env.HEROMARKET_SERVER_URL
+    serverUrl: process.env.HEROMARKET_SERVER_URL,
+    serverCaPem: process.env.HEROMARKET_SERVER_CA
+      ? fs.readFileSync(process.env.HEROMARKET_SERVER_CA, 'utf8')
+      : undefined
   }
 }
 
@@ -84,6 +91,8 @@ export function writeConfig(cfg) {
     mode: ['client', 'local'].includes(cfg.mode) ? cfg.mode : 'standalone',
     databaseUrl: cfg.mode === 'standalone' ? cfg.databaseUrl : undefined,
     serverUrl: cfg.mode === 'client' ? cfg.serverUrl : undefined,
+    // Root certificate of the store server's TLS proxy (public; pinned instead of trusted machine-wide).
+    serverCaPem: cfg.mode === 'client' ? cfg.serverCaPem || current.serverCaPem : undefined,
     terminalName: cfg.terminalName || current.terminalName || os.hostname(),
     secret: current.secret || crypto.randomBytes(32).toString('base64url'),
     // Credentials of the managed local cluster are kept even when switching modes, so it can be reopened.
@@ -132,18 +141,47 @@ async function startStandalone(cfg) {
   }
 }
 
+/**
+ * Requests to the store server go through Chromium's network stack in a dedicated in-memory session.
+ * HTTPS certificates are accepted when Windows trusts them, or when their chain ends at the root the
+ * owner pinned for this till (`serverCaPem`, see tlsPin.js). Everything else is refused.
+ */
+function serverSession(cfg) {
+  const ses = session.fromPartition('heromarket-server')
+  const bare = (h) => String(h).replace(/^\[|\]$/g, '')
+  const host = bare(new URL(cfg.serverUrl).hostname)
+  ses.setCertificateVerifyProc((req, callback) => {
+    if (req.verificationResult === 'net::OK') return callback(0)
+    if (!cfg.serverCaPem || bare(req.hostname) !== host) {
+      serverCertRefused = true
+      return callback(-2)
+    }
+    const chain = []
+    for (let c = req.certificate; c; c = c.issuerCert) chain.push(c.data)
+    const result = verifyPinnedChain(chain, cfg.serverCaPem, host)
+    if (!result.ok) {
+      serverCertRefused = true
+      console.error('[backend] server certificate refused:', result.reason)
+    }
+    callback(result.ok ? 0 : -2)
+  })
+  return ses
+}
+
 function startClient(cfg) {
   const base = String(cfg.serverUrl || '').replace(/\/+$/, '')
+  const ses = serverSession(cfg)
   return {
     mode: 'client',
     close: async () => {},
     call: async (op, body, headers) => {
-      const res = await fetch(`${base}/api/${op}`, {
+      const res = await ses.fetch(`${base}/api/${op}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(body || {}),
         signal: AbortSignal.timeout(15000)
       })
+      serverCertRefused = false
       const text = await res.text()
       return { status: res.status, body: text ? JSON.parse(text) : null }
     }
@@ -318,7 +356,22 @@ export async function callOperation(op, body) {
     if (op === 'auth.logout') token = null
     return { status: res.status, data }
   } catch (e) {
-    const offline = /ECONNREFUSED|fetch failed|timeout|ENOTFOUND/i.test(String(e.message))
+    const msg = String(e.message)
+    // A refusal by our verifier surfaces only as net::ERR_FAILED.
+    if (/ERR_CERT|ERR_SSL|ERR_BAD_SSL/i.test(msg) || serverCertRefused) {
+      return {
+        status: 503,
+        error: {
+          code: 'server_certificate',
+          message: 'شهادة أمان خادم المتجر غير موثوقة. اختر شهادة الخادم من إعدادات الاتصال.'
+        }
+      }
+    }
+    // Node (ECONNREFUSED…) and Chromium (net::ERR_CONNECTION_REFUSED…) spellings of "unreachable".
+    const offline =
+      /ECONNREFUSED|fetch failed|timeout|ENOTFOUND|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE|ERR_INTERNET_DISCONNECTED|ERR_TIMED_OUT|ERR_NETWORK/i.test(
+        msg
+      )
     return {
       status: 503,
       error: {
