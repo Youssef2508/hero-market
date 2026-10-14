@@ -60,7 +60,7 @@ No force-pushes to shared branches and no history rewriting. The current GitHub 
 
 - `npm ci` with the committed lockfile everywhere. Dependabot sends weekly npm and Actions PRs and monthly Docker PRs.
 - **2026-10-14:** Fastify was upgraded 5.6.2 → 5.12.7 and fast-uri 3.1.3 → 3.1.8. This fixes high advisories in the service's HTTP layer, among them a Content-Type parsing issue that bypassed body validation.
-- **Electron 43 (PR #3, 2026-10-15):** Electron 39.8.10 → **43.7.11** (Node 24.21, Chromium 150). The four Electron advisories (GHSA-hq2x-r82h-9wj4, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj, GHSA-9qh4-3jw8-366w; fixed from 41.10.6) are resolved; 43 was chosen over 42 because Electron supports only the latest three majors and 42 drops out when 45 ships. `npm audit --omit=dev`: **0**. Full tree: 8 moderate, all one packaging-time chain (electron-builder → `@electron/get` → `global-agent` → `roarr` → `sprintf-js` ≤ 1.1.3, no patched release published) – not shipped in the app.
+- **Electron 43 (PR #3, 2026-10-14):** Electron 39.8.10 → **43.7.11** (Node 24.21, Chromium 150). The four Electron advisories (GHSA-hq2x-r82h-9wj4, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj, GHSA-9qh4-3jw8-366w; fixed from 41.10.6) are resolved; 43 was chosen over 42 because Electron supports only the latest three majors and 42 drops out when 45 ships. `npm audit --omit=dev`: **0**. Full tree: 8 moderate, all one packaging-time chain (electron-builder → `@electron/get` → `global-agent` → `roarr` → `sprintf-js` ≤ 1.1.3, no patched release published) – not shipped in the app.
 - Recommended account setting (owner): enable _Dependabot alerts_ and _security updates_ under Settings → Code security.
 
 ## 6. Versioning and tags

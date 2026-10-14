@@ -1,6 +1,6 @@
 # Owner Decisions Pending
 
-Two business policies are undecided. Current behaviour stays unchanged until the owner answers. Evidence was gathered on 2026-10-15 from the code and from a scripted scenario on a throw-away database (`k24.js` in the QA notes).
+Two business policies are undecided. Current behaviour stays unchanged until the owner answers. Evidence was gathered on 2026-10-14 from the code and from a scripted scenario on a throw-away database (`k24.js` in the QA notes).
 
 ## K-24 / G-27 – Expected cash when closing a shift
 
