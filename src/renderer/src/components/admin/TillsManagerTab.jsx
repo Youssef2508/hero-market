@@ -20,7 +20,7 @@ import {
   Landmark
 } from 'lucide-react'
 import { StatCard } from '../ui'
-import { api } from '../../lib/api'
+import { api, can } from '../../lib/api'
 import { getFriendlyErrorMessage } from '../../lib/utils'
 import { useMomknTill } from '../../hooks/useMomknTill'
 import { useMobileMoneyTill } from '../../hooks/useMobileMoneyTill'
@@ -53,7 +53,8 @@ const TillsManagerTab = ({
   // True once the drawer summary for the current shift has loaded (avoids showing misleading zeros).
   const [drawerReady, setDrawerReady] = useState(false)
 
-  const isAdmin = currentUser?.role === 'admin'
+  // Printing and deleting till movements: same permission the service checks.
+  const isAdmin = can(currentUser, 'tills.manage')
 
   // Initialize hooks
   const momkn = useMomknTill({ currentShift, triggerCustomAlert, triggerCustomConfirm })

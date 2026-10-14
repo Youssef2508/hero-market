@@ -91,3 +91,22 @@ Search (scanner input is routed here automatically), sort, paginate → add (sca
 - Sidebar items switch screens instantly; state of the cart is kept when visiting other screens.
 - Lock (`Ctrl+Alt+L` / user menu) never closes the shift; logging back in resumes it.
 - Render crashes show the ErrorBoundary screen with a reload button.
+
+## 11. First start and device roles (stage 2)
+
+1. **New single-till store:** install → the app prepares its database ("جاري تجهيز قاعدة البيانات…") → **إعداد المتجر لأول مرة**: administrator name and a 4-digit PIN (not 0000/1234/1111) → lock screen.
+2. **Upgrade from the earlier version:** install → the app imports the old data once (can take a minute; the old file is not modified) → lock screen → log in with the **existing PIN**. If the import fails, the reason is shown and nothing changes; fix and restart.
+3. **Cashier terminal in a multi-till store:** first start → **جهاز كاشير** → server address `http://<server>:8787` and a terminal name → lock screen. The first terminal of a new server asks for the **setup code** from the server log.
+4. **Connection lost:** the start screen retries for about 30 s; after that it shows the connection form with the reason. During work, operations show "تعذر الاتصال…" and can be retried; a sale retried after a timeout is never recorded twice.
+
+## 12. Roles and users
+
+الأدوار والصلاحيات → **دور جديد** → name, description, tick permissions → حفظ. Built-in roles can be adjusted (except مدير النظام). المستخدمون → إضافة حساب → username, PIN, role; edit to change the role or disable the account (disabling signs the user out immediately). The system refuses changes that would remove the last active مدير النظام, change your own role, or give someone more access than you have.
+
+## 13. Designing a receipt
+
+تصميم الفاتورة → **جديد** under a paper size → each element shows its zone (أعلى/وسط/أسفل الفاتورة), alignment (يمين/وسط/يسار, or على الطرفين for amounts), bold and size; drag an element by its handle or use the arrows / zone menu to move it; **نص** / **فاصل** add free text or separator lines in a zone; untick an element to hide it (items, total and the copy/return marker cannot be hidden) → the preview updates live → حفظ → **اعتماد** makes it the template used for that paper size. **طباعة تجريبية** prints a sample (A4: saves a PDF). **الافتراضي → اعتماد** returns to the built-in template.
+
+## 14. Printing reports
+
+Closing a shift prints the shift-close report automatically. الأدراج والتحويلات → print buttons for the Momkn and wallets reports (shown with the `tills.manage` permission).

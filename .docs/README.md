@@ -6,36 +6,43 @@ Statements are marked **Verified** (read in code or observed in the running app)
 
 ## Start here
 
-| If you want to…                                | Read                                                                                               |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Understand what the product is and who uses it | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)                                                         |
-| Set up a machine, run the app, run the checks  | [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md)                                                       |
-| Find where something lives                     | [REPOSITORY_MAP.md](REPOSITORY_MAP.md)                                                             |
-| Change the UI                                  | [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md), [UI_UX_DESIGN_SPEC.md](UI_UX_DESIGN_SPEC.md) |
-| Change a business rule                         | [BUSINESS_LOGIC.md](BUSINESS_LOGIC.md), [DATA_MODEL.md](DATA_MODEL.md) first                       |
-| Ship a release                                 | [SECURITY_AND_RELEASE.md](SECURITY_AND_RELEASE.md), [CI_CD.md](CI_CD.md)                           |
+| If you want to…                                | Read                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Understand what the product is and who uses it | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)                                                                                                               |
+| Set up a machine, run the app, run the checks  | [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md)                                                                                                             |
+| Find where something lives                     | [REPOSITORY_MAP.md](REPOSITORY_MAP.md)                                                                                                                   |
+| Change the UI                                  | [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md), [UI_UX_DESIGN_SPEC.md](UI_UX_DESIGN_SPEC.md)                                                       |
+| Change a business rule                         | [BUSINESS_LOGIC.md](BUSINESS_LOGIC.md), [DATA_MODEL.md](DATA_MODEL.md) first                                                                             |
+| Ship a release                                 | [SECURITY_AND_RELEASE.md](SECURITY_AND_RELEASE.md), [CI_CD.md](CI_CD.md)                                                                                 |
+| Deploy a store or upgrade one                  | [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md), [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md), [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) |
 
 ## All documents
 
-| Document                                                   | Contents                                                               |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)                 | Purpose, roles, capabilities, boundaries                               |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                         | Processes, IPC, database access, printing, startup sequence            |
-| [REPOSITORY_MAP.md](REPOSITORY_MAP.md)                     | Every top-level path and renderer folder; where to change what         |
-| [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md)               | All screens and operations, with roles and entry points                |
-| [BUSINESS_LOGIC.md](BUSINESS_LOGIC.md)                     | Checkout, payments, credit, returns, shifts, tills, stock rules        |
-| [DATA_MODEL.md](DATA_MODEL.md)                             | Tables, columns, triggers, migrations                                  |
-| [API_AND_INTEGRATIONS.md](API_AND_INTEGRATIONS.md)         | `window.api` IPC surface, printing, PDF, external binaries             |
-| [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md)       | Before/after structure, shell, design-system layers, contracts kept    |
-| [UI_UX_DESIGN_SPEC.md](UI_UX_DESIGN_SPEC.md)               | Brand, tokens, typography, components, screens, motion, accessibility  |
-| [USER_FLOWS.md](USER_FLOWS.md)                             | Step-by-step flows: login, selling, returns, shifts, back office       |
-| [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md)               | Prerequisites, databases, running, checks, packaging, Git workflow     |
-| [TESTING_AND_KNOWN_ISSUES.md](TESTING_AND_KNOWN_ISSUES.md) | Test suites, baseline vs final results, QA method, known defects       |
-| [DOCKER.md](DOCKER.md)                                     | The Linux validation image and why the app itself is not containerised |
-| [CI_CD.md](CI_CD.md)                                       | CI jobs, release workflow, Dependabot, branch protection               |
-| [SECURITY_AND_RELEASE.md](SECURITY_AND_RELEASE.md)         | Security model, secrets rules, advisories, release and rollback        |
-| [DECISIONS.md](DECISIONS.md)                               | Decision log (D-001…) with reasons and consequences                    |
-| [IMPLEMENTATION_PROGRESS.md](IMPLEMENTATION_PROGRESS.md)   | Redesign milestones and per-screen verification checklist              |
+| Document                                                   | Contents                                                                         |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)                 | Purpose, roles, capabilities, boundaries                                         |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                         | Processes, IPC, database access, printing, startup sequence                      |
+| [REPOSITORY_MAP.md](REPOSITORY_MAP.md)                     | Every top-level path and renderer folder; where to change what                   |
+| [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md)               | All screens and operations, with roles and entry points                          |
+| [BUSINESS_LOGIC.md](BUSINESS_LOGIC.md)                     | Checkout, payments, credit, returns, shifts, tills, stock rules                  |
+| [DATA_MODEL.md](DATA_MODEL.md)                             | Tables, columns, triggers, migrations                                            |
+| [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md)       | PostgreSQL, the service boundary, deployment modes, outages, backup, performance |
+| [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md)             | SQLite → PostgreSQL: procedure, parity evidence, rollback                        |
+| [API_AND_INTEGRATIONS.md](API_AND_INTEGRATIONS.md)         | `window.api` IPC surface, printing, PDF, external binaries                       |
+| [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md)       | Before/after structure, shell, design-system layers, contracts kept              |
+| [UI_UX_DESIGN_SPEC.md](UI_UX_DESIGN_SPEC.md)               | Brand, tokens, typography, components, screens, motion, accessibility            |
+| [USER_FLOWS.md](USER_FLOWS.md)                             | Step-by-step flows: login, selling, returns, shifts, back office                 |
+| [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md)               | Prerequisites, databases, running, checks, packaging, Git workflow               |
+| [TESTING_AND_KNOWN_ISSUES.md](TESTING_AND_KNOWN_ISSUES.md) | Test suites, baseline vs final results, QA method, known defects                 |
+| [DOCKER.md](DOCKER.md)                                     | Multi-till store server (compose) and the containerised test environment         |
+| [CI_CD.md](CI_CD.md)                                       | CI jobs, release workflow, Dependabot, branch protection                         |
+| [SECURITY_AND_RELEASE.md](SECURITY_AND_RELEASE.md)         | Security model, secrets rules, advisories, release and rollback                  |
+| [DECISIONS.md](DECISIONS.md)                               | Decision log (D-001…) with reasons and consequences                              |
+| [IMPLEMENTATION_PROGRESS.md](IMPLEMENTATION_PROGRESS.md)   | Milestones and status (stage 1 redesign, stage 2 PostgreSQL)                     |
+| [PAUSED_TASK_STATE.md](PAUSED_TASK_STATE.md)               | Resume checkpoint                                                                |
+| [GAP_ANALYSIS.md](GAP_ANALYSIS.md)                         | Decision matrices and the gap list with statuses and evidence                    |
+| [POS_BENCHMARK_RESEARCH.md](POS_BENCHMARK_RESEARCH.md)     | What established POS products do (input to the gap analysis)                     |
+| [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)         | Readiness by dimension, verdict, go-live checklist                               |
 
 ## Keeping these documents true
 

@@ -71,3 +71,12 @@ See `REPOSITORY_MAP.md#where-to-change-things`.
 2. Move SQL into DAO modules (then into the main process) so components stop composing queries.
 3. Split the bundle per management screen (`React.lazy`) – the renderer is a single 1.3 MB chunk.
 4. Replace remaining inline styles in `CashierPerformanceTab`, `AdvancedStatsTab`, `TillsManagerTab` with screen classes.
+
+## Stage 2 changes (PostgreSQL release)
+
+- **Data access:** all SQL left the renderer. `lib/api.js#api(op, body)` is the only data path (IPC `api:call`); `lib/db.js` and `mockDb.js` were removed. Hooks keep their names and return shapes so screens did not change.
+- **Start-up:** `components/setup/StartupGate.jsx` (connection with three device roles; first-run administrator with the setup code when required); `App.jsx#checkStartup` retries temporary 503s.
+- **Permissions in the UI:** `shell/navigation.js` lists the permissions each item needs; `canOpenTab` guards admin tabs; the service enforces the same permissions.
+- **New screens:** `RolesTab`, `SettingsTab`, `ReceiptDesignerTab` (block editor with zones, alignment segmented control, bold/size toggles, drag-and-drop, live thermal preview parsing the printer tags, sandboxed A4 iframe).
+- **Shared primitives:** `Timestamp` (date-times kept left-to-right, date first), `BidiText` (isolates quoted names and codes in mixed Arabic/Latin messages), `StatCard` keeps amounts and currency together.
+- **Accessibility:** product search is a `combobox`; the roles list uses pressed buttons; axe-core reports 0 WCAG 2.2 A/AA violations on all screens in both themes.

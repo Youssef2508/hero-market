@@ -57,16 +57,30 @@ Status legend: **Implemented** (works in baseline QA) · **Partial** (works with
 | `logs`                | System event log                                                                        | `LogsTab`, `logs.dao`                                           | Implemented                                                                     |
 | `backup`              | Backup / restore                                                                        | `BackupTab`, IPC                                                | Implemented (dialogs are native; restore not exercised to protect data)         |
 
-## 4. Not present (do not assume)
+## 4. Added in stage 2 (PostgreSQL release)
 
-- No discounts by percentage or per line; no taxes/VAT.
-- No card terminal integration; "Vodafone Cash"/"InstaPay" are labels only.
+| Feature                                                                                                                                                                                                                               | Where                                                           | Status                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Device roles: this computer only (managed PostgreSQL), database server, cashier terminal                                                                                                                                              | `StartupGate`, `backend.js`, `localDatabase.js`                 | Implemented, verified (local and standalone in the app; client against the Docker server) |
+| Automatic import of the earlier SQLite store with parity                                                                                                                                                                              | `legacy-import.js`, `backend.js`                                | Implemented, verified on a copy of the installed store                                    |
+| First-run administrator (no default account), setup code on servers                                                                                                                                                                   | `auth.setup`, `StartupGate`                                     | Implemented, tested                                                                       |
+| Roles and permissions management                                                                                                                                                                                                      | الأدوار والصلاحيات (`RolesTab`), `admin` module                 | Implemented, tested                                                                       |
+| Users with roles and active/disabled status                                                                                                                                                                                           | المستخدمون (`UsersTab`)                                         | Implemented                                                                               |
+| Store settings (name, branch, address, phone, logo, printer, paper, opening float, drawer audits, receipt default)                                                                                                                    | إعدادات المتجر (`SettingsTab`)                                  | Implemented                                                                               |
+| Receipt designer: 58/80 mm and A4/PDF templates; every element placed top/middle/bottom and aligned right/centre/left, bold or large, by menu, arrows or drag-and-drop; preview = printed lines; test print / PDF; activate per paper | تصميم الفاتورة (`ReceiptDesignerTab`, `src/shared/receipt.mjs`) | Implemented, tested (golden tests, live QA, real print path to PDF)                       |
+| Shift-close, Momkn and wallets reports printed correctly                                                                                                                                                                              | `reportLines.mjs`, `print-report`                               | Fixed (K-32), verified to PDF                                                             |
+| Server-side audit log with Arabic labels                                                                                                                                                                                              | سجل العمليات                                                    | Implemented                                                                               |
+| Multi-till store server                                                                                                                                                                                                               | `docker-compose.yml`, `src/server/cli.js`                       | Implemented, verified with Docker                                                         |
+
+## 5. Not present (do not assume)
+
+- No discounts by percentage or per line; no taxes/VAT (no tax rules were invented).
+- No card terminal integration; "Vodafone Cash"/"InstaPay" are payment labels and till records only.
 - No product categories UI (column exists), no product images.
-- No purchase orders linked to stock (supplier purchases do **not** change `stock_qty`).
-- No multi-store sync, no cloud, no user-level permissions beyond the three roles.
-- No settings screen for `store_name` / `branch_name` / `printer_name` (values live in the `settings` table only).
-- No automated UI tests in the original project (only DB-level simulation scripts).
+- Supplier purchases do **not** change `stock_qty` (unchanged legacy behaviour).
+- No offline queue for cashier terminals (client mode) when the store server is unreachable.
+- Supervisor approval (`auth.verifyApprover`) exists but no flow requires it yet (K-10, owner decision).
 
-## 5. Tests touching features
+## 6. Tests touching features
 
-`tests/simulate_flows.js`, `tests/simulate_all_28_flows.js`, `tests/simulate_edge_cases.js`, `tests/simulate_advanced_edge_cases.js` – SQL-level simulations of shift, sale, return, client, supplier and expense flows against a copy of the DB. See `TESTING_AND_KNOWN_ISSUES.md`.
+`tests/service/flows.test.js` (all business flows), `checkout.test.js`, `auth.test.js`, `admin.test.js`, `migration.test.js`, `tests/unit/*`. See [TESTING_AND_KNOWN_ISSUES.md](TESTING_AND_KNOWN_ISSUES.md).

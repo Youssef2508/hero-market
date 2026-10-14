@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { LogOut, Calculator, Package, Smartphone, Wallet } from 'lucide-react'
-import { api } from '../../lib/api'
+import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 
 const FLOAT_AMOUNT = 200 // عهدة الفكة الثابتة
@@ -452,7 +452,8 @@ const AdvancedCloseShiftModal = ({
 
 export default function CloseShiftModal(props) {
   const { currentUser } = props
-  if (currentUser?.role === 'admin') {
+  // Multi-till close (drawer + Momkn + wallets): the permission the service checks for multi-till data.
+  if (can(currentUser, 'shifts.multi_till')) {
     return <AdvancedCloseShiftModal {...props} />
   }
   return <SimpleCloseShiftModal {...props} />

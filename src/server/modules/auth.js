@@ -151,6 +151,9 @@ module.exports = function authModule(app) {
           throw unauthorized('رمز الإعداد غير صحيح. تجده في سجل تشغيل خادم HeroMarket.')
         }
       }
+      // The first account has every permission: refuse the PINs anyone would try first.
+      if (['0000', '1234', '1111'].includes(String(pin).trim()))
+        throw badRequest('اختر رمزاً غير متوقع لمدير النظام (ليس 0000 أو 1234 أو 1111).')
       return ctx.tx(async (db) => {
         await db.query('LOCK TABLE users IN EXCLUSIVE MODE')
         const { rows } = await db.query('SELECT count(*)::int AS n FROM users')

@@ -1,58 +1,83 @@
 # Docker
 
-## 1. What Docker is (and is not) used for
+## 1. What runs in containers
 
-HeroMarket POS is a Windows desktop application. At runtime it needs the Electron window, the bundled Windows binaries `sqlite3.exe` and `typst.exe`, and PowerShell-based printing. None of that can run in a Linux container, and the store has no server component to containerise. So **the application is not containerised** (decision D-012).
+The HeroMarket **desktop app** (Electron window, PowerShell printing, Typst PDFs) runs on Windows and is not containerised. Since the PostgreSQL migration, Docker has two jobs:
 
-Docker is used for one thing: a **reproducible Linux validation image**. Every developer and CI get the same toolchain to run:
+| Compose file              | Purpose                                                                                                      | Images                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| `docker-compose.yml`      | **Multi-till store server**: PostgreSQL 17 + the HeroMarket service that the tills ("جهاز كاشير") connect to | `postgres:17-bookworm`, `Dockerfile.server` |
+| `docker-compose.test.yml` | **Validation environment**: lint, build and every test suite against a throw-away PostgreSQL                 | `postgres:17-bookworm`, `Dockerfile`        |
 
-1. `npm run lint`
-2. `npm run format:check`
-3. `npm run build` (main, preload and renderer bundles)
-4. `npm run test:fresh` (the four SQL simulation suites against a freshly bootstrapped SQLite database, using Debian's `sqlite3` CLI)
+A single-till store needs no Docker: the app manages its own PostgreSQL ([DATABASE_ARCHITECTURE.md §3.1](DATABASE_ARCHITECTURE.md)).
 
-There is no `docker-compose.yml`: there is one short-lived container with no services, ports or volumes to orchestrate.
+## 2. Store server
 
-## 2. Files
-
-| File            | Purpose                                                                            |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `Dockerfile`    | Validation image definition                                                        |
-| `.dockerignore` | Keeps the build context small and free of local data, secrets and Windows binaries |
-
-### Dockerfile summary
-
-| Choice                                                       | Reason                                                                                                                                          |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node:22-bookworm-slim` pinned **by digest**                 | Same Node major as CI; the digest makes builds reproducible. Dependabot (`docker` ecosystem, monthly) proposes digest updates as pull requests. |
-| `apt-get install sqlite3`                                    | Linux replacement for `sqlite3.exe` in the tests (`SQLITE3_BIN` is not needed; `sqlite3` is on `PATH`).                                         |
-| `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, `npm ci --ignore-scripts` | Lint, build and tests do not need the Electron binary or native rebuilds.                                                                       |
-| `USER node` (non-root), `/app` owned by `node`               | No root at runtime; the tests can still write `tests/temp_test.db` and ESLint its cache.                                                        |
-| `package.json` + `package-lock.json` copied first            | `npm ci` layer is cached until dependencies change.                                                                                             |
-| No `EXPOSE`, no volumes, no secrets, no `--privileged`       | Nothing is served and nothing from the host is mounted.                                                                                         |
-| `HEALTHCHECK NONE`                                           | One-shot job, not a service.                                                                                                                    |
-
-### What `.dockerignore` excludes
-
-`node_modules`, `out`, `dist`, `.git`, `.github`, every `*.db`/`*-wal`/`*-shm`/`*-journal` file (no local or production data ever enters an image), `.env` and `.env.*` (except `.env.example`), `sqlite3.exe`, `typst.exe`, `*.bat`, and documentation/report folders that the checks do not read.
-
-## 3. Usage
-
-```bash
-docker build -t heromarket-ci .
-docker run --rm heromarket-ci                          # lint + format + build + tests (exit code = result)
-docker run --rm heromarket-ci npm run test:fresh       # one step only
-docker run --rm -it heromarket-ci bash                 # explore the toolchain
+```powershell
+copy .env.example .env      # fill in POSTGRES_PASSWORD and HEROMARKET_SECRET (see the comments in the file)
+docker compose up -d        # builds Dockerfile.server, starts db then server (waits for db health)
+docker compose logs server  # first start: "HeroMarket first-run setup code: 12345678"
 ```
 
-The container exits non-zero if any step fails. Because the source is copied into the image at build time, rebuild after changing code.
+1. On the first till, choose **جهاز كاشير**, enter `http://<server-ip>:8787`, then create the administrator with the setup code from the log.
+2. Every other till only needs the address.
+3. Set `HEROMARKET_BIND` in `.env` to the server's LAN address so the tills can reach it. The default `127.0.0.1` keeps the API on the server PC only.
 
-## 4. In CI
+| Service  | Hardening                                                                                                                                                                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`     | No published port (reachable only by `server` on the compose network). Data in the named volume `pgdata`. UTF-8, `C` collation. `pg_isready` health check. `no-new-privileges`.                                                                                                                                                 |
+| `server` | Runs as uid 1000 (`node`). `read_only: true` root filesystem with a tmpfs `/tmp`. `cap_drop: ALL`, `no-new-privileges`. Health check `node src/server/cli.js health` (polls `/api/health`). The secret and database URL come from the environment (`*_FILE` variants accept Docker secrets) and are never baked into the image. |
 
-The `docker` job in `.github/workflows/ci.yml` builds the image with Buildx (layer cache stored in the GitHub Actions cache, nothing pushed to a registry) and runs it. It proves that the Dockerfile still builds and that the project checks pass as a non-root user on a clean Linux machine. See `CI_CD.md`.
+`Dockerfile.server`:
 
-## 5. Limitations
+- Base: `node:22-bookworm-slim`, pinned by digest.
+- Dependencies: `npm ci --omit=dev --ignore-scripts` (runtime dependencies only, exactly as locked).
+- Copies only `src/server` and `src/shared`.
+- `EXPOSE 8787`; `CMD node src/server/cli.js serve`. On start the server migrates the database, then listens. `SIGTERM` closes it cleanly.
 
-- Debian bookworm ships sqlite3 **3.40.1**; the app bundles **3.53.3** (`sqlite3.exe`). All four suites pass with both (verified locally on 2026-10-13: container run and Windows run). The Windows CI job keeps exercising the bundled binary, so a query that only works on one version is caught.
-- No Electron binary in the image: the app UI, printing and PDF generation are not exercised here. The UI is checked manually or with the CDP-based QA scripts described in `TESTING_AND_KNOWN_ISSUES.md`.
-- The image is a validation tool, not a deliverable. Installers are produced by the release workflow on a Windows runner (`SECURITY_AND_RELEASE.md`).
+**Operations:**
+
+| Task                         | Command                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upgrade                      | `git pull` then `docker compose up -d --build` (migrations run on start)                                                                                                                                                                                                                                                    |
+| Logs                         | `docker compose logs -f server`                                                                                                                                                                                                                                                                                             |
+| Backup                       | `docker compose exec db pg_dump -U heromarket -Fc heromarket > heromarket-$(Get-Date -Format yyyyMMdd).dump`. Keep `.env` (it holds the secret) with the dumps, off the machine.                                                                                                                                            |
+| Restore into an empty volume | `docker compose exec -T db pg_restore -U heromarket -d heromarket --clean --if-exists < file.dump`                                                                                                                                                                                                                          |
+| Import an old SQLite store   | From a checkout of the repository: `node scripts/import-sqlite.js --sqlite <file> --database-url <url>`, with the URL pointing at the server's PostgreSQL (temporarily publish port 5432 or run it on the server). The server image does not contain the import script. See [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md). |
+| Stop / remove (keeps data)   | `docker compose down`. `down -v` **deletes the database volume**: only for throw-away setups.                                                                                                                                                                                                                               |
+
+The API is plain HTTP on the LAN. For shared networks, put a TLS reverse proxy in front of port 8787 (G-24).
+
+## 3. Validation environment
+
+```powershell
+docker compose -f docker-compose.test.yml run --rm --build tests   # exit code = result
+docker compose -f docker-compose.test.yml down -v
+```
+
+`Dockerfile`:
+
+- Base: `node:22-bookworm-slim` pinned by digest, non-root `node` user.
+- `npm ci --ignore-scripts`: no Electron binary is needed to lint, build or test.
+- `CMD`: `npm run lint && npm run format:check && npm run build && npm test`.
+
+`test-db` is PostgreSQL 17 with `trust` authentication on the internal compose network, data in tmpfs and nothing published. Each test file creates and drops its own database. `npm test` fails rather than skips if the database is not reachable.
+
+## 4. What `.dockerignore` keeps out
+
+- `node_modules`, `out`, `dist`, `.git`, `.github`.
+- Every `*.db` / `*-wal` / `*-shm` / `*-journal` file, `.pgdata` and `.migration-backups` (real data never enters an image).
+- `.env*` (except `.env.example`).
+- Windows binaries, and documentation and report folders the checks do not read.
+
+## 5. In CI
+
+The `docker` job in `.github/workflows/ci.yml` runs both: the validation environment, then the server stack with throw-away credentials. It checks health, the setup-code requirement and the log line, then removes everything. See [CI_CD.md](CI_CD.md).
+
+## 6. Verified
+
+On 2026-10-14 (Docker 29.4.1, Windows host, Linux containers):
+
+- the validation run passed 50/50 tests;
+- the server stack started healthy, required the setup code and ran as uid 1000;
+- CI repeated both on GitHub-hosted runners.

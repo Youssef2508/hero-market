@@ -30,7 +30,7 @@ test('first run: setup is required, creates a super admin once, then is refused'
     needsSetup: false,
     setupCodeRequired: false
   })
-  const again = await svc.call('auth.setup', { username: 'intruder', pin: '1111' })
+  const again = await svc.call('auth.setup', { username: 'intruder', pin: '7777' })
   assert.equal(again.status, 409)
 })
 
@@ -143,6 +143,12 @@ test('networked server: first-run setup needs the one-time code from the server 
       needsSetup: true,
       setupCodeRequired: true
     })
+    const weak = await net.call('auth.setup', {
+      username: 'owner',
+      pin: '1234',
+      setupCode: '48213377'
+    })
+    assert.equal(weak.status, 400, 'guessable PIN refused for the first administrator')
     const noCode = await net.call('auth.setup', { username: 'intruder', pin: '4821' })
     assert.equal(noCode.status, 401)
     const wrong = await net.call('auth.setup', {
