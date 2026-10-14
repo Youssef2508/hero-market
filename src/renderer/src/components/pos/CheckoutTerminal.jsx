@@ -314,6 +314,8 @@ function CheckoutTerminal({
                 onChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="بحث بالاسم…"
+                role="combobox"
+                aria-autocomplete="list"
                 aria-label="البحث في الأصناف"
                 aria-expanded={showResults}
                 aria-controls="pos-search-results"

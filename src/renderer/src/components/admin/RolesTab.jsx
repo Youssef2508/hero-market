@@ -146,13 +146,12 @@ export default function RolesTab({ currentUser, triggerCustomAlert, triggerCusto
             دور جديد
           </button>
         </div>
-        <ul className="role-items" role="listbox" aria-label="الأدوار">
+        <ul className="role-items" aria-label="الأدوار">
           {roles.map((r) => (
             <li key={r.id}>
               <button
                 type="button"
-                role="option"
-                aria-selected={draft?.id === r.id}
+                aria-pressed={draft?.id === r.id}
                 className={`role-item ${draft?.id === r.id ? 'is-active' : ''}`}
                 onClick={() => setDraft({ ...r, permissions: [...r.permissions] })}
               >
