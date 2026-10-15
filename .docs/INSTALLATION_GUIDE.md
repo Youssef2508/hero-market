@@ -13,14 +13,16 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 1. Copy `HeroMarket-Setup-<version>.exe` to the cashier PC, for example from a USB stick.
 2. Double-click it.
    - The installer is **not code-signed yet**, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. This message disappears once a code-signing certificate is bought (see [DEPLOYMENT_RECOMMENDATION.md](DEPLOYMENT_RECOMMENDATION.md) §5).
-3. There are no questions to answer. The installer:
-   - puts the program in `C:\Users\<you>\AppData\Local\Programs\heromarket-pos`;
-   - creates a **HeroMarket POS** shortcut on the Desktop and in the Start Menu;
+3. Windows asks **"Do you want to allow this app to make changes to your device?"**. Click **Yes** (an administrator's password may be asked once). There are no other questions. The installer:
+   - puts the program in `C:\Program Files\HeroMarket POS`, for **every Windows user of this PC**;
+   - creates a **HeroMarket POS** shortcut on the Desktop and in the Start Menu of every user;
    - opens the program.
 
-   No administrator rights are needed.
+   If this Windows user had an older HeroMarket installed only for themselves, that copy is removed automatically. Its data is kept and moved in (step 4).
 
 4. On the first start the program prepares its database on this computer. This takes up to a minute.
+   - The store's data is kept in `C:\ProgramData\HeroMarket`, shared by all Windows users of the PC: whoever signs in to Windows opens the same shop, with the same products, invoices and shifts.
+   - If this Windows user has data from HeroMarket 1.3 or earlier (`%APPDATA%\HeroMarket`), it is copied there and every file is checked. The old database folder is left as it was; only its settings file is renamed (`heromarket.json.moved-to-…`) so the data is never moved twice.
    - If the PC still has the old version's data (`%APPDATA%\elnagdi-pos`), it is copied in automatically. The old file is only read, never changed.
    - Then the **إعداد المتجر لأول مرة** screen asks you to create the first administrator. There is no default password.
    - Next, the **recovery code** is shown once. Write it on paper and keep it away from the till (§3a).
@@ -29,6 +31,10 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 
 - **Open:** double-click **HeroMarket POS** on the Desktop, wait for the login screen, and sign in. The database starts by itself.
 - **Close:** close the window. The program stops its database cleanly. If Windows is shut down with the program open, the database recovers by itself on the next start.
+- **Several Windows users on one PC:** each can open HeroMarket under their own Windows account, and all of them work in the same shop.
+  - If two Windows accounts are signed in at the same time (switch user), the second one uses the database the first one started.
+  - The database stops when the account that started it closes the program.
+  - In every case, sign in to HeroMarket itself with your own HeroMarket username.
 - Without internet everything works: sales, invoices, stock and shifts are saved on this computer immediately.
 
 ## 3a. Sign-in and passwords
@@ -44,7 +50,7 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 - **Recovery code lost as well:**
   1. Close HeroMarket.
   2. Press **Win + R** and type:
-     `"%LOCALAPPDATA%\Programs\heromarket-pos\HeroMarket-POS.exe" --reset-password=<your username>`
+     `"C:\Program Files\HeroMarket POS\HeroMarket-POS.exe" --reset-password=<your username>`
   3. A window shows a temporary password; sign in with it and choose a new one.
 
   This works only on the store PC itself and is written to the event log. Anyone who can use that PC's Windows account can do it, so protect the Windows account with its own password.
@@ -65,19 +71,25 @@ Until then the shop works fully without it.
 
 ## 4. Where the data is
 
-| What                                         | Where                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| The store's database and settings            | `%APPDATA%\HeroMarket` (`pgdata`, `heromarket.json`)                                |
-| Automatic copies taken before every upgrade  | `%APPDATA%\HeroMarket\backups\pre-upgrade` (the newest 3 are kept)                  |
-| Copy of the old version's data (first start) | `%APPDATA%\HeroMarket\backups\legacy-sqlite`                                        |
-| The program files                            | `%LOCALAPPDATA%\Programs\heromarket-pos` (replaced by every upgrade, holds no data) |
+| What                                                          | Where                                                                        |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| The store's database, settings and program log                | `C:\ProgramData\HeroMarket` (`pgdata`, `heromarket.json`, `app.log`)         |
+| Automatic copies taken before every upgrade                   | `C:\ProgramData\HeroMarket\backups\pre-upgrade` (the newest 3 are kept)      |
+| Copy of the old version's data (first start)                  | `C:\ProgramData\HeroMarket\backups\legacy-sqlite`                            |
+| Data of version 1.3 or earlier (left as it was)               | `%APPDATA%\HeroMarket` of the Windows user who used it                       |
+| Window preferences (theme, last username) of one Windows user | `%APPDATA%\HeroMarket`                                                       |
+| The program files                                             | `C:\Program Files\HeroMarket POS` (replaced by every upgrade, holds no data) |
 
-`heromarket.json` holds the database password and the server secret. Keep it together with the backups and never share it.
+`heromarket.json` holds the database password and the server secret.
+
+- Every Windows user of this PC can open HeroMarket, so every Windows user of this PC can also read this file.
+- Give Windows accounts on the cashier PC only to people you trust with the shop's data, and protect each account with a Windows password.
+- Keep the file together with the backups and never share it.
 
 ## 5. Back up
 
 - **Every day:** open **النسخ الاحتياطي → حفظ نسخة** and save the file to a USB stick, not the same computer.
-- **Once a week:** with the program **closed**, copy the whole `%APPDATA%\HeroMarket` folder to a USB stick. This copy can rebuild the shop on a new PC.
+- **Once a week:** with the program **closed**, copy the whole `C:\ProgramData\HeroMarket` folder to a USB stick. This copy can rebuild the shop on a new PC.
 
 ## 6. Update to a new version
 
@@ -93,28 +105,34 @@ Until then the shop works fully without it.
 
 ## 7. If something goes wrong
 
-| Problem                                                     | What to do                                                                                                                                                                                                 |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The program says the database could not start               | Restart the computer and open the program again. If it repeats, send the file `%APPDATA%\HeroMarket\logs\postgres.log` to support. Do **not** delete any folder.                                           |
-| An update went wrong and you want the previous version back | Close the program. Reinstall the previous installer. Ask support to put the newest folder from `backups\pre-upgrade\…\pgdata` back as `%APPDATA%\HeroMarket\pgdata` (a guided button for this is planned). |
-| The PC broke                                                | Install HeroMarket on the new PC, close it, put the weekly copy of the `HeroMarket` folder back in `%APPDATA%`, and open it.                                                                               |
+| Problem                                                     | What to do                                                                                                                                                                                                      |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The program says the database could not start               | Restart the computer and open the program again. If it repeats, send the file `C:\ProgramData\HeroMarket\logs\postgres.log` to support. Do **not** delete any folder.                                           |
+| An update went wrong and you want the previous version back | Close the program. Reinstall the previous installer. Ask support to put the newest folder from `backups\pre-upgrade\…\pgdata` back as `C:\ProgramData\HeroMarket\pgdata` (a guided button for this is planned). |
+| The PC broke                                                | Install HeroMarket on the new PC, close it, put the weekly copy of the `HeroMarket` folder back in `C:\ProgramData`, and open it.                                                                               |
 
 ## 8. Uninstall
 
-Windows **Settings → Apps → HeroMarket POS → Uninstall**. The program and its shortcuts are removed. **The store's data stays** in `%APPDATA%\HeroMarket`; reinstalling picks it up again. To erase the data as well, delete that folder after uninstalling, and only once you are sure you have a backup.
+Windows **Settings → Apps → HeroMarket POS → Uninstall**. The program and its shortcuts are removed. **The store's data stays** in `C:\ProgramData\HeroMarket`; reinstalling picks it up again. To erase the data as well, delete that folder after uninstalling, and only once you are sure you have a backup.
 
 ## 9. What has been tested, and what you still need to test
 
-| Check                                                                                                             | Where it was tested                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Silent install; program folder; Desktop and Start Menu shortcuts; uninstall entry                                 | This development PC, QA edition of the real installer (2026-10-15)                                                             |
-| First start: database created automatically, first administrator, login, a sale, stock deducted                   | Same                                                                                                                           |
-| Closing stops the database; reopening shows the same sale and stock                                               | Same                                                                                                                           |
-| Database only on `127.0.0.1`; no connection leaves the computer                                                   | Same                                                                                                                           |
-| Upgrade over the previous version: data kept, verified snapshot before migrating (1,447 files), migration applied | Same (versions 2.0.0-qa.1 → qa.2)                                                                                              |
-| Uninstall keeps data; reinstall finds it                                                                          | Same                                                                                                                           |
-| Snapshot of a real database starts and contains the data                                                          | Automated test (`upgradeSnapshot.test.mjs`)                                                                                    |
-| **A clean Windows PC with no development tools**                                                                  | **Not yet**: Windows Sandbox is not enabled on the development PC. Your step: [GO_LIVE_TEST_PLAN.md](GO_LIVE_TEST_PLAN.md) T1. |
-| **Windows restart (reboot)** with the program installed                                                           | **Not yet**                                                                                                                    |
-| **Upgrade from your real version 1.3**                                                                            | **Not yet**: test on a separate PC with a copy of your data (T1)                                                               |
-| **Power cut while selling**                                                                                       | **Not yet** (T8)                                                                                                               |
+| Check                                                                                                                                                                                                       | Where it was tested                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Silent install; program folder; Desktop and Start Menu shortcuts; uninstall entry                                                                                                                           | This development PC, QA edition of the real installer (2026-10-15)                                                                      |
+| First start: database created automatically, first administrator, login, a sale, stock deducted                                                                                                             | Same                                                                                                                                    |
+| Closing stops the database; reopening shows the same sale and stock                                                                                                                                         | Same                                                                                                                                    |
+| Database only on `127.0.0.1`; no connection leaves the computer                                                                                                                                             | Same                                                                                                                                    |
+| Upgrade over the previous version: data kept, verified snapshot before migrating (1,447 files), migration applied                                                                                           | Same (versions 2.0.0-qa.1 → qa.2)                                                                                                       |
+| Uninstall keeps data; reinstall finds it                                                                                                                                                                    | Same                                                                                                                                    |
+| Snapshot of a real database starts and contains the data                                                                                                                                                    | Automated test (`upgradeSnapshot.test.mjs`)                                                                                             |
+| 1.4.0 QA build: shared store folder created on first start, modify rights for all Windows users (inherited by the database), database only on `127.0.0.1`, clean stop on close                              | This development PC, unpacked QA build, **not installed**: installing for all users needs the Windows administrator prompt (2026-10-15) |
+| 1.4.0 hardening: the program cannot be run as plain Node.js; a program package with a modified header is refused                                                                                            | Same                                                                                                                                    |
+| 1.4.0 moving a per-user store: a store kept by an older per-user installation is copied to the shared folder, every file checked, the old settings file renamed, and the data (a marker row) opens in 1.4.0 | Same                                                                                                                                    |
+| **1.4.0 installation for all users (administrator prompt, `C:\Program Files`)**                                                                                                                             | **Not yet**: needs a PC where you can approve the administrator prompt. Your step: [GO_LIVE_TEST_PLAN.md](GO_LIVE_TEST_PLAN.md) T1.     |
+| **Upgrade from a real per-user installation (1.3) with the 1.4.0 installer: old copy removed by the installer, data moved**                                                                                 | **Not yet** (T1, on a separate PC with a copy of your data)                                                                             |
+| **Two Windows accounts on one PC, one after the other and signed in at the same time**                                                                                                                      | **Not yet**                                                                                                                             |
+| **A clean Windows PC with no development tools**                                                                                                                                                            | **Not yet**: Windows Sandbox is not enabled on the development PC. Your step: [GO_LIVE_TEST_PLAN.md](GO_LIVE_TEST_PLAN.md) T1.          |
+| **Windows restart (reboot)** with the program installed                                                                                                                                                     | **Not yet**                                                                                                                             |
+| **Upgrade from your real version 1.3**                                                                                                                                                                      | **Not yet**: test on a separate PC with a copy of your data (T1)                                                                        |
+| **Power cut while selling**                                                                                                                                                                                 | **Not yet** (T8)                                                                                                                        |

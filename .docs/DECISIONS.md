@@ -502,3 +502,47 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Access before validation:** sign-in and permissions are checked before the request body is validated, so a caller without access receives 401/403 and no schema details. Credentials are redacted from logs.
 - **Remote stock receipts** follow the shop's quantity rules (whole pieces for count products).
 - **Tests:** `tests/service/integrity.test.js` (10), including real concurrency (a sale and a drawer row waiting on a close; four simultaneous shift openings).
+
+## D-050 Customer addresses: up to three, reused at the till (1.4.0, migration 0012)
+
+- **Model:** a customer has zero to three addresses in `client_addresses` (label home/work/other, address 1–300 characters, details up to 200, exactly one default when any exist).
+  - The limit is enforced in the service and by a database trigger that locks the customer row, so two simultaneous saves cannot create a fourth.
+  - The old single `clients.address` becomes the default address; nothing is invented or dropped.
+  - Older screens that still send `address` replace only the default address.
+- **At the till (owner's request):** for a known customer, the cashier picks one of the saved phones and one of the saved addresses from lists instead of typing them again ("رقم آخر…" / "عنوان آخر…" for a new one).
+  - A new phone typed for a known customer is saved in a free slot (at most two phones, D-045) when no other customer has it.
+  - A new address is saved when the customer has fewer than three and it is not a duplicate.
+  - When there is no room, the order still uses what was typed; nothing is overwritten.
+- **Invoice:** a delivery invoice keeps a snapshot of the address used (`sales.delivery_address`), so later edits of the customer do not change old invoices.
+- **Rejected:** unlimited addresses (the owner asked for three); free-text "other" labels (they make the till list harder to read).
+
+## D-051 Product categories and browsing at the till (1.4.0, migration 0013)
+
+- **Model:** `categories` (unique name ignoring case and spaces, sort order, active flag). Each product has at most one category (`products.category_id`, deletion restricted) and its own active flag.
+  - The existing free-text categories were converted; nothing was invented.
+  - Only an empty category can be deleted. Otherwise it is stopped, and its products then appear under "بدون تصنيف" at the till, so nothing becomes impossible to sell.
+  - A stopped product is refused by search, browsing, `pos.resolve` and checkout.
+- **Products without a category** are always listed at the till as "بدون تصنيف" (last in the list). A product saved without a category belongs there automatically; nothing has to be assigned.
+- **Browsing (F6 or "تصفح"):** a vertical list of categories beside the products, over the scan and cart column.
+  - The cart, the totals and the pay button stay as they are, and the scanner keeps working.
+  - Escape returns to the invoice and never clears the cart while the panel is open.
+  - ↑/↓ move between categories.
+  - A browsed product is added through the same path as a scan, so current prices, units, weighing and automatic discounts apply. Cashiers still cannot change discounts.
+- **Cache:** the till keeps categories and the first pages it has opened (at most 40 categories). Freshness comes from `catalog_state.version`, bumped by triggers on names, prices, units, categories and active flags (not stock); it is checked at most every 30 seconds. Correctness never depends on the cache, because the server re-prices at checkout.
+- **Permissions:** `categories.manage` (inventory and management roles) to edit; cashiers only read through `pos.*`.
+
+## D-052 Per-machine installation, shared store folder and program hardening (1.4.0)
+
+- **Install for all users:** the installer is per-machine (`C:\Program Files\HeroMarket POS`, one administrator prompt). The store's data moved to `%ProgramData%\HeroMarket`.
+  - On first creation, the local Users group is given modify rights, inherited by the database files.
+  - Every Windows account on the cashier PC therefore opens the same shop.
+  - Each person still signs in to HeroMarket with their own account.
+- **Upgrade from a per-user installation:** the installer removes the installing user's old per-user copy (keeping its data). On first start, 1.4.0 copies that user's store into the shared folder and checks every file (`copyAndVerify`, the same check as the pre-upgrade snapshot).
+  - The old database folder is left as it was; its settings file is renamed so the move happens once.
+  - If the shared folder already holds a database, nothing is moved and the screen says so.
+- **Two Windows accounts signed in together:** the second session finds the database already running (same folder, same port) and uses it. Only the session that started it stops it.
+- **Accepted risk:** every Windows user of the PC can read `heromarket.json` (database password, server secret), because every one of them must be able to start the database. The guide tells the owner to give Windows accounts on the till only to trusted people.
+- **Hardening (Electron fuses):** the packaged program cannot be used as a Node.js runtime and ignores `NODE_OPTIONS` and debugging switches. It loads only its own `app.asar` and checks that file's header at start.
+  - Verified on the QA build: `ELECTRON_RUN_AS_NODE=1` has no effect, and a modified header is refused before the database starts.
+  - Changes inside file contents are not caught at start. The protection for those is the administrator-only Program Files folder (and, later, code signing).
+- **Rejected:** keeping per-user installs (a second Windows account would see an empty shop); a Windows service for PostgreSQL (needs an administrator for every change and survives uninstall).
