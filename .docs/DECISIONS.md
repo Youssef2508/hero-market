@@ -318,6 +318,7 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Fall back to the cheapest paid VPS, about 4–6 EUR/month.
   - The cloud must be rebuildable from the PC.
 - **Status**:
+  - Official-source cost estimate in [HOSTING_COST_ESTIMATE.md](HOSTING_COST_ESTIMATE.md) (2026-10-15): about $4.2–4.5/month including 14 % VAT (IPv4 $0.005/h is the main cost); Hetzner CX23 €5.99–7.09/month excl. VAT.
   - Nothing created.
   - The owner must approve, and must create the billing account with their own card.
 
