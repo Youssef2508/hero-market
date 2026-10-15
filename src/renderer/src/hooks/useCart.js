@@ -96,12 +96,29 @@ export function useCart({ playSound }) {
     })
   }
 
-  /** Weight entry confirmed (kilograms) or cancelled (null). */
+  /** Weight entry confirmed (kilograms) or cancelled (null). Editing replaces the line's weight. */
   const confirmWeight = (kg) => {
     const p = pendingWeight
     setPendingWeight(null)
     if (!p || kg === null || !(kg > 0)) return
+    if (p.editKey) {
+      updateQty(p.editKey, round3(kg))
+      return
+    }
     addToCart({ product: p.product, unit: p.unit, units: p.units }, round3(kg))
+  }
+
+  /** Re-open the weight entry for a weighed line (correct the weight before payment). */
+  const editWeight = (key) => {
+    const line = cart.find((item) => item.key === key)
+    if (!line) return
+    setPendingWeight({
+      product: { barcode: line.barcode, name: line.name },
+      unit: { id: line.unitId, name: line.unitName, price: line.price },
+      units: line.units,
+      editKey: key,
+      initialKg: line.qty
+    })
   }
 
   const updateQty = (key, qty) => {
@@ -197,6 +214,7 @@ export function useCart({ playSound }) {
     triggerDeleteItem,
     triggerClearCart,
     pendingWeight,
-    confirmWeight
+    confirmWeight,
+    editWeight
   }
 }

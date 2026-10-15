@@ -157,6 +157,7 @@ function App() {
     changeLineUnit,
     pendingWeight,
     confirmWeight,
+    editWeight,
     triggerDeleteItem,
     triggerClearCart,
     updateQty,
@@ -653,6 +654,7 @@ function App() {
             changeLineUnit={changeLineUnit}
             pendingWeight={pendingWeight}
             confirmWeight={confirmWeight}
+            editWeight={editWeight}
             triggerDeleteItem={triggerDeleteItem}
             cartSubtotal={cartSubtotal}
             discount={discount}

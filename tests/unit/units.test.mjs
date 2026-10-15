@@ -44,20 +44,24 @@ test('prices: base keeps the exact price; a unit uses its own price or base × f
   assert.equal(unitPrice({ retail_price: 2.5 }, { id: 7, factor: 24, retail_price: 55 }), 55)
 })
 
-test('scale labels: default layout, unknown prefixes, invalid settings', () => {
-  assert.deepEqual(parseScaleLabel(DEFAULT_SCALE, '2000777002503'), {
+test('scale labels: off by default; when enabled, default layout, unknown prefixes, invalid settings', () => {
+  // The store weighs manually (owner, 2026-10-15): labels are ignored unless enabled.
+  assert.equal(DEFAULT_SCALE.enabled, false)
+  assert.equal(parseScaleLabel(DEFAULT_SCALE, '2000777002503'), null)
+  const ON = { ...DEFAULT_SCALE, enabled: true }
+  assert.deepEqual(parseScaleLabel(ON, '2000777002503'), {
     code: '00777',
     kind: 'weight',
     value: 0.25
   })
-  assert.deepEqual(parseScaleLabel(DEFAULT_SCALE, '2200777045004'), {
+  assert.deepEqual(parseScaleLabel(ON, '2200777045004'), {
     code: '00777',
     kind: 'price',
     value: 45
   })
-  assert.equal(parseScaleLabel(DEFAULT_SCALE, '6223001876366'), null)
-  assert.equal(parseScaleLabel(DEFAULT_SCALE, '200077700250'), null) // 12 digits
-  assert.equal(parseScaleLabel({ ...DEFAULT_SCALE, enabled: false }, '2000777002503'), null)
+  assert.equal(parseScaleLabel(ON, '6223001876366'), null)
+  assert.equal(parseScaleLabel(ON, '200077700250'), null) // 12 digits
+  assert.equal(parseScaleLabel({ ...ON, enabled: false }, '2000777002503'), null)
   assert.throws(() => normalizeScaleLabels('{bad'))
   assert.throws(() => normalizeScaleLabels(JSON.stringify({ ...DEFAULT_SCALE, codeStart: 12 })))
   assert.throws(() =>

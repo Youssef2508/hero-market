@@ -29,7 +29,7 @@ async function saleWithCashier(db, saleId) {
 async function saleItems(db, saleId) {
   return (
     await db.query(
-      'SELECT si.*, p.name FROM sale_items si LEFT JOIN products p ON si.product_barcode = p.barcode WHERE si.sale_id = $1 ORDER BY si.id',
+      'SELECT si.*, p.name, p.unit_kind FROM sale_items si LEFT JOIN products p ON si.product_barcode = p.barcode WHERE si.sale_id = $1 ORDER BY si.id',
       [saleId]
     )
   ).rows
@@ -171,7 +171,8 @@ module.exports = function salesModule(app) {
         })
         await db.query('UPDATE sale_items SET returned_qty = $1, total_price = $2 WHERE id = $3', [
           newReturned,
-          (Number(item.quantity) - newReturned) * Number(item.unit_price),
+          // Rounded per line like checkout (weighed lines: 0.2 kg × 240 must be 48.00, not 47.999…).
+          round2((Number(item.quantity) - newReturned) * Number(item.unit_price)),
           item.id
         ])
         await db.query(

@@ -221,7 +221,17 @@ test('weighed product: 200 g, 250 g, 1.25 kg at a per-kilogram price; 3 decimals
 
 test('scale labels follow the store settings (weight and price), including custom prefixes', async (t) => {
   if (!requireDb(t)) return
-  // Default: 20 + code 00777 + 00250 g + check digit → 0.250 kg
+  // Off by default (manual weighing): a label is not resolved until the owner enables labels.
+  assert.equal(ok(await svc.call('pos.resolve', { code: '2000777002503' }, admin)), null)
+  const initial = JSON.parse((await svc.call('settings.get', {}, admin)).body.settings.scale_labels)
+  ok(
+    await svc.call(
+      'settings.update',
+      { values: { scale_labels: JSON.stringify({ ...initial, enabled: true }) } },
+      admin
+    )
+  )
+  // Default layout: 20 + code 00777 + 00250 g + check digit → 0.250 kg
   const w = ok(await svc.call('pos.resolve', { code: '2000777002503' }, admin))
   assert.deepEqual([w.product.barcode, w.qty, w.unit.id], ['00777', 0.25, null])
   // 22 + code + 04500 (45.00 EGP) → 45 / 180 = 0.25 kg
