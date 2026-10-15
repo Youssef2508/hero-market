@@ -1,8 +1,10 @@
-# Owner Decisions Pending
+# Owner Decisions
 
 Two business policies are undecided. Current behaviour stays unchanged until the owner answers. Evidence was gathered on 2026-10-14 from the code and from a scripted scenario on a throw-away database (`k24.js` in the QA notes).
 
 ## K-24 / G-27 – Expected cash when closing a shift
+
+> **Decided by the owner on 2026-10-14: option 1. Implemented.** Both close dialogs, the hourly audit, the saved shift record and the printed report use one formula (`drawerFigures` in `src/server/modules/shifts.js`); the dialogs display the service's figure instead of computing their own. Regression tests: `tests/service/shiftClose.test.js` (the example below gives 650 everywhere). The analysis below is kept as the record.
 
 ### What the code does today
 
@@ -44,6 +46,8 @@ Physical cash in the drawer: 500 + 200 − 40 − 20 + 25 − 15 = **650**.
 _Recommendation, not an established requirement:_ option 1. The saved formula is the one that matches the cash physically in the drawer in every case we tested.
 
 ## K-10 / G-13 – Supervisor approval
+
+> **Owner decision, 2026-10-14:** option A is **rejected**. Ordinary edits to an unfinished cart (add, remove, change quantity or weight, clear, correct a scan) never require supervisor approval. A risk-based policy for completed sales, returns, prices, discounts, inventory and administration is proposed in [STAGE4_ARCHITECTURE_REVIEW.md](STAGE4_ARCHITECTURE_REVIEW.md) §7 and awaits the owner's choices. Nothing has been implemented.
 
 ### What exists
 

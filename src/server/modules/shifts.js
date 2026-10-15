@@ -1,9 +1,14 @@
 'use strict'
-// Shifts: open, hourly drawer audit, closing figures, close. Formulas are the legacy ones, unchanged
-// (usePOSController.handleConfirmCloseShift, App.triggerAuditCheck, CloseShiftModal queries).
+// Shifts: open, hourly drawer audit, closing figures, close.
+// One drawer formula (drawerFigures, K-24 option 1) serves the hourly audit, the saved close figure,
+// the printed report and both close dialogs:
+//   opening cash + cash sales as sold + cash inflows − every cash outflow (returns, suppliers, expenses).
+// Returns reduce a sale's total_amount AND add an outflow, so sales are counted as sold (SALE_VALUE)
+// and the refund is counted once, as the outflow – also for sales from earlier shifts.
 const { forbidden, notFound, conflict } = require('../errors')
 
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
 async function loadShift(db, ctx, shiftId, { own = true } = {}) {
   const { rows } = await db.query('SELECT * FROM shifts WHERE id = $1', [shiftId])
@@ -13,56 +18,56 @@ async function loadShift(db, ctx, shiftId, { own = true } = {}) {
   return shift
 }
 
-/** Figures for the hourly drawer audit (App.triggerAuditCheck). */
-async function auditFigures(db, shift) {
+/** Expected drawer cash and its parts (K-24). Every outflow falls in exactly one category. */
+async function drawerFigures(db, shift) {
   const { rows } = await db.query(
-    `SELECT
-       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1), 0) AS "grossSales",
-       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type = 'آجل'), 0) AS "debtSales",
-       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type NOT IN ('نقدي', 'آجل')), 0) AS "digitalSales",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'inflow'), 0) AS "repayTotal",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow'), 0) AS "refundTotal"`,
+    `WITH o AS (
+       SELECT amount, COALESCE(description, '') AS d FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow'
+     )
+     SELECT
+       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type = 'نقدي'), 0)::float8 AS "cashSales",
+       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type <> 'نقدي'), 0)::float8 AS "nonCashSales",
+       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'inflow'), 0)::float8 AS "inflow",
+       COALESCE((SELECT SUM(amount) FROM o WHERE d LIKE 'مرتجع%'), 0)::float8 AS "returns",
+       COALESCE((SELECT SUM(amount) FROM o WHERE d LIKE 'دفعة لمورد%' OR d LIKE 'سداد دين مورد%'), 0)::float8 AS "supplier",
+       COALESCE((SELECT SUM(amount) FROM o WHERE d NOT LIKE 'مرتجع%' AND d NOT LIKE 'دفعة لمورد%' AND d NOT LIKE 'سداد دين مورد%'), 0)::float8 AS "expenses"`,
     [shift.id]
   )
   const r = rows[0]
   const initialCash = Number(shift.initial_cash) || 0
-  const expected =
-    initialCash + r.grossSales - r.debtSales - r.digitalSales + r.repayTotal - r.refundTotal
+  const outflow = r.returns + r.supplier + r.expenses
   return {
-    expected,
+    expected: round2(initialCash + r.cashSales + r.inflow - outflow),
+    initialCash,
+    cashSales: r.cashSales,
+    nonCashSales: r.nonCashSales,
+    inflow: r.inflow,
+    outflow,
+    returns: r.returns,
+    supplier: r.supplier,
+    expenses: r.expenses
+  }
+}
+
+/** Figures for the hourly drawer audit (same formula as the close). */
+async function auditFigures(db, shift) {
+  const f = await drawerFigures(db, shift)
+  return {
+    expected: f.expected,
     breakdown: {
-      grossSales: r.grossSales,
-      debtSales: r.debtSales + r.digitalSales,
-      refunds: r.refundTotal,
-      repay: r.repayTotal,
-      initialCash
+      grossSales: f.cashSales + f.nonCashSales,
+      debtSales: f.nonCashSales,
+      refunds: f.outflow,
+      repay: f.inflow,
+      initialCash: f.initialCash
     }
   }
 }
 
-/** Expected drawer cash saved on close (usePOSController.handleConfirmCloseShift). */
-async function closeFigures(db, shift) {
-  const { rows } = await db.query(
-    `SELECT
-       COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type = 'نقدي'), 0) AS "cashSales",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'inflow'), 0) AS "repayTotal",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND description LIKE 'مرتجع%'), 0) AS "returnsTotal",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%')), 0) AS "supplierTotal",
-       COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%')), 0) AS "expensesTotal"`,
-    [shift.id]
-  )
-  const r = rows[0]
-  const initialCash = Number(shift.initial_cash) || 0
-  const outflow = r.returnsTotal + r.supplierTotal + r.expensesTotal
-  return {
-    expected: initialCash + r.cashSales + r.repayTotal - outflow,
-    cashSales: r.cashSales,
-    inflow: r.repayTotal,
-    outflow
-  }
-}
+/** Expected drawer cash saved on close. */
+const closeFigures = drawerFigures
 
-/** Live figures for the close dialogs (CloseShiftModal simple + detailed queries). */
+/** Live figures for the close dialogs: the drawer figure plus the Momkn and wallet sections. */
 async function liveDetails(db, shift) {
   const { rows } = await db.query(
     `SELECT
@@ -86,7 +91,12 @@ async function liveDetails(db, shift) {
        COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id = $1 AND platform = 'bank_transfer'), 0) AS bank_digital_impact`,
     [shift.id]
   )
-  return { initial_cash: Number(shift.initial_cash) || 0, ...rows[0] }
+  // drawer: the figure both dialogs show, identical to what shifts.close saves and prints.
+  return {
+    initial_cash: Number(shift.initial_cash) || 0,
+    ...rows[0],
+    drawer: await drawerFigures(db, shift)
+  }
 }
 
 const money = { type: 'number', minimum: 0 }
@@ -240,4 +250,11 @@ module.exports = function shiftsModule(app) {
   })
 }
 
-module.exports.helpers = { loadShift, auditFigures, closeFigures, liveDetails, SALE_VALUE }
+module.exports.helpers = {
+  loadShift,
+  auditFigures,
+  closeFigures,
+  drawerFigures,
+  liveDetails,
+  SALE_VALUE
+}

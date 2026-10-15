@@ -20,8 +20,10 @@ function Row({ label, value, tone, sign = '' }) {
   )
 }
 
-// Simple close dialog (cashier / manager). The drawer figure is display-only;
-// handleConfirmCloseShift recomputes the expected cash itself.
+// Both dialogs show the service's drawer figure (shifts.liveSummary → drawer), the same value that
+// shifts.close saves and prints (K-24 option 1). They never compute their own formula.
+
+// Simple close dialog (cashier / manager).
 const SimpleCloseShiftModal = ({
   closeShiftModal,
   currentShift,
@@ -44,10 +46,7 @@ const SimpleCloseShiftModal = ({
         .then((r) => [r])
         .then((rows) => {
           if (rows && rows[0]) {
-            const r = rows[0]
-            const exp =
-              Number(r.initial_cash) + Number(r.cash_sales) + Number(r.inflow) - Number(r.outflow)
-            setExpected(exp)
+            setExpected(Number(rows[0].drawer.expected))
           }
           setLoading(false)
         })
@@ -179,10 +178,9 @@ const AdvancedCloseShiftModal = ({
 }) => {
   const [data, setData] = useState({
     initialCash: 0,
-    allSales: 0,
-    debtSales: 0,
-    digitalSales: 0,
+    expected: 0,
     cashSales: 0,
+    nonCashSales: 0,
     inflow: 0,
     returnsOutflow: 0,
     supplierOutflow: 0,
@@ -210,16 +208,16 @@ const AdvancedCloseShiftModal = ({
         .then((rows) => {
           if (rows && rows[0]) {
             const r = rows[0]
+            const d = r.drawer
             setData({
-              initialCash: Number(r.initial_cash) || 0,
-              allSales: Number(r.all_sales) || 0,
-              debtSales: Number(r.debt_sales) || 0,
-              digitalSales: Number(r.digital_sales) || 0,
-              cashSales: Number(r.cash_sales) || 0,
-              inflow: Number(r.inflow) || 0,
-              returnsOutflow: Number(r.returns_outflow) || 0,
-              supplierOutflow: Number(r.supplier_outflow) || 0,
-              generalOutflow: Number(r.general_outflow) || 0,
+              initialCash: Number(d.initialCash) || 0,
+              expected: Number(d.expected) || 0,
+              cashSales: Number(d.cashSales) || 0,
+              nonCashSales: Number(d.nonCashSales) || 0,
+              inflow: Number(d.inflow) || 0,
+              returnsOutflow: Number(d.returns) || 0,
+              supplierOutflow: Number(d.supplier) || 0,
+              generalOutflow: Number(d.expenses) || 0,
               momknDigitalImpact: Number(r.momkn_digital_impact) || 0,
               momknCashImpact: Number(r.momkn_cash_impact) || 0,
               momknCommission: Number(r.momkn_commission) || 0,
@@ -246,9 +244,7 @@ const AdvancedCloseShiftModal = ({
   const vfcashStartBalance = Number(currentShift?.vfcash_start_balance) || 0
   const vfcashStartCash = Number(currentShift?.vfcash_start_cash) || 0
 
-  const netOperationsCashImpact =
-    data.cashSales + data.inflow - (data.supplierOutflow + data.generalOutflow)
-  const supermarketExpectedDrawer = data.initialCash + netOperationsCashImpact
+  const supermarketExpectedDrawer = data.expected
 
   const momknExpectedDigital = momknStartBalance + data.momknDigitalImpact
   const momknExpectedDrawer = momknStartCash + data.momknCashImpact
@@ -303,21 +299,19 @@ const AdvancedCloseShiftModal = ({
             </h3>
             <dl className="kv">
               <Row label="كاش الفكة الافتتاحي" value={m(data.initialCash)} />
+              <Row label="مبيعات نقدية" value={m(data.cashSales)} sign="+" tone="success" />
               <Row
-                label="إجمالي مبيعات الفواتير"
-                value={m(data.allSales)}
+                label="تحصيلات ومقدمات نقدية (داخل)"
+                value={m(data.inflow)}
                 sign="+"
                 tone="success"
               />
-              {(data.debtSales > 0 || data.digitalSales > 0) && (
-                <Row
-                  label="آجل وتحويلات (لم تدخل الدرج)"
-                  value={m(data.debtSales + data.digitalSales)}
-                  sign="−"
-                  tone="warning"
-                />
-              )}
-              <Row label="تحصيل ديون عملاء (داخل)" value={m(data.inflow)} sign="+" tone="success" />
+              <Row
+                label="مرتجعات مدفوعة من الدرج"
+                value={m(data.returnsOutflow)}
+                sign="−"
+                tone="danger"
+              />
               <Row
                 label="مدفوعات وصرف لموردين"
                 value={m(data.supplierOutflow)}
@@ -331,6 +325,12 @@ const AdvancedCloseShiftModal = ({
                 tone="danger"
               />
             </dl>
+            {data.nonCashSales > 0 && (
+              <p className="cell-muted">
+                مبيعات آجل وتحويلات ودفع جزئي ({m(data.nonCashSales)} ج.م) لا تدخل الدرج؛ مقدّم
+                الدفع الجزئي محسوب ضمن التحصيلات.
+              </p>
+            )}
             <div className="audit-expected">
               <span>صافي الكاش المتوقع بالدرج</span>
               <strong className="money">{m(supermarketExpectedDrawer)} ج.م</strong>
