@@ -428,3 +428,33 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Refused and failed rows are written on a separate connection, so they survive the rollback. They are also written to the event log.
   - A refused or failed approval changes nothing else (tested on stock, money, invoice, customer balance and returns).
 - **Discounts need no approval** (D-044 withdrew discount authority from cashiers entirely).
+
+## D-047 Synchronisation engine: outbox, versioned JSON rows in the cloud, epochs, exactly-once commands (stage 4 phase 4)
+
+- **Context:** D-042 fixed the model (one writer, row-change outbox, owner command queue). This records how it is built and what the proof suite showed. See [SYNC_DESIGN_AND_PROOF.md](SYNC_DESIGN_AND_PROOF.md).
+- **PC (migration 0009, changes no existing data):**
+  - A trigger on each synchronised table writes `sync_outbox` and `sync_row_versions` in the change's own transaction, with versions from one store-wide sequence. Administrative bulk work can switch capture off (`hm.sync_capture`); restore does so.
+  - Users are sent through an **allow-list** (id, username, role, active state, dates). Sessions, role permissions, receipt templates, migrations and sync bookkeeping are not sent.
+  - `applied_commands` holds the command id, outcome and detail. It is written in the command's transaction and synchronised back.
+  - Existing rows are queued once, when the store first registers (`hm_sync_snapshot`).
+- **Cloud (own database and schema, `src/server/cloud`):**
+  - Rows are stored as **versioned JSON** (`cloud_rows`), not as copies of the store tables. Rows may then arrive in any order without foreign keys failing.
+  - A row is replaced only by a strictly newer (epoch, version).
+  - One transaction per batch; the answer comes after the commit.
+  - Changes are accepted only for the store's current epoch.
+  - Phase 5 builds the owner's read screens on views over these rows.
+- **Transport:**
+  - Only the PC connects (HTTPS).
+  - The store is identified by a device token, stored hashed.
+  - Rows travel as PostgreSQL JSON **text**, so numeric scale and digits are exact.
+- **Commands:**
+  - Types: supplier invoice (paid only outside the drawer), stock receipt, product edit and price edit, each with base values.
+  - A business refusal rolls back the command's own writes (savepoint) and records **rejected** once.
+  - A database failure rolls back everything; the command stays pending.
+  - Outcomes: applied, partially applied (some fields in conflict) and rejected. All are audited on the PC as "المالك (عن بعد)" with the command id.
+- **Restore:** the restore turns capture off, clears the outbox, and sets the epoch to "none". The next sync takes a new epoch and sends everything once, and the old copy is refused. Writing back rows that reached the cloud after the backup is PR #15.
+- **Robustness fix found by the suite:** every pooled PostgreSQL connection now has an error listener. Previously a connection dropped while in use (a PostgreSQL restart) raised an uncaught exception that would have stopped the app.
+- **Rejected:**
+  - copying the store tables one-to-one into the cloud (out-of-order rows break foreign keys);
+  - a high-water-mark cursor (it skips late commits);
+  - sending parsed JSON (it loses numeric precision).

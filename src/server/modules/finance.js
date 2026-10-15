@@ -23,6 +23,110 @@ async function ownOpenShift(db, ctx, shiftId) {
   )
 }
 
+/**
+ * Record a supplier invoice and receive its lines into stock (K-38), in the caller's transaction.
+ * `drawer: false` (owner commands from the cloud): any paid amount was paid outside the drawer,
+ * so no shift is needed and no drawer movement is written.
+ */
+async function recordPurchase(db, ctx, p, { drawer = true } = {}) {
+  const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId]))
+    .rows[0]
+  if (!s) throw notFound('المورد غير موجود.')
+  const total = p.total_amount
+  const paid = p.paid_amount || 0
+  const remaining = total - paid
+  const ref = p.invoice_ref || ''
+  // A remote invoice (owner command) never touches the drawer: the owner paid outside it.
+  const shift = drawer ? await ownOpenShift(db, ctx, p.currentShiftId) : null
+  if (drawer && paid > 0 && !shift)
+    throw conflict('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
+  const items = (p.items || []).map((i) => ({
+    barcode: i.barcode.trim(),
+    unitId: i.unitId ?? null,
+    qty: Number(i.qty),
+    unitCost: Number(i.unitCost),
+    lineTotal: round2(Number(i.qty) * Number(i.unitCost))
+  }))
+  if (items.length) {
+    const sum = round2(items.reduce((a, i) => a + i.lineTotal, 0))
+    if (Math.abs(sum - total) > 0.005)
+      throw badRequest(
+        `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
+      )
+    if (new Set(items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)).size !== items.length)
+      throw badRequest('الصنف مكرر في فاتورة الشراء.')
+    const known = new Set(
+      (
+        await db.query('SELECT barcode FROM products WHERE barcode = ANY($1::text[])', [
+          items.map((i) => i.barcode)
+        ])
+      ).rows.map((r) => r.barcode)
+    )
+    const missing = items.find((i) => !known.has(i.barcode))
+    if (missing) throw notFound(`الصنف (${missing.barcode}) غير مسجل.`)
+  }
+  const purchaseId = (
+    await db.query(
+      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7) RETURNING id`,
+      [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '']
+    )
+  ).rows[0].id
+  // Lock the products in a stable order (concurrent sales lock the same rows).
+  for (const i of [...items].sort((a, b) => (a.barcode < b.barcode ? -1 : 1))) {
+    const product = (await db.query('SELECT * FROM products WHERE barcode = $1', [i.barcode]))
+      .rows[0]
+    const unit = await loadUnit(db, product, i.unitId, { purpose: 'buy' })
+    const { baseQty } = toBaseQty(product.unit_kind || 'count', i.qty, unit.factor, product.name)
+    await db.query(
+      `INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total, unit_id, unit_name, unit_factor)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        purchaseId,
+        i.barcode,
+        i.qty,
+        i.unitCost,
+        i.lineTotal,
+        unit.id,
+        unit.id === null ? product.unit || null : unit.name,
+        unit.factor
+      ]
+    )
+    // Stock and the moving average work per base unit.
+    await receiveStock(db, ctx, {
+      barcode: i.barcode,
+      qty: baseQty,
+      unitCost: round4(i.unitCost / unit.factor),
+      refType: 'purchase',
+      refId: purchaseId,
+      reason: `فاتورة شراء #${ref} من ${s.name}`
+    })
+  }
+  if (remaining > 0) {
+    await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
+      remaining,
+      s.id
+    ])
+    await db.query(
+      `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'purchase', $2, $3, LOCALTIMESTAMP(0))`,
+      [s.id, remaining, `فاتورة شراء #${ref} - متبقي آجل`]
+    )
+  }
+  if (drawer && paid > 0) {
+    await db.query(
+      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
+      [shift.id, paid, `دفعة لمورد: ${s.name} - فاتورة #${ref}`]
+    )
+  }
+  await ctx.audit(
+    db,
+    'supplier_purchase',
+    `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`
+  )
+  const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+  return { ...supplier, purchaseId, receivedItems: items.length }
+}
+
 module.exports = function financeModule(app) {
   // ── Suppliers ──────────────────────────────────────────────
   app.operation({
@@ -125,109 +229,7 @@ module.exports = function financeModule(app) {
         }
       }
     },
-    handler: async (ctx, p) =>
-      ctx.tx(async (db) => {
-        const s = (
-          await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId])
-        ).rows[0]
-        if (!s) throw notFound('المورد غير موجود.')
-        const total = p.total_amount
-        const paid = p.paid_amount || 0
-        const remaining = total - paid
-        const ref = p.invoice_ref || ''
-        const shift = await ownOpenShift(db, ctx, p.currentShiftId)
-        if (paid > 0 && !shift) throw conflict('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
-        const items = (p.items || []).map((i) => ({
-          barcode: i.barcode.trim(),
-          unitId: i.unitId ?? null,
-          qty: Number(i.qty),
-          unitCost: Number(i.unitCost),
-          lineTotal: round2(Number(i.qty) * Number(i.unitCost))
-        }))
-        if (items.length) {
-          const sum = round2(items.reduce((a, i) => a + i.lineTotal, 0))
-          if (Math.abs(sum - total) > 0.005)
-            throw badRequest(
-              `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
-            )
-          if (new Set(items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)).size !== items.length)
-            throw badRequest('الصنف مكرر في فاتورة الشراء.')
-          const known = new Set(
-            (
-              await db.query('SELECT barcode FROM products WHERE barcode = ANY($1::text[])', [
-                items.map((i) => i.barcode)
-              ])
-            ).rows.map((r) => r.barcode)
-          )
-          const missing = items.find((i) => !known.has(i.barcode))
-          if (missing) throw notFound(`الصنف (${missing.barcode}) غير مسجل.`)
-        }
-        const purchaseId = (
-          await db.query(
-            `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes)
-             VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7) RETURNING id`,
-            [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '']
-          )
-        ).rows[0].id
-        // Lock the products in a stable order (concurrent sales lock the same rows).
-        for (const i of [...items].sort((a, b) => (a.barcode < b.barcode ? -1 : 1))) {
-          const product = (await db.query('SELECT * FROM products WHERE barcode = $1', [i.barcode]))
-            .rows[0]
-          const unit = await loadUnit(db, product, i.unitId, { purpose: 'buy' })
-          const { baseQty } = toBaseQty(
-            product.unit_kind || 'count',
-            i.qty,
-            unit.factor,
-            product.name
-          )
-          await db.query(
-            `INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total, unit_id, unit_name, unit_factor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [
-              purchaseId,
-              i.barcode,
-              i.qty,
-              i.unitCost,
-              i.lineTotal,
-              unit.id,
-              unit.id === null ? product.unit || null : unit.name,
-              unit.factor
-            ]
-          )
-          // Stock and the moving average work per base unit.
-          await receiveStock(db, ctx, {
-            barcode: i.barcode,
-            qty: baseQty,
-            unitCost: round4(i.unitCost / unit.factor),
-            refType: 'purchase',
-            refId: purchaseId,
-            reason: `فاتورة شراء #${ref} من ${s.name}`
-          })
-        }
-        if (remaining > 0) {
-          await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
-            remaining,
-            s.id
-          ])
-          await db.query(
-            `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'purchase', $2, $3, LOCALTIMESTAMP(0))`,
-            [s.id, remaining, `فاتورة شراء #${ref} - متبقي آجل`]
-          )
-        }
-        if (paid > 0) {
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-            [shift.id, paid, `دفعة لمورد: ${s.name} - فاتورة #${ref}`]
-          )
-        }
-        await ctx.audit(
-          db,
-          'supplier_purchase',
-          `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`
-        )
-        const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
-        return { ...supplier, purchaseId, receivedItems: items.length }
-      })
+    handler: async (ctx, p) => ctx.tx((db) => recordPurchase(db, ctx, p))
   })
 
   app.operation({
@@ -560,3 +562,5 @@ module.exports = function financeModule(app) {
       })
   })
 }
+
+module.exports.helpers = { recordPurchase }

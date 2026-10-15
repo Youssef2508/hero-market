@@ -67,7 +67,15 @@ async function exportAll(db) {
     createdAt: new Date().toISOString(),
     schema: await schemaVersion(db),
     tables: {},
-    sequences: {}
+    sequences: {},
+    // Where synchronisation stood (D-047): a restore starts a new epoch from this point.
+    sync: (
+      await db.query(
+        `SELECT s.store_id AS "storeId", s.epoch,
+                (SELECT COALESCE(max(version), 0) FROM sync_row_versions)::text AS version
+           FROM sync_state s`
+      )
+    ).rows[0]
   }
   for (const t of TABLES) {
     const cols = await columnsOf(db, t)
@@ -121,6 +129,8 @@ module.exports = function backupModule(app) {
       }
       const actor = ctx.user
       return ctx.tx(async (db) => {
+        // Rows rewritten by the restore are not queued one by one: synchronisation restarts below.
+        await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
         const counts = {}
         for (const t of TRIGGER_TABLES) await db.query(`ALTER TABLE "${t}" DISABLE TRIGGER USER`)
         await db.query('DELETE FROM sessions')
@@ -159,6 +169,13 @@ module.exports = function backupModule(app) {
           }
         }
         for (const t of TRIGGER_TABLES) await db.query(`ALTER TABLE "${t}" ENABLE TRIGGER USER`)
+        // Synchronisation continues in a new epoch: the restored state is sent again in full, and
+        // the cloud stops accepting changes from the database that was replaced (D-047).
+        await db.query('DELETE FROM sync_outbox')
+        await db.query('DELETE FROM sync_row_versions')
+        await db.query('UPDATE sync_state SET epoch = NULL, recover_from = $1', [
+          JSON.stringify({ backupCreatedAt: backup.createdAt, sync: backup.sync || null })
+        ])
         await db.query(
           `INSERT INTO system_logs (timestamp, user_id, username, action_type, description, details)
            VALUES (LOCALTIMESTAMP(0), NULL, $1, 'database_restore', $2, $3)`,

@@ -10,6 +10,8 @@ files:
   - '!src/*'
   # The HeroMarket service runs inside the main process (local and standalone modes).
   - 'src/server/**'
+  # The cloud side of synchronisation never runs on the cashier PC.
+  - '!src/server/cloud/**'
   - 'src/shared/**'
   # Never package local data, credentials, backups or development material.
   - '!{.pgdata,.migration-backups,.docs,docs,tests,scripts,scratch,pdf,dist,coverage,build}/**'
