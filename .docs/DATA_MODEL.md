@@ -7,7 +7,7 @@
 - **Engine**: PostgreSQL 17 (UTF-8, `C` collation), reached only by the HeroMarket service through one `pg` pool. Each connection runs `SET TIME ZONE '<store zone>'`.
 - **Types**: money and quantities `numeric` (exact; parsed to JS numbers for the app), local date-times `timestamp without time zone` (store local time, returned as stored text), dates `date`, ids `integer` identities.
 - **Schema versions**: `schema_migrations` (file name + checksum); migrations run on every service start under an advisory lock, one transaction per file. Never edit an applied migration – add a new one.
-- **Where**: local mode `%APPDATA%HeroMarketpgdata` (managed cluster); standalone a PostgreSQL the store manages; server mode the Docker volume `pgdata`. Development: `.pgdata/` (`npm run pg:dev`).
+- **Where**: local mode `%APPDATA%\HeroMarket\pgdata` (managed cluster); standalone a PostgreSQL the store manages; server mode the Docker volume `pgdata`. Development: `.pgdata/` (`npm run pg:dev`).
 
 ## 2. Entity relationship overview
 

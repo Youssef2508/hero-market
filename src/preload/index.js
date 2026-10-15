@@ -7,7 +7,8 @@ const api = {
   call: (op, body) => ipcRenderer.invoke('api:call', op, body),
   backend: {
     status: () => ipcRenderer.invoke('backend:status'),
-    configure: (cfg) => ipcRenderer.invoke('backend:configure', cfg)
+    configure: (cfg) => ipcRenderer.invoke('backend:configure', cfg),
+    pickServerCa: () => ipcRenderer.invoke('backend:pickServerCa')
   },
   db: {
     backup: () => ipcRenderer.invoke('backup:save'),

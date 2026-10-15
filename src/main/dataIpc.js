@@ -3,6 +3,7 @@
 import { app, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
+import { describeRoot } from './tlsPin'
 
 const OP_RE = /^[a-zA-Z]+\.[a-zA-Z]+$/
 
@@ -32,14 +33,40 @@ export function registerDataIpc({
     if (mode === 'client' && !/^https?:\/\//i.test(String(cfg.serverUrl || ''))) {
       return { ready: false, error: 'عنوان الخادم يجب أن يبدأ بـ http:// أو https://' }
     }
+    let serverCaPem
+    if (mode === 'client' && cfg.serverCaPem) {
+      try {
+        describeRoot(cfg.serverCaPem)
+        serverCaPem = cfg.serverCaPem
+      } catch (e) {
+        return { ready: false, error: e.message }
+      }
+    }
     writeConfig({
       mode,
       databaseUrl: cfg.databaseUrl,
       serverUrl: cfg.serverUrl,
+      serverCaPem,
       terminalName: cfg.terminalName
     })
     clearSession()
     return startBackend()
+  })
+
+  // Cashier terminal: choose the store server's root certificate (root.crt from the server, public).
+  ipcMain.handle('backend:pickServerCa', async () => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'شهادة خادم المتجر',
+      filters: [{ name: 'Certificate', extensions: ['crt', 'pem', 'cer'] }],
+      properties: ['openFile']
+    })
+    if (!filePaths || !filePaths.length) return null
+    try {
+      const pem = fs.readFileSync(filePaths[0], 'utf8')
+      return { pem, ...describeRoot(pem) }
+    } catch (e) {
+      return { error: e.message.includes('CA') ? e.message : 'الملف المختار ليس شهادة صالحة.' }
+    }
   })
 
   ipcMain.handle('backup:save', async () => {

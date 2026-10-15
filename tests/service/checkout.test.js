@@ -116,6 +116,32 @@ test('retrying the same checkout returns the same sale and does not deduct stock
   )
 })
 
+test('checkout status: tells a till whether an attempt whose reply was lost was recorded', async (t) => {
+  if (!requireDb(t)) return
+  const key = ref()
+  const unknown = await svc.call('pos.checkoutStatus', { clientRef: key }, cashier)
+  assert.equal(unknown.status, 200)
+  assert.deepEqual(unknown.body, { recorded: false })
+  const sale = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: key,
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      items: [{ barcode: 'A1', qty: 1, unitPrice: 10.5 }]
+    },
+    cashier
+  )
+  assert.equal(sale.status, 200)
+  const known = await svc.call('pos.checkoutStatus', { clientRef: key }, cashier)
+  assert.deepEqual(known.body, { recorded: true, saleId: sale.body.saleId, total: 10.5 })
+  // Only users who may sell can ask.
+  assert.equal(
+    (await svc.call('pos.checkoutStatus', { clientRef: key }, inventoryUser)).status,
+    403
+  )
+})
+
 test('a tampered or stale price is refused and nothing is written', async (t) => {
   if (!requireDb(t)) return
   const salesBefore = (await q('SELECT count(*)::int AS n FROM sales'))[0].n

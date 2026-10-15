@@ -38,3 +38,22 @@ Phase letters follow the master mission §19.
 | H     | Production readiness and final report                                                                                                                  | ✅ Done                                                                        | PRODUCTION_READINESS.md                                                                                                             |
 
 Branch `feature/postgres-service` (stacked on `feature/heromarket-ui-redesign`), pull request #2.
+
+## Stage 3 – Closeout and hardening (2026-10-14)
+
+| Item                                                                             | Status                                                           | Evidence                                                |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| PR, CI and Git state verified; merge order recorded                              | ✅ Done                                                          | PAUSED_TASK_STATE.md                                    |
+| Owner decision briefs K-24 (measured example) and K-10                           | ✅ Written; ⏳ waiting for the owner (nothing implemented)       | OWNER_DECISIONS.md                                      |
+| Electron 39 → 43, production CSP without `unsafe-eval` (G-15, K-22)              | ✅ Done, PR #3                                                   | packaged smoke test, CI                                 |
+| Non-ASCII Windows paths (G-26, K-34)                                             | ✅ Done                                                          | `pgPaths.test.mjs` (real `initdb`), packaged run        |
+| Back-office lazy loading (G-19)                                                  | ✅ Done                                                          | chunk and start-up measurements                         |
+| HTTPS for client tills with a pinned root (G-24, D-039)                          | ✅ Done                                                          | `tlsPin.test.mjs`, real till, CI docker job             |
+| Offline selling (G-20)                                                           | ⏳ Analysed and designed (D-040); waits for three owner policies | DECISIONS.md                                            |
+| Scanner cut long barcodes (K-19); date pickers classified (K-33)                 | ✅ Fixed / platform behaviour                                    | `scannerTiming.test.mjs`, 0 of 48 trials cut            |
+| Duplicate sale on retry after a lost reply (K-35, found during go-live planning) | ✅ Fixed                                                         | `checkoutRetry.test.mjs`, `checkout.test.js`, proxy E2E |
+| Go-live test plan and automated rehearsal                                        | ✅ Plan and script; ⏳ hardware checks not yet performed         | GO_LIVE_TEST_PLAN.md, `npm run golive:check`            |
+| Gap list reconciled into six classes; readiness reassessed                       | ✅ Done                                                          | GAP_ANALYSIS.md, PRODUCTION_READINESS.md                |
+| Unused `sqlite3.exe` removed from the repository                                 | ✅ Done                                                          | –                                                       |
+
+Branches: `feature/electron-upgrade` (PR #3, stacked on PR #2), `feature/stage3-hardening` (PR #4, stacked on PR #3).

@@ -1,0 +1,27 @@
+# HeroMarket store server – TLS termination for cashier terminals (G-24).
+#
+# Caddy issues certificates from its own local root CA (kept in the caddy_data volume). Tills do not
+# trust it machine-wide: each till pins the root certificate (root.crt) in its connection settings.
+#   Export it:  docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./root.crt
+#   Fingerprint: docker compose exec proxy sh -c "openssl x509 -noout -fingerprint -sha256 -in /data/caddy/pki/authorities/local/root.crt"
+#                (or compare with the one shown on the till after choosing the file)
+{
+	local_certs
+	skip_install_trust
+	https_port 8443
+	auto_https disable_redirects
+	admin off
+	# Tills usually connect by IP address, and TLS clients send no server name (SNI) for an IP:
+	# this is the certificate name used then. Set it to the server's LAN address.
+	default_sni {$HEROMARKET_TLS_DEFAULT_NAME:127.0.0.1}
+}
+
+# Every name or address the tills use, comma separated (HEROMARKET_TLS_NAMES in .env).
+{$HEROMARKET_TLS_NAMES:localhost, 127.0.0.1} {
+	tls internal
+	reverse_proxy server:8787
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

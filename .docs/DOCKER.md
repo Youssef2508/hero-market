@@ -14,26 +14,39 @@ A single-till store needs no Docker: the app manages its own PostgreSQL ([DATABA
 ## 2. Store server
 
 ```powershell
-copy .env.example .env      # fill in POSTGRES_PASSWORD and HEROMARKET_SECRET (see the comments in the file)
-docker compose up -d        # builds Dockerfile.server, starts db then server (waits for db health)
+copy .env.example .env      # POSTGRES_PASSWORD, HEROMARKET_SECRET, HEROMARKET_BIND (LAN IP), HEROMARKET_TLS_NAMES / _DEFAULT_NAME
+docker compose up -d        # db, server, proxy (HTTPS on HEROMARKET_BIND:8443)
 docker compose logs server  # first start: "HeroMarket first-run setup code: 12345678"
+docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./root.crt   # the store's root certificate
 ```
 
-1. On the first till, choose **جهاز كاشير**, enter `http://<server-ip>:8787`, then create the administrator with the setup code from the log.
-2. Every other till only needs the address.
-3. Set `HEROMARKET_BIND` in `.env` to the server's LAN address so the tills can reach it. The default `127.0.0.1` keeps the API on the server PC only.
+On each till choose **جهاز كاشير**:
 
-| Service  | Hardening                                                                                                                                                                                                                                                                                                                       |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`     | No published port (reachable only by `server` on the compose network). Data in the named volume `pgdata`. UTF-8, `C` collation. `pg_isready` health check. `no-new-privileges`.                                                                                                                                                 |
-| `server` | Runs as uid 1000 (`node`). `read_only: true` root filesystem with a tmpfs `/tmp`. `cap_drop: ALL`, `no-new-privileges`. Health check `node src/server/cli.js health` (polls `/api/health`). The secret and database URL come from the environment (`*_FILE` variants accept Docker secrets) and are never baked into the image. |
+1. Enter `https://<server-ip>:8443`.
+2. Press **اختيار الشهادة…** and pick `root.crt` (copied on a USB stick, for example). Compare the SHA-256 shown on the till with the one printed on the server: `docker compose exec proxy sh -c "openssl x509 -noout -fingerprint -sha256 -in /data/caddy/pki/authorities/local/root.crt"`.
+3. The first till of a new server also needs the setup code.
 
-`Dockerfile.server`:
+| Service                                  | Exposure                                                 | Hardening                                                                                                                                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`                                     | Compose network only                                     | Volume `pgdata`; `pg_isready` health check; `no-new-privileges`                                                                                                                                                                    |
+| `server`                                 | Compose network only (`expose: 8787`, **not published**) | uid 1000, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, health check `cli.js health`; secrets from the environment or `*_FILE`                                                                                  |
+| `proxy` (Caddy 2.10, `deploy/Caddyfile`) | `HEROMARKET_BIND:8443`, HTTPS only                       | TLS 1.2/1.3 with Caddy's **local CA** (`tls internal`, root kept in volume `caddy_data`); HSTS; admin API off; read-only root filesystem, `cap_drop: ALL` + `NET_BIND_SERVICE` (the binary's file capability), `no-new-privileges` |
 
-- Base: `node:22-bookworm-slim`, pinned by digest.
-- Dependencies: `npm ci --omit=dev --ignore-scripts` (runtime dependencies only, exactly as locked).
-- Copies only `src/server` and `src/shared`.
-- `EXPOSE 8787`; `CMD node src/server/cli.js serve`. On start the server migrates the database, then listens. `SIGTERM` closes it cleanly.
+**Trust model (G-24, D-039).**
+
+- The proxy's root CA is created on the server and never leaves it, except as the public `root.crt`.
+- Tills do **not** add it to Windows: each till pins it in `heromarket.json` (`serverCaPem`). It accepts the server only when the presented chain is signed up to that root, every certificate is in date, and the certificate names the address the till uses (`src/main/tlsPin.js`, Chromium's network stack in a dedicated session).
+- Session tokens therefore travel only inside TLS.
+- Certificates trusted by Windows, for example from a real certificate authority, are accepted too.
+- Plain `http://` is still accepted for development and for a server on the same PC. Do not use it across a shared network.
+- **Back up the `caddy_data` volume with the database:** a new root means re-pinning every till.
+
+Verified on 2026-10-14:
+
+- `https://127.0.0.1:8443` (no SNI) and `https://localhost:8443` work with the pinned root over TLS 1.3.
+- The connection is refused without the root and for a wrong name.
+- Port 8787 is unreachable from the host.
+- A real Electron till completed setup and login over HTTPS with the pinned root, and was refused with "شهادة أمان خادم المتجر غير موثوقة…" without it.
 
 **Operations:**
 
@@ -45,8 +58,6 @@ docker compose logs server  # first start: "HeroMarket first-run setup code: 123
 | Restore into an empty volume | `docker compose exec -T db pg_restore -U heromarket -d heromarket --clean --if-exists < file.dump`                                                                                                                                                                                                                          |
 | Import an old SQLite store   | From a checkout of the repository: `node scripts/import-sqlite.js --sqlite <file> --database-url <url>`, with the URL pointing at the server's PostgreSQL (temporarily publish port 5432 or run it on the server). The server image does not contain the import script. See [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md). |
 | Stop / remove (keeps data)   | `docker compose down`. `down -v` **deletes the database volume**: only for throw-away setups.                                                                                                                                                                                                                               |
-
-The API is plain HTTP on the LAN. For shared networks, put a TLS reverse proxy in front of port 8787 (G-24).
 
 ## 3. Validation environment
 

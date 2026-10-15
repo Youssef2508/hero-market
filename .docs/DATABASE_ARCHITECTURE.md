@@ -20,7 +20,7 @@ flowchart LR
 | Renderer      | `src/renderer/src/lib/api.js`                                | `api('pos.checkout', {...})`. Raises `ApiError` with status and code; a 401 fires `heromarket:session-expired`.                                                        |
 | Preload / IPC | `src/preload/index.js`, `src/main/dataIpc.js`                | `api:call` accepts only an operation name (`/^[a-zA-Z]+\.[a-zA-Z]+$/`) and a JSON body.                                                                                |
 | Main          | `src/main/backend.js`                                        | Starts or connects the service, stores the session token in memory, adds `authorization` and `x-heromarket-terminal`, and revokes the previous session on a new login. |
-| Service       | `src/server/app.js`, `src/server/modules/*.js`               | 89 named operations, each `POST /api/<op>` with a JSON schema. Every operation checks permissions and writes audit rows server-side.                                   |
+| Service       | `src/server/app.js`, `src/server/modules/*.js`               | 90 named operations, each `POST /api/<op>` with a JSON schema. Every operation checks permissions and writes audit rows server-side.                                   |
 | Data access   | `src/server/db/pool.js`                                      | One `pg` pool (max 10, idle 30 s, connect timeout 5 s). Queries are parameterised. `withTransaction` runs BEGIN/COMMIT/ROLLBACK.                                       |
 | Schema        | `src/server/db/migrations/*.sql`, `src/server/db/migrate.js` | Numbered SQL files with checksums, recorded in `schema_migrations`, applied under an advisory lock, one transaction per file.                                          |
 
@@ -50,11 +50,11 @@ The 19 tables of the original application are ported one-to-one: same names, col
 
 ## 3. Deployment modes
 
-| Mode (`heromarket.json` → `mode`)   | Who                                                       | Where the database runs                                                   | How the till reaches it                          |
-| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
-| `local`: "هذا الجهاز فقط" (default) | One-till store; every new or upgraded install             | Private cluster created by the app (`src/main/localDatabase.js`)          | In-process                                       |
-| `standalone`: "خادم قاعدة بيانات"   | The store's main PC, or a PC next to a managed PostgreSQL | Any PostgreSQL 17 (`databaseUrl`)                                         | In-process                                       |
-| `client`: "جهاز كاشير"              | Extra tills in a multi-till store                         | The store server (`docker compose up`, or `node src/server/cli.js serve`) | HTTP on the LAN (`serverUrl`, default port 8787) |
+| Mode (`heromarket.json` → `mode`)   | Who                                                       | Where the database runs                                                   | How the till reaches it                                                            |
+| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `local`: "هذا الجهاز فقط" (default) | One-till store; every new or upgraded install             | Private cluster created by the app (`src/main/localDatabase.js`)          | In-process                                                                         |
+| `standalone`: "خادم قاعدة بيانات"   | The store's main PC, or a PC next to a managed PostgreSQL | Any PostgreSQL 17 (`databaseUrl`)                                         | In-process                                                                         |
+| `client`: "جهاز كاشير"              | Extra tills in a multi-till store                         | The store server (`docker compose up`, or `node src/server/cli.js serve`) | HTTPS on the LAN through the TLS proxy (`serverUrl`, port 8443, pinned store root) |
 
 ### 3.1 Local mode (managed PostgreSQL)
 
@@ -64,6 +64,7 @@ On first start the app:
 
 1. Picks a free port from 54330 and a random 24-byte password, and saves both in `heromarket.json` **before** running `initdb`. If the first start is interrupted, the same credentials finish the job later.
 2. Runs `initdb` (UTF-8, `C` locale, scram-sha-256) in `%APPDATA%\HeroMarket\pgdata`. If the Windows profile path contains characters outside ASCII (for example an Arabic user name), it uses `%ProgramData%\HeroMarket\store-<hash>` instead. The PostgreSQL tools cannot open such paths: Windows passes them in the ANSI code page.
+   The PostgreSQL tools themselves also need an ASCII path: if the app is installed under a non-ASCII profile (default per-user install), they are copied once to `%ProgramData%\HeroMarket\runtime\pgsql-<version>` and run from there (`src/main/pgPaths.js`, K-34).
 3. Starts the server with `pg_ctl start -w`, listening on `127.0.0.1` only. `pg_ctl` drops administrator rights itself, so this works on admin accounts.
 4. Creates the `heromarket` database, runs the migrations, imports the earlier version's SQLite data once (see [DATABASE_MIGRATION.md](DATABASE_MIGRATION.md)), and starts the service in-process.
 
@@ -82,16 +83,16 @@ Safety rules in `localDatabase.js` / `backend.js`:
 ```
                 ┌───────────── store LAN ─────────────┐
   Till 1 ──┐    │                                     │
-  Till 2 ──┼──► HeroMarket server :8787 ──► PostgreSQL 17 (not exposed)
+  Till 2 ──┼──► Caddy TLS :8443 ──► HeroMarket server ──► PostgreSQL 17 (neither exposed)
   Till 3 ──┘    │   (Docker: docker-compose.yml)      │
                 └─────────────────────────────────────┘
 ```
 
 - `docker-compose.yml` runs `db` (PostgreSQL 17, volume `pgdata`, no published port) and `server` (`Dockerfile.server`: non-root, read-only filesystem, all capabilities dropped, health-checked). See [DOCKER.md](DOCKER.md).
 - Without Docker: install PostgreSQL 17 on the server PC, create a `heromarket` database and role, then run `node src/server/cli.js serve` with `HEROMARKET_DATABASE_URL` and `HEROMARKET_SECRET` (for example as a Windows service with NSSM).
-- Each till picks **جهاز كاشير** and enters `http://<server-ip>:8787`. Tills never hold database credentials.
+- Each till picks **جهاز كاشير**, enters `https://<server-ip>:8443` and pins the server's `root.crt`. Tills never hold database credentials.
 - First start of an empty server prints a **one-time setup code** in its log. The first administrator can only be created with it, so nobody else on the LAN can claim the store.
-- **Transport:** plain HTTP on the store LAN. Session tokens travel in clear text inside the LAN. Put the server behind a TLS reverse proxy (Caddy or nginx with an internal certificate) if the network is shared. This is open item G-24 in [GAP_ANALYSIS.md](GAP_ANALYSIS.md).
+- **Transport:** HTTPS through the Caddy proxy (`deploy/Caddyfile`, local CA). Each till pins the store root certificate instead of trusting it machine-wide (`src/main/tlsPin.js`, D-039). The HeroMarket API and PostgreSQL are not published. Details and verification: [DOCKER.md §2](DOCKER.md).
 
 ## 4. Outages: what keeps working
 

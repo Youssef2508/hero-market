@@ -15,6 +15,7 @@ function ConnectForm({ backendInfo, onRetry }) {
   )
   const [databaseUrl, setDatabaseUrl] = useState('')
   const [serverUrl, setServerUrl] = useState('')
+  const [serverCa, setServerCa] = useState(null) // { pem, subject, fingerprint }
   const [terminalName, setTerminalName] = useState(backendInfo?.terminalName || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(
@@ -28,7 +29,13 @@ function ConnectForm({ backendInfo, onRetry }) {
     setBusy(true)
     setError('')
     try {
-      const st = await window.api.backend.configure({ mode, databaseUrl, serverUrl, terminalName })
+      const st = await window.api.backend.configure({
+        mode,
+        databaseUrl,
+        serverUrl,
+        serverCaPem: serverCa?.pem,
+        terminalName
+      })
       if (st.ready) onRetry()
       else setError(st.error || 'تعذر الاتصال. راجع البيانات وحاول مرة أخرى.')
     } finally {
@@ -92,19 +99,47 @@ function ConnectForm({ backendInfo, onRetry }) {
           />
         </label>
       ) : (
-        <label className="field">
-          <span className="field-label">عنوان خادم HeroMarket</span>
-          <input
-            className="input ltr"
-            dir="ltr"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            placeholder="http://192.168.1.10:8787"
-            required
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
+        <>
+          <label className="field">
+            <span className="field-label">عنوان خادم HeroMarket</span>
+            <input
+              className="input ltr"
+              dir="ltr"
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+              placeholder="https://192.168.1.10:8443"
+              required
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <div className="field">
+            <span className="field-label">شهادة خادم المتجر (لاتصال https)</span>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  const picked = await window.api.backend.pickServerCa()
+                  if (!picked) return
+                  if (picked.error) setError(picked.error)
+                  else setServerCa(picked)
+                }}
+              >
+                <ShieldCheck size={15} aria-hidden="true" />
+                اختيار الشهادة…
+              </button>
+              {serverCa && (
+                <span className="field-hint ltr" dir="ltr" title={serverCa.subject}>
+                  SHA-256 {serverCa.fingerprint.slice(0, 23)}…
+                </span>
+              )}
+            </div>
+            <span className="field-hint">
+              ملف root.crt من جهاز الخادم. قارن البصمة بالمعروضة على الخادم قبل الحفظ.
+            </span>
+          </div>
+        </>
       )}
       <label className="field">
         <span className="field-label">اسم هذا الجهاز</span>
