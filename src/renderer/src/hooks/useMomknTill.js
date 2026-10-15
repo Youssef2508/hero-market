@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { 
-  addMomknTransaction, 
-  getMomknTransactionsByShift, 
+import {
+  addMomknTransaction,
+  getMomknTransactionsByShift,
   getMomknShiftSummary,
   deleteMomknTransaction
 } from '../lib/dao/momkn.dao'
@@ -68,15 +68,18 @@ export function useMomknTill({ currentShift, triggerCustomAlert, triggerCustomCo
   }
 
   const handleDeleteTransaction = async (id) => {
-    triggerCustomConfirm('هل أنت متأكد من حذف هذه العملية؟ سيتم إزالتها نهائياً من السجلات.', async () => {
-      try {
-        await deleteMomknTransaction(id)
-        await fetchMomknData()
-        triggerCustomAlert('تم حذف العملية بنجاح!')
-      } catch (err) {
-        triggerCustomAlert('فشل حذف العملية: ' + getFriendlyErrorMessage(err))
+    triggerCustomConfirm(
+      'هل أنت متأكد من حذف هذه العملية؟ سيتم إزالتها نهائياً من السجلات.',
+      async () => {
+        try {
+          await deleteMomknTransaction(id)
+          await fetchMomknData()
+          triggerCustomAlert('تم حذف العملية بنجاح!')
+        } catch (err) {
+          triggerCustomAlert('فشل حذف العملية: ' + getFriendlyErrorMessage(err))
+        }
       }
-    })
+    )
   }
 
   return {

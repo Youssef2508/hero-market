@@ -1,15 +1,13 @@
-import React from 'react'
+import { UserCog, UserPlus, Pencil, Trash2, Wrench, RotateCcw } from 'lucide-react'
+
+const ROLE_BADGE = {
+  admin: { label: 'مدير النظام', className: 'badge-info' },
+  manager: { label: 'مشرف', className: 'badge-purple' },
+  cashier: { label: 'كاشير', className: 'badge-accent' }
+}
 
 /**
- * @param {object} props
- * @param {function} props.setNewUser
- * @param {function} props.setShowAddUserModal
- * @param {object[]} props.usersList
- * @param {function} props.setEditUser
- * @param {function} props.setShowEditUserModal
- * @param {object} props.currentUser
- * @param {function} props.handleDeleteUser
- * @param {function} props.handleSystemReset
+ * Users management (admin only). Data and mutations come from useUsersManager.
  */
 export default function UsersTab({
   setNewUser,
@@ -22,95 +20,128 @@ export default function UsersTab({
   handleSystemReset
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="admin-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0 }}>👥 إدارة حسابات الكاشيرات والمشرفين</h3>
-          <button className="btn btn-primary" onClick={() => {
-            setNewUser({ username: '', pin: '', role: 'cashier' })
-            setShowAddUserModal(true)
-          }}>
-            ➕ إضافة حساب جديد
+    <>
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">
+            <UserCog size={18} aria-hidden="true" />
+            حسابات الكاشيرات والمشرفين
+          </h2>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              setNewUser({ username: '', pin: '', role: 'cashier' })
+              setShowAddUserModal(true)
+            }}
+          >
+            <UserPlus size={16} aria-hidden="true" />
+            إضافة حساب
           </button>
         </div>
-
-        <div className="admin-table-wrapper" style={{ marginTop: '15px' }}>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>رقم التعريف</th>
-                <th>اسم المستخدم (الكاشير)</th>
-                <th>رمز المرور (PIN)</th>
-                <th>نوع الصلاحية</th>
-                <th style={{ width: '180px', textAlign: 'center' }}>الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {usersList.length === 0 ? (
+        <div className="card-body">
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                    لا يوجد حسابات كاشير مسجلة في قاعدة البيانات.
-                  </td>
+                  <th style={{ width: 80 }}>المعرّف</th>
+                  <th>اسم المستخدم</th>
+                  <th>رمز المرور</th>
+                  <th>الصلاحية</th>
+                  <th>
+                    <span className="visually-hidden">الإجراءات</span>
+                  </th>
                 </tr>
-              ) : (
-                usersList.map((u) => (
-                  <tr key={u.id}>
-                    <td style={{ fontWeight: 'bold' }}>#{u.id}</td>
-                    <td style={{ fontWeight: '600' }}>{u.username}</td>
-                    <td style={{ fontFamily: 'monospace', letterSpacing: '0.1em' }}>••••</td>
-                    <td>
-                      <span className="badge-status" style={{
-                        backgroundColor: u.role === 'admin' ? 'rgba(37, 99, 235, 0.15)' : 'rgba(107, 114, 128, 0.15)',
-                        color: u.role === 'admin' ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem'
-                      }}>
-                        {u.role === 'admin' ? 'مدير (Admin)' : 'كاشير (Cashier)'}
-                      </span>
-                    </td>
-                    <td style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                      <button 
-                        className="btn btn-sm btn-secondary" 
-                        onClick={() => {
-                          setEditUser({ id: u.id, username: u.username, pin: '••••', role: u.role })
-                          setShowEditUserModal(true)
-                        }}
-                      >
-                        تعديل
-                      </button>
-                      <button 
-                        className="btn btn-sm btn-secondary" 
-                        style={{ color: 'var(--accent-rose)', borderColor: 'var(--accent-rose)' }}
-                        onClick={() => handleDeleteUser(u)}
-                      >
-                        حذف
-                      </button>
+              </thead>
+              <tbody>
+                {usersList.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="table-empty">
+                      لا توجد حسابات مسجلة.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  usersList.map((u) => {
+                    const badge = ROLE_BADGE[u.role] || { label: u.role, className: '' }
+                    const isMe = currentUser?.id === u.id
+                    return (
+                      <tr key={u.id}>
+                        <td className="num cell-muted">#{u.id}</td>
+                        <td>
+                          <span className="cell-strong">{u.username}</span>
+                          {isMe && <span className="badge ms-2">أنت</span>}
+                        </td>
+                        <td className="mono cell-muted" aria-label="مخفي">
+                          ••••
+                        </td>
+                        <td>
+                          <span className={`badge ${badge.className}`}>{badge.label}</span>
+                        </td>
+                        <td>
+                          <div className="cell-actions">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => {
+                                setEditUser({
+                                  id: u.id,
+                                  username: u.username,
+                                  pin: '••••',
+                                  role: u.role
+                                })
+                                setShowEditUserModal(true)
+                              }}
+                            >
+                              <Pencil size={15} aria-hidden="true" />
+                              تعديل
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-btn danger"
+                              onClick={() => handleDeleteUser(u)}
+                              aria-label={`حذف ${u.username}`}
+                              title="حذف الحساب"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── Maintenance: System Reset ── */}
-      <div className="admin-card" style={{ border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.04)' }}>
-        <h3 style={{ color: 'var(--accent-rose)', marginBottom: '8px' }}>🔧 صيانة النظام وإعادة الضبط</h3>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.6' }}>
-          تُستخدم قبل البدء الفعلي لحذف بيانات الاختبار.<br/>
-          <strong style={{ color: 'var(--accent-rose)' }}>تحذير:</strong> لا يمكن التراجع. ستُحذف الفواتير والورديات والعملاء والموردين والشيكات — ويبقى المخزن والمستخدمون.
-        </p>
-        <button
-          id="btn-system-reset"
-          className="btn"
-          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--accent-rose)', color: 'var(--accent-rose)', fontWeight: 'bold', padding: '10px 24px' }}
-          onClick={handleSystemReset}
-        >
-          🗑️ إعادة ضبط بيانات التشغيل (ريسيت)
-        </button>
-      </div>
-    </div>
+      <section className="card danger-zone">
+        <div className="card-header">
+          <h2 className="card-title">
+            <Wrench size={18} aria-hidden="true" />
+            صيانة النظام وإعادة الضبط
+          </h2>
+        </div>
+        <div className="card-body stack">
+          <p className="text-2">
+            تُستخدم قبل البدء الفعلي لحذف بيانات الاختبار.{' '}
+            <strong className="text-danger">لا يمكن التراجع:</strong> ستُحذف الفواتير والورديات
+            والعملاء والموردون والشيكات والمصروفات — ويبقى المخزون والمستخدمون.
+          </p>
+          <div>
+            <button
+              id="btn-system-reset"
+              type="button"
+              className="btn btn-danger-soft"
+              onClick={handleSystemReset}
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+              إعادة ضبط بيانات التشغيل
+            </button>
+          </div>
+        </div>
+      </section>
+    </>
   )
 }

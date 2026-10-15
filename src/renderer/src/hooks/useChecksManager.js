@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import { executeQuery } from '../lib/db'
-import { escapeSql, getNowStr, getFriendlyErrorMessage} from '../lib/utils'
+import { escapeSql, getNowStr, getFriendlyErrorMessage } from '../lib/utils'
 
 export function useChecksManager({ triggerCustomAlert, triggerCustomConfirm }) {
   const [checksList, setChecksList] = useState([])
   const [showAddCheckModal, setShowAddCheckModal] = useState(false)
-  const [newCheckForm, setNewCheckForm] = useState({ check_type: 'مورد', check_number: '', bank_name: '', party_name: '', issue_date: '', due_date: '', amount: '', notes: '' })
+  const [newCheckForm, setNewCheckForm] = useState({
+    check_type: 'مورد',
+    check_number: '',
+    bank_name: '',
+    party_name: '',
+    issue_date: '',
+    due_date: '',
+    amount: '',
+    notes: ''
+  })
   const [checksDueToday, setChecksDueToday] = useState([])
 
   const fetchChecksList = async () => {
@@ -48,7 +57,16 @@ export function useChecksManager({ triggerCustomAlert, triggerCustomConfirm }) {
                 ${parseFloat(newCheckForm.amount) || 0}, 'غير مسدد', '${escapeSql(newCheckForm.notes)}', '${nowStr}');
       `)
       setShowAddCheckModal(false)
-      setNewCheckForm({ check_type: 'مورد', check_number: '', bank_name: '', party_name: '', issue_date: '', due_date: '', amount: '', notes: '' })
+      setNewCheckForm({
+        check_type: 'مورد',
+        check_number: '',
+        bank_name: '',
+        party_name: '',
+        issue_date: '',
+        due_date: '',
+        amount: '',
+        notes: ''
+      })
       await fetchChecksList()
     } catch (err) {
       triggerCustomAlert('فشل إضافة الشيك: ' + getFriendlyErrorMessage(err))

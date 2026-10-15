@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { executeQuery } from '../lib/db'
-import { parseLocaleDateString, getNowStr } from '../lib/utils'
+import { getNowStr } from '../lib/utils'
 
 /**
  * Hook to manage product best-sellers analytics.
@@ -24,13 +24,15 @@ export function useBestSellersManager() {
       sinceDate.setHours(0, 0, 0, 0) // start of the target day
 
       const sinceStr = getNowStr(sinceDate)
-      const matchingShifts = await executeQuery(`SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`)
+      const matchingShifts = await executeQuery(
+        `SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`
+      )
       const matchingShiftIds = matchingShifts.map((sh) => sh.id)
 
       if (matchingShiftIds.length === 0) {
         // No sales recorded in the period
         setBsTopSellers([])
-        
+
         // Slow movers are all products with stock > 0
         const slowRes = await executeQuery(`
           SELECT barcode, name, unit, retail_price AS price, cost_price AS cost, stock_qty AS stock, reorder_limit

@@ -1,7 +1,19 @@
-import { useState, useRef } from 'react'
-import { escapeSql, normalizeDigits, playSound, getNowStr, getFriendlyErrorMessage, hashPin } from '../lib/utils'
+import { useState, useRef, useEffect } from 'react'
+import {
+  escapeSql,
+  normalizeDigits,
+  playSound,
+  getNowStr,
+  getFriendlyErrorMessage,
+  hashPin,
+  round2
+} from '../lib/utils'
 import { executeQuery } from '../lib/db'
-import { generateReceiptHtml, generateReprintHtml, generateGrandShiftReportHtml } from '../lib/printTemplates'
+import {
+  generateReceiptHtml,
+  generateReprintHtml,
+  generateGrandShiftReportHtml
+} from '../lib/printTemplates'
 import { logEvent } from '../lib/dao/logs.dao'
 
 /**
@@ -14,25 +26,16 @@ export function usePOSController({
   setCurrentUser,
   currentShift,
   setCurrentShift,
-  isLocked,
   setIsLocked,
-  openShiftModal,
   setOpenShiftModal,
   startingCash,
   setStartingCash,
   momknStartBalance,
-  setMomknStartBalance,
   momknStartCash,
-  setMomknStartCash,
   vfcashStartBalance,
-  setVfcashStartBalance,
   vfcashStartCash,
-  setVfcashStartCash,
-  closeShiftModal,
   setCloseShiftModal,
   actualEndCash,
-  setActualEndCash,
-  managerApprovalModal,
   setManagerApprovalModal,
   managerPin,
   setManagerPin,
@@ -57,12 +60,9 @@ export function usePOSController({
   cartTotal,
   cartSubtotal,
   addToCart,
-  triggerClearCart,
   updateQty,
 
   barcodeInputRef,
-  searchInputRef,
-  qtyInputRefs,
 
   depositChange,
   setDepositChange,
@@ -84,6 +84,11 @@ export function usePOSController({
   const searchDebounceRef = useRef(null)
   const [barcodeInput, setBarcodeInput] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  // Latest search text, so a late debounced query can tell the search was cleared or changed.
+  const latestSearchRef = useRef('')
+  useEffect(() => {
+    latestSearchRef.current = searchInput
+  }, [searchInput])
   const [searchResults, setSearchResults] = useState([])
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
 
@@ -120,7 +125,9 @@ export function usePOSController({
       }
       const escapedPin = escapeSql(cleanPin)
       const hashedPin = await hashPin(cleanPin)
-      let users = await executeQuery(`SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapedPin}') LIMIT 1;`)
+      let users = await executeQuery(
+        `SELECT * FROM users WHERE (password_hash = '${escapeSql(hashedPin)}' OR password_hash = '${escapedPin}') LIMIT 1;`
+      )
 
       if (users.length > 0) {
         const user = users[0]
@@ -144,11 +151,17 @@ export function usePOSController({
         } else {
           console.log('[AUTH FLOW] No open shift found. Prompting to open a shift.')
           setCurrentShift(null)
-          try { setStartingCash('200') } catch(e) {}
+          try {
+            setStartingCash('200')
+          } catch {
+            /* setter unavailable */
+          }
           setOpenShiftModal(true)
         }
       } else {
-        console.warn(`[AUTH FLOW] Authentication failed. No user found with password_hash = '${escapedPin}'`)
+        console.warn(
+          `[AUTH FLOW] Authentication failed. No user found with password_hash = '${escapedPin}'`
+        )
         playSound('error')
         triggerCustomAlert('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
         setPin('')
@@ -167,7 +180,14 @@ export function usePOSController({
     const momknCashNum = parseFloat(momknStartCash) || 0
     const vfcashStartNum = parseFloat(vfcashStartBalance) || 0
     const vfcashCashNum = parseFloat(vfcashStartCash) || 0
-    if (startingCashNum < 0 || momknStartNum < 0 || momknCashNum < 0 || vfcashStartNum < 0 || vfcashCashNum < 0) return
+    if (
+      startingCashNum < 0 ||
+      momknStartNum < 0 ||
+      momknCashNum < 0 ||
+      vfcashStartNum < 0 ||
+      vfcashCashNum < 0
+    )
+      return
 
     try {
       if (!currentUser || !currentUser.id) {
@@ -206,7 +226,7 @@ export function usePOSController({
   }
 
   // Close Active Shift
-  const handleConfirmCloseShift = async (aggregatedData) => {
+  const handleConfirmCloseShift = async () => {
     const actual = parseFloat(actualEndCash) || 0
     if (isNaN(actual) || actual < 0) {
       triggerCustomAlert('الرجاء إدخال مبلغ صحيح.')
@@ -235,19 +255,9 @@ export function usePOSController({
       const returns = parseFloat(r.returnsTotal) || 0
       const supplierOutflow = parseFloat(r.supplierTotal) || 0
       const generalOutflow = parseFloat(r.expensesTotal) || 0
-      
-      const momknCashImpact = parseFloat(r.momknCashImpact) || 0
-      const mmCashImpact = parseFloat(r.mobileMoneyCashImpact) || 0
 
-      const expectedMainCash = initialCash + cashSales + inflow - (returns + supplierOutflow + generalOutflow)
-
-      const momknStartCash = Number(currentShift?.momkn_start_cash) || 0
-      const vfcashStartCash = Number(currentShift?.vfcash_start_cash) || 0
-
-      const expectedMomknCash = momknStartCash + momknCashImpact
-      const expectedMobileMoneyCash = vfcashStartCash + mmCashImpact
-
-      const grandTotalExpected = expectedMainCash + expectedMomknCash + expectedMobileMoneyCash
+      const expectedMainCash =
+        initialCash + cashSales + inflow - (returns + supplierOutflow + generalOutflow)
 
       const expected = expectedMainCash
 
@@ -297,14 +307,17 @@ export function usePOSController({
               const mmSum = mmRes[0] || {}
 
               const momknSummary = {
-                expectedDigitalBalance: (currentShift.momkn_start_balance || 0) + (parseFloat(mSum.digitalImpact) || 0),
+                expectedDigitalBalance:
+                  (currentShift.momkn_start_balance || 0) + (parseFloat(mSum.digitalImpact) || 0),
                 totalCashImpact: parseFloat(mSum.cashImpact) || 0,
                 totalCommission: parseFloat(mSum.commission) || 0,
                 startBalance: currentShift.momkn_start_balance || 0
               }
 
               const mobileMoneySummary = {
-                expectedVfcashDigitalBalance: (currentShift.vfcash_start_balance || 0) + (parseFloat(mmSum.vfcashDigitalImpact) || 0),
+                expectedVfcashDigitalBalance:
+                  (currentShift.vfcash_start_balance || 0) +
+                  (parseFloat(mmSum.vfcashDigitalImpact) || 0),
                 expectedInstapayDigitalBalance: parseFloat(mmSum.instapayDigitalImpact) || 0,
                 expectedBankDigitalBalance: parseFloat(mmSum.bankDigitalImpact) || 0,
                 totalCashImpact: parseFloat(mmSum.cashImpact) || 0,
@@ -352,20 +365,32 @@ export function usePOSController({
                 actionType: 'database_backup',
                 description: `أخذ نسخة احتياطية من قاعدة البيانات بنجاح في: ${backupRes.filePath}`
               })
-              triggerCustomAlert(`تم حفظ النسخة الاحتياطية بنجاح في:\n${backupRes.filePath}`, 'نجاح النسخ الاحتياطي', async () => {
-                await finalizeShiftClose()
-              })
+              triggerCustomAlert(
+                `تم حفظ النسخة الاحتياطية بنجاح في:\n${backupRes.filePath}`,
+                'نجاح النسخ الاحتياطي',
+                async () => {
+                  await finalizeShiftClose()
+                }
+              )
             } else if (backupRes && backupRes.error && backupRes.error !== 'User cancelled') {
-              triggerCustomAlert(`فشل حفظ النسخة الاحتياطية: ${backupRes.error}`, 'فشل النسخ الاحتياطي', async () => {
-                await finalizeShiftClose()
-              })
+              triggerCustomAlert(
+                `فشل حفظ النسخة الاحتياطية: ${backupRes.error}`,
+                'فشل النسخ الاحتياطي',
+                async () => {
+                  await finalizeShiftClose()
+                }
+              )
             } else {
               await finalizeShiftClose()
             }
           } else {
-            triggerCustomAlert('خاصية النسخ الاحتياطي غير متوفرة في هذه البيئة.', 'تنبيه', async () => {
-              await finalizeShiftClose()
-            })
+            triggerCustomAlert(
+              'خاصية النسخ الاحتياطي غير متوفرة في هذه البيئة.',
+              'تنبيه',
+              async () => {
+                await finalizeShiftClose()
+              }
+            )
           }
         },
         async () => {
@@ -385,6 +410,8 @@ export function usePOSController({
 
     let rawInput = barcodeInput.trim()
     const cleanRaw = escapeSql(rawInput)
+    // Declared here (not inside the else-branch) because the suffix lookup below reads it.
+    let parsed = { isWeighted: false, barcode: rawInput }
     try {
       let product = null
 
@@ -402,7 +429,7 @@ export function usePOSController({
         product = exactProducts[0]
       } else {
         // If no exact match, check weighted scale barcode parsing
-        let parsed = parseScaleBarcode(rawInput)
+        parsed = parseScaleBarcode(rawInput)
         const lookupProduct = async (p) => {
           if (p.isWeighted) {
             const code = escapeSql(p.barcode)
@@ -491,7 +518,7 @@ export function usePOSController({
       if (managers.length > 0) {
         playSound('success')
         if (pendingAction.type === 'DELETE_ITEM') {
-          setCart(prev => prev.filter(item => item.barcode !== pendingAction.payload))
+          setCart((prev) => prev.filter((item) => item.barcode !== pendingAction.payload))
         } else if (pendingAction.type === 'QTY_REDUCTION') {
           updateQty(pendingAction.payload.barcode, pendingAction.payload.qty)
         } else if (pendingAction.type === 'CLEAR_CART') {
@@ -528,6 +555,7 @@ export function usePOSController({
     }
 
     searchDebounceRef.current = setTimeout(async () => {
+      if (latestSearchRef.current !== val) return
       try {
         const escaped = escapeSql(val)
         const results = await executeQuery(`
@@ -535,6 +563,7 @@ export function usePOSController({
           WHERE name LIKE '%${escaped}%' OR barcode LIKE '%${escaped}%'
           LIMIT 8;
         `)
+        if (latestSearchRef.current !== val) return
         setSearchResults(results)
       } catch (err) {
         console.error('Search query error:', err)
@@ -562,9 +591,10 @@ export function usePOSController({
       setSelectedSearchIndex((prev) => (prev > 0 ? prev - 1 : searchResults.length - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const targetItem = (selectedSearchIndex >= 0 && selectedSearchIndex < searchResults.length)
-        ? searchResults[selectedSearchIndex]
-        : searchResults[0]
+      const targetItem =
+        selectedSearchIndex >= 0 && selectedSearchIndex < searchResults.length
+          ? searchResults[selectedSearchIndex]
+          : searchResults[0]
       if (targetItem) {
         addToCart(targetItem)
         setSearchInput('')
@@ -585,7 +615,10 @@ export function usePOSController({
 
     if (!currentShift || !currentShift.id || currentShift.status !== 'open') {
       playSound('error')
-      triggerCustomAlert('فشل البيع: لا توجد وردية كاشير مفتوحة حالياً!\nيرجى فتح وردية جديدة أولاً لبدء عمليات البيع.', 'تنبيه الوردية')
+      triggerCustomAlert(
+        'فشل البيع: لا توجد وردية كاشير مفتوحة حالياً!\nيرجى فتح وردية جديدة أولاً لبدء عمليات البيع.',
+        'تنبيه الوردية'
+      )
       return
     }
 
@@ -598,14 +631,15 @@ export function usePOSController({
         if (selectedClient) {
           clientId = selectedClient.id
         } else {
-          const searchQ = clientPhone 
+          const searchQ = clientPhone
             ? `SELECT * FROM clients WHERE name = '${escapeSql(clientName)}' OR phone = '${escapeSql(clientPhone)}' LIMIT 1;`
             : `SELECT * FROM clients WHERE name = '${escapeSql(clientName)}' LIMIT 1;`
           const existing = await executeQuery(searchQ)
           if (existing && existing.length > 0) {
             clientId = existing[0].id
           } else {
-            const phoneForInsert = clientPhone && clientPhone.trim() ? `'${escapeSql(clientPhone.trim())}'` : 'NULL'
+            const phoneForInsert =
+              clientPhone && clientPhone.trim() ? `'${escapeSql(clientPhone.trim())}'` : 'NULL'
             await executeQuery(`
               INSERT INTO clients (name, phone, address, debt_balance, points, created_at)
               VALUES ('${escapeSql(clientName)}', ${phoneForInsert}, '${escapeSql(clientAddress)}', 0.0, 0, '${nowStr}');
@@ -616,8 +650,6 @@ export function usePOSController({
         }
       }
 
-      const pointsEarned = clientId ? Math.floor(cartTotal / 100) : 0
-
       let clientDbValue = clientName
       if (clientName) {
         if (clientPhone) clientDbValue += ` (${clientPhone})`
@@ -626,7 +658,7 @@ export function usePOSController({
 
       let sqlQuery = 'BEGIN TRANSACTION;\n'
       sqlQuery += `INSERT INTO sales (shift_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id) VALUES (${currentShift.id}, '${nowStr}', ${cartTotal}, ${cartSubtotal || cartTotal}, ${finalDiscount}, '${escapeSql(paymentType)}', '${escapeSql(clientDbValue)}', ${clientId || 'NULL'});\n`
-      
+
       cart.forEach((item) => {
         sqlQuery += `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price) VALUES ((SELECT MAX(id) FROM sales LIMIT 1), '${escapeSql(item.barcode)}', ${item.qty}, ${item.price}, ${item.total}, ${item.cost_price || 0.0});\n`
         sqlQuery += `UPDATE products SET stock_qty = stock_qty - ${item.qty} WHERE barcode = '${escapeSql(item.barcode)}';\n`
@@ -649,7 +681,7 @@ export function usePOSController({
             sqlQuery += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${currentShift.id}, 'inflow', ${upfrontPaid}, 'مقدم نقدي بيع دفع جزئي فاتورة رقم #' || (SELECT MAX(id) FROM sales LIMIT 1), '${nowStr}');\n`
           }
         }
-        
+
         // استهلاك الرصيد كخصم (إذا تم استخدامه)
         if (parseFloat(appliedCredit) > 0) {
           sqlQuery += `UPDATE clients SET debt_balance = debt_balance + ${parseFloat(appliedCredit)} WHERE id = ${clientId};\n`
@@ -676,7 +708,10 @@ export function usePOSController({
       })
 
       const saleResult = await executeQuery(`SELECT id FROM sales ORDER BY id DESC LIMIT 1;`)
-      const rawSaleId = (saleResult && saleResult.length > 0 && saleResult[0]) ? (saleResult[0].id || saleResult[0].ID || 0) : 0
+      const rawSaleId =
+        saleResult && saleResult.length > 0 && saleResult[0]
+          ? saleResult[0].id || saleResult[0].ID || 0
+          : 0
       const displaySaleId = parseInt(rawSaleId) > 0 ? rawSaleId : '—'
 
       playSound('chime')
@@ -685,7 +720,7 @@ export function usePOSController({
       const timePart = new Date().toLocaleTimeString('ar-EG')
 
       const receiptHtml = generateReceiptHtml({
-        storeName: 'سوبر ماركت النجدي',
+        storeName: 'هيرو ماركت',
         branchName: 'الفرع الرئيسي',
         displaySaleId,
         datePart,
@@ -697,18 +732,26 @@ export function usePOSController({
         cart,
         cartTotal,
         finalDiscount,
-        paidAmount: paidAmount ? (parseFloat(paidAmount) || cartTotal) : cartTotal,
+        paidAmount: paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal,
         changeRemaining: paidAmount ? Math.max(0, (parseFloat(paidAmount) || 0) - cartTotal) : 0,
         paymentType: paymentType || 'نقدي'
       })
 
       if (!noPrint && window.api && window.api.printer && window.api.printer.print) {
-        console.log('[PRINT FLOW] Invoking printer.print with HTML content length:', receiptHtml.length, 'mode silent:', printSilent)
-        window.api.printer.print(receiptHtml, { silent: printSilent })
+        console.log(
+          '[PRINT FLOW] Invoking printer.print with HTML content length:',
+          receiptHtml.length,
+          'mode silent:',
+          printSilent
+        )
+        window.api.printer
+          .print(receiptHtml, { silent: printSilent })
           .then(() => console.log('[PRINT FLOW] Receipt printed successfully on Citizen CT-S300.'))
           .catch((e) => {
             console.error('[PRINT FLOW] Printing failed:', e)
-            triggerCustomAlert(`تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${getFriendlyErrorMessage(e)}\nيرجى التحقق من اتصال الطابعة والتعريف.`)
+            triggerCustomAlert(
+              `تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${getFriendlyErrorMessage(e)}\nيرجى التحقق من اتصال الطابعة والتعريف.`
+            )
           })
       }
 
@@ -730,7 +773,8 @@ export function usePOSController({
         if (fetchStats) fetchStats()
         if (fetchClientsList) fetchClientsList()
         if (fetchClientStats) fetchClientStats()
-        if (fetchAdminData) fetchAdminData().catch(e => console.error('Real-time admin sync failed:', e))
+        if (fetchAdminData)
+          fetchAdminData().catch((e) => console.error('Real-time admin sync failed:', e))
       } catch (refreshErr) {
         console.error('Post-checkout background refresh error:', refreshErr)
       }
@@ -739,15 +783,27 @@ export function usePOSController({
       console.error('[CHECKOUT ERROR]', e)
       playSound('error')
       const errText = String(e?.message || e || '')
-      if (errText.includes('وردية مغلقة') || errText.includes('closed') || errText.includes('prevent_sale_on_closed_shift')) {
-        triggerCustomAlert('فشل البيع: لا يمكن تسجيل المعاملة لأن الوردية مغلقة.\nيرجى فتح وردية جديدة للبدء.')
+      if (
+        errText.includes('وردية مغلقة') ||
+        errText.includes('closed') ||
+        errText.includes('prevent_sale_on_closed_shift')
+      ) {
+        triggerCustomAlert(
+          'فشل البيع: لا يمكن تسجيل المعاملة لأن الوردية مغلقة.\nيرجى فتح وردية جديدة للبدء.'
+        )
       } else if (errText.includes('stock') || errText.includes('المخزون')) {
-        triggerCustomAlert('فشل البيع: رصيد المخزون لا يكفي لأحد الأصناف في السلة.\nيرجى مراجعة الكميات المطلوبة أو تحديث المخزون.')
+        triggerCustomAlert(
+          'فشل البيع: رصيد المخزون لا يكفي لأحد الأصناف في السلة.\nيرجى مراجعة الكميات المطلوبة أو تحديث المخزون.'
+        )
       } else if (errText.includes('busy') || errText.includes('locked')) {
-        triggerCustomAlert('فشلت المعاملة: قاعدة البيانات مشغولة مؤقتاً.\nيرجى إعادة المحاولة فوراً.')
+        triggerCustomAlert(
+          'فشلت المعاملة: قاعدة البيانات مشغولة مؤقتاً.\nيرجى إعادة المحاولة فوراً.'
+        )
       } else {
         const friendly = getFriendlyErrorMessage(e)
-        triggerCustomAlert(`فشلت المعاملة أثناء حفظ الفاتورة!\nالسبب: ${friendly || errText.slice(0, 120)}\nيرجى المحاولة مرة أخرى.`)
+        triggerCustomAlert(
+          `فشلت المعاملة أثناء حفظ الفاتورة!\nالسبب: ${friendly || errText.slice(0, 120)}\nيرجى المحاولة مرة أخرى.`
+        )
       }
     }
   }
@@ -774,30 +830,7 @@ export function usePOSController({
         WHERE si.sale_id = ${saleId};
       `)
 
-      const displaySaleId = parseInt(s.id) > 0 ? (((parseInt(s.id) - 1) % 10000) + 1) : '?'
-      let clName = s.client_name || ''
-      let clPhone = ''
-      let clAddress = ''
-      
-      const phoneMatch = clName.match(/\((.*?)\)/)
-      if (phoneMatch) {
-        clPhone = phoneMatch[1]
-        clName = clName.replace(/\(.*?\)/, '').trim()
-      }
-      const addressParts = clName.split(' - ')
-      if (addressParts.length > 1) {
-        clAddress = addressParts.slice(1).join(' - ').trim()
-        clName = addressParts[0].trim()
-      }
-
-      let datePart = s.timestamp || ''
-      let timePart = ''
-      if (s.timestamp && s.timestamp.includes(' ')) {
-        const parts = s.timestamp.split(' ')
-        datePart = parts[0]
-        timePart = parts.slice(1).join(' ')
-      }
-
+      const displaySaleId = parseInt(s.id) > 0 ? ((parseInt(s.id) - 1) % 10000) + 1 : '?'
       const receiptHtml = generateReprintHtml({
         sale: {
           ...s,
@@ -807,7 +840,8 @@ export function usePOSController({
       })
 
       if (!noPrint && window.api && window.api.printer && window.api.printer.print) {
-        window.api.printer.print(receiptHtml, { silent: printSilent })
+        window.api.printer
+          .print(receiptHtml, { silent: printSilent })
           .then(() => console.log('Historical receipt printed successfully.'))
           .catch((e) => triggerCustomAlert(`فشلت الطباعة: ${getFriendlyErrorMessage(e)}`))
       } else {

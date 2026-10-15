@@ -1,16 +1,38 @@
-import React, { useState } from 'react'
-import { KeyRound, Lock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useState } from 'react'
+import { KeyRound, CircleCheck, CircleAlert } from 'lucide-react'
 import { executeQuery } from '../../lib/db' // sqlite interface wrapper
-import { playSound } from '../../lib/utils'
+import { playSound, hashPin, escapeSql } from '../../lib/utils'
 
-const ChangePinModal = ({
-  showChangePinModal,
-  setShowChangePinModal,
-  currentUser,
-  setCurrentUser
-}) => {
-  if (!showChangePinModal || !currentUser) return null
+const ROLE_LABELS = { admin: 'مدير النظام', manager: 'مشرف', cashier: 'كاشير' }
 
+// Hooks live in the inner component so the open/closed early return in the wrapper
+// does not change hook order (rules-of-hooks; see .docs/DECISIONS.md D-008).
+const ChangePinModal = (props) => {
+  if (!props.showChangePinModal || !props.currentUser) return null
+  return <ChangePinDialog {...props} />
+}
+
+function PinInput({ label, value, onChange, autoFocus }) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <input
+        type="password"
+        pattern="\d{4}"
+        maxLength="4"
+        inputMode="numeric"
+        className="input input-lg pin-field"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
+        required
+        placeholder="••••"
+        autoFocus={autoFocus}
+      />
+    </label>
+  )
+}
+
+function ChangePinDialog({ setShowChangePinModal, currentUser, setCurrentUser }) {
   const [currentPin, setCurrentPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -43,24 +65,39 @@ const ChangePinModal = ({
 
     try {
       // Verify current password from DB directly since currentUser.password_hash might be undefined
-      const userRows = await executeQuery(`SELECT password_hash FROM users WHERE id = ${currentUser.id} LIMIT 1;`)
-      if (!userRows || userRows.length === 0 || String(userRows[0].password_hash) !== String(currentPin)) {
+      const userRows = await executeQuery(
+        `SELECT password_hash FROM users WHERE id = ${currentUser.id} LIMIT 1;`
+      )
+      // Stored PINs may be SHA-256 hashes (Users screen, release seed) or legacy plain text – accept both, as login does.
+      const stored = userRows && userRows.length > 0 ? String(userRows[0].password_hash) : null
+      const hashedCurrent = await hashPin(currentPin)
+      if (stored === null || (stored !== String(currentPin) && stored !== hashedCurrent)) {
         setErrorMsg('رمز المرور الحالي غير صحيح!')
         playSound('error')
         return
       }
 
-      // Update in DB
+      // Update in DB (hashed, the same format the Users screen writes)
+      const hashedNew = await hashPin(newPin)
+      // PINs identify the user at login, so they must stay unique (same rule as the Users screen).
+      const dup = await executeQuery(
+        `SELECT id FROM users WHERE (password_hash = '${escapeSql(hashedNew)}' OR password_hash = '${escapeSql(newPin)}') AND id != ${currentUser.id} LIMIT 1;`
+      )
+      if (dup && dup.length > 0) {
+        setErrorMsg('رمز المرور هذا مستخدم لحساب آخر، اختر رمزاً مختلفاً.')
+        playSound('error')
+        return
+      }
       await executeQuery(`
         UPDATE users 
-        SET password_hash = '${newPin}' 
+        SET password_hash = '${escapeSql(hashedNew)}' 
         WHERE id = ${currentUser.id};
       `)
 
       // Update current user state
-      setCurrentUser(prev => ({
+      setCurrentUser((prev) => ({
         ...prev,
-        password_hash: newPin
+        password_hash: hashedNew
       }))
 
       playSound('success')
@@ -74,7 +111,6 @@ const ChangePinModal = ({
         setShowChangePinModal(false)
         setSuccessMsg('')
       }, 1500)
-
     } catch (err) {
       setErrorMsg('فشل تحديث رمز المرور: ' + err.message)
       playSound('error')
@@ -83,130 +119,62 @@ const ChangePinModal = ({
 
   return (
     <div className="modal-overlay" style={{ zIndex: 100000 }}>
-      <div className="modal-content" style={{ maxWidth: '380px', padding: '25px' }}>
-        
-        <div className="modal-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            background: 'rgba(59, 130, 246, 0.1)',
-            color: 'var(--accent-blue)',
-            padding: '12px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <KeyRound size={28} />
-          </div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0, color: 'var(--text-primary)' }}>
-            تغيير رمز المرور الخاص بك
-          </h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
-            المستخدم: <strong>{currentUser.username}</strong> ({currentUser.role === 'admin' ? 'مدير' : 'كاشير'})
+      <form
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pin-title"
+        style={{ width: 400 }}
+        onSubmit={handleSubmit}
+      >
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <KeyRound size={24} />
+          </span>
+          <h2 id="pin-title">تغيير رمز المرور</h2>
+          <p>
+            المستخدم: <strong>{currentUser.username}</strong> (
+            {ROLE_LABELS[currentUser.role] || currentUser.role})
           </p>
         </div>
 
         {errorMsg && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            padding: '8px 12px',
-            borderRadius: '6px',
-            color: 'var(--accent-rose)',
-            fontSize: '0.8rem'
-          }}>
-            <AlertCircle size={16} />
+          <div className="notice notice-danger" role="alert">
+            <CircleAlert size={16} aria-hidden="true" />
             <span>{errorMsg}</span>
           </div>
         )}
-
         {successMsg && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(16, 185, 129, 0.08)',
-            border: '1px solid rgba(16, 185, 129, 0.2)',
-            padding: '8px 12px',
-            borderRadius: '6px',
-            color: 'var(--accent-emerald)',
-            fontSize: '0.8rem'
-          }}>
-            <CheckCircle2 size={16} />
+          <div className="notice notice-success" role="status">
+            <CircleCheck size={16} aria-hidden="true" />
             <span>{successMsg}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
-          
-          <div className="form-group">
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>رمز المرور الحالي *</label>
-            <input 
-              type="password"
-              pattern="\d{4}"
-              maxLength="4"
-              className="form-input"
-              style={{ fontSize: '1.1rem', letterSpacing: '0.3em', textAlign: 'center', padding: '6px' }}
-              value={currentPin}
-              onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
-              required
-              placeholder="••••"
-            />
-          </div>
+        <div className="modal-body">
+          <PinInput
+            label="رمز المرور الحالي *"
+            value={currentPin}
+            onChange={setCurrentPin}
+            autoFocus
+          />
+          <PinInput label="رمز المرور الجديد (4 أرقام) *" value={newPin} onChange={setNewPin} />
+          <PinInput label="تأكيد رمز المرور الجديد *" value={confirmPin} onChange={setConfirmPin} />
+        </div>
 
-          <div className="form-group">
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>رمز المرور الجديد (4 أرقام) *</label>
-            <input 
-              type="password"
-              pattern="\d{4}"
-              maxLength="4"
-              className="form-input"
-              style={{ fontSize: '1.1rem', letterSpacing: '0.3em', textAlign: 'center', padding: '6px' }}
-              value={newPin}
-              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
-              required
-              placeholder="••••"
-            />
-          </div>
-
-          <div className="form-group">
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>تأكيد رمز المرور الجديد *</label>
-            <input 
-              type="password"
-              pattern="\d{4}"
-              maxLength="4"
-              className="form-input"
-              style={{ fontSize: '1.1rem', letterSpacing: '0.3em', textAlign: 'center', padding: '6px' }}
-              value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-              required
-              placeholder="••••"
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} 
-              onClick={() => setShowChangePinModal(false)}
-            >
-              إلغاء
-            </button>
-            <button 
-              type="submit" 
-              className="btn btn-primary" 
-              style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}
-            >
-              تحديث الرمز
-            </button>
-          </div>
-
-        </form>
-
-      </div>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setShowChangePinModal(false)}
+          >
+            إلغاء
+          </button>
+          <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+            تحديث الرمز
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

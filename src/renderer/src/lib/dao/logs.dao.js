@@ -3,7 +3,7 @@ import { escapeSql, getNowStr } from '../utils'
 
 /**
  * Log a system event.
- * 
+ *
  * @param {object} params
  * @param {number} params.userId
  * @param {string} params.username
@@ -31,7 +31,7 @@ export async function logEvent({ userId, username, actionType, description, deta
 
 /**
  * Retrieve system logs.
- * 
+ *
  * @param {object} params
  * @param {number} params.limit
  * @param {number} params.offset

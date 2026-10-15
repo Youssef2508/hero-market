@@ -31,16 +31,39 @@ export function useBarcode({
 
   // Auto-focus barcode scanner on POS view
   useEffect(() => {
-    if (!isLocked && currentView === 'pos' && !openShiftModal && !closeShiftModal && !managerApprovalModal && !customAlert && !customConfirm) {
+    if (
+      !isLocked &&
+      currentView === 'pos' &&
+      !openShiftModal &&
+      !closeShiftModal &&
+      !managerApprovalModal &&
+      !customAlert &&
+      !customConfirm
+    ) {
       barcodeInputRef.current?.focus()
     }
-  }, [isLocked, currentView, openShiftModal, closeShiftModal, managerApprovalModal, customAlert, customConfirm])
+  }, [
+    isLocked,
+    currentView,
+    openShiftModal,
+    closeShiftModal,
+    managerApprovalModal,
+    customAlert,
+    customConfirm
+  ])
 
   // Global scanner active focus recovery & overwrite
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       // Ignore if screen is locked or shift modals/alerts are open
-      if (isLocked || openShiftModal || closeShiftModal || managerApprovalModal || customAlert || customConfirm) {
+      if (
+        isLocked ||
+        openShiftModal ||
+        closeShiftModal ||
+        managerApprovalModal ||
+        customAlert ||
+        customConfirm
+      ) {
         return
       }
 
@@ -78,7 +101,7 @@ export function useBarcode({
           } else if (targetInput === adminSearchInputRef.current) {
             setAdminSearch(val)
           } else if (targetInput === addProductBarcodeRef.current) {
-            setNewProduct(prev => ({ ...prev, barcode: val }))
+            setNewProduct((prev) => ({ ...prev, barcode: val }))
           }
         })
         targetInput.value = val
@@ -97,12 +120,18 @@ export function useBarcode({
           } else {
             // New scan starting. Focus and overwrite.
             // If previously active element was an input, remove the scanner's first character from it
-            if (prevActive && (prevActive.tagName === 'INPUT' || prevActive.tagName === 'TEXTAREA')) {
+            if (
+              prevActive &&
+              (prevActive.tagName === 'INPUT' || prevActive.tagName === 'TEXTAREA')
+            ) {
               const charToRemove = prevChar
               const cleanField = () => {
                 const val = prevActive.value
                 if (val && val.length > 0) {
-                  const prototype = prevActive.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+                  const prototype =
+                    prevActive.tagName === 'TEXTAREA'
+                      ? window.HTMLTextAreaElement.prototype
+                      : window.HTMLInputElement.prototype
                   const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
                   let newVal = val
                   if (charToRemove && val.endsWith(charToRemove)) {
@@ -110,13 +139,13 @@ export function useBarcode({
                   } else {
                     newVal = val.substring(0, val.length - 1)
                   }
-                  
+
                   if (nativeSetter) {
                     nativeSetter.call(prevActive, newVal)
                   } else {
                     prevActive.value = newVal
                   }
-                  
+
                   const inputEvent = new Event('input', { bubbles: true })
                   prevActive.dispatchEvent(inputEvent)
                 }
@@ -154,20 +183,31 @@ export function useBarcode({
 
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [isLocked, currentView, openShiftModal, closeShiftModal, managerApprovalModal, showAddModal, adminTab, customAlert, customConfirm])
+  }, [
+    isLocked,
+    currentView,
+    openShiftModal,
+    closeShiftModal,
+    managerApprovalModal,
+    showAddModal,
+    adminTab,
+    customAlert,
+    customConfirm
+  ])
 
   /**
    * Parse weighted scale barcode (e.g. prefixes 20, 21, 22, 25 + product code + weight/price + checksum).
    * Weight Format (20, 21, 25): 2X + CCCCC (5 chars code) + WWWWW (5 chars weight in grams / 1000) + C.
    * Price Format (22): 22 + CCCCC (5 chars code) + PPPPP (5 chars price in EGP / 100) + C.
-   * 
-   * @param {string} rawBarcode 
+   *
+   * @param {string} rawBarcode
    * @returns {object} { isWeighted: boolean, isPriceEmbedded: boolean, barcode: string, qty?: number, totalPrice?: number }
    */
   const parseScaleBarcode = (rawBarcode) => {
     const clean = rawBarcode.trim()
     const scalePrefixes = ['20', '21', '22', '25']
-    const hasScalePrefix = clean.length === 13 && scalePrefixes.some(prefix => clean.startsWith(prefix))
+    const hasScalePrefix =
+      clean.length === 13 && scalePrefixes.some((prefix) => clean.startsWith(prefix))
 
     if (hasScalePrefix) {
       const prefix = clean.substring(0, 2)

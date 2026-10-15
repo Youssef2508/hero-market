@@ -1,13 +1,18 @@
 {
   "name": "elnagdi-pos",
   "version": "1.3.0",
-  "description": "An Electron application with React",
+  "description": "HeroMarket POS – supermarket point of sale and management system (Electron + React)",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "HeroMarket",
+  "homepage": "https://github.com/Youssef2508/hero-market",
   "scripts": {
     "format": "prettier --write .",
+    "format:check": "prettier --check src tests scripts",
     "lint": "eslint --cache .",
+    "test": "node tests/run-all.js",
+    "test:fresh": "node tests/run-all.js --fresh",
+    "db:init": "node scripts/init-dev-db.js",
+    "icons": "electron scripts/generate-icons.js",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -21,6 +26,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@fontsource-variable/cairo": "^5.2.5",
     "lucide-react": "^1.25.0"
   },
   "devDependencies": {

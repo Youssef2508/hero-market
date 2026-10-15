@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { 
-  addMobileMoneyTransaction, 
-  getMobileMoneyByShift, 
+import {
+  addMobileMoneyTransaction,
+  getMobileMoneyByShift,
   getMobileMoneyShiftSummary,
   deleteMobileMoneyTransaction
 } from '../lib/dao/mobile_money.dao'
@@ -76,20 +76,24 @@ export function useMobileMoneyTill({ currentShift, triggerCustomAlert, triggerCu
   }
 
   const handleDeleteTransaction = async (id) => {
-    triggerCustomConfirm('هل أنت متأكد من حذف هذه العملية؟ سيتم إزالتها نهائياً من السجلات.', async () => {
-      try {
-        await deleteMobileMoneyTransaction(id)
-        await fetchMobileMoneyData()
-        triggerCustomAlert('تم حذف العملية بنجاح!')
-      } catch (err) {
-        triggerCustomAlert('فشل حذف العملية: ' + getFriendlyErrorMessage(err))
+    triggerCustomConfirm(
+      'هل أنت متأكد من حذف هذه العملية؟ سيتم إزالتها نهائياً من السجلات.',
+      async () => {
+        try {
+          await deleteMobileMoneyTransaction(id)
+          await fetchMobileMoneyData()
+          triggerCustomAlert('تم حذف العملية بنجاح!')
+        } catch (err) {
+          triggerCustomAlert('فشل حذف العملية: ' + getFriendlyErrorMessage(err))
+        }
       }
-    })
+    )
   }
 
-  const filteredTransactions = platformFilter === 'all'
-    ? transactions
-    : transactions.filter(t => t.platform === platformFilter)
+  const filteredTransactions =
+    platformFilter === 'all'
+      ? transactions
+      : transactions.filter((t) => t.platform === platformFilter)
 
   return {
     transactions: filteredTransactions,

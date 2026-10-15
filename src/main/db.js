@@ -10,8 +10,12 @@ const sqlitePath = isDev
   ? path.join(process.cwd(), 'sqlite3.exe')
   : path.join(process.resourcesPath, 'sqlite3.exe')
 
-// Resolve the database path (Testing Sandbox Instance)
-const devDbPath = path.join(process.cwd(), 'market_unified_testing.db')
+// Resolve the database path (Testing Sandbox Instance).
+// HEROMARKET_DB_PATH lets QA/automation point a dev session at a disposable copy;
+// it is ignored in packaged builds.
+const devDbPath = process.env.HEROMARKET_DB_PATH
+  ? path.resolve(process.env.HEROMARKET_DB_PATH)
+  : path.join(process.cwd(), 'market_unified_testing.db')
 const prodDbPath = path.join(app.getPath('userData'), 'market_unified.db')
 export const dbPath = isDev ? devDbPath : prodDbPath
 
@@ -235,10 +239,12 @@ export async function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_supplier_ledger_supplier_id ON supplier_ledger(supplier_id);
       `)
       console.log('[DB] Installed performance indices on foreign keys.')
-    } catch (e) { console.error('Failed to create performance indices:', e) }
+    } catch (e) {
+      console.error('Failed to create performance indices:', e)
+    }
 
     await executeSql(`
-      INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'سوبر ماركت النجدي');
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'هيرو ماركت');
     `)
     await executeSql(`
       INSERT OR IGNORE INTO settings (key, value) VALUES ('branch_name', 'الفرع الرئيسي');
@@ -250,37 +256,51 @@ export async function initializeDatabase() {
     try {
       await executeSql(`ALTER TABLE sales ADD COLUMN client_id INTEGER REFERENCES clients(id);`)
       console.log('[DB] Migrated sales table: added client_id column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE shifts ADD COLUMN momkn_start_balance REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated shifts table: added momkn_start_balance column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE shifts ADD COLUMN momkn_start_cash REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated shifts table: added momkn_start_cash column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE shifts ADD COLUMN vfcash_start_balance REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated shifts table: added vfcash_start_balance column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE shifts ADD COLUMN vfcash_start_cash REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated shifts table: added vfcash_start_cash column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE sale_items ADD COLUMN cost_price REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated sale_items table: added cost_price column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`ALTER TABLE sales ADD COLUMN original_amount REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated sales table: added original_amount column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     try {
       await executeSql(`
@@ -293,12 +313,16 @@ export async function initializeDatabase() {
         WHERE original_amount = 0 OR original_amount IS NULL;
       `)
       console.log('[DB] Migrated sales table: populated original_amount for past sales.')
-    } catch (e) { /* Ignore if already populated */ }
+    } catch (e) {
+      /* Ignore if already populated */
+    }
 
     try {
       await executeSql(`ALTER TABLE sale_items ADD COLUMN returned_qty REAL DEFAULT 0.0;`)
       console.log('[DB] Migrated sale_items table: added returned_qty column.')
-    } catch (e) { /* Ignore if column already exists */ }
+    } catch (e) {
+      /* Ignore if column already exists */
+    }
 
     // Enforce database-level triggers for integrity
     try {
@@ -312,7 +336,9 @@ export async function initializeDatabase() {
         END;
       `)
       console.log('[DB] Installed trigger: prevent_negative_stock')
-    } catch (e) { console.error('Failed to create trigger prevent_negative_stock:', e) }
+    } catch (e) {
+      console.error('Failed to create trigger prevent_negative_stock:', e)
+    }
 
     try {
       await executeSql(`
@@ -325,7 +351,9 @@ export async function initializeDatabase() {
         END;
       `)
       console.log('[DB] Installed trigger: prevent_sale_on_closed_shift')
-    } catch (e) { console.error('Failed to create trigger prevent_sale_on_closed_shift:', e) }
+    } catch (e) {
+      console.error('Failed to create trigger prevent_sale_on_closed_shift:', e)
+    }
 
     try {
       await executeSql(`
@@ -338,7 +366,9 @@ export async function initializeDatabase() {
         END;
       `)
       console.log('[DB] Installed trigger: prevent_multiple_open_shifts')
-    } catch (e) { console.error('Failed to create trigger prevent_multiple_open_shifts:', e) }
+    } catch (e) {
+      console.error('Failed to create trigger prevent_multiple_open_shifts:', e)
+    }
 
     console.log('[DB] Database tables initialized successfully settings.')
   } catch (err) {
@@ -376,8 +406,8 @@ export function executeSql(sqlQuery) {
         const matches = trimmed.match(/\[[\s\S]*?\]/g)
         if (matches && matches.length > 0) {
           // Filter out PRAGMA busy_timeout output
-          const validMatches = matches.filter(m => !m.includes('{"timeout":10000}'))
-          
+          const validMatches = matches.filter((m) => !m.includes('{"timeout":10000}'))
+
           if (validMatches.length > 0) {
             const lastMatch = validMatches[validMatches.length - 1]
             const result = JSON.parse(lastMatch)

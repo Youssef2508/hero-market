@@ -1,4 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  Store,
+  Smartphone,
+  Wallet,
+  Info,
+  Coins,
+  ReceiptText,
+  HandCoins,
+  Truck,
+  NotebookPen,
+  ArrowLeftRight,
+  Banknote,
+  Percent,
+  ScrollText,
+  Printer,
+  Plus,
+  Trash2,
+  Zap,
+  Landmark
+} from 'lucide-react'
+import { StatCard } from '../ui'
 import { executeQuery } from '../../lib/db'
 import { getFriendlyErrorMessage } from '../../lib/utils'
 import { useMomknTill } from '../../hooks/useMomknTill'
@@ -30,8 +51,10 @@ const TillsManagerTab = ({
     returns: 0
   })
 
+  // True once the drawer summary for the current shift has loaded (avoids showing misleading zeros).
+  const [drawerReady, setDrawerReady] = useState(false)
+
   const isAdmin = currentUser?.role === 'admin'
-  const isSeifFayez = currentUser?.username === 'سيف فايز'
 
   // Initialize hooks
   const momkn = useMomknTill({ currentShift, triggerCustomAlert, triggerCustomConfirm })
@@ -69,7 +92,7 @@ const TillsManagerTab = ({
         FROM safe_ledger
         WHERE shift_id = ${shiftId} AND type = 'inflow';
       `)
-      
+
       // Split outflows: Returns, Supplier Payments, General Expenses
       const returnsRes = await executeQuery(`
         SELECT IFNULL(SUM(amount), 0) as total
@@ -95,9 +118,18 @@ const TillsManagerTab = ({
       const returnsTotal = parseFloat(returnsRes[0]?.total) || 0
       const supplierTotal = parseFloat(supplierRes[0]?.total) || 0
       const expensesTotal = parseFloat(expensesRes[0]?.total) || 0
-      
-      const expected = initialCash + allSalesTotal - debtSalesTotal - digitalSalesTotal + repayTotal - returnsTotal - supplierTotal - expensesTotal
 
+      const expected =
+        initialCash +
+        allSalesTotal -
+        debtSalesTotal -
+        digitalSalesTotal +
+        repayTotal -
+        returnsTotal -
+        supplierTotal -
+        expensesTotal
+
+      setDrawerReady(true)
       setMainDrawerSummary({
         initialCash,
         expectedCash: expected,
@@ -124,7 +156,6 @@ const TillsManagerTab = ({
     }
   }, [currentShift, fetchMainDrawerData])
 
-
   // Print Handlers (Admin Only)
   const handlePrintMomknReport = () => {
     if (!isAdmin) {
@@ -142,9 +173,10 @@ const TillsManagerTab = ({
       summary: momkn.summary
     })
 
-    window.api.printer.print(html)
+    window.api.printer
+      .print(html)
       .then(() => triggerCustomAlert('تم إرسال تقرير ممكن للطابعة بنجاح.'))
-      .catch(e => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
+      .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }
 
   const handlePrintMobileMoneyReport = () => {
@@ -163,401 +195,461 @@ const TillsManagerTab = ({
       summary: mobileMoney.summary
     })
 
-    window.api.printer.print(html)
+    window.api.printer
+      .print(html)
       .then(() => triggerCustomAlert('تم إرسال تقرير المحافظ للطابعة بنجاح.'))
-      .catch(e => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
+      .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
+  }
+
+  const signedMoney = (v) => `${(v || 0) >= 0 ? '+' : ''}${formatVal(v)}`
+  const toneOfSigned = (v) => ((v || 0) >= 0 ? 'text-success' : 'text-danger')
+  const SUBTABS = [
+    { id: 'supermarket', label: 'درج السوبر ماركت', icon: Store },
+    { id: 'momkn', label: 'ماكينة ممكن', icon: Smartphone },
+    { id: 'mobile_money', label: 'المحافظ والتحويلات', icon: Wallet }
+  ]
+  const PLATFORMS = [
+    { id: 'all', label: 'الكل' },
+    { id: 'vodafone_cash', label: 'فودافون كاش' },
+    { id: 'instapay', label: 'انستاباي' },
+    { id: 'bank_transfer', label: 'تحويل بنكي' }
+  ]
+  const PLATFORM_LABEL = {
+    vodafone_cash: 'فودافون كاش',
+    instapay: 'انستاباي',
+    bank_transfer: 'تحويل بنكي'
   }
 
   return (
-    <div className="tab-container" style={{ padding: '15px', backgroundColor: '#f9fafb', minHeight: '100vh' }}>
-      {/* Sub-Tabs Selector */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '10px' }}>
-        <button 
-          className={`btn ${activeSubTab === 'supermarket' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setActiveSubTab('supermarket')}
-          style={{ padding: '8px 16px', fontWeight: 'bold' }}
-        >
-          🏪 درج السوبر ماركت (كاش)
-        </button>
-        <button 
-          className={`btn ${activeSubTab === 'momkn' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setActiveSubTab('momkn')}
-          style={{ padding: '8px 16px', fontWeight: 'bold' }}
-        >
-          📊 درج ماكينة ممكن
-        </button>
-        <button 
-          className={`btn ${activeSubTab === 'mobile_money' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setActiveSubTab('mobile_money')}
-          style={{ padding: '8px 16px', fontWeight: 'bold' }}
-        >
-          💰 درج المحافظ والتحويلات
-        </button>
+    <>
+      <div className="segmented segmented-lg" role="tablist" aria-label="الأدراج">
+        {SUBTABS.map((t) => {
+          const Icon = t.icon
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={activeSubTab === t.id}
+              className={activeSubTab === t.id ? 'active' : ''}
+              onClick={() => setActiveSubTab(t.id)}
+            >
+              <Icon size={16} aria-hidden="true" />
+              {t.label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* Tab 1: Supermarket Till */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      {activeSubTab === 'supermarket' && (
-        <div>
-          <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>العهدة الافتتاحية الكاش</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#111827' }}>{formatVal(mainDrawerSummary.initialCash)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>إجمالي مبيعات الفواتير بالكامل</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#10b981' }}>+{formatVal(mainDrawerSummary.allSales)} ج.م</div>
-            </div>
-            {(mainDrawerSummary.debtSales > 0 || mainDrawerSummary.digitalSales > 0) && (
-              <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>آجل وتحويلات (لم تدخل كاش)</div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#f59e0b' }}>-{formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م</div>
-              </div>
-            )}
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>سداد ديون عملاء (دخل الخزنة)</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#10b981' }}>+{formatVal(mainDrawerSummary.inflows)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>مدفوعات موردين (كاش - خرج)</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#ef4444' }}>-{formatVal(mainDrawerSummary.supplierPayments)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>مصروفات ونثريات (كاش - خرج)</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', marginTop: '5px', color: '#ef4444' }}>-{formatVal(mainDrawerSummary.expenses)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', gridColumn: 'span 3', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#15803d', fontSize: '13px', fontWeight: 'bold' }}>صافي الكاش المتوقع في الدرج حالياً</div>
-              <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '5px', color: '#15803d' }}>{formatVal(mainDrawerSummary.expectedCash)} ج.م</div>
-            </div>
-          </div>
-          <div className="text-center" style={{ color: '#4b5563', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-            <p style={{ margin: 0 }}>ℹ️ يتم احتساب عمليات مبيعات الكاش والمدفوعات العامة تلقائياً بناءً على مبيعات الوردية النشطة وسجل حركة الخزنة.</p>
-          </div>
+      {!currentShift && (
+        <div className="notice notice-warning">
+          <Info size={18} aria-hidden="true" />
+          <span>لا توجد وردية مفتوحة حالياً؛ تظهر أرقام الأدراج بعد فتح وردية.</span>
         </div>
       )}
 
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* Tab 2: Momkn Till */}
-      {/* ───────────────────────────────────────────────────────────── */}
+      {currentShift &&
+        ((activeSubTab === 'supermarket' && !drawerReady) ||
+          (activeSubTab === 'momkn' && momkn.loading && !momkn.summary) ||
+          (activeSubTab === 'mobile_money' && mobileMoney.loading && !mobileMoney.summary)) && (
+          <div className="loading-state">
+            <span className="spinner" aria-hidden="true" />
+            جاري حساب أرصدة الدرج...
+          </div>
+        )}
+
+      {/* ── Supermarket drawer ── */}
+      {activeSubTab === 'supermarket' && (drawerReady || !currentShift) && (
+        <>
+          <div className="stat-grid stat-grid-3">
+            <StatCard
+              icon={Coins}
+              tone="neutral"
+              label="العهدة الافتتاحية (كاش)"
+              value={`${formatVal(mainDrawerSummary.initialCash)} ج.م`}
+            />
+            <StatCard
+              icon={ReceiptText}
+              tone="success"
+              label="إجمالي مبيعات الفواتير"
+              value={`+${formatVal(mainDrawerSummary.allSales)} ج.م`}
+            />
+            {(mainDrawerSummary.debtSales > 0 || mainDrawerSummary.digitalSales > 0) && (
+              <StatCard
+                icon={Smartphone}
+                tone="warning"
+                label="آجل وتحويلات (لم تدخل الدرج)"
+                value={`-${formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م`}
+              />
+            )}
+            <StatCard
+              icon={HandCoins}
+              tone="success"
+              label="سداد ديون عملاء (داخل)"
+              value={`+${formatVal(mainDrawerSummary.inflows)} ج.م`}
+            />
+            <StatCard
+              icon={Truck}
+              tone="danger"
+              label="مدفوعات موردين (خارج)"
+              value={`-${formatVal(mainDrawerSummary.supplierPayments)} ج.م`}
+            />
+            <StatCard
+              icon={NotebookPen}
+              tone="danger"
+              label="مصروفات ونثريات (خارج)"
+              value={`-${formatVal(mainDrawerSummary.expenses)} ج.م`}
+            />
+          </div>
+          <div className="balance-banner is-clear drawer-expected">
+            <span>صافي الكاش المتوقع في الدرج حالياً</span>
+            <strong className="money">{formatVal(mainDrawerSummary.expectedCash)} ج.م</strong>
+          </div>
+          <div className="notice notice-info">
+            <Info size={18} aria-hidden="true" />
+            <span>
+              تُحتسب مبيعات الكاش والمدفوعات تلقائياً من مبيعات الوردية النشطة وسجل حركة الخزنة.
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* ── Momkn till ── */}
       {activeSubTab === 'momkn' && (
-        <div>
-          {/* Summary Grid */}
-          <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>رصيد ماكينة ممكن الافتتاحي</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: '#111827' }}>{formatVal(momkn.summary?.startBalance)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#dbeafe', borderRadius: '8px', border: '1px solid #bfdbfe', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#1e40af', fontSize: '12px', fontWeight: 'bold' }}>رصيد ماكينة ممكن المتوقع حالياً</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: '#1e40af' }}>{formatVal(momkn.summary?.expectedDigitalBalance)} ج.م</div>
-              <small style={{ color: '#6b7280', fontSize: '10px' }}>بداية الوردية + التأثير الرقمي</small>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>كاش فكة درج المكنة الافتتاحي</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: '#111827' }}>{formatVal(momkn.summary?.startCash)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>تأثير العمليات على كاش الدرج</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: (momkn.summary?.totalCashImpact || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                {(momkn.summary?.totalCashImpact || 0) >= 0 ? '+' : ''}{formatVal(momkn.summary?.totalCashImpact)} ج.م
+        <>
+          <div className="stat-grid stat-grid-3">
+            <StatCard
+              icon={Smartphone}
+              tone="neutral"
+              label="رصيد ماكينة ممكن الافتتاحي"
+              value={`${formatVal(momkn.summary?.startBalance)} ج.م`}
+            />
+            <StatCard
+              icon={Smartphone}
+              tone="info"
+              label="رصيد الماكينة المتوقع حالياً"
+              value={`${formatVal(momkn.summary?.expectedDigitalBalance)} ج.م`}
+              meta="بداية الوردية + التأثير الرقمي"
+            />
+            <StatCard
+              icon={Coins}
+              tone="neutral"
+              label="كاش فكة درج الماكينة الافتتاحي"
+              value={`${formatVal(momkn.summary?.startCash)} ج.م`}
+            />
+            <StatCard
+              icon={ArrowLeftRight}
+              tone={(momkn.summary?.totalCashImpact || 0) >= 0 ? 'success' : 'danger'}
+              label="تأثير العمليات على كاش الدرج"
+              value={`${signedMoney(momkn.summary?.totalCashImpact)} ج.م`}
+            />
+            <StatCard
+              icon={Banknote}
+              tone="success"
+              label="صافي الكاش المتوقع بالدرج"
+              value={`${formatVal(momkn.summary?.expectedCash)} ج.م`}
+              meta="الفكة + تأثير العمليات"
+            />
+            <StatCard
+              icon={Percent}
+              tone="info"
+              label="صافي عمولات ممكن للوردية"
+              value={`${formatVal(momkn.summary?.totalCommission)} ج.م`}
+            />
+          </div>
+
+          <section className="card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <ScrollText size={18} aria-hidden="true" />
+                حركات ماكينة ممكن
+              </h2>
+              <div className="row">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handlePrintMomknReport}
+                  >
+                    <Printer size={15} aria-hidden="true" />
+                    طباعة تقرير الجرد
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => momkn.setModalOpen(true)}
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  تسجيل حركة
+                </button>
               </div>
             </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#15803d', fontSize: '12px', fontWeight: 'bold' }}>صافي الكاش الورق المتوقع بالدرج</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: '#15803d' }}>{formatVal(momkn.summary?.expectedCash)} ج.م</div>
-              <small style={{ color: '#15803d', fontSize: '10px' }}>الفكة + تأثير العمليات</small>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '12px', fontWeight: '600' }}>صافي عمولات ممكن للوردية</div>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', marginTop: '5px', color: '#3b82f6' }}>{formatVal(momkn.summary?.totalCommission)} ج.م</div>
-            </div>
-          </div>
-
-          {/* Action Bar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-            <button className="btn btn-success" onClick={() => momkn.setModalOpen(true)}>
-              ➕ تسجيل حركة رصيد / كاش
-            </button>
-            {isAdmin && (
-              <button className="btn btn-primary" onClick={handlePrintMomknReport}>
-                🖨️ طباعة تقرير الجرد
-              </button>
-            )}
-          </div>
-
-          {/* Transactions Table */}
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden', marginTop: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', color: '#1f2937' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>التوقيت</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>نوع العملية</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>الوصف</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>الرصيد الرقمي</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>الكاش المتأثر</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>العمولة</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>ملاحظات</th>
-                  {isAdmin && <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>إجراءات</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(!momkn.transactions || momkn.transactions.length === 0) ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 8 : 7} style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>
-                      لا توجد عمليات مسجلة لماكينة ممكن في هذا الشفت بعد.
-                    </td>
-                  </tr>
-                ) : (
-                  momkn.transactions.map((t, idx) => (
-                    <tr 
-                      key={t.id} 
-                      style={{ 
-                        borderBottom: '1px solid #e5e7eb', 
-                        backgroundColor: idx % 2 === 0 ? 'transparent' : '#f9fafb'
-                      }}
-                    >
-                      <td style={{ padding: '12px 16px', color: '#1f2937' }}>{t.timestamp ? (t.timestamp.split(' ')[1] || t.timestamp) : '-'}</td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span 
-                          style={{ 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.78rem', 
-                            fontWeight: '600',
-                            backgroundColor: t.operation_type === 'payment' ? 'rgba(59,130,246,0.1)' : t.operation_type === 'recharge' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                            color: t.operation_type === 'payment' ? '#1e40af' : t.operation_type === 'recharge' ? '#065f46' : '#991b1b',
-                            border: t.operation_type === 'payment' ? '1px solid rgba(59,130,246,0.2)' : t.operation_type === 'recharge' ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(239,68,68,0.2)',
-                            display: 'inline-block' 
-                          }}
-                        >
-                          {t.operation_type === 'payment' && 'دفع لعميل'}
-                          {t.operation_type === 'recharge' && 'شحن المكنة'}
-                          {t.operation_type === 'refund' && 'مرتجع عملية'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', fontWeight: '500', color: '#111827' }}>{t.description}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: (t.digital_impact || 0) >= 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>
-                        {(t.digital_impact || 0) >= 0 ? '+' : ''}{formatVal(t.digital_impact)} ج.م
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: (t.cash_impact || 0) >= 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>
-                        {(t.cash_impact || 0) >= 0 ? '+' : ''}{formatVal(t.cash_impact)} ج.م
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: '#1e40af', fontWeight: '600' }}>{formatVal(t.commission)} ج.م</td>
-                      <td style={{ padding: '12px 16px', color: '#4b5563' }}>{t.notes || '-'}</td>
+            <div className="card-body">
+              <div className="table-wrap">
+                <table className="table table-compact">
+                  <thead>
+                    <tr>
+                      <th>التوقيت</th>
+                      <th>نوع العملية</th>
+                      <th>الوصف</th>
+                      <th className="num">الرصيد الرقمي</th>
+                      <th className="num">الكاش المتأثر</th>
+                      <th className="num">العمولة</th>
+                      <th>ملاحظات</th>
                       {isAdmin && (
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <button 
-                            className="btn btn-danger" 
-                            style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '5px' }}
-                            onClick={() => momkn.handleDeleteTransaction(t.id)}
-                          >
-                            حذف
-                          </button>
-                        </td>
+                        <th>
+                          <span className="visually-hidden">إجراءات</span>
+                        </th>
                       )}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* Tab 3: Mobile Money Till */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      {activeSubTab === 'mobile_money' && (
-        <div>
-          {/* Summary Grid */}
-          <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>كاش درج فودافون الافتتاحي</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#111827' }}>{formatVal(mobileMoney.summary?.startCash)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#15803d', fontSize: '11px', fontWeight: 'bold' }}>صافي الكاش الورق المتوقع بالدرج</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#15803d' }}>{formatVal(mobileMoney.summary?.expectedCash)} ج.م</div>
-            </div>
-            
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>رصيد فودافون الافتتاحي</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#111827' }}>{formatVal(mobileMoney.summary?.startBalance)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#15803d', fontSize: '11px', fontWeight: 'bold' }}>رصيد فودافون كاش المتوقع</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#15803d' }}>{formatVal(mobileMoney.summary?.expectedVfcashDigitalBalance)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>متحصلات انستا باي (ديجيتال)</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#10b981' }}>{formatVal(mobileMoney.summary?.expectedInstapayDigitalBalance)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>متحصلات تحويل بنكي (ديجيتال)</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#10b981' }}>{formatVal(mobileMoney.summary?.expectedBankDigitalBalance)} ج.م</div>
-            </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>التأثير الصافي على الكاش</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: (mobileMoney.summary?.totalCashImpact || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                {(mobileMoney.summary?.totalCashImpact || 0) >= 0 ? '+' : ''}{formatVal(mobileMoney.summary?.totalCashImpact)} ج.م
+                  </thead>
+                  <tbody>
+                    {!momkn.transactions || momkn.transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={isAdmin ? 8 : 7} className="table-empty">
+                          لا توجد عمليات مسجلة لماكينة ممكن في هذه الوردية بعد.
+                        </td>
+                      </tr>
+                    ) : (
+                      momkn.transactions.map((t) => (
+                        <tr key={t.id}>
+                          <td className="num nowrap cell-muted">
+                            {t.timestamp ? t.timestamp.split(' ')[1] || t.timestamp : '—'}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${t.operation_type === 'payment' ? 'badge-info' : t.operation_type === 'recharge' ? 'badge-success' : 'badge-danger'}`}
+                            >
+                              {t.operation_type === 'payment' && 'دفع لعميل'}
+                              {t.operation_type === 'recharge' && 'شحن الماكينة'}
+                              {t.operation_type === 'refund' && 'مرتجع عملية'}
+                            </span>
+                          </td>
+                          <td className="cell-strong">{t.description}</td>
+                          <td className={`num money-strong ${toneOfSigned(t.digital_impact)}`}>
+                            {signedMoney(t.digital_impact)}
+                          </td>
+                          <td className={`num money-strong ${toneOfSigned(t.cash_impact)}`}>
+                            {signedMoney(t.cash_impact)}
+                          </td>
+                          <td className="num text-info">{formatVal(t.commission)}</td>
+                          <td className="cell-muted">{t.notes || '—'}</td>
+                          {isAdmin && (
+                            <td>
+                              <div className="cell-actions">
+                                <button
+                                  type="button"
+                                  className="icon-btn danger"
+                                  onClick={() => momkn.handleDeleteTransaction(t.id)}
+                                  aria-label="حذف الحركة"
+                                  title="حذف"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="stat-card" style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#4b5563', fontSize: '11px', fontWeight: '600' }}>صافي عمولات المحافظ</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '5px', color: '#3b82f6' }}>{formatVal(mobileMoney.summary?.totalCommission)} ج.م</div>
-            </div>
+          </section>
+        </>
+      )}
+
+      {/* ── Wallets & transfers till ── */}
+      {activeSubTab === 'mobile_money' && (
+        <>
+          <div className="stat-grid">
+            <StatCard
+              icon={Coins}
+              tone="neutral"
+              label="كاش درج فودافون الافتتاحي"
+              value={`${formatVal(mobileMoney.summary?.startCash)} ج.م`}
+            />
+            <StatCard
+              icon={Banknote}
+              tone="success"
+              label="صافي الكاش المتوقع بالدرج"
+              value={`${formatVal(mobileMoney.summary?.expectedCash)} ج.م`}
+            />
+            <StatCard
+              icon={Smartphone}
+              tone="neutral"
+              label="رصيد فودافون الافتتاحي"
+              value={`${formatVal(mobileMoney.summary?.startBalance)} ج.م`}
+            />
+            <StatCard
+              icon={Smartphone}
+              tone="success"
+              label="رصيد فودافون كاش المتوقع"
+              value={`${formatVal(mobileMoney.summary?.expectedVfcashDigitalBalance)} ج.م`}
+            />
+            <StatCard
+              icon={Zap}
+              tone="info"
+              label="متحصلات انستاباي (رقمي)"
+              value={`${formatVal(mobileMoney.summary?.expectedInstapayDigitalBalance)} ج.م`}
+            />
+            <StatCard
+              icon={Landmark}
+              tone="info"
+              label="متحصلات تحويل بنكي (رقمي)"
+              value={`${formatVal(mobileMoney.summary?.expectedBankDigitalBalance)} ج.م`}
+            />
+            <StatCard
+              icon={ArrowLeftRight}
+              tone={(mobileMoney.summary?.totalCashImpact || 0) >= 0 ? 'success' : 'danger'}
+              label="التأثير الصافي على الكاش"
+              value={`${signedMoney(mobileMoney.summary?.totalCashImpact)} ج.م`}
+            />
+            <StatCard
+              icon={Percent}
+              tone="info"
+              label="صافي عمولات المحافظ"
+              value={`${formatVal(mobileMoney.summary?.totalCommission)} ج.م`}
+            />
           </div>
 
-          {/* Filters & Actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '15px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <button className="btn btn-success" onClick={() => mobileMoney.setModalOpen(true)}>
-                ➕ تسجيل حركة محفظة
-              </button>
+          <section className="card">
+            <div className="card-header toolbar">
+              <h2 className="card-title">
+                <ScrollText size={18} aria-hidden="true" />
+                حركات المحافظ والتحويلات
+              </h2>
+              <div className="segmented" role="group" aria-label="تصفية حسب المنصة">
+                {PLATFORMS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={mobileMoney.platformFilter === p.id ? 'active' : ''}
+                    aria-pressed={mobileMoney.platformFilter === p.id}
+                    onClick={() => mobileMoney.setPlatformFilter(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="spacer" />
               {isAdmin && (
-                <button className="btn btn-primary" onClick={handlePrintMobileMoneyReport}>
-                  🖨️ طباعة تقرير الجرد
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handlePrintMobileMoneyReport}
+                >
+                  <Printer size={15} aria-hidden="true" />
+                  طباعة تقرير الجرد
                 </button>
               )}
-            </div>
-
-            {/* Platform Filter */}
-            <div style={{ display: 'flex', gap: '5px', backgroundColor: '#ffffff', padding: '4px', borderRadius: '6px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <button 
-                className="btn" 
-                style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: mobileMoney.platformFilter === 'all' ? '#10b981' : 'transparent', color: mobileMoney.platformFilter === 'all' ? '#fff' : '#4b5563' }}
-                onClick={() => mobileMoney.setPlatformFilter('all')}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => mobileMoney.setModalOpen(true)}
               >
-                الكل
-              </button>
-              <button 
-                className="btn" 
-                style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: mobileMoney.platformFilter === 'vodafone_cash' ? '#10b981' : 'transparent', color: mobileMoney.platformFilter === 'vodafone_cash' ? '#fff' : '#4b5563' }}
-                onClick={() => mobileMoney.setPlatformFilter('vodafone_cash')}
-              >
-                فودافون كاش
-              </button>
-              <button 
-                className="btn" 
-                style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: mobileMoney.platformFilter === 'instapay' ? '#10b981' : 'transparent', color: mobileMoney.platformFilter === 'instapay' ? '#fff' : '#4b5563' }}
-                onClick={() => mobileMoney.setPlatformFilter('instapay')}
-              >
-                انستاباي
-              </button>
-              <button 
-                className="btn" 
-                style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: mobileMoney.platformFilter === 'bank_transfer' ? '#10b981' : 'transparent', color: mobileMoney.platformFilter === 'bank_transfer' ? '#fff' : '#4b5563' }}
-                onClick={() => mobileMoney.setPlatformFilter('bank_transfer')}
-              >
-                تحويل بنكي
+                <Plus size={16} aria-hidden="true" />
+                تسجيل حركة محفظة
               </button>
             </div>
-          </div>
-
-          {/* Transactions Table */}
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden', marginTop: '15px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', color: '#1f2937' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>التوقيت</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>المنصة</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>نوع العملية</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>الرصيد الرقمي</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>الكاش المتأثر</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>العمولة</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>المستلم/الهاتف</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#4b5563' }}>ملاحظات</th>
-                  {isAdmin && <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#4b5563' }}>إجراءات</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(!mobileMoney.transactions || mobileMoney.transactions.length === 0) ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 9 : 8} style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>
-                      لا توجد عمليات تطابق الفلتر المختار لهذا الشفت.
-                    </td>
-                  </tr>
-                ) : (
-                  mobileMoney.transactions.map((t, idx) => (
-                    <tr 
-                      key={t.id} 
-                      style={{ 
-                        borderBottom: '1px solid #e5e7eb', 
-                        backgroundColor: idx % 2 === 0 ? 'transparent' : '#f9fafb'
-                      }}
-                    >
-                      <td style={{ padding: '12px 16px', color: '#1f2937' }}>{t.timestamp ? (t.timestamp.split(' ')[1] || t.timestamp) : '-'}</td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#111827' }}>
-                          {t.platform === 'vodafone_cash' && '🔴 فودافون كاش'}
-                          {t.platform === 'instapay' && '⚡ انستاباي'}
-                          {t.platform === 'bank_transfer' && '🏦 تحويل بنكي'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span 
-                          style={{ 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.78rem', 
-                            fontWeight: '600',
-                            backgroundColor: t.operation_type === 'withdraw_from_client' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                            color: t.operation_type === 'withdraw_from_client' ? '#065f46' : '#991b1b',
-                            border: t.operation_type === 'withdraw_from_client' ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(239,68,68,0.2)',
-                            display: 'inline-block' 
-                          }}
-                        >
-                          {t.operation_type === 'withdraw_from_client' ? 'سحب من زبون (سائل)' : 'إيداع لزبون (رصيد)'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: (t.digital_impact || 0) >= 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>
-                        {(t.digital_impact || 0) >= 0 ? '+' : ''}{formatVal(t.digital_impact)} ج.م
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: (t.cash_impact || 0) >= 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>
-                        {(t.cash_impact || 0) >= 0 ? '+' : ''}{formatVal(t.cash_impact)} ج.m
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'center', color: '#1e40af', fontWeight: '600' }}>{formatVal(t.commission)} ج.م</td>
-                      <td style={{ padding: '12px 16px', color: '#111827' }}>
-                        {t.recipient_name ? `${t.recipient_name} | ` : ''}
-                        <span style={{ direction: 'ltr', display: 'inline-block' }}>{t.phone_or_account || '-'}</span>
-                      </td>
-                      <td style={{ padding: '12px 16px', color: '#4b5563' }}>{t.notes || '-'}</td>
+            <div className="card-body">
+              <div className="table-wrap">
+                <table className="table table-compact">
+                  <thead>
+                    <tr>
+                      <th>التوقيت</th>
+                      <th>المنصة</th>
+                      <th>نوع العملية</th>
+                      <th className="num">الرصيد الرقمي</th>
+                      <th className="num">الكاش المتأثر</th>
+                      <th className="num">العمولة</th>
+                      <th>المستلم / الهاتف</th>
+                      <th>ملاحظات</th>
                       {isAdmin && (
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <button 
-                            className="btn btn-danger" 
-                            style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '5px' }}
-                            onClick={() => mobileMoney.handleDeleteTransaction(t.id)}
-                          >
-                            حذف
-                          </button>
-                        </td>
+                        <th>
+                          <span className="visually-hidden">إجراءات</span>
+                        </th>
                       )}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {!mobileMoney.transactions || mobileMoney.transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={isAdmin ? 9 : 8} className="table-empty">
+                          لا توجد عمليات تطابق الفلتر المختار لهذه الوردية.
+                        </td>
+                      </tr>
+                    ) : (
+                      mobileMoney.transactions.map((t) => (
+                        <tr key={t.id}>
+                          <td className="num nowrap cell-muted">
+                            {t.timestamp ? t.timestamp.split(' ')[1] || t.timestamp : '—'}
+                          </td>
+                          <td className="cell-strong nowrap">
+                            {PLATFORM_LABEL[t.platform] || t.platform}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${t.operation_type === 'withdraw_from_client' ? 'badge-success' : 'badge-danger'}`}
+                            >
+                              {t.operation_type === 'withdraw_from_client'
+                                ? 'سحب من زبون (سائل)'
+                                : 'إيداع لزبون (رصيد)'}
+                            </span>
+                          </td>
+                          <td className={`num money-strong ${toneOfSigned(t.digital_impact)}`}>
+                            {signedMoney(t.digital_impact)}
+                          </td>
+                          <td className={`num money-strong ${toneOfSigned(t.cash_impact)}`}>
+                            {signedMoney(t.cash_impact)}
+                          </td>
+                          <td className="num text-info">{formatVal(t.commission)}</td>
+                          <td>
+                            {t.recipient_name ? `${t.recipient_name} · ` : ''}
+                            <span className="num" dir="ltr">
+                              {t.phone_or_account || '—'}
+                            </span>
+                          </td>
+                          <td className="cell-muted">{t.notes || '—'}</td>
+                          {isAdmin && (
+                            <td>
+                              <div className="cell-actions">
+                                <button
+                                  type="button"
+                                  className="icon-btn danger"
+                                  onClick={() => mobileMoney.handleDeleteTransaction(t.id)}
+                                  aria-label="حذف الحركة"
+                                  title="حذف"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </>
       )}
 
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* Modals Mounting */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      <MomknOperationModal 
+      <MomknOperationModal
         isOpen={momkn.modalOpen}
         onClose={() => momkn.setModalOpen(false)}
         onSubmit={momkn.handleAddTransaction}
       />
-      <MobileMoneyOperationModal 
+      <MobileMoneyOperationModal
         isOpen={mobileMoney.modalOpen}
         onClose={() => mobileMoney.setModalOpen(false)}
         onSubmit={mobileMoney.handleAddTransaction}
       />
-    </div>
+    </>
   )
 }
 

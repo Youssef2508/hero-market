@@ -1,205 +1,256 @@
 // ─────────────────────────────────────────────────────────────
-// Admin Tab: Shifts History
-// Shows a read-only table of all closed shifts with reconciliation data.
-// Paginated: 25 rows per page.
+// Admin screen: shift history and periodic drawer audits.
+// Read-only tables with client-side pagination (25 rows per page).
 // ─────────────────────────────────────────────────────────────
-import React from 'react'
+import { Fragment, useState } from 'react'
+import {
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronLeft,
+  ChevronRight,
+  Archive,
+  ClipboardCheck,
+  PackageOpen
+} from 'lucide-react'
+import { formatMoney } from '../../lib/utils'
 
 const PAGE_SIZE = 25
 
 function PaginationBar({ page, totalPages, setPage, total }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-      <button onClick={() => setPage(1)} disabled={page === 1}
-        style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1, fontFamily: 'inherit' }}>
-        «
-      </button>
-      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1, fontFamily: 'inherit' }}>
-        ‹ السابق
-      </button>
-      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', padding: '0 8px' }}>
-        صفحة {page} من {totalPages} — ({total} إجمالي)
-      </span>
-      <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.4 : 1, fontFamily: 'inherit' }}>
-        التالي ›
-      </button>
-      <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
-        style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.4 : 1, fontFamily: 'inherit' }}>
-        »
-      </button>
+    <div className="pagination-controls">
+      <div className="pagination-info">
+        صفحة <span className="num">{page}</span> من <span className="num">{totalPages}</span> ·{' '}
+        <span className="num">{total}</span> إجمالي
+      </div>
+      <div className="pagination-buttons">
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary btn-icon"
+          onClick={() => setPage(1)}
+          disabled={page === 1}
+          aria-label="الصفحة الأولى"
+        >
+          <ChevronsRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+        >
+          <ChevronRight size={16} aria-hidden="true" />
+          السابق
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
+        >
+          التالي
+          <ChevronLeft size={16} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary btn-icon"
+          onClick={() => setPage(totalPages)}
+          disabled={page === totalPages}
+          aria-label="الصفحة الأخيرة"
+        >
+          <ChevronsLeft size={16} />
+        </button>
+      </div>
     </div>
   )
 }
 
+const signed = (v) => (v > 0 ? `+${formatMoney(v)}` : formatMoney(v || 0))
+
 function ClosedShiftsTable({ shiftsHistory }) {
-  const [page, setPage] = React.useState(1)
+  const [page, setPage] = useState(1)
   const data = shiftsHistory || []
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
   const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    <div className="admin-card">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>سجل الورديات المقفلة وجرد الخزينة</h3>
-        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-          إجمالي: {data.length} وردية
-        </span>
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          <Archive size={18} aria-hidden="true" />
+          الورديات المغلقة وجرد الخزينة
+        </h2>
+        <span className="badge num">{data.length} وردية</span>
       </div>
-      <div className="admin-table-wrapper" style={{ marginTop: '15px' }}>
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>رقم الوردية</th>
-              <th>الكاشير</th>
-              <th>تاريخ البدء</th>
-              <th>تاريخ الإغلاق</th>
-              <th>المبلغ الافتتاحي</th>
-              <th>النقدية المتوقعة بالدرج</th>
-              <th>النقدية الفعلية المسلمة</th>
-              <th>الفرق (العجز/الزيادة)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageData.length === 0 ? (
+      <div className="card-body stack">
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                  لا توجد ورديات مغلقة مسجلة في النظام بعد.
-                </td>
+                <th>الوردية</th>
+                <th>الكاشير</th>
+                <th>البدء</th>
+                <th>الإغلاق</th>
+                <th className="num">الافتتاحي</th>
+                <th className="num">المتوقع بالدرج</th>
+                <th className="num">الفعلي المسلَّم</th>
+                <th className="num">الفرق</th>
               </tr>
-            ) : (
-              pageData.map((s, idx) => {
-                // الفاصل بين النظام القديم و الجديد
-                const prevShift = pageData[idx - 1]
-                const showSeparator = prevShift && prevShift.id > 28 && s.id <= 28
-
-                return (
-                  <React.Fragment key={s.id}>
-                    {showSeparator && (
+            </thead>
+            <tbody>
+              {pageData.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="table-empty">
+                    لا توجد ورديات مغلقة مسجلة بعد.
+                  </td>
+                </tr>
+              ) : (
+                pageData.map((s, idx) => {
+                  // Marker where the store switched to the envelope hand-over system (store history).
+                  const prevShift = pageData[idx - 1]
+                  const showSeparator = prevShift && prevShift.id > 28 && s.id <= 28
+                  return (
+                    <Fragment key={s.id}>
+                      {showSeparator && (
+                        <tr>
+                          <td colSpan="8" className="table-separator">
+                            <PackageOpen size={16} aria-hidden="true" />
+                            <strong>بداية نظام التوريد الجديد — عهدة 200 ج.م</strong>
+                            <span>
+                              من الوردية #{prevShift.id} وما بعدها: يسلّم الكاشير المبلغ في ظرف
+                              ويبقى 200 ج.م فكة بالدرج.
+                            </span>
+                          </td>
+                        </tr>
+                      )}
                       <tr>
-                        <td colSpan="8" style={{ padding: 0, border: 'none' }}>
-                          <div style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '10px 14px',
-                            background: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))',
-                            borderTop: '2px dashed rgba(245,158,11,0.5)',
-                            borderBottom: '2px dashed rgba(245,158,11,0.5)',
-                          }}>
-                            <span style={{ fontSize: '1rem' }}>📦</span>
-                            <div>
-                              <div style={{ fontWeight: 800, fontSize: '0.82rem', color: '#f59e0b', letterSpacing: '0.03em' }}>
-                                بداية نظام التوريد الجديد — عهدة 200 ج.م
-                              </div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                                من الوردية #{prevShift.id} وما بعدها: الكاشير يسلّم الفلوس في ظرف ويبقى 200 ج.م فكة بالدرج
-                              </div>
-                            </div>
-                            <div style={{ marginRight: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                              ↑ نظام جديد &nbsp;|&nbsp; نظام قديم ↓
-                            </div>
-                          </div>
+                        <td className="cell-strong num">#{s.id}</td>
+                        <td className="cell-strong">{s.username}</td>
+                        <td className="num nowrap cell-muted">{s.start_time}</td>
+                        <td className="num nowrap cell-muted">{s.end_time}</td>
+                        <td className="num">{formatMoney(s.initial_cash)}</td>
+                        <td className="num">{formatMoney(s.expected_end_cash)}</td>
+                        <td className="num money-strong">{formatMoney(s.actual_end_cash)}</td>
+                        <td
+                          className={`num money-strong ${s.difference < 0 ? 'text-danger' : s.difference > 0 ? 'text-success' : ''}`}
+                        >
+                          {signed(s.difference)}
                         </td>
                       </tr>
-                    )}
-                    <tr>
-                      <td style={{ fontWeight: 'bold' }}>#{s.id}</td>
-                      <td style={{ fontWeight: '600' }}>{s.username}</td>
-                      <td>{s.start_time}</td>
-                      <td>{s.end_time}</td>
-                      <td>{(s.initial_cash || 0).toFixed(2)} ج.م</td>
-                      <td>{(s.expected_end_cash || 0).toFixed(2)} ج.م</td>
-                      <td style={{ fontWeight: 'bold' }}>{(s.actual_end_cash || 0).toFixed(2)} ج.م</td>
-                      <td style={{ fontWeight: 'bold', color: s.difference < 0 ? 'var(--accent-rose)' : s.difference > 0 ? 'var(--accent-emerald)' : 'inherit' }}>
-                        {s.difference > 0 ? `+${s.difference?.toFixed(2)}` : (s.difference || 0).toFixed(2)} ج.م
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+                    </Fragment>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalPages > 1 && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            setPage={setPage}
+            total={data.length}
+          />
+        )}
       </div>
-      {totalPages > 1 && (
-        <PaginationBar page={page} totalPages={totalPages} setPage={setPage} total={data.length} />
-      )}
-    </div>
+    </section>
   )
 }
 
 function AuditsTable({ shiftAudits }) {
-  const [page, setPage] = React.useState(1)
+  const [page, setPage] = useState(1)
   const data = shiftAudits || []
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
   const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    <div className="admin-card">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>سجل الجرد الدوري للخزينة خلال الوردية 🕒</h3>
-        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-          إجمالي: {data.length} جرد
-        </span>
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          <ClipboardCheck size={18} aria-hidden="true" />
+          الجرد الدوري للدرج خلال الورديات
+        </h2>
+        <span className="badge num">{data.length} جرد</span>
       </div>
-      <div className="admin-table-wrapper" style={{ marginTop: '15px' }}>
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>تاريخ الجرد</th>
-              <th>رقم الوردية</th>
-              <th>الكاشير</th>
-              <th>المبلغ المتوقع بالدرج</th>
-              <th>المبلغ الفعلي المدخل</th>
-              <th>الفرق (العجز/الزيادة)</th>
-              <th>ملاحظات الجرد</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageData.length === 0 ? (
+      <div className="card-body stack">
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                  لا توجد حركات جرد دوري مسجلة في النظام بعد.
-                </td>
+                <th>تاريخ الجرد</th>
+                <th>الوردية</th>
+                <th>الكاشير</th>
+                <th className="num">المتوقع بالدرج</th>
+                <th className="num">الفعلي</th>
+                <th className="num">الفرق</th>
+                <th>ملاحظات</th>
               </tr>
-            ) : (
-              pageData.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.timestamp}</td>
-                  <td style={{ fontWeight: 'bold' }}>#{a.shift_id}</td>
-                  <td style={{ fontWeight: '600' }}>{a.username}</td>
-                  <td>{(a.expected_cash || 0).toFixed(2)} ج.م</td>
-                  <td style={{ fontWeight: 'bold' }}>{(a.actual_cash || 0).toFixed(2)} ج.م</td>
-                  <td style={{ fontWeight: 'bold', color: a.difference < 0 ? 'var(--accent-rose)' : a.difference > 0 ? 'var(--accent-orange)' : 'var(--accent-emerald)' }}>
-                    {a.difference > 0 ? `+${a.difference?.toFixed(2)}` : (a.difference || 0).toFixed(2)} ج.م
+            </thead>
+            <tbody>
+              {pageData.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="table-empty">
+                    لا توجد حركات جرد دوري مسجلة بعد.
                   </td>
-                  <td style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{a.notes || '—'}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                pageData.map((a) => (
+                  <tr key={a.id}>
+                    <td className="num nowrap cell-muted">{a.timestamp}</td>
+                    <td className="cell-strong num">#{a.shift_id}</td>
+                    <td className="cell-strong">{a.username}</td>
+                    <td className="num">{formatMoney(a.expected_cash)}</td>
+                    <td className="num money-strong">{formatMoney(a.actual_cash)}</td>
+                    <td
+                      className={`num money-strong ${a.difference < 0 ? 'text-danger' : a.difference > 0 ? 'text-warning' : 'text-success'}`}
+                    >
+                      {signed(a.difference)}
+                    </td>
+                    <td className="cell-muted">{a.notes || '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalPages > 1 && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            setPage={setPage}
+            total={data.length}
+          />
+        )}
       </div>
-      {totalPages > 1 && (
-        <PaginationBar page={page} totalPages={totalPages} setPage={setPage} total={data.length} />
-      )}
-    </div>
+    </section>
   )
 }
 
 export default function ShiftsTab({ shiftsHistory, shiftAudits }) {
-  const [activeSubTab, setActiveSubTab] = React.useState('closed')
+  const [activeSubTab, setActiveSubTab] = useState('closed')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '5px' }}>
-        <button className="btn" onClick={() => setActiveSubTab('closed')}
-          style={{ padding: '10px 20px', fontSize: '0.95rem', borderRadius: '6px', fontWeight: 'bold', transition: 'all 0.2s ease', backgroundColor: activeSubTab === 'closed' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.03)', color: activeSubTab === 'closed' ? '#fff' : 'var(--text-secondary)', border: activeSubTab === 'closed' ? 'none' : '1px solid rgba(255,255,255,0.08)', fontFamily: 'inherit' }}>
-          📁 الورديات المقفلة وجرد الخزينة
+    <>
+      <div className="segmented segmented-lg" role="tablist" aria-label="سجلات الورديات">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSubTab === 'closed'}
+          className={activeSubTab === 'closed' ? 'active' : ''}
+          onClick={() => setActiveSubTab('closed')}
+        >
+          <Archive size={16} aria-hidden="true" />
+          الورديات المغلقة
         </button>
-        <button className="btn" onClick={() => setActiveSubTab('audits')}
-          style={{ padding: '10px 20px', fontSize: '0.95rem', borderRadius: '6px', fontWeight: 'bold', transition: 'all 0.2s ease', backgroundColor: activeSubTab === 'audits' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.03)', color: activeSubTab === 'audits' ? '#fff' : 'var(--text-secondary)', border: activeSubTab === 'audits' ? 'none' : '1px solid rgba(255,255,255,0.08)', fontFamily: 'inherit' }}>
-          🕒 سجل الجرد الدوري خلال الوردية
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSubTab === 'audits'}
+          className={activeSubTab === 'audits' ? 'active' : ''}
+          onClick={() => setActiveSubTab('audits')}
+        >
+          <ClipboardCheck size={16} aria-hidden="true" />
+          الجرد الدوري
         </button>
       </div>
 
@@ -208,6 +259,6 @@ export default function ShiftsTab({ shiftsHistory, shiftAudits }) {
       ) : (
         <AuditsTable shiftAudits={shiftAudits} />
       )}
-    </div>
+    </>
   )
 }

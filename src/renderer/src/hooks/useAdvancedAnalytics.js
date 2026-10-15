@@ -30,27 +30,37 @@ export function useAdvancedAnalytics() {
     let start
 
     if (type === 'today') {
-      const d = new Date(); d.setHours(0, 0, 0, 0)
+      const d = new Date()
+      d.setHours(0, 0, 0, 0)
       start = getNowStr(d)
       setFromDate(start.slice(0, 16))
       setToDate(end.slice(0, 16))
     } else if (type === 'yesterday') {
-      const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0)
-      const e = new Date(); e.setHours(0, 0, 0, 0)
+      const d = new Date()
+      d.setDate(d.getDate() - 1)
+      d.setHours(0, 0, 0, 0)
+      const e = new Date()
+      e.setHours(0, 0, 0, 0)
       setFromDate(getNowStr(d).slice(0, 16))
       setToDate(getNowStr(e).slice(0, 16))
     } else if (type === '3days') {
-      const d = new Date(); d.setDate(d.getDate() - 3); d.setHours(0, 0, 0, 0)
+      const d = new Date()
+      d.setDate(d.getDate() - 3)
+      d.setHours(0, 0, 0, 0)
       start = getNowStr(d)
       setFromDate(start.slice(0, 16))
       setToDate(end.slice(0, 16))
     } else if (type === 'week') {
-      const d = new Date(); d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0)
+      const d = new Date()
+      d.setDate(d.getDate() - 7)
+      d.setHours(0, 0, 0, 0)
       start = getNowStr(d)
       setFromDate(start.slice(0, 16))
       setToDate(end.slice(0, 16))
     } else if (type === 'month') {
-      const d = new Date(); d.setDate(d.getDate() - 30); d.setHours(0, 0, 0, 0)
+      const d = new Date()
+      d.setDate(d.getDate() - 30)
+      d.setHours(0, 0, 0, 0)
       start = getNowStr(d)
       setFromDate(start.slice(0, 16))
       setToDate(end.slice(0, 16))
@@ -75,11 +85,29 @@ export function useAdvancedAnalytics() {
         ORDER BY s.id ASC;
       `)
 
-      const shiftIds = shiftsInRange.map(s => s.id)
+      const shiftIds = shiftsInRange.map((s) => s.id)
 
       if (shiftIds.length === 0) {
-        setSummary({ totalSales: 0, invoiceCount: 0, avgInvoice: 0, netProfit: 0, profitMargin: 0, totalExpenses: 0, totalReturns: 0, cashSales: 0, debtSales: 0, netCashFlow: 0, maxInvoice: 0, returnCount: 0, damagedCost: 0 })
-        setShiftRows([]); setPeakHours([]); setDailyTrend([]); setTopProducts([]); setPaymentBreakdown([])
+        setSummary({
+          totalSales: 0,
+          invoiceCount: 0,
+          avgInvoice: 0,
+          netProfit: 0,
+          profitMargin: 0,
+          totalExpenses: 0,
+          totalReturns: 0,
+          cashSales: 0,
+          debtSales: 0,
+          netCashFlow: 0,
+          maxInvoice: 0,
+          returnCount: 0,
+          damagedCost: 0
+        })
+        setShiftRows([])
+        setPeakHours([])
+        setDailyTrend([])
+        setTopProducts([])
+        setPaymentBreakdown([])
         setLoading(false)
         return
       }
@@ -109,7 +137,9 @@ export function useAdvancedAnalytics() {
       `)
       const netProfitRaw = profitRes[0]?.profit || 0
 
-      const damagedRes = await executeQuery(`SELECT SUM(quantity * cost_price) as total_cost FROM damaged_goods ${shiftCond};`)
+      const damagedRes = await executeQuery(
+        `SELECT SUM(quantity * cost_price) as total_cost FROM damaged_goods ${shiftCond};`
+      )
       const damagedCost = damagedRes[0]?.total_cost || 0
       const netProfit = netProfitRaw - damagedCost
 
@@ -132,9 +162,23 @@ export function useAdvancedAnalytics() {
       const safeInflows = safeRes[0]?.inflows || 0
       const safeOutflows = safeRes[0]?.outflows || 0
       const netCashFlow = cashSales + safeInflows - safeOutflows - totalExpenses
-      const profitMargin = totalSales > 0 ? ((netProfit / totalSales) * 100) : 0
+      const profitMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0
 
-      setSummary({ totalSales, invoiceCount, avgInvoice, netProfit, profitMargin, totalExpenses, totalReturns, cashSales, debtSales, netCashFlow, maxInvoice, returnCount, damagedCost })
+      setSummary({
+        totalSales,
+        invoiceCount,
+        avgInvoice,
+        netProfit,
+        profitMargin,
+        totalExpenses,
+        totalReturns,
+        cashSales,
+        debtSales,
+        netCashFlow,
+        maxInvoice,
+        returnCount,
+        damagedCost
+      })
 
       const perShiftSales = await executeQuery(`
         SELECT shift_id, SUM(total_amount) as sales, COUNT(*) as invoices,
@@ -147,13 +191,24 @@ export function useAdvancedAnalytics() {
         FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
         ${salesShiftCond} GROUP BY s.shift_id;
       `)
-      const perShiftExpenses = await executeQuery(`SELECT shift_id, SUM(amount) as expenses FROM expenses ${shiftCond} GROUP BY shift_id;`)
+      const perShiftExpenses = await executeQuery(
+        `SELECT shift_id, SUM(amount) as expenses FROM expenses ${shiftCond} GROUP BY shift_id;`
+      )
 
-      const salesByShift = {}; perShiftSales.forEach(r => { salesByShift[r.shift_id] = r })
-      const profitByShift = {}; perShiftProfit.forEach(r => { profitByShift[r.shift_id] = r.profit || 0 })
-      const expensesByShift = {}; perShiftExpenses.forEach(r => { expensesByShift[r.shift_id] = r.expenses || 0 })
+      const salesByShift = {}
+      perShiftSales.forEach((r) => {
+        salesByShift[r.shift_id] = r
+      })
+      const profitByShift = {}
+      perShiftProfit.forEach((r) => {
+        profitByShift[r.shift_id] = r.profit || 0
+      })
+      const expensesByShift = {}
+      perShiftExpenses.forEach((r) => {
+        expensesByShift[r.shift_id] = r.expenses || 0
+      })
 
-      const rows = shiftsInRange.map(sh => {
+      const rows = shiftsInRange.map((sh) => {
         const sales = salesByShift[sh.id]?.sales || 0
         const invoices = salesByShift[sh.id]?.invoices || 0
         const debt = salesByShift[sh.id]?.debt || 0
@@ -161,7 +216,8 @@ export function useAdvancedAnalytics() {
         const expenses = expensesByShift[sh.id] || 0
         let durationHrs = null
         if (sh.start_time && sh.end_time) {
-          const s = new Date(sh.start_time), e = new Date(sh.end_time)
+          const s = new Date(sh.start_time),
+            e = new Date(sh.end_time)
           durationHrs = ((e - s) / 3600000).toFixed(1)
         }
         const margin = sales > 0 ? (profit / sales) * 100 : 0
@@ -184,7 +240,8 @@ export function useAdvancedAnalytics() {
       setDailyTrend(dailyRes)
 
       const topRes = await executeQuery(`
-        SELECT si.product_barcode, si.product_name,
+        -- D-009: sale_items has no product_name column; take the name from products (already joined).
+        SELECT si.product_barcode, p.name AS product_name,
                SUM(si.quantity - si.returned_qty) as qty_sold,
                SUM(si.total_price) as revenue,
                SUM(si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price))) as profit
@@ -198,7 +255,6 @@ export function useAdvancedAnalytics() {
         FROM sales ${shiftCond} GROUP BY payment_type;
       `)
       setPaymentBreakdown(payRes)
-
     } catch (e) {
       console.error('useAdvancedAnalytics error:', e)
     } finally {
@@ -206,5 +262,19 @@ export function useAdvancedAnalytics() {
     }
   }
 
-  return { loading, fromDate, setFromDate, toDate, setToDate, setQuickFilter, runAnalysis, summary, shiftRows, peakHours, dailyTrend, topProducts, paymentBreakdown }
+  return {
+    loading,
+    fromDate,
+    setFromDate,
+    toDate,
+    setToDate,
+    setQuickFilter,
+    runAnalysis,
+    summary,
+    shiftRows,
+    peakHours,
+    dailyTrend,
+    topProducts,
+    paymentBreakdown
+  }
 }

@@ -1,5 +1,7 @@
+# appId and package name are unchanged so existing installs upgrade in place (D-005).
 appId: com.electron.app
-productName: elnagdi-pos
+productName: HeroMarket POS
+copyright: Copyright © HeroMarket
 directories:
   buildResources: build
 files:
@@ -20,14 +22,17 @@ extraResources:
 asarUnpack:
   - resources/**
 win:
-  executableName: elnagdi-pos
+  executableName: HeroMarket-POS
+  icon: build/icon.ico
 nsis:
   oneClick: true
   perMachine: false
   deleteAppDataOnUninstall: false
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: "برنامج مبيعات النجدي"
-  uninstallDisplayName: "برنامج مبيعات النجدي"
+  artifactName: HeroMarket-POS-${version}-setup.${ext}
+  shortcutName: "HeroMarket POS"
+  uninstallDisplayName: "HeroMarket POS"
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
@@ -44,7 +49,7 @@ linux:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: HeroMarket
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}

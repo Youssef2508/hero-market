@@ -3,7 +3,7 @@ import { escapeSql, getNowStr } from '../utils'
 
 /**
  * Get all checks ordered by due date.
- * 
+ *
  * @returns {Promise<object[]>}
  */
 export async function getChecks() {
@@ -12,7 +12,7 @@ export async function getChecks() {
 
 /**
  * Get all unpaid checks due today.
- * 
+ *
  * @returns {Promise<object[]>}
  */
 export async function getChecksDueToday() {
@@ -28,11 +28,20 @@ export async function getChecksDueToday() {
 
 /**
  * Add a new check to the registry.
- * 
- * @param {object} check 
+ *
+ * @param {object} check
  * @returns {Promise<void>}
  */
-export async function addCheck({ check_type, check_number, bank_name, party_name, issue_date, due_date, amount, notes }) {
+export async function addCheck({
+  check_type,
+  check_number,
+  bank_name,
+  party_name,
+  issue_date,
+  due_date,
+  amount,
+  notes
+}) {
   const nowStr = getNowStr()
   await executeQuery(`
     INSERT INTO checks_register (check_type, check_number, bank_name, party_name, issue_date, due_date, amount, status, notes, created_at)
@@ -53,8 +62,8 @@ export async function addCheck({ check_type, check_number, bank_name, party_name
 
 /**
  * Mark a check as paid.
- * 
- * @param {number} checkId 
+ *
+ * @param {number} checkId
  * @returns {Promise<void>}
  */
 export async function markCheckPaid(checkId) {
@@ -63,8 +72,8 @@ export async function markCheckPaid(checkId) {
 
 /**
  * Delete a check from registry.
- * 
- * @param {number} checkId 
+ *
+ * @param {number} checkId
  * @returns {Promise<void>}
  */
 export async function deleteCheck(checkId) {

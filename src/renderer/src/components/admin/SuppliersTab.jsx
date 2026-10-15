@@ -1,23 +1,21 @@
-import React from 'react'
+import { useMemo, useState } from 'react'
+import {
+  Truck,
+  Plus,
+  Search,
+  Trash2,
+  ReceiptText,
+  BookOpenText,
+  Phone,
+  MapPin,
+  UserRound,
+  HandCoins
+} from 'lucide-react'
+import { EmptyState, SortableTh } from '../ui'
+import { formatMoney } from '../../lib/utils'
 
 /**
- * @param {object} props
- * @param {function} props.setNewSupplierForm
- * @param {function} props.setShowAddSupplierModal
- * @param {string} props.suppliersSearch
- * @param {function} props.setSuppliersSearch
- * @param {function} props.fetchSuppliersList
- * @param {object[]} props.suppliersList
- * @param {function} props.fetchSupplierProfile
- * @param {object|null} props.selectedSupplier
- * @param {function} props.setNewPurchaseForm
- * @param {function} props.setShowAddPurchaseModal
- * @param {function} props.handleDeleteSupplier
- * @param {function} props.handleSupplierRepay
- * @param {string} props.supplierRepayAmount
- * @param {function} props.setSupplierRepayAmount
- * @param {object[]} props.supplierPurchases
- * @param {object[]} props.supplierLedger
+ * Suppliers & purchases. Data and mutations come from useSuppliersManager.
  */
 export default function SuppliersTab({
   setNewSupplierForm,
@@ -37,10 +35,19 @@ export default function SuppliersTab({
   supplierPurchases,
   supplierLedger
 }) {
-  const [sortField, setSortField] = React.useState('name')
-  const [sortAsc, setSortAsc] = React.useState(true)
+  const [sortField, setSortField] = useState('name')
+  const [sortAsc, setSortAsc] = useState(true)
 
-  const sortedSuppliersList = React.useMemo(() => {
+  const onSort = (field) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc)
+    } else {
+      setSortField(field)
+      setSortAsc(true)
+    }
+  }
+
+  const sortedSuppliersList = useMemo(() => {
     return [...suppliersList].sort((a, b) => {
       let valA = a[sortField]
       let valB = b[sortField]
@@ -53,150 +60,278 @@ export default function SuppliersTab({
     })
   }, [suppliersList, sortField, sortAsc])
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '20px', alignItems: 'start' }}>
-      {/* Left: Supplier List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div className="admin-card" style={{ padding: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: '1rem' }}>🏭 قائمة الموردين</h3>
-            <button className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-              onClick={() => { setNewSupplierForm({ name: '', phone: '', address: '', contact_person: '' }); setShowAddSupplierModal(true) }}>
-              ➕ مورد جديد
-            </button>
-          </div>
-          <input type="text" className="form-input" placeholder="بحث باسم المورد أو الهاتف..."
-            value={suppliersSearch}
-            onChange={e => { setSuppliersSearch(e.target.value); fetchSuppliersList(e.target.value) }}
-            style={{ marginBottom: '10px' }} />
-          
-          {/* Sorting controls */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', fontSize: '0.8rem', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-muted)' }}>ترتيب حسب:</span>
-            {['name', 'phone', 'debt_balance'].map(field => (
-              <button
-                key={field}
-                type="button"
-                className="btn btn-sm btn-secondary"
-                style={{ 
-                  padding: '3px 8px', 
-                  fontSize: '0.75rem',
-                  backgroundColor: sortField === field ? 'var(--accent-blue)' : 'transparent',
-                  color: sortField === field ? '#fff' : 'var(--text-secondary)'
-                }}
-                onClick={() => {
-                  if (sortField === field) {
-                    setSortAsc(!sortAsc)
-                  } else {
-                    setSortField(field)
-                    setSortAsc(true)
-                  }
-                }}
-              >
-                {field === 'name' ? 'الاسم' : field === 'phone' ? 'الهاتف' : 'المديونية'}
-                {sortField === field && (sortAsc ? ' ▲' : ' ▼')}
-              </button>
-            ))}
-          </div>
+  const sortProps = { sortField, sortAsc, onSort }
+  const s = selectedSupplier
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
-            {sortedSuppliersList.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>لا يوجد موردون مسجلون</p>
-            ) : sortedSuppliersList.map(s => (
-              <div key={s.id}
-                onClick={() => fetchSupplierProfile(s)}
-                style={{ padding: '12px', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${selectedSupplier?.id === s.id ? 'var(--accent-blue)' : 'var(--border-color)'}`, background: selectedSupplier?.id === s.id ? 'rgba(37,99,235,0.08)' : 'var(--bg-secondary)' }}>
-                <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{s.name}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.phone || 'لا يوجد هاتف'}</div>
-                <div style={{ fontSize: '0.8rem', color: s.debt_balance > 0 ? 'var(--accent-rose)' : 'var(--accent-green)', fontWeight: 'bold' }}>
-                  المديونية: {(s.debt_balance || 0).toFixed(2)} ج.م
-                </div>
-              </div>
-            ))}
+  return (
+    <div className="split split-narrow-list">
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">
+            <Truck size={18} aria-hidden="true" />
+            الموردون
+          </h2>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              setNewSupplierForm({ name: '', phone: '', address: '', contact_person: '' })
+              setShowAddSupplierModal(true)
+            }}
+          >
+            <Plus size={16} aria-hidden="true" />
+            مورد جديد
+          </button>
+        </div>
+        <div className="card-body stack">
+          <div className="search-field">
+            <Search size={17} aria-hidden="true" />
+            <input
+              type="text"
+              className="input"
+              placeholder="بحث باسم المورد أو الهاتف"
+              value={suppliersSearch}
+              onChange={(e) => {
+                setSuppliersSearch(e.target.value)
+                fetchSuppliersList(e.target.value)
+              }}
+              aria-label="البحث في الموردين"
+            />
+          </div>
+          <div className="table-wrap" style={{ maxHeight: 520 }}>
+            <table className="table table-clickable">
+              <thead>
+                <tr>
+                  <SortableTh field="name" label="المورد" {...sortProps} />
+                  <SortableTh field="phone" label="الهاتف" {...sortProps} />
+                  <SortableTh
+                    field="debt_balance"
+                    label="المديونية"
+                    className="num"
+                    {...sortProps}
+                  />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedSuppliersList.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" className="table-empty">
+                      لا يوجد موردون مسجلون
+                    </td>
+                  </tr>
+                ) : (
+                  sortedSuppliersList.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={s?.id === row.id ? 'is-selected' : ''}
+                      onClick={() => fetchSupplierProfile(row)}
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchSupplierProfile(row)}
+                    >
+                      <td className="cell-strong">{row.name}</td>
+                      <td className="num cell-muted nowrap">{row.phone || '—'}</td>
+                      <td
+                        className={`num money-strong ${row.debt_balance > 0 ? 'text-danger' : 'text-success'}`}
+                      >
+                        {formatMoney(row.debt_balance)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Right: Supplier Profile */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {selectedSupplier ? (
-          <>
-            {/* Supplier Info Card */}
-            <div className="admin-card" style={{ padding: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+      {s ? (
+        <div className="stack-lg">
+          <section className="card">
+            <div className="card-header">
+              <div className="profile-head">
+                <span className="avatar avatar-lg" aria-hidden="true">
+                  <Truck size={20} />
+                </span>
                 <div>
-                  <h3 style={{ margin: '0 0 4px 0' }}>{selectedSupplier.name}</h3>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{selectedSupplier.phone} {selectedSupplier.address && `| ${selectedSupplier.address}`}</div>
-                  <div style={{ marginTop: '8px', fontSize: '1.1rem', fontWeight: 'bold', color: (selectedSupplier.debt_balance || 0) > 0 ? 'var(--accent-rose)' : 'var(--accent-green)' }}>
-                    إجمالي المديونية: {(selectedSupplier.debt_balance || 0).toFixed(2)} ج.م
+                  <h2 className="card-title">{s.name}</h2>
+                  <div className="contact-row" style={{ fontSize: 'var(--fs-sm)' }}>
+                    {s.phone && (
+                      <span>
+                        <Phone size={14} aria-hidden="true" />
+                        <span className="num">{s.phone}</span>
+                      </span>
+                    )}
+                    {s.contact_person && (
+                      <span>
+                        <UserRound size={14} aria-hidden="true" />
+                        {s.contact_person}
+                      </span>
+                    )}
+                    {s.address && (
+                      <span>
+                        <MapPin size={14} aria-hidden="true" />
+                        {s.address}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                    onClick={() => { setNewPurchaseForm({ invoice_ref: '', total_amount: '', paid_amount: '', payment_type: 'آجل', notes: '' }); setShowAddPurchaseModal(true) }}>
-                    🧾 فاتورة شراء
-                  </button>
-                  <button className="delete-btn" onClick={() => handleDeleteSupplier(selectedSupplier.id)}>🗑</button>
-                </div>
               </div>
-              {/* Pay supplier */}
-              <form onSubmit={handleSupplierRepay} style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                <input type="number" className="form-input" placeholder="مبلغ السداد (ج.م)" min="0" step="0.01"
-                  value={supplierRepayAmount} onChange={e => setSupplierRepayAmount(e.target.value)} style={{ flex: 1 }} />
-                <button type="submit" className="btn btn-success" style={{ whiteSpace: 'nowrap' }}>✅ سداد</button>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setNewPurchaseForm({
+                      invoice_ref: '',
+                      total_amount: '',
+                      paid_amount: '',
+                      payment_type: 'آجل',
+                      notes: ''
+                    })
+                    setShowAddPurchaseModal(true)
+                  }}
+                >
+                  <ReceiptText size={16} aria-hidden="true" />
+                  فاتورة شراء
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn danger"
+                  onClick={() => handleDeleteSupplier(s.id)}
+                  aria-label={`حذف المورد ${s.name}`}
+                  title="حذف المورد"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="card-body stack">
+              <div
+                className={`balance-banner ${(s.debt_balance || 0) > 0 ? 'is-owed' : 'is-clear'}`}
+              >
+                <span>إجمالي المديونية للمورد</span>
+                <strong className="money">{formatMoney(s.debt_balance)} ج.م</strong>
+              </div>
+              <form className="repay-form" onSubmit={handleSupplierRepay}>
+                <label className="field" style={{ flex: 1 }}>
+                  <span className="field-label">سداد دفعة للمورد (ج.م)</span>
+                  <input
+                    type="number"
+                    className="input num"
+                    placeholder="مبلغ السداد"
+                    min="0"
+                    step="0.01"
+                    value={supplierRepayAmount}
+                    onChange={(e) => setSupplierRepayAmount(e.target.value)}
+                  />
+                </label>
+                <button type="submit" className="btn btn-primary">
+                  <HandCoins size={16} aria-hidden="true" />
+                  تسجيل السداد
+                </button>
               </form>
             </div>
-            {/* Purchases History */}
-            <div className="admin-card" style={{ padding: '16px' }}>
-              <h4 style={{ margin: '0 0 10px 0' }}>🧾 فواتير الشراء</h4>
-              {supplierPurchases.length === 0 ? <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>لا توجد فواتير</p> :
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="admin-table" style={{ fontSize: '0.8rem' }}>
-                    <thead><tr><th>التاريخ</th><th>رقم الفاتورة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>نوع الدفع</th></tr></thead>
+          </section>
+
+          <section className="card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <ReceiptText size={18} aria-hidden="true" />
+                فواتير الشراء
+              </h2>
+            </div>
+            <div className="card-body">
+              {supplierPurchases.length === 0 ? (
+                <p className="cell-muted text-center">لا توجد فواتير</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table table-compact">
+                    <thead>
+                      <tr>
+                        <th>التاريخ</th>
+                        <th>رقم الفاتورة</th>
+                        <th className="num">الإجمالي</th>
+                        <th className="num">المدفوع</th>
+                        <th className="num">المتبقي</th>
+                        <th>نوع الدفع</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {supplierPurchases.map(p => (
+                      {supplierPurchases.map((p) => (
                         <tr key={p.id}>
-                          <td>{p.timestamp}</td>
-                          <td>{p.invoice_ref || '-'}</td>
-                          <td>{(p.total_amount || 0).toFixed(2)}</td>
-                          <td>{(p.paid_amount || 0).toFixed(2)}</td>
-                          <td style={{ color: (p.remaining || 0) > 0 ? 'var(--accent-rose)' : 'var(--accent-green)', fontWeight: 'bold' }}>{(p.remaining || 0).toFixed(2)}</td>
-                          <td>{p.payment_type}</td>
+                          <td className="num nowrap cell-muted">{p.timestamp}</td>
+                          <td>{p.invoice_ref || '—'}</td>
+                          <td className="num">{formatMoney(p.total_amount)}</td>
+                          <td className="num">{formatMoney(p.paid_amount)}</td>
+                          <td
+                            className={`num money-strong ${(p.remaining || 0) > 0 ? 'text-danger' : 'text-success'}`}
+                          >
+                            {formatMoney(p.remaining)}
+                          </td>
+                          <td>
+                            <span className="badge">{p.payment_type}</span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              }
+              )}
             </div>
-            {/* Ledger */}
-            <div className="admin-card" style={{ padding: '16px' }}>
-              <h4 style={{ margin: '0 0 10px 0' }}>📒 دفتر حساب المورد</h4>
-              {supplierLedger.length === 0 ? <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>لا توجد حركات</p> :
-                <table className="admin-table" style={{ fontSize: '0.8rem' }}>
-                  <thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>البيان</th></tr></thead>
-                  <tbody>
-                    {supplierLedger.map(l => (
-                      <tr key={l.id}>
-                        <td>{l.timestamp}</td>
-                        <td style={{ color: l.type === 'payment' ? 'var(--accent-green)' : 'var(--accent-rose)', fontWeight: 'bold' }}>
-                          {l.type === 'payment' ? 'سداد' : 'شراء'}
-                        </td>
-                        <td>{(l.amount || 0).toFixed(2)} ج.م</td>
-                        <td>{l.description}</td>
+          </section>
+
+          <section className="card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <BookOpenText size={18} aria-hidden="true" />
+                دفتر حساب المورد
+              </h2>
+            </div>
+            <div className="card-body">
+              {supplierLedger.length === 0 ? (
+                <p className="cell-muted text-center">لا توجد حركات</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table table-compact">
+                    <thead>
+                      <tr>
+                        <th>التاريخ</th>
+                        <th>النوع</th>
+                        <th className="num">المبلغ</th>
+                        <th>البيان</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              }
+                    </thead>
+                    <tbody>
+                      {supplierLedger.map((l) => (
+                        <tr key={l.id}>
+                          <td className="num nowrap cell-muted">{l.timestamp}</td>
+                          <td>
+                            <span
+                              className={`badge ${l.type === 'payment' ? 'badge-success' : 'badge-danger'}`}
+                            >
+                              {l.type === 'payment' ? 'سداد' : 'شراء'}
+                            </span>
+                          </td>
+                          <td className="num money-strong">{formatMoney(l.amount)}</td>
+                          <td>{l.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          </>
-        ) : (
-          <div className="admin-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px', color: 'var(--text-muted)' }}>
-            اختر مورداً من القائمة لعرض تفاصيله
-          </div>
-        )}
-      </div>
+          </section>
+        </div>
+      ) : (
+        <section className="card">
+          <EmptyState
+            icon={Truck}
+            title="اختر مورداً"
+            text="اختر مورداً من القائمة لعرض فواتير الشراء ودفتر الحساب وتسجيل السداد."
+          />
+        </section>
+      )}
     </div>
   )
 }

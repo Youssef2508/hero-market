@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { executeQuery } from '../lib/db'
-import { escapeSql, getNowStr, getFriendlyErrorMessage} from '../lib/utils'
+import { escapeSql, getNowStr, getFriendlyErrorMessage } from '../lib/utils'
 
 export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerCustomConfirm }) {
   const [suppliersList, setSuppliersList] = useState([])
@@ -10,13 +10,26 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
   const [supplierPurchases, setSupplierPurchases] = useState([])
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
   const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(false)
-  const [newSupplierForm, setNewSupplierForm] = useState({ name: '', phone: '', address: '', contact_person: '' })
-  const [newPurchaseForm, setNewPurchaseForm] = useState({ invoice_ref: '', total_amount: '', paid_amount: '', payment_type: 'آجل', notes: '' })
+  const [newSupplierForm, setNewSupplierForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    contact_person: ''
+  })
+  const [newPurchaseForm, setNewPurchaseForm] = useState({
+    invoice_ref: '',
+    total_amount: '',
+    paid_amount: '',
+    payment_type: 'آجل',
+    notes: ''
+  })
   const [supplierRepayAmount, setSupplierRepayAmount] = useState('')
 
   const fetchSuppliersList = async (search = '') => {
     try {
-      const where = search ? `WHERE name LIKE '%${escapeSql(search)}%' OR phone LIKE '%${escapeSql(search)}%'` : ''
+      const where = search
+        ? `WHERE name LIKE '%${escapeSql(search)}%' OR phone LIKE '%${escapeSql(search)}%'`
+        : ''
       const res = await executeQuery(`SELECT * FROM suppliers ${where} ORDER BY name ASC;`)
       setSuppliersList(res || [])
     } catch (err) {
@@ -28,8 +41,12 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     setSelectedSupplier(supplier)
     try {
       const [ledger, purchases] = await Promise.all([
-        executeQuery(`SELECT * FROM supplier_ledger WHERE supplier_id = ${supplier.id} ORDER BY id DESC LIMIT 50;`),
-        executeQuery(`SELECT * FROM supplier_purchases WHERE supplier_id = ${supplier.id} ORDER BY id DESC;`)
+        executeQuery(
+          `SELECT * FROM supplier_ledger WHERE supplier_id = ${supplier.id} ORDER BY id DESC LIMIT 50;`
+        ),
+        executeQuery(
+          `SELECT * FROM supplier_purchases WHERE supplier_id = ${supplier.id} ORDER BY id DESC;`
+        )
       ])
       setSupplierLedger(ledger || [])
       setSupplierPurchases(purchases || [])
@@ -64,7 +81,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     if (e) e.preventDefault()
     if (!selectedSupplier) return
     const total = parseFloat(newPurchaseForm.total_amount) || 0
-    const paid  = parseFloat(newPurchaseForm.paid_amount)  || 0
+    const paid = parseFloat(newPurchaseForm.paid_amount) || 0
     if (total <= 0) {
       triggerCustomAlert('يرجى إدخال مبلغ الفاتورة!')
       return
@@ -86,8 +103,16 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       sql += 'COMMIT;\n'
       await executeQuery(sql)
       setShowAddPurchaseModal(false)
-      setNewPurchaseForm({ invoice_ref: '', total_amount: '', paid_amount: '', payment_type: 'آجل', notes: '' })
-      const updated = await executeQuery(`SELECT * FROM suppliers WHERE id = ${selectedSupplier.id} LIMIT 1;`)
+      setNewPurchaseForm({
+        invoice_ref: '',
+        total_amount: '',
+        paid_amount: '',
+        payment_type: 'آجل',
+        notes: ''
+      })
+      const updated = await executeQuery(
+        `SELECT * FROM suppliers WHERE id = ${selectedSupplier.id} LIMIT 1;`
+      )
       if (updated.length > 0) await fetchSupplierProfile(updated[0])
     } catch (err) {
       triggerCustomAlert('فشل تسجيل الفاتورة: ' + getFriendlyErrorMessage(err))
@@ -113,7 +138,9 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       sql += 'COMMIT;\n'
       await executeQuery(sql)
       setSupplierRepayAmount('')
-      const updated = await executeQuery(`SELECT * FROM suppliers WHERE id = ${selectedSupplier.id} LIMIT 1;`)
+      const updated = await executeQuery(
+        `SELECT * FROM suppliers WHERE id = ${selectedSupplier.id} LIMIT 1;`
+      )
       if (updated.length > 0) await fetchSupplierProfile(updated[0])
     } catch (err) {
       triggerCustomAlert('فشل تسجيل السداد: ' + getFriendlyErrorMessage(err))
@@ -135,7 +162,9 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         await fetchSuppliersList()
       } catch (err) {
         if (err.message && err.message.includes('FOREIGN KEY')) {
-          triggerCustomAlert('لا يمكن حذف هذا المورد لأنه مرتبط بسجلات أو حركات شراء سابقة بالنظام.')
+          triggerCustomAlert(
+            'لا يمكن حذف هذا المورد لأنه مرتبط بسجلات أو حركات شراء سابقة بالنظام.'
+          )
         } else {
           triggerCustomAlert('فشل حذف المورد: ' + getFriendlyErrorMessage(err))
         }

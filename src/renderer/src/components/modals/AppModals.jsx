@@ -1,4 +1,3 @@
-import React from 'react'
 import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
 import CustomAlertModal from './CustomAlertModal'
@@ -132,15 +131,9 @@ export default function AppModals({
         handleConfirmCloseShift={handleConfirmCloseShift}
       />
 
-      <CustomAlertModal
-        customAlert={customAlert}
-        closeCustomAlert={closeCustomAlert}
-      />
+      <CustomAlertModal customAlert={customAlert} closeCustomAlert={closeCustomAlert} />
 
-      <CustomConfirmModal
-        customConfirm={customConfirm}
-        closeCustomConfirm={closeCustomConfirm}
-      />
+      <CustomConfirmModal customConfirm={customConfirm} closeCustomConfirm={closeCustomConfirm} />
 
       <ManagerApprovalModal
         managerApprovalModal={managerApprovalModal}

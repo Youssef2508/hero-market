@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { executeQuery } from '../lib/db'
 import { escapeSql, getNowStr, getFriendlyErrorMessage, round2 } from '../lib/utils'
 
-export function useSalesManager({ currentShift, fetchAdminData, triggerCustomAlert, triggerCustomConfirm }) {
+export function useSalesManager({
+  currentShift,
+  fetchAdminData,
+  triggerCustomAlert,
+  triggerCustomConfirm
+}) {
   const [salesHistory, setSalesHistory] = useState([])
   const [salesSearch, setSalesSearch] = useState('')
   const [selectedSale, setSelectedSale] = useState(null)
@@ -90,125 +95,143 @@ export function useSalesManager({ currentShift, fetchAdminData, triggerCustomAle
     const maxReturnable = saleItem.quantity - alreadyReturned
 
     if (qtyToReturn <= 0 || qtyToReturn > maxReturnable) {
-      triggerCustomAlert(`الرجاء إدخال كمية مرتجع صحيحة (أكبر من 0 ولا تزيد عن المتبقي: ${maxReturnable}).`)
+      triggerCustomAlert(
+        `الرجاء إدخال كمية مرتجع صحيحة (أكبر من 0 ولا تزيد عن المتبقي: ${maxReturnable}).`
+      )
       return
     }
 
-    triggerCustomConfirm(`هل أنت متأكد من رغبتك في إرجاع كمية ${qtyToReturn} من الصنف "${saleItem.name || saleItem.product_barcode}"؟`, async () => {
-      try {
-        const freshSales = await executeQuery(`SELECT original_amount, total_amount, discount, payment_type, client_id, id, shift_id FROM sales WHERE id = ${saleItem.sale_id} LIMIT 1;`)
-        const saleData = freshSales?.[0]
-        if (!saleData) {
-          triggerCustomAlert('لم يتم العثور على الفاتورة!')
-          return
-        }
+    triggerCustomConfirm(
+      `هل أنت متأكد من رغبتك في إرجاع كمية ${qtyToReturn} من الصنف "${saleItem.name || saleItem.product_barcode}"؟`,
+      async () => {
+        try {
+          const freshSales = await executeQuery(
+            `SELECT original_amount, total_amount, discount, payment_type, client_id, id, shift_id FROM sales WHERE id = ${saleItem.sale_id} LIMIT 1;`
+          )
+          const saleData = freshSales?.[0]
+          if (!saleData) {
+            triggerCustomAlert('لم يتم العثور على الفاتورة!')
+            return
+          }
 
-        const originalAmt = parseFloat(saleData.original_amount) || (parseFloat(saleData.total_amount) + parseFloat(saleData.discount)) || 1
-        const currentDiscount = parseFloat(saleData.discount) || 0
-        const discountRatio = (currentDiscount > 0 && originalAmt > 0) ? (currentDiscount / originalAmt) : 0
-        const grossRefund = qtyToReturn * saleItem.unit_price
-        const discountShare = round2(grossRefund * discountRatio)
-        const netRefund = round2(grossRefund - discountShare)
+          const originalAmt =
+            parseFloat(saleData.original_amount) ||
+            parseFloat(saleData.total_amount) + parseFloat(saleData.discount) ||
+            1
+          const currentDiscount = parseFloat(saleData.discount) || 0
+          const discountRatio =
+            currentDiscount > 0 && originalAmt > 0 ? currentDiscount / originalAmt : 0
+          const grossRefund = qtyToReturn * saleItem.unit_price
+          const discountShare = round2(grossRefund * discountRatio)
+          const netRefund = round2(grossRefund - discountShare)
 
-        let sql = 'BEGIN TRANSACTION;\n'
-        sql += `UPDATE products SET stock_qty = stock_qty + ${qtyToReturn} WHERE barcode = '${escapeSql(saleItem.product_barcode)}';\n`
-        
-        // Update returned quantity and recalculate total_price for this item
-        const newReturnedQty = alreadyReturned + qtyToReturn
-        const newTotalPrice = (saleItem.quantity - newReturnedQty) * saleItem.unit_price
-        sql += `UPDATE sale_items SET returned_qty = ${newReturnedQty}, total_price = ${newTotalPrice} WHERE id = ${saleItem.id};\n`
-        
-        // Update sales discount and total_amount
-        sql += `UPDATE sales SET discount = MAX(0, discount - ${discountShare}), total_amount = MAX(0, (SELECT IFNULL(SUM(total_price), 0) FROM sale_items WHERE sale_id = ${saleItem.sale_id}) - MAX(0, discount - ${discountShare})) WHERE id = ${saleItem.sale_id};\n`
-        
-        const shiftId = (currentShift && currentShift.id) ? currentShift.id : (saleData.shift_id || 'NULL')
-        const nowStr = getNowStr()
-        
-        if (saleData.payment_type === 'آجل' && saleData.client_id) {
-          sql += `UPDATE clients SET debt_balance = debt_balance - ${netRefund} WHERE id = ${saleData.client_id};\n`
-          sql += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${saleData.client_id}, 'payment', ${netRefund}, 'إرجاع صنف من فاتورة آجل #${saleData.id}', '${nowStr}');\n`
-        } else {
-          sql += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${shiftId}, 'outflow', ${netRefund}, 'مرتجع صنف ${escapeSql(saleItem.name || saleItem.product_barcode)} (${qtyToReturn}) للفاتورة #${saleItem.sale_id}', '${nowStr}');\n`
-        }
-        
-        sql += 'COMMIT;\n'
+          let sql = 'BEGIN TRANSACTION;\n'
+          sql += `UPDATE products SET stock_qty = stock_qty + ${qtyToReturn} WHERE barcode = '${escapeSql(saleItem.product_barcode)}';\n`
 
-        await executeQuery(sql)
-        triggerCustomAlert('تم إرجاع الصنف وتحديث المخزن بنجاح!')
-        
-        if (fetchAdminData) await fetchAdminData()
-        
-        // Reload details to show updated item returned status
-        const details = await executeQuery(`
+          // Update returned quantity and recalculate total_price for this item
+          const newReturnedQty = alreadyReturned + qtyToReturn
+          const newTotalPrice = (saleItem.quantity - newReturnedQty) * saleItem.unit_price
+          sql += `UPDATE sale_items SET returned_qty = ${newReturnedQty}, total_price = ${newTotalPrice} WHERE id = ${saleItem.id};\n`
+
+          // Update sales discount and total_amount
+          sql += `UPDATE sales SET discount = MAX(0, discount - ${discountShare}), total_amount = MAX(0, (SELECT IFNULL(SUM(total_price), 0) FROM sale_items WHERE sale_id = ${saleItem.sale_id}) - MAX(0, discount - ${discountShare})) WHERE id = ${saleItem.sale_id};\n`
+
+          const shiftId =
+            currentShift && currentShift.id ? currentShift.id : saleData.shift_id || 'NULL'
+          const nowStr = getNowStr()
+
+          if (saleData.payment_type === 'آجل' && saleData.client_id) {
+            sql += `UPDATE clients SET debt_balance = debt_balance - ${netRefund} WHERE id = ${saleData.client_id};\n`
+            sql += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${saleData.client_id}, 'payment', ${netRefund}, 'إرجاع صنف من فاتورة آجل #${saleData.id}', '${nowStr}');\n`
+          } else {
+            sql += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${shiftId}, 'outflow', ${netRefund}, 'مرتجع صنف ${escapeSql(saleItem.name || saleItem.product_barcode)} (${qtyToReturn}) للفاتورة #${saleItem.sale_id}', '${nowStr}');\n`
+          }
+
+          sql += 'COMMIT;\n'
+
+          await executeQuery(sql)
+          triggerCustomAlert('تم إرجاع الصنف وتحديث المخزن بنجاح!')
+
+          if (fetchAdminData) await fetchAdminData()
+
+          // Reload details to show updated item returned status
+          const details = await executeQuery(`
           SELECT s.*, u.username 
           FROM sales s
           JOIN shifts sh ON s.shift_id = sh.id
           JOIN users u ON sh.user_id = u.id
           WHERE s.id = ${saleItem.sale_id} LIMIT 1;
         `)
-        if (details.length > 0) {
-          await selectSaleForDetail(details[0])
+          if (details.length > 0) {
+            await selectSaleForDetail(details[0])
+          }
+        } catch (e) {
+          triggerCustomAlert('فشلت عملية الإرجاع: ' + getFriendlyErrorMessage(e))
         }
-      } catch (e) {
-        triggerCustomAlert('فشلت عملية الإرجاع: ' + getFriendlyErrorMessage(e))
       }
-    })
+    )
   }
 
   const handleReturnEntireSale = async (saleId) => {
-    triggerCustomConfirm('هل أنت متأكد من رغبتك في إلغاء وإرجاع الفاتورة بالكامل؟ سيتم إعادة جميع الكميات إلى المخزن وتصفير قيمتها المتبقية.', async () => {
-      try {
-        const items = await executeQuery(`SELECT * FROM sale_items WHERE sale_id = ${saleId};`)
-        const freshSale = await executeQuery(`SELECT total_amount, payment_type, client_id, shift_id FROM sales WHERE id = ${saleId} LIMIT 1;`)
-        const saleData = freshSale?.[0]
-        if (!saleData) {
-          triggerCustomAlert('لم يتم العثور على الفاتورة!')
-          return
-        }
-
-        let sql = 'BEGIN TRANSACTION;\n'
-        items.forEach(item => {
-          const remainingQty = item.quantity - (item.returned_qty || 0)
-          if (remainingQty > 0) {
-            sql += `UPDATE products SET stock_qty = stock_qty + ${remainingQty} WHERE barcode = '${escapeSql(item.product_barcode)}';\n`
+    triggerCustomConfirm(
+      'هل أنت متأكد من رغبتك في إلغاء وإرجاع الفاتورة بالكامل؟ سيتم إعادة جميع الكميات إلى المخزن وتصفير قيمتها المتبقية.',
+      async () => {
+        try {
+          const items = await executeQuery(`SELECT * FROM sale_items WHERE sale_id = ${saleId};`)
+          const freshSale = await executeQuery(
+            `SELECT total_amount, payment_type, client_id, shift_id FROM sales WHERE id = ${saleId} LIMIT 1;`
+          )
+          const saleData = freshSale?.[0]
+          if (!saleData) {
+            triggerCustomAlert('لم يتم العثور على الفاتورة!')
+            return
           }
-        })
 
-        sql += `UPDATE sale_items SET returned_qty = quantity, total_price = 0 WHERE sale_id = ${saleId};\n`
-        sql += `UPDATE sales SET total_amount = 0, discount = 0 WHERE id = ${saleId};\n`
+          let sql = 'BEGIN TRANSACTION;\n'
+          items.forEach((item) => {
+            const remainingQty = item.quantity - (item.returned_qty || 0)
+            if (remainingQty > 0) {
+              sql += `UPDATE products SET stock_qty = stock_qty + ${remainingQty} WHERE barcode = '${escapeSql(item.product_barcode)}';\n`
+            }
+          })
 
-        const shiftId = (currentShift && currentShift.id) ? currentShift.id : (saleData.shift_id || 'NULL')
-        const refundAmount = saleData.total_amount || 0
-        const nowStr = getNowStr()
+          sql += `UPDATE sale_items SET returned_qty = quantity, total_price = 0 WHERE sale_id = ${saleId};\n`
+          sql += `UPDATE sales SET total_amount = 0, discount = 0 WHERE id = ${saleId};\n`
 
-        if (saleData.payment_type === 'آجل' && saleData.client_id) {
-          sql += `UPDATE clients SET debt_balance = debt_balance - ${refundAmount} WHERE id = ${saleData.client_id};\n`
-          sql += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${saleData.client_id}, 'payment', ${refundAmount}, 'إرجاع كامل فاتورة آجل #${saleId}', '${nowStr}');\n`
-        } else {
-          sql += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${shiftId}, 'outflow', ${refundAmount}, 'مرتجع كامل الفاتورة #${saleId}', '${nowStr}');\n`
-        }
+          const shiftId =
+            currentShift && currentShift.id ? currentShift.id : saleData.shift_id || 'NULL'
+          const refundAmount = saleData.total_amount || 0
+          const nowStr = getNowStr()
 
-        sql += 'COMMIT;\n'
+          if (saleData.payment_type === 'آجل' && saleData.client_id) {
+            sql += `UPDATE clients SET debt_balance = debt_balance - ${refundAmount} WHERE id = ${saleData.client_id};\n`
+            sql += `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES (${saleData.client_id}, 'payment', ${refundAmount}, 'إرجاع كامل فاتورة آجل #${saleId}', '${nowStr}');\n`
+          } else {
+            sql += `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (${shiftId}, 'outflow', ${refundAmount}, 'مرتجع كامل الفاتورة #${saleId}', '${nowStr}');\n`
+          }
 
-        await executeQuery(sql)
-        triggerCustomAlert('تم إلغاء الفاتورة بالكامل وإرجاع كافة الأصناف للمخزن!')
+          sql += 'COMMIT;\n'
 
-        if (fetchAdminData) await fetchAdminData()
+          await executeQuery(sql)
+          triggerCustomAlert('تم إلغاء الفاتورة بالكامل وإرجاع كافة الأصناف للمخزن!')
 
-        const details = await executeQuery(`
+          if (fetchAdminData) await fetchAdminData()
+
+          const details = await executeQuery(`
           SELECT s.*, u.username
           FROM sales s
           JOIN shifts sh ON s.shift_id = sh.id
           JOIN users u ON sh.user_id = u.id
           WHERE s.id = ${saleId} LIMIT 1;
         `)
-        if (details.length > 0) {
-          await selectSaleForDetail(details[0])
+          if (details.length > 0) {
+            await selectSaleForDetail(details[0])
+          }
+        } catch (e) {
+          triggerCustomAlert('فشل إرجاع الفاتورة بالكامل: ' + getFriendlyErrorMessage(e))
         }
-      } catch (e) {
-        triggerCustomAlert('فشل إرجاع الفاتورة بالكامل: ' + getFriendlyErrorMessage(e))
       }
-    })
+    )
   }
 
   return {
