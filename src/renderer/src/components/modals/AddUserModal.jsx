@@ -5,7 +5,8 @@ const AddUserModal = ({
   setShowAddUserModal,
   newUser,
   setNewUser,
-  handleAddUser
+  handleAddUser,
+  rolesList = []
 }) => {
   if (!showAddUserModal) return null
 
@@ -24,7 +25,7 @@ const AddUserModal = ({
           style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
         >
           <div className="form-group">
-            <label>اسم المستخدم (كاشير) *</label>
+            <label>اسم المستخدم *</label>
             <input
               type="text"
               className="form-input"
@@ -50,14 +51,19 @@ const AddUserModal = ({
             />
           </div>
           <div className="form-group">
-            <label>نوع الصلاحية *</label>
+            <label>الدور *</label>
             <select
               className="form-input"
-              value={newUser.role}
-              onChange={(e) => setNewUser((prev) => ({ ...prev, role: e.target.value }))}
+              value={newUser.roleId}
+              onChange={(e) => setNewUser((prev) => ({ ...prev, roleId: e.target.value }))}
+              required
             >
-              <option value="cashier">كاشير (صلاحية البيع فقط)</option>
-              <option value="admin">مدير (المالك - صلاحيات كاملة)</option>
+              <option value="">اختر الدور…</option>
+              {rolesList.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="modal-footer">

@@ -141,3 +141,10 @@ States: hover (surface-hover), active (pressed scale 0.98 for buttons), focus-vi
 
 Do: use tokens, one primary action per area, labels with icons, tabular numbers.
 Don't: raw hex in components, emoji as icons, nested cards, decorative gradients, glassmorphism, huge radii, animations on the payment path.
+
+## 13. Stage 2 screens and checks
+
+- **Receipt designer** (تصميم الفاتورة): three columns – templates per paper, the element editor grouped in zone cards (أعلى / وسط / أسفل الفاتورة; each element row: grip, visibility checkbox, name or text field, arrows, delete for free text/separators; second line: zone menu, alignment segmented control, bold, size, element options), and a sticky preview (simulated thermal roll in black on white, or the A4 page). Below 1280 px the preview moves under the editor.
+- **Start-up gate**: the lock-screen card with the three device roles stacked as rows (icon, title, description) so they stay readable at every width.
+- **Event log**: Arabic labels for every action, "النظام" for automatic entries, timestamps date-first, mixed-direction text isolated.
+- **Accessibility evidence (2026-10-14)**: axe-core 4.10, WCAG 2.0/2.1/2.2 A + AA, lock screen + 22 destinations, light and dark: **0 violations**.

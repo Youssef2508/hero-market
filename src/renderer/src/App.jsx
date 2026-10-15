@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { CircleCheck, TriangleAlert, ClipboardCheck, NotebookPen } from 'lucide-react'
 import packageInfo from '../../../package.json'
 
-import { playSound, getNowStr } from './lib/utils'
-import { executeQuery } from './lib/db'
+import { playSound } from './lib/utils'
+import { api } from './lib/api'
+import { canAccessAdmin } from './components/shell/navigation'
+import StartupGate from './components/setup/StartupGate'
 
 // Import Custom Hooks
 import { useBarcode } from './hooks/useBarcode'
@@ -67,9 +69,22 @@ function App() {
     setManagerPin,
     pendingAction,
     setPendingAction,
-    handleLock: rawHandleLock,
-    checkActiveShift
+    handleLock: rawHandleLock
   } = useShift()
+
+  // Startup: connection to the service, then first-run administrator setup (no default password).
+  const [startupPhase, setStartupPhase] = useState('checking') // checking | connect | setup | ready
+  const [backendInfo, setBackendInfo] = useState(null)
+  // Store-wide settings from the service (store profile, opening cash, audit timing, receipts).
+  const [appSettings, setAppSettings] = useState(null)
+  const loadAppSettings = async () => {
+    try {
+      const res = await api('settings.public')
+      setAppSettings(res.settings)
+    } catch (e) {
+      console.error('settings.public failed:', e)
+    }
+  }
 
   const [showChangePinModal, setShowChangePinModal] = useState(false)
   const [noPrint, setNoPrint] = useState(false)
@@ -258,7 +273,9 @@ function App() {
     fetchAdminData: () => adminController.fetchAdminData(),
     triggerCustomAlert,
     triggerCustomConfirm,
-    parseScaleBarcode: (bc) => parseScaleBarcodeFnRef.current(bc)
+    parseScaleBarcode: (bc) => parseScaleBarcodeFnRef.current(bc),
+    appSettings,
+    onLoggedIn: (user) => onLoggedIn(user)
   })
 
   // useBarcode after usePOSController so setBarcodeInput is available
@@ -323,39 +340,10 @@ function App() {
   const triggerAuditCheck = async () => {
     if (!currentShift) return
     try {
-      const grossRes = await executeQuery(
-        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id};`
-      )
-      const debtRes = await executeQuery(
-        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type = 'آجل';`
-      )
-      const digitalRes = await executeQuery(
-        `SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total FROM sales WHERE shift_id = ${currentShift.id} AND payment_type NOT IN ('نقدي', 'آجل');`
-      )
-      const repayRes = await executeQuery(
-        `SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'inflow';`
-      )
-      const refundRes = await executeQuery(
-        `SELECT IFNULL(SUM(amount), 0) as total FROM safe_ledger WHERE shift_id = ${currentShift.id} AND type = 'outflow';`
-      )
-
-      const grossSales = parseFloat(grossRes[0]?.total) || 0
-      const debtSales = parseFloat(debtRes[0]?.total) || 0
-      const digitalSales = parseFloat(digitalRes[0]?.total) || 0
-      const repayTotal = parseFloat(repayRes[0]?.total) || 0
-      const refundTotal = parseFloat(refundRes[0]?.total) || 0
-      const initialCash = parseFloat(currentShift.initial_cash) || 0
-
-      const expected =
-        initialCash + grossSales - debtSales - digitalSales + repayTotal - refundTotal
+      // Same formula as before, computed by the service (shifts.auditPreview).
+      const { expected, breakdown } = await api('shifts.auditPreview', { shiftId: currentShift.id })
       setAuditExpectedCash(expected)
-      setAuditBreakdown({
-        grossSales,
-        debtSales: debtSales + digitalSales,
-        refunds: refundTotal,
-        repay: repayTotal,
-        initialCash
-      })
+      setAuditBreakdown(breakdown)
       setAuditActualCash('')
       setAuditNotes('')
       setShowAuditModal(true)
@@ -373,8 +361,11 @@ function App() {
       const now = Date.now()
       const timeSinceLastAudit = now - lastAuditTime.current
 
-      // If 1 hour has passed (3600000 ms)
-      if (timeSinceLastAudit >= 3600000) {
+      if (appSettings && appSettings.audit_enabled === 'false') return
+      const intervalMs = (Number(appSettings?.audit_interval_minutes) || 60) * 60000
+      const idleMs = (Number(appSettings?.audit_idle_seconds) || 20) * 1000
+      // Default: 1 hour since the last audit (store setting audit_interval_minutes)
+      if (timeSinceLastAudit >= intervalMs) {
         const idleTime = now - lastActivityTime.current
         const isCartEmpty = cart.length === 0
         const isModalOpen =
@@ -386,7 +377,7 @@ function App() {
           customConfirm
 
         // Idle for 20 seconds, empty cart, no modals open
-        if (idleTime >= 20000 && isCartEmpty && !isModalOpen) {
+        if (idleTime >= idleMs && isCartEmpty && !isModalOpen) {
           triggerAuditCheck()
         }
       }
@@ -402,7 +393,8 @@ function App() {
     managerApprovalModal,
     showAuditModal,
     customAlert,
-    customConfirm
+    customConfirm,
+    appSettings
   ])
 
   const submitAudit = async () => {
@@ -413,18 +405,14 @@ function App() {
     }
 
     try {
-      const diff = actual - auditExpectedCash
-      const nowStr = getNowStr()
-
-      // Insert record
-      await executeQuery(`
-        INSERT INTO shift_audits (shift_id, timestamp, expected_cash, actual_cash, difference, notes)
-        VALUES (${currentShift.id}, '${nowStr}', ${auditExpectedCash}, ${actual}, ${diff}, '${auditNotes.replace(/'/g, "''")}');
-      `)
-
-      // Fetch last inserted audit row id
-      const lastInsertRes = await executeQuery(`SELECT last_insert_rowid() as id;`)
-      const auditId = lastInsertRes[0]?.id
+      // K-23: the service returns the new audit id (the legacy last_insert_rowid() ran in a new process and was always 0).
+      const saved = await api('shifts.audit', {
+        shiftId: currentShift.id,
+        actualCash: actual,
+        notes: auditNotes
+      })
+      const diff = saved.difference
+      const auditId = saved.id
 
       setShowAuditModal(false)
       lastAuditTime.current = Date.now() // reset hourly timer
@@ -456,7 +444,8 @@ function App() {
 
   const snoozeAudit = () => {
     setShowAuditModal(false)
-    lastAuditTime.current = Date.now() - 3600000 + 5 * 60 * 1000 // snooze for 5 minutes
+    const intervalMs = (Number(appSettings?.audit_interval_minutes) || 60) * 60000
+    lastAuditTime.current = Date.now() - intervalMs + 5 * 60 * 1000 // snooze for 5 minutes
     triggerCustomAlert('تم تأجيل الجرد الدوري لمدة 5 دقائق.')
   }
 
@@ -466,12 +455,56 @@ function App() {
     triggerCustomAlert('تم تخطي الجرد الدوري لهذه الساعة.')
   }
 
-  // On App Mount
+  // On App Mount: check the service connection and whether the first administrator exists.
+  // The till always starts locked; an open shift is resumed after PIN login (G-16).
+  // A temporarily unreachable database or server (503) is retried for about half a minute before
+  // the connection settings are shown; the settings screen is for configuration problems.
+  const checkStartup = async (attempt = 0) => {
+    try {
+      const st = window.api?.backend ? await window.api.backend.status() : { ready: false }
+      setBackendInfo(st)
+      if (!st.ready) {
+        setStartupPhase('connect')
+        return
+      }
+      const auth = await api('auth.status')
+      setStartupPhase(auth.needsSetup ? 'setup' : 'ready')
+    } catch (e) {
+      if (e.status === 503 && attempt < 15) {
+        setStartupPhase('checking')
+        setTimeout(() => checkStartup(attempt + 1), 2000)
+        return
+      }
+      setBackendInfo((b) => ({ ...(b || {}), error: e.message }))
+      setStartupPhase('connect')
+    }
+  }
   useEffect(() => {
-    adminController.fetchStats()
-    checkActiveShift()
-    adminController.fetchChecksDueToday()
+    checkStartup()
   }, [])
+
+  // Session expired, account disabled or data restored: back to the lock screen.
+  useEffect(() => {
+    const onExpired = () => {
+      rawHandleLock()
+      setCurrentView('pos')
+      triggerCustomAlert('انتهت الجلسة أو تغيّرت صلاحيات الحساب. يرجى تسجيل الدخول مرة أخرى.')
+    }
+    window.addEventListener('heromarket:session-expired', onExpired)
+    return () => window.removeEventListener('heromarket:session-expired', onExpired)
+  }, [])
+
+  // Store default for automatic receipt printing (the cashier can still toggle it per sale).
+  useEffect(() => {
+    if (appSettings) setNoPrint(appSettings.print_receipt_default === 'false')
+  }, [appSettings])
+
+  // Data the shell needs right after a login (previously loaded at mount, before login).
+  const onLoggedIn = (user) => {
+    loadAppSettings()
+    adminController.fetchStats()
+    if (user.permissions.includes('checks.manage')) adminController.fetchChecksDueToday()
+  }
 
   // Global keyboard shortcuts
   useKeyboardShortcuts({
@@ -535,6 +568,25 @@ function App() {
     }
   ]
 
+  // Connection setup / first administrator, before the lock screen
+  if (startupPhase !== 'ready') {
+    return (
+      <StartupGate
+        phase={startupPhase}
+        backendInfo={backendInfo}
+        onRetry={checkStartup}
+        onSetupDone={(user) => {
+          setCurrentUser(user)
+          setStartupPhase('ready')
+          setIsLocked(false)
+          onLoggedIn(user)
+          setStartingCash('200')
+          setOpenShiftModal(true)
+        }}
+      />
+    )
+  }
+
   // Render Pin Authenticator Screen (the alert dialog must stay visible here, e.g. wrong PIN)
   if (isLocked) {
     return (
@@ -573,8 +625,7 @@ function App() {
         onChangePin={() => setShowChangePinModal(true)}
         version={packageInfo.version}
       >
-        {currentView === 'admin' &&
-        (currentUser?.role === 'admin' || currentUser?.role === 'manager') ? (
+        {currentView === 'admin' && canAccessAdmin(currentUser) ? (
           <AdminDashboard
             currentUser={currentUser}
             currentShift={currentShift}
@@ -585,6 +636,7 @@ function App() {
             adminSearchInputRef={adminSearchInputRef}
             handleReprintSale={handleReprintSale}
             onNavigate={handleNavigate}
+            onSettingsChanged={loadAppSettings}
             {...adminController}
           />
         ) : currentView === 'tills' ? (
@@ -814,11 +866,10 @@ function App() {
                 style={{ flex: 1 }}
                 onClick={async () => {
                   try {
-                    await executeQuery(`
-                      UPDATE shift_audits
-                      SET notes = '${auditDeficitReason.replace(/'/g, "''")}'
-                      WHERE id = ${reasonAuditId};
-                    `)
+                    await api('shifts.auditNote', {
+                      auditId: reasonAuditId,
+                      notes: auditDeficitReason
+                    })
                     triggerCustomAlert('تم تسجيل سبب العجز بنجاح.', 'تم الحفظ')
                     setShowReasonModal(false)
                     adminController.fetchAdminData()

@@ -71,6 +71,7 @@ export default function AppModals({
   editUser,
   setEditUser,
   handleEditUser,
+  rolesList,
 
   showAddClientModal,
   setShowAddClientModal,
@@ -167,6 +168,7 @@ export default function AppModals({
         newUser={newUser}
         setNewUser={setNewUser}
         handleAddUser={handleAddUser}
+        rolesList={rolesList}
       />
 
       <EditUserModal
@@ -175,6 +177,7 @@ export default function AppModals({
         editUser={editUser}
         setEditUser={setEditUser}
         handleEditUser={handleEditUser}
+        rolesList={rolesList}
       />
 
       <AddClientModal

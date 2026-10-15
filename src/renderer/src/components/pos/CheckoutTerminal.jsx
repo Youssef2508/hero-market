@@ -293,7 +293,7 @@ function CheckoutTerminal({
               onFocus={(e) => e.target.select()}
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="امسح باركود الصنف أو اكتبه ثم Enter"
+              placeholder="امسح الباركود أو اكتبه"
               aria-label="باركود الصنف"
               autoComplete="off"
               spellCheck={false}
@@ -313,7 +313,9 @@ function CheckoutTerminal({
                 value={searchInput}
                 onChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="ابحث بالاسم أو الباركود"
+                placeholder="بحث بالاسم…"
+                role="combobox"
+                aria-autocomplete="list"
                 aria-label="البحث في الأصناف"
                 aria-expanded={showResults}
                 aria-controls="pos-search-results"

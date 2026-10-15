@@ -1,7 +1,7 @@
 # Architecture Documentation
 
 ## 1. System Topology Overview
-Elnagdi POS is constructed as a modern desktop application utilizing Electron as the runtime container. It implements a decoupled architecture consisting of a **Renderer Process** (handling UI and view logic via React 19) and a **Main Process** (managing native OS services, hardware integration, and database operations via Node.js).
+HeroMarket POS is constructed as a modern desktop application utilizing Electron as the runtime container. It implements a decoupled architecture consisting of a **Renderer Process** (handling UI and view logic via React 19) and a **Main Process** (managing native OS services, hardware integration, and database operations via Node.js).
 
 ```mermaid
 graph TD
@@ -26,7 +26,7 @@ Security and stability are maintained by separating the frontend from the Node.j
 ---
 
 ## 3. Database Architecture (CLI Wrapper SQLite)
-Unlike conventional setups using native modules like `better-sqlite3` (which can cause compilation and path issues across Node versions), Elnagdi POS interacts with SQLite via a custom child process spawned bridge.
+Unlike conventional setups using native modules like `better-sqlite3` (which can cause compilation and path issues across Node versions), HeroMarket POS interacts with SQLite via a custom child process spawned bridge.
 
 ### Execution Mechanism
 1.  **Process Spawning:** In `src/main/db.js`, `sqlite3.exe` is resolved locally (based on whether the application is running in development or packaged).
@@ -42,7 +42,7 @@ To prevent database locks (`SQLITE_BUSY` errors) when the administrator is fetch
 ---
 
 ## 4. Hardware & Printing Architecture
-Supermarket operations require rapid printing of receipt tickets. Elnagdi POS routes printing commands through specialized system interfaces:
+Supermarket operations require rapid printing of receipt tickets. HeroMarket POS routes printing commands through specialized system interfaces:
 
 *   **Arabic Text Rendering (GDI Wrapper):** Arabic text requires proper right-to-left layout and contextual glyph shaping (ligatures). To achieve this on standard ESC/POS hardware without complex device-level firmware loading, the system leverages a PowerShell wrapper utilizing the Windows Graphical Device Interface (GDI) to paint Arabic text accurately on the thermal printer canvas.
 *   **Settings Integration:** The active printer name is fetched dynamically from the database `settings` table (`printer_name` key) before routing print requests.

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { getActiveShift } from '../lib/dao/shifts.dao'
 
 /**
  * Custom hook to manage shifts, locking, and authentication state.
@@ -28,25 +27,6 @@ export function useShift() {
     setIsLocked(true)
     setCurrentUser(null)
     setCurrentShift(null)
-  }
-
-  const checkActiveShift = async () => {
-    try {
-      const active = await getActiveShift()
-      if (active) {
-        console.log('[useShift] Found active shift:', active)
-        // Set both current shift and the corresponding cashier
-        setCurrentShift(active)
-        setCurrentUser({
-          id: active.user_id,
-          username: active.username,
-          role: active.role
-        })
-        setIsLocked(false)
-      }
-    } catch (e) {
-      console.error('[useShift] Failed to check active shift:', e)
-    }
   }
 
   return {
@@ -78,7 +58,6 @@ export function useShift() {
     setManagerPin,
     pendingAction,
     setPendingAction,
-    handleLock,
-    checkActiveShift
+    handleLock
   }
 }

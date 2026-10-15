@@ -52,7 +52,7 @@ function UserMenu({ currentUser, onChangePin, onLock }) {
         <span className="user-menu-text">
           <span className="user-menu-name">{name}</span>
           <span className="user-menu-role">
-            {ROLE_LABELS[currentUser?.role] || currentUser?.role}
+            {currentUser?.roleName || ROLE_LABELS[currentUser?.role] || currentUser?.role}
           </span>
         </span>
         <ChevronDown size={16} aria-hidden="true" />
@@ -105,6 +105,8 @@ export default function Topbar({
 }) {
   const now = useClock()
   const hasShift = !!(currentShift && currentShift.id)
+  // Shift controls only for roles that work shifts (the service enforces shifts.operate too).
+  const canShift = !!currentUser?.permissions?.includes('shifts.operate')
 
   return (
     <header className="topbar">
@@ -129,7 +131,7 @@ export default function Topbar({
           <strong>{now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</strong>
         </div>
 
-        {hasShift ? (
+        {!canShift ? null : hasShift ? (
           <>
             <span className="shift-chip is-open" title="الوردية الحالية مفتوحة">
               <span className="dot" aria-hidden="true" />

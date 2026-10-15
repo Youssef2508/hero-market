@@ -1,0 +1,285 @@
+'use strict'
+const { test, before, after } = require('node:test')
+const assert = require('node:assert/strict')
+const crypto = require('crypto')
+const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+
+let db, svc, cashier, inventoryUser, shift
+const ref = () => crypto.randomUUID()
+const q = async (sql, params) => (await svc.pool.query(sql, params)).rows
+
+before(async () => {
+  if (!process.env.HEROMARKET_TEST_DATABASE_URL) return
+  db = await freshDatabase()
+  svc = await startService(db.url)
+  await createUser(svc, { username: 'cashier1', pin: '1111', roleKey: 'cashier' })
+  await createUser(svc, { username: 'stock1', pin: '2222', roleKey: 'inventory' })
+  await q(`INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
+    ('A1', 'منتج أ', 8, 10.5, 9, 100, 5, 'قطعة', 'عام'),
+    ('B2', 'منتج ب', 2, 3.25, 3, 5, 1, 'قطعة', 'عام'),
+    ('C3', 'جبنة', 150, 200, 190, 1.5, 0.5, 'كجم', 'ألبان')`)
+  cashier = await login(svc, '1111')
+  inventoryUser = await login(svc, '2222')
+  shift = (await svc.call('shifts.open', { startingCash: 200 }, cashier)).body
+})
+after(async () => {
+  if (svc) await svc.close()
+  if (db) await db.dispose()
+})
+
+test('permissions: inventory role cannot sell or open a shift; cashier cannot enter multi-till floats', async (t) => {
+  if (!requireDb(t)) return
+  assert.equal((await svc.call('shifts.open', { startingCash: 100 }, inventoryUser)).status, 403)
+  assert.equal((await svc.call('pos.searchProducts', { term: 'منتج' }, inventoryUser)).status, 403)
+  assert.equal(
+    (await svc.call('shifts.open', { startingCash: 1, momknStartBalance: 50 }, cashier)).status,
+    403
+  )
+  assert.equal(shift.status, 'open')
+  assert.equal(Number(shift.initial_cash), 200)
+})
+
+test('cash sale: server prices, items linked to their sale, stock deducted, user recorded', async (t) => {
+  if (!requireDb(t)) return
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      paidAmount: 50,
+      items: [
+        { barcode: 'A1', qty: 2, unitPrice: 10.5 },
+        { barcode: 'B2', qty: 3, unitPrice: 3.25 }
+      ]
+    },
+    cashier
+  )
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal(r.body.subTotal, 30.75)
+  assert.equal(r.body.total, 30.75)
+  assert.equal(r.body.change, 19.25)
+  const sale = (await q('SELECT * FROM sales WHERE id = $1', [r.body.saleId]))[0]
+  assert.equal(Number(sale.total_amount), 30.75)
+  assert.equal(Number(sale.original_amount), 30.75)
+  assert.ok(sale.user_id, 'cashier recorded on the sale')
+  const items = await q(
+    'SELECT product_barcode, quantity, unit_price, total_price, cost_price FROM sale_items WHERE sale_id = $1 ORDER BY product_barcode',
+    [r.body.saleId]
+  )
+  assert.deepEqual(
+    items.map((i) => [
+      i.product_barcode,
+      Number(i.quantity),
+      Number(i.total_price),
+      Number(i.cost_price)
+    ]),
+    [
+      ['A1', 2, 21, 8],
+      ['B2', 3, 9.75, 2]
+    ]
+  )
+  assert.equal(
+    Number((await q("SELECT stock_qty FROM products WHERE barcode = 'B2'"))[0].stock_qty),
+    2
+  )
+  const log = await q("SELECT * FROM system_logs WHERE action_type = 'checkout_sale'")
+  assert.equal(log.length, 1)
+})
+
+test('retrying the same checkout returns the same sale and does not deduct stock twice', async (t) => {
+  if (!requireDb(t)) return
+  const key = ref()
+  const body = {
+    clientRef: key,
+    shiftId: shift.id,
+    paymentType: 'نقدي',
+    items: [{ barcode: 'A1', qty: 1, unitPrice: 10.5 }]
+  }
+  const before = Number(
+    (await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty
+  )
+  const [a, b] = await Promise.all([
+    svc.call('pos.checkout', body, cashier),
+    svc.call('pos.checkout', body, cashier)
+  ])
+  assert.equal(a.status, 200)
+  assert.equal(b.status, 200)
+  assert.equal(a.body.saleId, b.body.saleId)
+  assert.equal(
+    Number((await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty),
+    before - 1
+  )
+  assert.equal(
+    (await q('SELECT count(*)::int AS n FROM sales WHERE client_ref = $1', [key]))[0].n,
+    1
+  )
+})
+
+test('a tampered or stale price is refused and nothing is written', async (t) => {
+  if (!requireDb(t)) return
+  const salesBefore = (await q('SELECT count(*)::int AS n FROM sales'))[0].n
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      items: [{ barcode: 'A1', qty: 1, unitPrice: 0.01 }]
+    },
+    cashier
+  )
+  assert.equal(r.status, 409)
+  assert.match(r.body.error.message, /تغيّر سعر الصنف/)
+  assert.equal((await q('SELECT count(*)::int AS n FROM sales'))[0].n, salesBefore)
+})
+
+test('insufficient stock rolls the whole sale back with the Arabic trigger message', async (t) => {
+  if (!requireDb(t)) return
+  const salesBefore = (await q('SELECT count(*)::int AS n FROM sales'))[0].n
+  const a1 = Number((await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty)
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      items: [
+        { barcode: 'A1', qty: 1 },
+        { barcode: 'C3', qty: 2 }
+      ]
+    },
+    cashier
+  )
+  assert.equal(r.status, 409)
+  assert.match(r.body.error.message, /المخزون/)
+  assert.equal((await q('SELECT count(*)::int AS n FROM sales'))[0].n, salesBefore)
+  assert.equal(
+    Number((await q("SELECT stock_qty FROM products WHERE barcode = 'A1'"))[0].stock_qty),
+    a1,
+    'first line rolled back too'
+  )
+})
+
+test('credit sale needs a customer; a new customer is created in the same transaction', async (t) => {
+  if (!requireDb(t)) return
+  const noClient = await svc.call(
+    'pos.checkout',
+    { clientRef: ref(), shiftId: shift.id, paymentType: 'آجل', items: [{ barcode: 'A1', qty: 1 }] },
+    cashier
+  )
+  assert.equal(noClient.status, 400)
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'آجل',
+      items: [{ barcode: 'A1', qty: 20 }],
+      client: { name: 'عميل جديد', phone: '0100', address: 'شارع' }
+    },
+    cashier
+  )
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  const client = (await q('SELECT * FROM clients WHERE id = $1', [r.body.clientId]))[0]
+  assert.equal(Number(client.debt_balance), 210)
+  assert.equal(client.points, 2, 'one point per 100 EGP')
+  const ledger = await q(
+    'SELECT type, amount, description FROM client_ledger WHERE client_id = $1',
+    [client.id]
+  )
+  assert.deepEqual(
+    ledger.map((l) => [l.type, Number(l.amount), l.description]),
+    [['sale', 210, `شراء آجل فاتورة رقم #${r.body.saleId}`]]
+  )
+})
+
+test('discount bounds: cannot exceed the subtotal', async (t) => {
+  if (!requireDb(t)) return
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      discount: 50,
+      items: [{ barcode: 'A1', qty: 1 }]
+    },
+    cashier
+  )
+  assert.equal(r.status, 400)
+})
+
+test('concurrent checkouts never oversell and keep every item with its own sale', async (t) => {
+  if (!requireDb(t)) return
+  await q("UPDATE products SET stock_qty = 5 WHERE barcode = 'B2'")
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () =>
+      svc.call(
+        'pos.checkout',
+        {
+          clientRef: ref(),
+          shiftId: shift.id,
+          paymentType: 'نقدي',
+          items: [{ barcode: 'B2', qty: 1 }]
+        },
+        cashier
+      )
+    )
+  )
+  const ok = results.filter((r) => r.status === 200)
+  assert.equal(ok.length, 5, 'exactly the available stock was sold')
+  assert.ok(results.filter((r) => r.status !== 200).every((r) => r.status === 409))
+  assert.equal(
+    Number((await q("SELECT stock_qty FROM products WHERE barcode = 'B2'"))[0].stock_qty),
+    0
+  )
+  for (const r of ok) {
+    const items = await q('SELECT product_barcode FROM sale_items WHERE sale_id = $1', [
+      r.body.saleId
+    ])
+    assert.deepEqual(
+      items.map((i) => i.product_barcode),
+      ['B2']
+    )
+  }
+})
+
+test('drawer audit and close use the legacy formulas; selling on a closed shift is refused', async (t) => {
+  if (!requireDb(t)) return
+  const preview = (await svc.call('shifts.auditPreview', { shiftId: shift.id }, cashier)).body
+  const cashSales = (
+    await q(
+      `SELECT SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount))::float AS s FROM sales WHERE shift_id = $1 AND payment_type = 'نقدي'`,
+      [shift.id]
+    )
+  )[0].s
+  assert.equal(Math.round(preview.expected * 100), Math.round((200 + cashSales) * 100))
+  const audit = (
+    await svc.call('shifts.audit', { shiftId: shift.id, actualCash: preview.expected - 5 }, cashier)
+  ).body
+  assert.ok(audit.id > 0, 'audit id returned (deficit reason can be saved)')
+  assert.equal(
+    (await svc.call('shifts.auditNote', { auditId: audit.id, notes: 'عجز فكة' }, cashier)).status,
+    200
+  )
+  assert.equal(
+    (await q('SELECT notes FROM shift_audits WHERE id = $1', [audit.id]))[0].notes,
+    'عجز فكة'
+  )
+  const closed = await svc.call('shifts.close', { shiftId: shift.id, actualCash: 300 }, cashier)
+  assert.equal(closed.status, 200)
+  assert.equal(Math.round(closed.body.expected * 100), Math.round((200 + cashSales) * 100))
+  const r = await svc.call(
+    'pos.checkout',
+    {
+      clientRef: ref(),
+      shiftId: shift.id,
+      paymentType: 'نقدي',
+      items: [{ barcode: 'A1', qty: 1 }]
+    },
+    cashier
+  )
+  assert.equal(r.status, 409)
+  assert.match(r.body.error.message, /الوردية مغلقة/)
+})

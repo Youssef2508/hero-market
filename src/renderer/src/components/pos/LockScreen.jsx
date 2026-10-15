@@ -45,7 +45,7 @@ export default function LockScreen({ pin, setPin, handlePinSubmit }) {
           <p className="lock-tagline">نظام نقاط البيع وإدارة السوبر ماركت</p>
           <div className="lock-brand-foot">
             <ShieldCheck size={16} />
-            يعمل محلياً بالكامل – بياناتك على هذا الجهاز
+            كل عملية تمر بصلاحيات المستخدم على خادم المتجر
           </div>
         </section>
 

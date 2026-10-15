@@ -1,5 +1,5 @@
 export function generateReceiptHtml({
-  storeName = 'سوبر ماركت النجدي',
+  storeName = 'هيرو ماركت',
   branchName = 'الفرع الرئيسي',
   displaySaleId,
   datePart,
@@ -103,7 +103,7 @@ export function generateReceiptHtml({
 }
 
 export function generateReprintHtml({
-  storeName = 'سوبر ماركت النجدي',
+  storeName = 'هيرو ماركت',
   branchName = 'الفرع الرئيسي',
   displaySaleId,
   datePart,
@@ -201,81 +201,6 @@ export function generateReprintHtml({
       <div style="text-align: center; font-size: 10px; margin-top: 4px; font-style: italic;">
         شكراً لتسوقكم معنا! - ${storeName}
       </div>
-    </div>
-  `
-}
-
-export function generateMomknReportHtml({ shift, summary = {} }) {
-  return `
-    <div style="font-family: 'Courier New', monospace; width: 80mm; padding: 5px; direction: rtl; font-size: 11px; color: #000; background: #fff;">
-      <div style="text-align: center; margin-bottom: 8px;">
-        <h3 style="margin:0;">تقرير ماكينة ممكن</h3>
-        <p style="margin:2px 0;">الوردية #${shift?.id || '—'}</p>
-      </div>
-      <div style="border-bottom: 1px solid #000; margin: 4px 0;"></div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>رصيد الماكينة الافتتاحي:</span>
-        <span>${(summary.startBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-weight:bold;">
-        <span>رصيد الماكينة المتوقع:</span>
-        <span>${(summary.expectedDigitalBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>كاش الماكينة بالدرج:</span>
-        <span>${(summary.expectedCashBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
-    </div>
-  `
-}
-
-export function generateMobileMoneyReportHtml({ shift, summary = {} }) {
-  return `
-    <div style="font-family: 'Courier New', monospace; width: 80mm; padding: 5px; direction: rtl; font-size: 11px; color: #000; background: #fff;">
-      <div style="text-align: center; margin-bottom: 8px;">
-        <h3 style="margin:0;">تقرير المحافظ والتحويلات</h3>
-        <p style="margin:2px 0;">الوردية #${shift?.id || '—'}</p>
-      </div>
-      <div style="border-bottom: 1px solid #000; margin: 4px 0;"></div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>رصيد فودافون الافتتاحي:</span>
-        <span>${(summary.startBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-weight:bold;">
-        <span>رصيد فودافون المتوقع:</span>
-        <span>${(summary.expectedDigitalBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>كاش المحافظ بالدرج:</span>
-        <span>${(summary.expectedCashBalance || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
-    </div>
-  `
-}
-
-export function generateGrandShiftReportHtml({ shift, salesStats = {}, user = {} }) {
-  return `
-    <div style="font-family: 'Courier New', monospace; width: 80mm; padding: 5px; direction: rtl; font-size: 11px; color: #000; background: #fff;">
-      <div style="text-align: center; margin-bottom: 8px;">
-        <h3 style="margin:0;">تقرير تقفيل الوردية الإجمالي</h3>
-        <p style="margin:2px 0;">الوردية #${shift?.id || '—'}</p>
-        <p style="margin:2px 0;">الموظف: ${user?.username || '—'}</p>
-      </div>
-      <div style="border-bottom: 1px solid #000; margin: 4px 0;"></div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>إجمالي المبيعات:</span>
-        <span>${(salesStats.total || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="display:flex; justify-content:space-between;">
-        <span>مبيعات كاش:</span>
-        <span>${(salesStats.cash || 0).toFixed(2)} ج.م</span>
-      </div>
-      <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-      <p style="text-align:center; font-size:10px; margin:0;">نظام إداري - الشروق POS</p>
     </div>
   `
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { executeQuery } from '../../lib/db'
+import { api } from '../../lib/api'
 import { PackageX, Trash2, Plus, Layers, Banknote, X } from 'lucide-react'
-import { EmptyState, StatCard } from '../ui'
+import { EmptyState, StatCard, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
 // Reason values are stored in damaged_goods.reason – keep them unchanged.
@@ -37,9 +37,8 @@ export default function DamagedGoodsTab({
         return
       }
       try {
-        const res = await executeQuery(
-          `SELECT name, stock_qty FROM products WHERE barcode = '${cleanBarcode}';`
-        )
+        const product = await api('products.get', { barcode: cleanBarcode })
+        const res = product ? [product] : []
         if (active) {
           if (res && res.length > 0) {
             setResolvedProductName(res[0].name)
@@ -91,7 +90,7 @@ export default function DamagedGoodsTab({
           icon={Layers}
           tone="warning"
           label="إجمالي كمية الهوالك"
-          value={`${totalItems?.toFixed(2)} وحدة`}
+          value={`${Number((totalItems || 0).toFixed(3))} وحدة`}
           meta="مخصومة من رصيد المخزون الفعلي"
         />
         <StatCard
@@ -154,7 +153,9 @@ export default function DamagedGoodsTab({
                       <td className="num money-strong">
                         {formatMoney(item.quantity * item.cost_price)}
                       </td>
-                      <td className="num nowrap cell-muted">{item.timestamp}</td>
+                      <td className="nowrap cell-muted">
+                        <Timestamp value={item.timestamp} />
+                      </td>
                       <td>
                         <div className="cell-actions">
                           <button

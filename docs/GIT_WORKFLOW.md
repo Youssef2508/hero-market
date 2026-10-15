@@ -1,6 +1,6 @@
 # Git & Versioning Workflow
 
-This document defines the version control procedures, branch models, and deployment release standards for **Elnagdi POS**. Adhering to these guidelines keeps history structured and provides recovery paths for cashier desk rollbacks.
+This document defines the version control procedures, branch models, and deployment release standards for **HeroMarket POS**. Adhering to these guidelines keeps history structured and provides recovery paths for cashier desk rollbacks.
 
 ---
 

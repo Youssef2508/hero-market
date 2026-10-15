@@ -1,5 +1,5 @@
 # Comprehensive System Audit & Security Report
-**Target System:** Elnagdi POS Application (`elnagdi-pos` v1.2.3)  
+**Target System:** HeroMarket POS (code base v1.2.3, before the HeroMarket redesign)  
 **Audit Date:** August 1, 2026  
 **Auditor Role:** Principal Software Auditor, System Security & Performance Specialist  
 **Audit Scope:** Full repository review across Main Process (`src/main/`), Preload Bridge (`src/preload/`), Data Access Objects (`src/renderer/src/lib/dao/`), React Controllers (`src/renderer/src/hooks/`), Components & Modals (`src/renderer/src/components/`), and Database Engine (`src/main/db.js`).
@@ -8,7 +8,7 @@
 
 ## 1. System Architecture
 
-The following diagram illustrates the complete runtime architecture, data flow, IPC boundaries, and database/hardware subsystem interfaces of the Elnagdi POS system:
+The following diagram illustrates the complete runtime architecture, data flow, IPC boundaries, and database/hardware subsystem interfaces of the HeroMarket POS system:
 
 ```mermaid
 graph TD
@@ -173,7 +173,7 @@ graph TD
 ### 🔴 Critical Severity Issues
 
 #### Issue C-01: IPC Arbitrary SQL Execution & Privilege Escalation
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/index.js` (Lines 262-273)
+* **File Path**: `src/main/index.js` (Lines 262-273)
 * **Root Cause Analysis**: The `execute-sql` IPC channel uses a weak regex (`/^\s*(DROP|ALTER\s+TABLE\s+\w+\s+RENAME|ATTACH|DETACH)/i`) that only checks the start of the query string. Multi-statement inputs like `SELECT 1; DROP TABLE users;` bypass the check and execute directly via `child_process.spawn`.
 * **Impact Scenario**: Any script executing in the renderer (or XSS payload) can run arbitrary destructive SQL commands, modify administrative accounts, or erase database tables.
 * **Suggested Remediation Code**:
@@ -196,7 +196,7 @@ ipcMain.handle('execute-sql', async (event, sqlQuery) => {
 ---
 
 #### Issue C-02: Race Condition & ID Mismatch in Checkout Line Items
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/usePOSController.js` (Lines 581-585) & `file:///e:/new_sys/alshorouk-pos/src/renderer/src/lib/dao/sales.dao.js` (Line 169)
+* **File Path**: `src/renderer/src/hooks/usePOSController.js` (Lines 581-585) & `src/renderer/src/lib/dao/sales.dao.js` (Line 169)
 * **Root Cause Analysis**: Line items are inserted into `sale_items` using `(SELECT MAX(id) FROM sales)` in the `VALUES` clause. If a concurrent transaction occurs or `MAX(id)` evaluates dynamically across iterations, items get linked to incorrect sales or fail foreign key validation.
 * **Impact Scenario**: Corrupted invoice item associations, mismatched receipt printouts, and inaccurate inventory item tracking.
 * **Suggested Remediation Code**:
@@ -214,7 +214,7 @@ cart.forEach((item) => {
 ---
 
 #### Issue C-03: Incomplete System Reset Leaving Orphaned Foreign Keys
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/useUsersManager.js` (Lines 56-69)
+* **File Path**: `src/renderer/src/hooks/useUsersManager.js` (Lines 56-69)
 * **Root Cause Analysis**: `handleSystemReset()` truncates `sales`, `shifts`, `clients`, `suppliers`, and `checks_register`, but omits `expenses`, `damaged_goods`, `shift_audits`, `momkn_transactions`, and `mobile_money_transactions`.
 * **Impact Scenario**: Foreign key constraints fail on subsequent queries referencing deleted `shift_id`s, causing system log errors and report calculation crashes.
 * **Suggested Remediation Code**:
@@ -244,7 +244,7 @@ COMMIT;`)
 ---
 
 #### Issue C-04: High Latency & OS Process Spawning Bottleneck
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/db.js` (Lines 335-375)
+* **File Path**: `src/main/db.js` (Lines 335-375)
 * **Root Cause Analysis**: `executeSql()` invokes `child_process.spawn(sqlitePath, ...)` for every single SQL query. Operating system process creation overhead (10-50ms per query) throttles throughput during rapid scanning or multi-query pages.
 * **Impact Scenario**: High CPU usage spikes, GUI stutter during rapid barcode scanning, and frequent `sqlite3 exited with code 1` or `database is locked` errors.
 * **Suggested Remediation Code**:
@@ -257,7 +257,7 @@ COMMIT;`)
 ### 🟠 High Severity Issues
 
 #### Issue H-01: JSON Parser Failure on String Data Containing Brackets
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/db.js` (Lines 358-361)
+* **File Path**: `src/main/db.js` (Lines 358-361)
 * **Root Cause Analysis**: To parse `sqlite3.exe -json` stdout, `executeSql()` uses `stdout.slice(stdout.lastIndexOf('['))`. If any text column (e.g. product name or notes) contains a `[` bracket, `lastIndexOf` slices from inside the string payload, corrupting JSON structure.
 * **Impact Scenario**: `JSON.parse` exception crashes queries when retrieving products or notes containing square brackets (e.g. `"حليب [1 لتر]"`).
 * **Suggested Remediation Code**:
@@ -273,7 +273,7 @@ const result = jsonPart ? JSON.parse(jsonPart) : []
 ---
 
 #### Issue H-02: Plaintext PIN Storage in `password_hash` Column
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/usePOSController.js` (Line 122) & `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/useUsersManager.js` (Line 112)
+* **File Path**: `src/renderer/src/hooks/usePOSController.js` (Line 122) & `src/renderer/src/hooks/useUsersManager.js` (Line 112)
 * **Root Cause Analysis**: User 4-digit PINs are saved directly as unhashed cleartext in `users.password_hash`. The Web Crypto hashing function `hashPin()` in `utils.js` is never invoked.
 * **Impact Scenario**: Anyone with read access to `market_unified.db` or database backup files can read all cashier and administrator PIN credentials.
 * **Suggested Remediation Code**:
@@ -288,7 +288,7 @@ let users = await executeQuery(`SELECT * FROM users WHERE password_hash = '${esc
 ---
 
 #### Issue H-03: Unescaped SQL Parameter Insertion in Scale Barcode Lookup
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/usePOSController.js` (Lines 378, 388)
+* **File Path**: `src/renderer/src/hooks/usePOSController.js` (Lines 378, 388)
 * **Root Cause Analysis**: `lookupProduct` embeds scale barcode parameters (`p.barcode`) directly into SQL query strings without calling `escapeSql()`.
 * **Impact Scenario**: Scanner input or keyboard injection containing single quote characters breaks query syntax and triggers database errors.
 * **Suggested Remediation Code**:
@@ -305,7 +305,7 @@ const products = await executeQuery(`
 ---
 
 #### Issue H-04: Electron BrowserWindow Sandbox Disabled
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/index.js` (Line 50)
+* **File Path**: `src/main/index.js` (Line 50)
 * **Root Cause Analysis**: `webPreferences` initializes `BrowserWindow` with `sandbox: false`.
 * **Impact Scenario**: Increases attack surface by permitting renderer access to Node.js capabilities if untrusted external content or links are rendered.
 * **Suggested Remediation Code**:
@@ -324,7 +324,7 @@ webPreferences: {
 ### 🟡 Medium Severity Issues
 
 #### Issue M-01: Floating-Point Rounding Discrepancies in Cart Items
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/useCart.js` (Lines 49, 62, 84)
+* **File Path**: `src/renderer/src/hooks/useCart.js` (Lines 49, 62, 84)
 * **Root Cause Analysis**: Item totals are calculated as `total = qty * price` without wrapping in `round2()`. Floating-point operations like `19.99 * 3` produce `59.970000000000006`.
 * **Impact Scenario**: Unrounded floating-point numbers stored in `sale_items.total_price` and displayed in reports with extended decimals.
 * **Suggested Remediation Code**:
@@ -339,7 +339,7 @@ return { ...item, qty: targetQty, total: itemTotal }
 ---
 
 #### Issue M-02: Text Matching Categorization Misclassification in Safe Ledger
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/components/admin/TillsManagerTab.jsx` (Lines 67-77) & `file:///e:/new_sys/alshorouk-pos/src/renderer/src/lib/dao/sales.dao.js` (Lines 96, 138)
+* **File Path**: `src/renderer/src/components/admin/TillsManagerTab.jsx` (Lines 67-77) & `src/renderer/src/lib/dao/sales.dao.js` (Lines 96, 138)
 * **Root Cause Analysis**: `TillsManagerTab` categorizes returns using `description LIKE 'مرتجع%'`. However, `sales.dao.js` logs refunds using the string `"إرجاع صنف..."` or `"إرجاع كامل..."`.
 * **Impact Scenario**: Refund transactions starting with `"إرجاع..."` fail the `LIKE 'مرتجع%'` filter and get incorrectly grouped into general Expenses, corrupting drawer analytics.
 * **Suggested Remediation Code**:
@@ -355,7 +355,7 @@ const returnsRes = await executeQuery(`
 ---
 
 #### Issue M-03: Missing Indices on Foreign Key Columns
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/db.js` (Lines 47-224)
+* **File Path**: `src/main/db.js` (Lines 47-224)
 * **Root Cause Analysis**: Database tables define foreign keys (`shift_id`, `client_id`, `supplier_id`, `sale_id`), but no `CREATE INDEX` statements exist for these columns.
 * **Impact Scenario**: Aggregation queries across large histories perform full table scans, slowing down report generation as the database grows.
 * **Suggested Remediation Code**:
@@ -372,7 +372,7 @@ CREATE INDEX IF NOT EXISTS idx_supplier_ledger_supplier_id ON supplier_ledger(su
 ---
 
 #### Issue M-04: Negative Invoice Totals on Discounted Item Returns
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/hooks/useSalesManager.js` (Lines 115, 172)
+* **File Path**: `src/renderer/src/hooks/useSalesManager.js` (Lines 115, 172)
 * **Root Cause Analysis**: `UPDATE sales SET total_amount = (SELECT IFNULL(SUM(total_price), 0) FROM sale_items WHERE sale_id = X) - discount`. When items are returned from a discounted sale, subtracting the full initial discount from the reduced item sum can produce a negative invoice total.
 * **Impact Scenario**: Invoice list displays negative `total_amount` values, distorting daily revenue totals.
 * **Suggested Remediation Code**:
@@ -386,7 +386,7 @@ sql += `UPDATE sales SET total_amount = MAX(0, (SELECT IFNULL(SUM(total_price), 
 ### 🟢 Low Severity Issues
 
 #### Issue L-01: Unclosed Web Audio Context Warning
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/renderer/src/lib/utils.js` (Lines 47-55)
+* **File Path**: `src/renderer/src/lib/utils.js` (Lines 47-55)
 * **Root Cause Analysis**: AudioContext is initialized lazily without explicit close handlers across rapid tone calls.
 * **Impact Scenario**: Non-breaking browser developer console warning regarding AudioContext autoplay policies prior to user interaction.
 * **Suggested Remediation Code**:
@@ -397,7 +397,7 @@ sql += `UPDATE sales SET total_amount = MAX(0, (SELECT IFNULL(SUM(total_price), 
 ---
 
 #### Issue L-02: Production Renderer Console Mirroring Overhead
-* **File Path**: `file:///e:/new_sys/alshorouk-pos/src/main/index.js` (Lines 59-61)
+* **File Path**: `src/main/index.js` (Lines 59-61)
 * **Root Cause Analysis**: `mainWindow.webContents.on('console-message')` forwards all renderer logs directly to main process stdout / `app.log` without level filtering.
 * **Impact Scenario**: Slightly increases log file size in production environments.
 * **Suggested Remediation Code**:

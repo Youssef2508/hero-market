@@ -1,89 +1,106 @@
 # Security and Release
 
-## 1. Security model in one page
+## 1. Security model (verified in code)
 
-| Aspect                  | Current state (verified in code)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deployment              | One Windows PC per store, offline. No server, no network API, no payment integration.                                                                                                                                                                                                                                                                                                                                                                                              |
-| Data                    | One SQLite file: `%APPDATA%\elnagdi-pos\market_unified.db` (packaged) or `market_unified_testing.db` / `HEROMARKET_DB_PATH` (development).                                                                                                                                                                                                                                                                                                                                         |
-| Renderer isolation      | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: false`; the preload exposes a small `window.api` (`db.execute`, backup/restore, printing, shortages PDF). `setWindowOpenHandler` denies in-app windows and hands the URL to the default browser (`shell.openExternal`, template default).                                                                                                                                                                            |
-| Content Security Policy | `index.html`: `default-src 'self' data: blob:`; `script-src 'self' 'unsafe-inline' 'unsafe-eval'` (inherited; the inline pre-paint theme script relies on `'unsafe-inline'`); `style-src 'self' 'unsafe-inline'`; `img-src 'self' data:`; `font-src 'self' data:` (added for the bundled Cairo font); `connect-src 'self' ws://localhost:*`. No remote origins. Hardening idea: drop `'unsafe-eval'` for production builds and move the theme script to a hashed or external file. |
-| SQL                     | The renderer composes SQL strings (values escaped with `escapeSql`) and the main process runs them through `sqlite3.exe`. A regex deny-list in `src/main/index.js` blocks `DROP TABLE`, `ALTER TABLE`, `ATTACH/DETACH DATABASE` and `DELETE FROM users`. This is defence-in-depth, not a security boundary (K-14).                                                                                                                                                                 |
-| Authentication          | 4-digit PINs per user, stored as SHA-256 hashes; legacy plain-text PINs are still accepted and an open shift auto-resumes on launch (K-15). Roles: `admin`, `manager`, `cashier`.                                                                                                                                                                                                                                                                                                  |
-| Secrets                 | None. The app needs no API keys, tokens or passwords at build or run time.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Aspect                  | Implementation                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Trust boundary          | Only the **HeroMarket service** (`src/server`) talks to PostgreSQL. The renderer sends an operation name and a JSON body over IPC (`api:call`, name checked against `/^[a-zA-Z]+\.[a-zA-Z]+$/`). There is no SQL IPC channel. Each operation validates its body against a JSON schema (Fastify), checks permissions and runs in a transaction where it writes.                 |
+| Credentials             | Database URL and password, server secret and session token stay in the main process or the server. The local cluster's password is in `%APPDATA%\HeroMarket\heromarket.json` (written atomically, mode 0600; Windows ACLs restrict `%APPDATA%` to the user). It is never sent to the renderer. Tills in client mode hold no database credentials at all.                       |
+| Authentication          | 4-digit PIN per user. Lookup is an HMAC-SHA256 key over the server secret (`users.pin_lookup`, unique); verification is scrypt (`users.pin_hash`, N=16384). Legacy SHA-256 or plain-text PINs are accepted once and upgraded on that login. The first administrator cannot use the guessable PINs `0000`, `1234` or `1111`; both the setup screen and the service refuse them. |
+| Brute force             | 5 wrong PINs in 5 minutes lock that terminal for 60 s. 20 wrong PINs in 15 minutes lock the whole source address for 15 minutes, so rotating terminal names gives no extra attempts. The same applies to supervisor approval and the setup code. Failures are counted in memory per service instance.                                                                          |
+| Sessions                | Random 32-byte tokens; only their SHA-256 is stored (`sessions`). They expire after 12 h, and logout, lock, a new login on the same till, disabling or deleting a user, or a restore revoke them. Every request re-reads the user and role, so a revoked permission takes effect on the next call.                                                                             |
+| Authorisation (RBAC)    | Permission catalogue of 31 keys (`src/server/auth/permissions.js`). Roles hold permissions (`roles`, `role_permissions`). Every operation declares `permission` / `anyPermission` and the service checks it. Hidden UI elements are only convenience. Details in §2.                                                                                                           |
+| First run               | No default account. `auth.setup` works only while `users` is empty, and creates one super administrator. A networked server (`cli.js serve`) also requires a one-time **setup code** printed in its log, so a LAN client cannot claim the store first.                                                                                                                         |
+| Audit                   | Sensitive operations write `system_logs` rows server-side: sales, returns, approvals, shifts, tills, products, customers, suppliers, cheques, expenses, users, roles, settings, templates, backup and restore. 37 action types, shown with Arabic labels.                                                                                                                      |
+| Logging                 | pino structured logs with `authorization` headers and `pin` fields redacted. Errors map to `{ error: { code, message } }` and never expose stack traces.                                                                                                                                                                                                                       |
+| Renderer isolation      | `contextIsolation: true`, `nodeIntegration: false`. The preload exposes a small `window.api`. `setWindowOpenHandler` denies new windows, `will-navigate` is blocked, and no remote content is loaded.                                                                                                                                                                          |
+| Content Security Policy | `default-src 'self' data: blob:`; `script-src 'self' 'unsafe-inline' 'unsafe-eval'` (inherited; open item G-15); no remote origins.                                                                                                                                                                                                                                            |
+| Network                 | Local mode: PostgreSQL listens on `127.0.0.1` only, with scram-sha-256. Server mode: PostgreSQL is not published (compose network only), and the HeroMarket API is plain HTTP on port 8787, bound to `HEROMARKET_BIND`. **Use a TLS reverse proxy on shared networks** (G-24).                                                                                                 |
+| Printing input          | Receipt and report text is sanitised: printer tags, column and box separators and line breaks are stripped from all data and template text (tests in `receipt.test.mjs`, `reports.test.mjs`).                                                                                                                                                                                  |
+| Containers              | Non-root, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, no secrets in images (environment variables or `*_FILE` Docker secrets).                                                                                                                                                                                                                            |
 
-Known security-relevant defects are tracked in `TESTING_AND_KNOWN_ISSUES.md` (K-14, K-15, K-18).
+## 2. Roles and permissions
 
-## 2. Secrets and local data – rules
+| Built-in role (`roles.key`) | Name                | Permissions                                                                                                                                    |
+| --------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `super_admin`               | مدير النظام         | All 31. **Protected**: permissions cannot be edited and the role cannot be deleted.                                                            |
+| `store_admin`               | مدير المتجر         | All except `system.reset`                                                                                                                      |
+| `manager`                   | مشرف                | Management screens and reports without `users.manage`, `roles.manage`, `system.reset`, `shifts.multi_till`, `tills.manage` (the old "manager") |
+| `cashier`                   | كاشير               | `pos.sell`, `pos.credit`, `pos.discount`, `shifts.operate`, `tills.operate`                                                                    |
+| `inventory`                 | أمين مخزن / مشتريات | Products (view, manage, cost), damaged goods, reorder assistant, suppliers                                                                     |
+| `auditor`                   | مراجع (قراءة فقط)   | View-only: sales, products and cost, customers, suppliers, all shifts, reports, logs                                                           |
 
-- Never commit `.env` files, databases (`*.db`, `*-wal`, `*-shm`), backups, logs with customer data, certificates or keys. `.gitignore` and `.dockerignore` block the common cases; review `git status` before every commit anyway.
-- `.env.example` documents the only environment variables (all optional, all non-secret). The app does not load `.env` files.
-- CI uses no repository secrets. If code signing is added (§6), its certificate lives only in GitHub encrypted secrets.
-- Do not copy the store's production database to development machines, CI or containers. Use `npm run db:init`, `--release-seed` or `npm run test:fresh` instead.
-- Back up `%APPDATA%\elnagdi-pos\` before testing a packaged build on a machine that has real data.
+Administrators can create custom roles from any subset of the catalogue (الأدوار والصلاحيات). The service enforces these invariants (`src/server/modules/admin.js`, tests in `admin.test.js`):
 
-## 3. Repository and remote safety
+- at least one **active super administrator** always remains: the last one cannot be deleted, disabled or moved to another role;
+- nobody can change their own role or disable themselves;
+- nobody can grant a role, or assign a user to a role, with permissions they do not hold themselves (**no escalation**);
+- the protected role's permissions are fixed, and a role that still has users cannot be deleted;
+- changes apply on the next request, and disabling a user revokes their sessions at once.
 
-| Remote                                                         | Purpose                                                     | Safety measure                                                                                 |
-| -------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `origin` → `Youssef2508/hero-market` (private)                 | All development pushes and pull requests                    | Default branch `main`; work happens on `feature/*`, `fix/*`, `chore/*` branches                |
-| `upstream` → `3bkader-gpt/elnagdi-pos` (public source project) | Fetch only, to compare with or pick fixes from the original | Push URL set to `DISABLED-do-not-push-to-upstream`, so an accidental `git push upstream` fails |
+New permissions introduced by later releases are granted once to the built-in roles that should include them (`permission_catalog`, migration 0003). A permission an administrator removed is never re-added.
 
-Rules: no force-pushes to shared branches, no history rewriting of `main`, merge through pull requests with green CI. Branch protection cannot be enforced on the current GitHub plan (`CI_CD.md` §5).
+## 3. Secrets and local data: rules
 
-## 4. Dependency security
+- Never commit `.env`, databases (`*.db`, `*-wal`, `*-shm`), `.pgdata/`, `.migration-backups/`, backup files, logs with customer data, certificates or keys. `.gitignore`, `.dockerignore`, the electron-builder `files` patterns and `scripts/verify-package.js` (run in CI) block these. Review `git status` before every commit anyway.
+- `.env.example` documents every variable. The server's real values (`POSTGRES_PASSWORD`, `HEROMARKET_SECRET`) live only in the server's `.env` or Docker secrets. **Keep the secret with the database backups.**
+- CI uses no repository secrets: the Docker job generates throw-away credentials per run.
+- Do not copy a store's database to development machines, CI or containers. Use `npm run db:legacy-fixture`, the test suites' throw-away databases, or a **copy** in a scratch `HEROMARKET_USER_DATA` folder for upgrade rehearsals.
 
-- `npm ci` with the committed lockfile everywhere (CI, Docker, release).
-- Dependabot opens weekly npm and GitHub Actions update PRs and monthly Docker base-image PRs (`CI_CD.md` §3).
-- **Recommended repository setting (not enabled yet):** _Settings → Code security → Dependabot alerts_ and _Dependabot security updates_. The API reported alerts as disabled on 2026-10-13. These are account settings, so they are left for the owner to switch on.
+## 4. Repository and remote safety
 
-### Open advisories (`npm audit --omit=dev`, 2026-10-13)
+| Remote                                          | Purpose                      | Safety measure                                                                                                                  |
+| ----------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `origin` → `Youssef2508/hero-market` (private)  | All pushes and pull requests | Work on `feature/*`, `fix/*` and `chore/*` branches; PRs with green CI                                                          |
+| `upstream` → the original open-source code base | Fetch only                   | Push URL set to `DISABLED-do-not-push-to-upstream`. `gh` defaults to this remote: always pass `--repo Youssef2508/hero-market`. |
 
-7 findings (3 high, 4 moderate), all from the **Electron 39** dependency tree:
+No force-pushes to shared branches and no history rewriting. The current GitHub plan cannot enforce branch protection ([CI_CD.md](CI_CD.md) §5).
 
-| Package                                                | Severity | Path / note                                                                                                                        | Fix                                                                                                                   |
-| ------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `electron` 39.8.10                                     | high     | Sandbox/popup and protocol-handler advisories (GHSA-hq2x-r82h-9wj4, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj, GHSA-9qh4-3jw8-366w) | Electron ≥ 41.10.6 (npm suggests 44.x), a **major upgrade**                                                           |
-| `extract-zip`                                          | high     | Used by `@electron/get` to unpack the Electron download (install time)                                                             | Comes with the Electron upgrade                                                                                       |
-| `http-cache-semantics` 4.2.0                           | high     | `@electron/get` → `got` → `cacheable-request` (install time)                                                                       | 4.3.0 is in range; `npm audit fix` would also bump ~25 unrelated packages, so it is left to a dedicated dependency PR |
-| `@electron/get`, `global-agent`, `roarr`, `sprintf-js` | moderate | Electron download tooling (install time)                                                                                           | Comes with the Electron upgrade                                                                                       |
+## 5. Dependency security
 
-Exposure assessment: the app loads only its own bundled renderer, opens no remote content, uses no `<webview>` and denies new windows, so the Electron advisories are not reachable through normal use. They are still real and should be fixed by upgrading Electron in its own pull request. Test that upgrade with the full checklist: lint, build, `npm run test:fresh`, a packaged smoke run, printing a receipt and generating a shortages PDF on a real Windows machine.
+- `npm ci` with the committed lockfile everywhere. Dependabot sends weekly npm and Actions PRs and monthly Docker PRs.
+- **2026-10-14:** Fastify was upgraded 5.6.2 → 5.12.7 and fast-uri 3.1.3 → 3.1.8. This fixes high advisories in the service's HTTP layer, among them a Content-Type parsing issue that bypassed body validation.
+- **Remaining (`npm audit --omit=dev`, 2026-10-14):** 3 high and 4 moderate, all in the **Electron 39** tree (`electron`, plus `@electron/get` → `extract-zip`, `global-agent`, `roarr`, `sprintf-js`, `http-cache-semantics`, which are Electron's download tooling used at install time).
+- **Exposure:** the app loads only its own bundled renderer, opens no remote content and denies new windows, so the Electron advisories are not reachable in normal use. They still need the **Electron major upgrade** (≥ 41.10.6; npm proposes 44.x) in its own PR, tested with lint, build, `npm test`, a packaged smoke run, receipt printing and the shortages PDF (G-15).
+- Recommended account setting (owner): enable _Dependabot alerts_ and _security updates_ under Settings → Code security.
 
-## 5. Versioning and tags
+## 6. Versioning and tags
 
-- Semantic versioning in `package.json` (`1.3.0` at the start of the redesign).
-- A release is the tag `vX.Y.Z` on a commit of `main`; the release workflow refuses tags that do not match `package.json`.
-- Feature work never creates releases. Only a deliberate tag push (or a manual run for an existing tag) does.
+- Semantic versioning in `package.json`.
+- A release is the tag `vX.Y.Z` on a commit of `main`. The release workflow refuses tags that do not match `package.json`.
+- Feature work never creates releases. Only a deliberate tag push, or a manual run for an existing tag, does.
 
-## 6. Building and publishing a release
+## 7. Building and publishing a release
 
-The release workflow (`CI_CD.md` §2) builds on `windows-2025`: lint → fresh-database tests → release-seed database → unsigned NSIS installer → `SHA256SUMS.txt` → **draft** GitHub Release. A person must then:
+The release workflow ([CI_CD.md](CI_CD.md) §2) builds on `windows-2025`: lint → tests on the bundled PostgreSQL → unsigned NSIS installer → package content check → `SHA256SUMS.txt` → **draft** GitHub Release.
 
-1. Download the installer from the draft and check its SHA-256 against `SHA256SUMS.txt`.
-2. Install it on a clean Windows test machine (or VM). Confirm the window title and icon, log in with `admin` / `1234`, change that PIN, open a shift, make a test sale in a test database, print a receipt.
-3. On a machine with an existing installation, confirm the upgrade keeps the data (`%APPDATA%\elnagdi-pos\market_unified.db` is reused, decision D-005).
-4. Publish the draft release.
+**The installer ships no database and no account.** On first start a new store's app creates its database and asks for the administrator. An upgraded store's app imports the earlier data ([DATABASE_MIGRATION.md](DATABASE_MIGRATION.md)).
 
-### First-run database
+Before publishing a draft, a person must:
 
-`electron-builder.yml` ships `market_unified.db` from the repository root as the initial database; it is copied to `%APPDATA%\elnagdi-pos\` only if no database exists there. The release workflow generates it with `node scripts/init-dev-db.js --db market_unified.db --reset --release-seed`: full schema, default settings and **one account `admin` with PIN `1234` (stored hashed)**, no sample products, customers or users. The release notes tell the store to change that PIN immediately. Never build an installer from a working copy whose root `market_unified.db` contains development or store data.
+1. Check the installer's SHA-256 against `SHA256SUMS.txt`.
+2. On a clean Windows test machine or VM:
+   - install, check the window title and icon, and create the administrator;
+   - open a shift, sell in a test store, print a receipt and a shift-close report, and close the app;
+   - start it again and confirm the data is still there.
+3. On a test machine with a **copy** of a v1.3 store in `%APPDATA%\elnagdi-pos`:
+   - install the new version and confirm the import succeeds (report in `%APPDATA%\HeroMarket\backups`);
+   - log in with an existing PIN, and confirm the store name and data are intact.
+4. Publish the draft.
 
-### Code signing (not configured)
+**Code signing (not configured).** Installers are unsigned, so SmartScreen warns, and the release notes say so. To sign later:
 
-Installers are currently **unsigned**: Windows SmartScreen will warn on first run, and the release notes say so. No certificate exists in this project and none should be invented. To sign later:
+1. Obtain an Authenticode certificate, or use a cloud signing service.
+2. Store a `.pfx` as the `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` secrets.
+3. Remove `CSC_IDENTITY_AUTO_DISCOVERY: 'false'` from `release.yml` and pass the secrets to the build step only.
+4. Verify with `Get-AuthenticodeSignature`.
 
-1. Obtain an Authenticode code-signing certificate (OV or EV) from a certificate authority, or use a cloud signing service such as Azure Trusted Signing.
-2. For a `.pfx` certificate, store it base64-encoded as the repository secret `WIN_CSC_LINK` and its password as `WIN_CSC_KEY_PASSWORD` (electron-builder reads both). Cloud/HSM signing uses electron-builder's `win.azureSignOptions` or a custom `sign` hook instead.
-3. In `release.yml`, remove `CSC_IDENTITY_AUTO_DISCOVERY: 'false'` and pass the secrets as environment variables to the build step only.
-4. Verify the signature on the built installer (`Get-AuthenticodeSignature`) as part of the manual check.
+**Auto-update (not configured).** `electron-builder.yml` still has a placeholder `publish` URL and the app has no updater. Do not enable auto-update before signing and a real update feed exist.
 
-### Auto-update (not configured)
+## 8. Rollback
 
-`electron-builder.yml` contains a placeholder `publish` provider (`https://example.com/auto-updates`) inherited from the project template, and the app does not include an updater. Installers are distributed manually. Do not enable auto-update until signing is in place and a real update feed exists.
-
-## 7. Rollback
-
-- **Bad installer, not yet installed anywhere:** delete the draft release (or the asset), fix, and tag a new patch version. Do not move or reuse tags that were ever published.
-- **Installed and misbehaving:** reinstall the previous version's installer; the database stays in `%APPDATA%\elnagdi-pos\`. The redesign added no schema changes, so moving between 1.3.x builds keeps the data compatible. Before any version that changes the schema, take a backup from _Backup_ (النسخ الاحتياطي) first.
-- **Data problem:** restore a backup from the Backup screen. Restore **overwrites** the current database file (after a WAL checkpoint) and does not keep a copy of it, so take a fresh backup of the current state first, then restart the app as prompted.
+- **Bad installer, not yet installed anywhere:** delete the draft or its assets, fix, and tag a new patch version. Never move or reuse a published tag.
+- **Installed and misbehaving:** export a backup (النسخ الاحتياطي → حفظ نسخة), then reinstall the previous HeroMarket version.
+  - Versions from this one on share `%APPDATA%\HeroMarket` and migrate the schema forward only. A restore requires the backup's schema version to match.
+  - Going back to **1.3 (SQLite)** uses the untouched `%APPDATA%\elnagdi-pos\market_unified.db`. Changes made since the upgrade must be re-entered ([DATABASE_MIGRATION.md §5](DATABASE_MIGRATION.md)).
+- **Data problem:** restore a backup from the Backup screen. The current state is saved first as `backups\pre-restore-*.json`, the restore replaces all data in one transaction, and everyone is signed out.

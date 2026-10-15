@@ -1,6 +1,6 @@
 # AI Handoff & Development Rules
 
-This file provides critical context, constraints, and operational guidelines for AI coding agents working on the **Elnagdi POS** codebase. Follow these rules to avoid breaking application stability, causing UI lockups, or causing database corruption.
+This file provides critical context, constraints, and operational guidelines for AI coding agents working on the **HeroMarket POS** codebase. Follow these rules to avoid breaking application stability, causing UI lockups, or causing database corruption.
 
 ---
 
@@ -26,7 +26,7 @@ This file provides critical context, constraints, and operational guidelines for
 *   **Execution Rule:** You must append the local portable Node path to the environment variable before running scripts or commands.
 *   **PowerShell Command Prefix:**
     ```powershell
-    $env:Path = "e:\new_sys\alshorouk-pos\node-portable;" + $env:Path
+    $env:Path = "<project folder>\node-portable;" + $env:Path
     & npm.cmd run dev
     & npm.cmd run build
     ```

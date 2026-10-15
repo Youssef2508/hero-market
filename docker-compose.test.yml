@@ -1,0 +1,31 @@
+# HeroMarket – containerised test environment: lint, build and every test suite against a
+# disposable PostgreSQL 17 (no published ports, data in memory, removed afterwards).
+#
+#   docker compose -f docker-compose.test.yml run --rm --build tests
+#   docker compose -f docker-compose.test.yml down -v
+name: heromarket-test
+
+services:
+  test-db:
+    image: postgres:17-bookworm
+    environment:
+      # Disposable and unreachable from outside the compose network: no password needed.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      test-db:
+        condition: service_healthy
+    environment:
+      HEROMARKET_TEST_DATABASE_URL: postgres://postgres@test-db:5432/postgres

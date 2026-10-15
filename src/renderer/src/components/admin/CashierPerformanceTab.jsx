@@ -107,7 +107,7 @@ function CashierCard({ c, rank, onSelect }) {
     >
       <span className={`rank rank-${rank + 1} cashier-rank`}>{rank + 1}</span>
       <span className="cashier-avatar" aria-hidden="true">
-        {c.username.charAt(0)}
+        {c.username.charAt(0).toUpperCase()}
       </span>
       <span className="cashier-name">{c.username}</span>
       <GradeBadge grade={c.grade} />

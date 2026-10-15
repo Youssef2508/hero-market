@@ -1,19 +1,48 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, ScrollText } from 'lucide-react'
 import { getSystemLogs } from '../../lib/dao/logs.dao'
-import { executeQuery } from '../../lib/db'
-import { EmptyState } from '../ui'
+import { api } from '../../lib/api'
+import { BidiText, EmptyState, Timestamp } from '../ui'
 
-// action_type values written by logs.dao#logEvent callers.
+// action_type values written by the service audit log (src/server).
 const ACTIONS = {
+  checkout_sale: { label: 'فاتورة بيع', tone: 'badge-accent' },
+  sale_return: { label: 'مرتجع', tone: 'badge-warning' },
+  manager_approval: { label: 'اعتماد مشرف', tone: 'badge-info' },
+  shift_open: { label: 'فتح وردية', tone: 'badge-success' },
+  shift_close: { label: 'إغلاق وردية', tone: 'badge-warning' },
+  till_delete: { label: 'حذف حركة درج', tone: 'badge-danger' },
+  product_create: { label: 'إضافة صنف', tone: 'badge-info' },
+  product_update: { label: 'تعديل صنف', tone: 'badge-info' },
+  product_delete: { label: 'حذف صنف', tone: 'badge-danger' },
+  damaged_create: { label: 'تسجيل توالف', tone: 'badge-warning' },
+  damaged_delete: { label: 'حذف توالف', tone: 'badge-danger' },
+  client_create: { label: 'إضافة عميل', tone: 'badge-info' },
+  client_update: { label: 'تعديل عميل', tone: 'badge-info' },
+  client_delete: { label: 'حذف عميل', tone: 'badge-danger' },
+  client_payment: { label: 'تحصيل من عميل', tone: 'badge-success' },
+  supplier_create: { label: 'إضافة مورد', tone: 'badge-info' },
+  supplier_purchase: { label: 'فاتورة مشتريات', tone: 'badge-info' },
+  supplier_payment: { label: 'سداد لمورد', tone: 'badge-warning' },
+  supplier_delete: { label: 'حذف مورد', tone: 'badge-danger' },
+  check_create: { label: 'تسجيل شيك', tone: 'badge-info' },
+  check_paid: { label: 'سداد شيك', tone: 'badge-success' },
+  check_delete: { label: 'حذف شيك', tone: 'badge-danger' },
+  expense_create: { label: 'تسجيل مصروف', tone: 'badge-warning' },
+  expense_delete: { label: 'حذف مصروف', tone: 'badge-danger' },
   user_create: { label: 'إنشاء موظف', tone: 'badge-info' },
   user_update: { label: 'تعديل موظف', tone: 'badge-info' },
   user_delete: { label: 'حذف موظف', tone: 'badge-danger' },
-  shift_open: { label: 'فتح وردية', tone: 'badge-success' },
-  shift_close: { label: 'إغلاق وردية', tone: 'badge-warning' },
-  system_reset: { label: 'تهيئة النظام', tone: 'badge-danger' },
+  role_create: { label: 'إنشاء دور', tone: 'badge-info' },
+  role_update: { label: 'تعديل دور', tone: 'badge-info' },
+  role_delete: { label: 'حذف دور', tone: 'badge-danger' },
+  settings_update: { label: 'تعديل الإعدادات', tone: 'badge-purple' },
+  receipt_template_save: { label: 'حفظ قالب فاتورة', tone: 'badge-purple' },
+  receipt_template_activate: { label: 'اعتماد قالب فاتورة', tone: 'badge-purple' },
+  receipt_template_delete: { label: 'حذف قالب فاتورة', tone: 'badge-danger' },
   database_backup: { label: 'نسخة احتياطية', tone: 'badge-purple' },
-  checkout_sale: { label: 'فاتورة بيع', tone: 'badge-accent' }
+  database_restore: { label: 'استعادة نسخة احتياطية', tone: 'badge-danger' },
+  system_reset: { label: 'تهيئة النظام', tone: 'badge-danger' }
 }
 
 export default function LogsTab() {
@@ -37,10 +66,8 @@ export default function LogsTab() {
 
   const fetchUsers = async () => {
     try {
-      const res = await executeQuery(
-        'SELECT DISTINCT username FROM users UNION SELECT DISTINCT username FROM system_logs WHERE username IS NOT NULL;'
-      )
-      setUsers(res || [])
+      const res = await api('logs.list', { limit: 1 })
+      setUsers(res.usernames || [])
     } catch (e) {
       console.log(e)
     }
@@ -90,7 +117,7 @@ export default function LogsTab() {
             <option value="">كل المسؤولين</option>
             {users.map((u) => (
               <option key={u.username} value={u.username}>
-                {u.username}
+                {u.username === 'system' ? 'النظام' : u.username}
               </option>
             ))}
           </select>
@@ -129,12 +156,18 @@ export default function LogsTab() {
                   const a = ACTIONS[log.action_type] || { label: log.action_type, tone: '' }
                   return (
                     <tr key={log.id}>
-                      <td className="num nowrap cell-muted">{log.timestamp}</td>
-                      <td className="cell-strong">{log.username || 'النظام'}</td>
+                      <td className="nowrap cell-muted">
+                        <Timestamp value={log.timestamp} />
+                      </td>
+                      <td className="cell-strong">
+                        {!log.username || log.username === 'system' ? 'النظام' : log.username}
+                      </td>
                       <td>
                         <span className={`badge ${a.tone}`}>{a.label}</span>
                       </td>
-                      <td className="text-2">{log.description}</td>
+                      <td className="text-2">
+                        <BidiText text={log.description} />
+                      </td>
                     </tr>
                   )
                 })}

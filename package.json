@@ -1,5 +1,5 @@
 {
-  "name": "elnagdi-pos",
+  "name": "heromarket-pos",
   "version": "1.3.0",
   "description": "HeroMarket POS – supermarket point of sale and management system (Electron + React)",
   "main": "./out/main/index.js",
@@ -10,8 +10,10 @@
     "format:check": "prettier --check src tests scripts",
     "lint": "eslint --cache .",
     "test": "node tests/run-all.js",
-    "test:fresh": "node tests/run-all.js --fresh",
-    "db:init": "node scripts/init-dev-db.js",
+    "test:unit": "node tests/run-all.js unit",
+    "test:service": "node tests/run-all.js service",
+    "db:legacy-fixture": "node scripts/init-dev-db.js",
+    "db:import-sqlite": "node scripts/import-sqlite.js",
     "icons": "electron scripts/generate-icons.js",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
@@ -21,13 +23,16 @@
     "build:unpack": "npm run clean && npm run build && electron-builder --dir",
     "build:win": "npm run clean && npm run build && electron-builder --win",
     "build:mac": "npm run clean && npm run build && electron-builder --mac",
-    "build:linux": "npm run clean && npm run build && electron-builder --linux"
+    "build:linux": "npm run clean && npm run build && electron-builder --linux",
+    "pg:dev": "node scripts/pg-dev.js"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@fontsource-variable/cairo": "^5.2.5",
-    "lucide-react": "^1.25.0"
+    "fastify": "^5.12.7",
+    "lucide-react": "^1.25.0",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^2.1.0",
@@ -36,6 +41,7 @@
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
+    "embedded-postgres": "^17.10.0-beta.17",
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",

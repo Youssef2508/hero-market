@@ -748,9 +748,11 @@
   outline: none;
   box-shadow: var(--focus-ring);
 }
+/* The small F1 label sits directly on the accent (no tint), so it keeps the button's own text
+   contrast in both themes (WCAG AA 4.5:1 for small text); only the outline marks it as a key. */
 .pay-button .kbd {
-  background: color-mix(in srgb, var(--on-accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--on-accent) 30%, transparent);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--on-accent) 55%, transparent);
   color: var(--on-accent);
 }
 .pay-button.is-no-receipt {

@@ -1,4 +1,5 @@
 import { PlayCircle, Store, Smartphone, Wallet } from 'lucide-react'
+import { can } from '../../lib/api'
 
 const OpenShiftModal = ({
   openShiftModal,
@@ -16,7 +17,8 @@ const OpenShiftModal = ({
   handleStartShift
 }) => {
   if (!openShiftModal) return null
-  const isAdmin = currentUser?.role === 'admin'
+  // Opening floats for Momkn and wallets: the service accepts them only with shifts.multi_till.
+  const isAdmin = can(currentUser, 'shifts.multi_till')
 
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>

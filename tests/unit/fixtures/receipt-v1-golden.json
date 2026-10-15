@@ -1,0 +1,1539 @@
+{
+  "store": {
+    "name": "هيرو ماركت",
+    "branch": "الفرع الرئيسي",
+    "address": "شارع التحرير، الدقي",
+    "phone": "01000000000"
+  },
+  "datas": {
+    "sample": {
+      "saleId": 1024,
+      "date": "13/10/2026",
+      "time": "10:42:05 ص",
+      "cashier": "كاشير 1",
+      "paymentType": "نقدي",
+      "client": {
+        "name": "أحمد محمود",
+        "phone": "01012345678",
+        "address": "شارع النيل"
+      },
+      "items": [
+        {
+          "name": "جبنة رومي قديم فرط",
+          "barcode": "00515",
+          "qty": 0.75,
+          "price": 240,
+          "total": 180
+        },
+        {
+          "name": "لوبيا الضحى 500جم",
+          "barcode": "6223000660515",
+          "qty": 2,
+          "price": 112.7,
+          "total": 225.4
+        },
+        {
+          "name": "مياه معدنية 1.5 لتر",
+          "barcode": "6224000301000",
+          "qty": 6,
+          "price": 1.72,
+          "total": 10.32
+        }
+      ],
+      "subTotal": 415.72,
+      "discount": 5.72,
+      "total": 410,
+      "paid": 500,
+      "change": 90
+    },
+    "noClient": {
+      "saleId": 1024,
+      "date": "13/10/2026",
+      "time": "10:42:05 ص",
+      "cashier": "كاشير 1",
+      "paymentType": "نقدي",
+      "client": {},
+      "items": [
+        {
+          "name": "جبنة رومي قديم فرط",
+          "barcode": "00515",
+          "qty": 0.75,
+          "price": 240,
+          "total": 180
+        },
+        {
+          "name": "لوبيا الضحى 500جم",
+          "barcode": "6223000660515",
+          "qty": 2,
+          "price": 112.7,
+          "total": 225.4
+        },
+        {
+          "name": "مياه معدنية 1.5 لتر",
+          "barcode": "6224000301000",
+          "qty": 6,
+          "price": 1.72,
+          "total": 10.32
+        }
+      ],
+      "subTotal": 415.72,
+      "discount": 0,
+      "total": 410,
+      "paid": 500,
+      "change": 90,
+      "banner": "نسخة مكررة"
+    },
+    "addressOnly": {
+      "saleId": 1024,
+      "date": "13/10/2026",
+      "time": "10:42:05 ص",
+      "cashier": "كاشير 1",
+      "paymentType": "نقدي",
+      "client": {
+        "address": "المعادي"
+      },
+      "items": [
+        {
+          "name": "جبنة رومي قديم فرط",
+          "barcode": "00515",
+          "qty": 0.75,
+          "price": 240,
+          "total": 180
+        },
+        {
+          "name": "لوبيا الضحى 500جم",
+          "barcode": "6223000660515",
+          "qty": 2,
+          "price": 112.7,
+          "total": 225.4
+        },
+        {
+          "name": "مياه معدنية 1.5 لتر",
+          "barcode": "6224000301000",
+          "qty": 6,
+          "price": 1.72,
+          "total": 10.32
+        }
+      ],
+      "subTotal": 415.72,
+      "discount": 5.72,
+      "total": 410,
+      "paid": 500,
+      "change": 90
+    }
+  },
+  "cases": [
+    {
+      "variant": "default80",
+      "data": "sample",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العميل: أحمد محمود ~ الهاتف: 01012345678 ~ العنوان: شارع النيل",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "default80",
+      "data": "noClient",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]نسخة مكررة",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "default80",
+      "data": "addressOnly",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العنوان: المعادي",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "default58",
+      "data": "sample",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "--------------------------------",
+        "الوقت: 10:42:05 ص التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العميل: أحمد محمود ~ الهاتف: 01012345678 ~ العنوان: شارع النيل",
+        "--------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "--------------------------------",
+        "--------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "--------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "--------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "default58",
+      "data": "noClient",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]نسخة مكررة",
+        "[C]رقم العملية : 1024",
+        "--------------------------------",
+        "الوقت: 10:42:05 ص التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "--------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "--------------------------------",
+        "--------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "--------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "--------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "default58",
+      "data": "addressOnly",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "--------------------------------",
+        "الوقت: 10:42:05 ص التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العنوان: المعادي",
+        "--------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "--------------------------------",
+        "--------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "--------------------------------",
+        "[B]الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "--------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "everything",
+      "data": "sample",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": true,
+          "showPhone": true,
+          "showTitle": true,
+          "extraLines": ["الرقم الضريبي 123-456", "سجل تجاري 789"]
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": true
+        },
+        "items": {
+          "showUnitPrice": false,
+          "showBarcode": true
+        },
+        "totals": {
+          "showSubtotal": true,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": true,
+          "boldTotal": false
+        },
+        "footer": {
+          "lines": ["شكراً لكم", "الاستبدال خلال 14 يوماً"],
+          "showStoreName": false
+        },
+        "style": {
+          "fontSize": 10,
+          "separator": "double"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]شارع التحرير، الدقي",
+        "[C]الهاتف: 01000000000",
+        "[C]الرقم الضريبي 123-456",
+        "[C]سجل تجاري 789",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "================================================",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[R]طريقة الدفع: نقدي",
+        "[BOX]العميل: أحمد محمود ~ الهاتف: 01012345678 ~ العنوان: شارع النيل",
+        "================================================",
+        "الصنف|ك||إجمالي",
+        "================================================",
+        "================================================",
+        "جبنة رومي قديم فرط (00515)|0.75||180.00",
+        "لوبيا الضحى 500جم (6223000660515)|2||225.40",
+        "مياه معدنية 1.5 لتر (6224000301000)|6||10.32",
+        "================================================",
+        "عدد الأصناف|3",
+        "المجموع قبل الخصم|415.72 ج.م",
+        "الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "================================================",
+        "[C]شكراً لكم",
+        "[C]الاستبدال خلال 14 يوماً",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "everything",
+      "data": "noClient",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": true,
+          "showPhone": true,
+          "showTitle": true,
+          "extraLines": ["الرقم الضريبي 123-456", "سجل تجاري 789"]
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": true
+        },
+        "items": {
+          "showUnitPrice": false,
+          "showBarcode": true
+        },
+        "totals": {
+          "showSubtotal": true,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": true,
+          "boldTotal": false
+        },
+        "footer": {
+          "lines": ["شكراً لكم", "الاستبدال خلال 14 يوماً"],
+          "showStoreName": false
+        },
+        "style": {
+          "fontSize": 10,
+          "separator": "double"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]شارع التحرير، الدقي",
+        "[C]الهاتف: 01000000000",
+        "[C]الرقم الضريبي 123-456",
+        "[C]سجل تجاري 789",
+        "[C]فاتورة بيع",
+        "[C]نسخة مكررة",
+        "[C]رقم العملية : 1024",
+        "================================================",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[R]طريقة الدفع: نقدي",
+        "================================================",
+        "الصنف|ك||إجمالي",
+        "================================================",
+        "================================================",
+        "جبنة رومي قديم فرط (00515)|0.75||180.00",
+        "لوبيا الضحى 500جم (6223000660515)|2||225.40",
+        "مياه معدنية 1.5 لتر (6224000301000)|6||10.32",
+        "================================================",
+        "عدد الأصناف|3",
+        "المجموع قبل الخصم|415.72 ج.م",
+        "الإجمالي|410.00 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "================================================",
+        "[C]شكراً لكم",
+        "[C]الاستبدال خلال 14 يوماً",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "everything",
+      "data": "addressOnly",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": true,
+          "showPhone": true,
+          "showTitle": true,
+          "extraLines": ["الرقم الضريبي 123-456", "سجل تجاري 789"]
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": true,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": true
+        },
+        "items": {
+          "showUnitPrice": false,
+          "showBarcode": true
+        },
+        "totals": {
+          "showSubtotal": true,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": true,
+          "boldTotal": false
+        },
+        "footer": {
+          "lines": ["شكراً لكم", "الاستبدال خلال 14 يوماً"],
+          "showStoreName": false
+        },
+        "style": {
+          "fontSize": 10,
+          "separator": "double"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]شارع التحرير، الدقي",
+        "[C]الهاتف: 01000000000",
+        "[C]الرقم الضريبي 123-456",
+        "[C]سجل تجاري 789",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "================================================",
+        "الوقت: 10:42:05 ص            التاريخ: 13/10/2026",
+        "[R]الكاشير: كاشير 1",
+        "[R]طريقة الدفع: نقدي",
+        "[BOX]العنوان: المعادي",
+        "================================================",
+        "الصنف|ك||إجمالي",
+        "================================================",
+        "================================================",
+        "جبنة رومي قديم فرط (00515)|0.75||180.00",
+        "لوبيا الضحى 500جم (6223000660515)|2||225.40",
+        "مياه معدنية 1.5 لتر (6224000301000)|6||10.32",
+        "================================================",
+        "عدد الأصناف|3",
+        "المجموع قبل الخصم|415.72 ج.م",
+        "الإجمالي|410.00 ج.م",
+        "خصم الفاتورة|- 5.72 ج.م",
+        "المدفوع|500.00 ج.م",
+        "الباقي للعميل|90.00 ج.م",
+        "================================================",
+        "[C]شكراً لكم",
+        "[C]الاستبدال خلال 14 يوماً",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "minimal",
+      "data": "sample",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": false,
+          "showStoreName": false,
+          "showBranch": false,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": false,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": false,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": false,
+          "showCustomer": false,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": false,
+          "showPaid": false,
+          "showChange": false,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": [],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "none"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[R]الوقت: 10:42:05 ص",
+        "[BOX]العنوان: شارع النيل",
+        "الصنف|ك|سعر|إجمالي",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "[B]الإجمالي|410.00 ج.م",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "minimal",
+      "data": "noClient",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": false,
+          "showStoreName": false,
+          "showBranch": false,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": false,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": false,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": false,
+          "showCustomer": false,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": false,
+          "showPaid": false,
+          "showChange": false,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": [],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "none"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[C]نسخة مكررة",
+        "[R]الوقت: 10:42:05 ص",
+        "الصنف|ك|سعر|إجمالي",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "[B]الإجمالي|410.00 ج.م",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "minimal",
+      "data": "addressOnly",
+      "template": {
+        "version": 1,
+        "paper": "58mm",
+        "header": {
+          "showLogo": false,
+          "showStoreName": false,
+          "showBranch": false,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": false,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": false,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": false,
+          "showCustomer": false,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": false,
+          "showPaid": false,
+          "showChange": false,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": [],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "none"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "الإجمالي",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "ج.م"
+        }
+      },
+      "lines": [
+        "[R]الوقت: 10:42:05 ص",
+        "[BOX]العنوان: المعادي",
+        "الصنف|ك|سعر|إجمالي",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "[B]الإجمالي|410.00 ج.م",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "timeOnly",
+      "data": "sample",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "المطلوب",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "EGP"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "[R]الوقت: 10:42:05 ص",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العميل: أحمد محمود ~ الهاتف: 01012345678 ~ العنوان: شارع النيل",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]المطلوب|410.00 EGP",
+        "خصم الفاتورة|- 5.72 EGP",
+        "المدفوع|500.00 EGP",
+        "الباقي للعميل|90.00 EGP",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "timeOnly",
+      "data": "noClient",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "المطلوب",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "EGP"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]نسخة مكررة",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "[R]الوقت: 10:42:05 ص",
+        "[R]الكاشير: كاشير 1",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]المطلوب|410.00 EGP",
+        "المدفوع|500.00 EGP",
+        "الباقي للعميل|90.00 EGP",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    },
+    {
+      "variant": "timeOnly",
+      "data": "addressOnly",
+      "template": {
+        "version": 1,
+        "paper": "80mm",
+        "header": {
+          "showLogo": true,
+          "showStoreName": true,
+          "showBranch": true,
+          "showAddress": false,
+          "showPhone": false,
+          "showTitle": true,
+          "extraLines": []
+        },
+        "info": {
+          "showInvoiceNo": true,
+          "showDate": false,
+          "showTime": true,
+          "showCashier": true,
+          "showCustomer": true,
+          "showCustomerPhone": true,
+          "showCustomerAddress": true,
+          "showPaymentType": false
+        },
+        "items": {
+          "showUnitPrice": true,
+          "showBarcode": false
+        },
+        "totals": {
+          "showSubtotal": false,
+          "showDiscount": true,
+          "showPaid": true,
+          "showChange": true,
+          "showItemCount": false,
+          "boldTotal": true
+        },
+        "footer": {
+          "lines": ["شكراً لتسوقكم معنا!"],
+          "showStoreName": true
+        },
+        "style": {
+          "fontSize": 8,
+          "separator": "dashed"
+        },
+        "labels": {
+          "title": "فاتورة بيع",
+          "invoiceNo": "رقم العملية",
+          "date": "التاريخ",
+          "time": "الوقت",
+          "cashier": "الكاشير",
+          "customer": "العميل",
+          "phone": "الهاتف",
+          "address": "العنوان",
+          "item": "الصنف",
+          "qty": "ك",
+          "price": "سعر",
+          "lineTotal": "إجمالي",
+          "subtotal": "المجموع قبل الخصم",
+          "total": "المطلوب",
+          "discount": "خصم الفاتورة",
+          "paid": "المدفوع",
+          "change": "الباقي للعميل",
+          "paymentType": "طريقة الدفع",
+          "itemCount": "عدد الأصناف",
+          "currency": "EGP"
+        }
+      },
+      "lines": [
+        "[C]هيرو ماركت",
+        "[C]الفرع الرئيسي",
+        "[C]فاتورة بيع",
+        "[C]رقم العملية : 1024",
+        "------------------------------------------------",
+        "[R]الوقت: 10:42:05 ص",
+        "[R]الكاشير: كاشير 1",
+        "[BOX]العنوان: المعادي",
+        "------------------------------------------------",
+        "الصنف|ك|سعر|إجمالي",
+        "------------------------------------------------",
+        "------------------------------------------------",
+        "جبنة رومي قديم فرط|0.75|240.00|180.00",
+        "لوبيا الضحى 500جم|2|112.70|225.40",
+        "مياه معدنية 1.5 لتر|6|1.72|10.32",
+        "------------------------------------------------",
+        "[B]المطلوب|410.00 EGP",
+        "خصم الفاتورة|- 5.72 EGP",
+        "المدفوع|500.00 EGP",
+        "الباقي للعميل|90.00 EGP",
+        "------------------------------------------------",
+        "[C]شكراً لتسوقكم معنا!",
+        "[C]- هيرو ماركت -",
+        "",
+        ""
+      ]
+    }
+  ]
+}

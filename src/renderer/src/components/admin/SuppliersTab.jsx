@@ -11,7 +11,7 @@ import {
   UserRound,
   HandCoins
 } from 'lucide-react'
-import { EmptyState, SortableTh } from '../ui'
+import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
 /**
@@ -259,7 +259,9 @@ export default function SuppliersTab({
                     <tbody>
                       {supplierPurchases.map((p) => (
                         <tr key={p.id}>
-                          <td className="num nowrap cell-muted">{p.timestamp}</td>
+                          <td className="nowrap cell-muted">
+                            <Timestamp value={p.timestamp} />
+                          </td>
                           <td>{p.invoice_ref || '—'}</td>
                           <td className="num">{formatMoney(p.total_amount)}</td>
                           <td className="num">{formatMoney(p.paid_amount)}</td>
@@ -304,7 +306,9 @@ export default function SuppliersTab({
                     <tbody>
                       {supplierLedger.map((l) => (
                         <tr key={l.id}>
-                          <td className="num nowrap cell-muted">{l.timestamp}</td>
+                          <td className="nowrap cell-muted">
+                            <Timestamp value={l.timestamp} />
+                          </td>
                           <td>
                             <span
                               className={`badge ${l.type === 'payment' ? 'badge-success' : 'badge-danger'}`}

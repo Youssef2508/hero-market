@@ -13,6 +13,7 @@ import {
   PackageOpen
 } from 'lucide-react'
 import { formatMoney } from '../../lib/utils'
+import { Timestamp } from '../ui'
 
 const PAGE_SIZE = 25
 
@@ -126,8 +127,12 @@ function ClosedShiftsTable({ shiftsHistory }) {
                       <tr>
                         <td className="cell-strong num">#{s.id}</td>
                         <td className="cell-strong">{s.username}</td>
-                        <td className="num nowrap cell-muted">{s.start_time}</td>
-                        <td className="num nowrap cell-muted">{s.end_time}</td>
+                        <td className="nowrap cell-muted">
+                          <Timestamp value={s.start_time} />
+                        </td>
+                        <td className="nowrap cell-muted">
+                          <Timestamp value={s.end_time} />
+                        </td>
                         <td className="num">{formatMoney(s.initial_cash)}</td>
                         <td className="num">{formatMoney(s.expected_end_cash)}</td>
                         <td className="num money-strong">{formatMoney(s.actual_end_cash)}</td>
@@ -196,7 +201,9 @@ function AuditsTable({ shiftAudits }) {
               ) : (
                 pageData.map((a) => (
                   <tr key={a.id}>
-                    <td className="num nowrap cell-muted">{a.timestamp}</td>
+                    <td className="nowrap cell-muted">
+                      <Timestamp value={a.timestamp} />
+                    </td>
                     <td className="cell-strong num">#{a.shift_id}</td>
                     <td className="cell-strong">{a.username}</td>
                     <td className="num">{formatMoney(a.expected_cash)}</td>

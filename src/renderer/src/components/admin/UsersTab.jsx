@@ -1,7 +1,7 @@
 import { UserCog, UserPlus, Pencil, Trash2, Wrench, RotateCcw } from 'lucide-react'
 
 const ROLE_BADGE = {
-  admin: { label: 'مدير النظام', className: 'badge-info' },
+  super_admin: { label: 'مدير النظام', className: 'badge-info' },
   manager: { label: 'مشرف', className: 'badge-purple' },
   cashier: { label: 'كاشير', className: 'badge-accent' }
 }
@@ -25,13 +25,13 @@ export default function UsersTab({
         <div className="card-header">
           <h2 className="card-title">
             <UserCog size={18} aria-hidden="true" />
-            حسابات الكاشيرات والمشرفين
+            حسابات المستخدمين
           </h2>
           <button
             type="button"
             className="btn btn-primary btn-sm"
             onClick={() => {
-              setNewUser({ username: '', pin: '', role: 'cashier' })
+              setNewUser({ username: '', pin: '', roleId: '' })
               setShowAddUserModal(true)
             }}
           >
@@ -46,7 +46,7 @@ export default function UsersTab({
                 <tr>
                   <th style={{ width: 80 }}>المعرّف</th>
                   <th>اسم المستخدم</th>
-                  <th>رمز المرور</th>
+                  <th>الحالة</th>
                   <th>الصلاحية</th>
                   <th>
                     <span className="visually-hidden">الإجراءات</span>
@@ -62,7 +62,10 @@ export default function UsersTab({
                   </tr>
                 ) : (
                   usersList.map((u) => {
-                    const badge = ROLE_BADGE[u.role] || { label: u.role, className: '' }
+                    const badge = ROLE_BADGE[u.role_key] || {
+                      label: u.role_name || u.role,
+                      className: 'badge-info'
+                    }
                     const isMe = currentUser?.id === u.id
                     return (
                       <tr key={u.id}>
@@ -71,11 +74,17 @@ export default function UsersTab({
                           <span className="cell-strong">{u.username}</span>
                           {isMe && <span className="badge ms-2">أنت</span>}
                         </td>
-                        <td className="mono cell-muted" aria-label="مخفي">
-                          ••••
+                        <td>
+                          {u.is_active ? (
+                            <span className="badge badge-success">نشط</span>
+                          ) : (
+                            <span className="badge badge-danger">معطل</span>
+                          )}
                         </td>
                         <td>
-                          <span className={`badge ${badge.className}`}>{badge.label}</span>
+                          <span className={`badge ${badge.className}`}>
+                            {u.role_name || badge.label}
+                          </span>
                         </td>
                         <td>
                           <div className="cell-actions">
@@ -87,7 +96,8 @@ export default function UsersTab({
                                   id: u.id,
                                   username: u.username,
                                   pin: '••••',
-                                  role: u.role
+                                  roleId: u.role_id,
+                                  isActive: u.is_active
                                 })
                                 setShowEditUserModal(true)
                               }}

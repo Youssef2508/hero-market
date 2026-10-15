@@ -149,13 +149,19 @@ Per-shift ledgers of `digital_impact`, `cash_impact`, `commission`. Expected Mom
 | Users         | Username unique; PIN exactly 4 digits, unique, stored as SHA-256; cannot delete yourself. "System reset" deletes all transactional data (keeps products & users) after two confirmations. (`useUsersManager`)                             |
 | Analytics     | Net profit = Σ(line total − (qty−returned)·cost) − damaged cost − expenses, filtered by shifts started in the period. (`useAdminController#fetchAnalytics`)                                                                               |
 
-## 10. Receipts and printing
+## 10. Where the rules run (stage 2)
 
-- `printTemplates.js` produces HTML for sale receipts, reprints, till reports and the grand shift report. **The labels are parsed by regex in `src/main/printer.js`** – keep them stable.
-- Reprint shows `((id−1) % 10000) + 1` as the display number.
-- Shortages: PDF via Typst (`generate-shortages-pdf`, opens the PDF) or direct thermal print (`print-shortages-to-printer`).
+Every rule in this document now runs **in the HeroMarket service** (`src/server/modules/*`), inside a transaction, with the same formulas as before (legacy behaviour preserved; deliberate fixes are K-23 … K-32 in [TESTING_AND_KNOWN_ISSUES.md](TESTING_AND_KNOWN_ISSUES.md)). The renderer only displays results. Prices and totals are recomputed by the service at checkout; a stale or tampered price is refused.
 
-## 11. Unknowns
+## 11. Receipts and printing
 
-- Exact contents of the production `market_unified.db` (not in repo) – column sets beyond the dev schema are **unknown**; two queries reference columns absent from the dev schema (`products.price`, `sale_items.product_name`), see known issues.
-- Real printer behaviour could not be verified on this machine (no thermal printer).
+- Sale receipts come from the active **receipt template** of the paper size (`src/shared/receipt.mjs`): the same data and template produce the thermal lines and the A4/PDF page. The built-in template prints exactly what the original receipt printed (except the K-29 discount fix).
+- Reprint shows `((id−1) % 10000) + 1` as the display number (legacy HTML path).
+- Shift-close, Momkn and wallets reports: `src/shared/reportLines.mjs` (K-32).
+- Shortages: PDF via Typst or direct thermal print.
+
+## 12. Unknowns and open decisions
+
+- K-24: the simple and detailed close dialogs use different legacy formulas – the owner must choose one.
+- K-10: when a supervisor's approval should be required.
+- Behaviour on the store's physical printer (verified to PDF only).

@@ -5,7 +5,8 @@ const EditUserModal = ({
   setShowEditUserModal,
   editUser,
   setEditUser,
-  handleEditUser
+  handleEditUser,
+  rolesList = []
 }) => {
   if (!showEditUserModal) return null
 
@@ -46,16 +47,28 @@ const EditUserModal = ({
             />
           </div>
           <div className="form-group">
-            <label>نوع الصلاحية *</label>
+            <label>الدور *</label>
             <select
               className="form-input"
-              value={editUser.role}
-              onChange={(e) => setEditUser((prev) => ({ ...prev, role: e.target.value }))}
+              value={editUser.roleId}
+              onChange={(e) => setEditUser((prev) => ({ ...prev, roleId: e.target.value }))}
+              required
             >
-              <option value="cashier">كاشير (صلاحية البيع فقط)</option>
-              <option value="admin">مدير (المالك - صلاحيات كاملة)</option>
+              {rolesList.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
             </select>
           </div>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={editUser.isActive !== false}
+              onChange={(e) => setEditUser((prev) => ({ ...prev, isActive: e.target.checked }))}
+            />
+            <span>الحساب نشط (إلغاء التحديد يمنع تسجيل الدخول ويُنهي جلساته)</span>
+          </label>
           <div className="modal-footer">
             <button
               type="button"

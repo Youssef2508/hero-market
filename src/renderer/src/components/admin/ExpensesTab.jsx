@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { HandCoins, Plus, Trash2, NotebookPen } from 'lucide-react'
-import { EmptyState, SortableTh } from '../ui'
+import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
 // Category values are stored in expenses.category – keep them unchanged.
@@ -108,7 +108,9 @@ export default function ExpensesTab({
                 sortedExpenses.map((exp, idx) => (
                   <tr key={exp.id}>
                     <td className="num cell-muted">{idx + 1}</td>
-                    <td className="num nowrap cell-muted">{exp.timestamp}</td>
+                    <td className="nowrap cell-muted">
+                      <Timestamp value={exp.timestamp} />
+                    </td>
                     <td>
                       <span className="badge badge-warning">{exp.category}</span>
                     </td>

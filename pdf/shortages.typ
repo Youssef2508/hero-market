@@ -1,4 +1,4 @@
-// سوبر ماركت النجدي - تقرير نواقص المخزون
+// هيرو ماركت - تقرير نواقص المخزون
 // ملف تنسيق Typst لإنتاج تقرير PDF راقٍ ومميز
 
 #set page(
@@ -8,7 +8,7 @@
     if counter(page).get().first() > 1 {
       grid(
         columns: (1fr, 1fr),
-        align(right)[#text(8pt, fill: rgb("#57606a"), font: "Cairo")[سوبر ماركت النجدي - تقرير النواقص]],
+        align(right)[#text(8pt, fill: rgb("#57606a"), font: "Cairo")[هيرو ماركت - تقرير النواقص]],
         align(left)[#text(8pt, fill: rgb("#57606a"), font: "Cairo")[تاريخ التقرير: #datetime.today().display("[day]/[month]/[year]")]]
       )
       line(length: 100%, stroke: 0.5pt + rgb("#e1e4e8"))
@@ -19,7 +19,7 @@
     set text(8pt, fill: rgb("#8c959f"), font: "Cairo")
     grid(
       columns: (1fr, 1fr),
-      align(right)[سوبر ماركت النجدي © #datetime.today().display("[year]")],
+      align(right)[هيرو ماركت © #datetime.today().display("[year]")],
       align(left)[صفحة #counter(page).display()]
     )
   }
@@ -45,7 +45,7 @@
         columns: (1fr, auto),
         gutter: 20pt,
         align(right + horizon)[
-          #text(22pt, weight: "bold", fill: rgb("#254b41"))[سوبر ماركت النجدي] \
+          #text(22pt, weight: "bold", fill: rgb("#254b41"))[هيرو ماركت] \
           #v(4pt)
           #text(12pt, weight: "medium", fill: rgb("#5b9a8b"))[نظام إدارة الجرد والمستودعات الذكي]
         ],

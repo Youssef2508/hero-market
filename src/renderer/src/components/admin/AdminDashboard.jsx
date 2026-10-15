@@ -7,9 +7,10 @@ import {
   TriangleAlert,
   Users,
   Landmark,
-  Clock
+  Clock,
+  ShieldAlert
 } from 'lucide-react'
-import { StatCard } from '../ui'
+import { StatCard, EmptyState } from '../ui'
 import { visibleGroups } from '../shell/navigation'
 import { formatMoney } from '../../lib/utils'
 import StatsTab from './StatsTab'
@@ -28,6 +29,10 @@ import DamagedGoodsTab from './DamagedGoodsTab'
 import AdvancedStatsTab from './AdvancedStatsTab'
 import CashierPerformanceTab from './CashierPerformanceTab'
 import LogsTab from './LogsTab'
+import RolesTab from './RolesTab'
+import SettingsTab from './SettingsTab'
+import ReceiptDesignerTab from './ReceiptDesignerTab'
+import { canOpenTab } from '../shell/navigation'
 import TillsManagerTab from './TillsManagerTab'
 
 function Overview({
@@ -46,7 +51,7 @@ function Overview({
   }
   const pa = periodicAnalytics || {}
   const dueChecks = checksDueToday?.length || 0
-  const today = new Date().toLocaleDateString('ar-EG', {
+  const today = new Date().toLocaleDateString('ar-EG-u-nu-latn', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -174,6 +179,19 @@ function Overview({
 export default function AdminDashboard(props) {
   const { adminTab, currentUser } = props
 
+  // Each tab requires its permission (same list as the sidebar); the service enforces it again.
+  if (adminTab !== 'tills' && !canOpenTab(currentUser, adminTab)) {
+    return (
+      <div className="admin-container">
+        <EmptyState
+          icon={ShieldAlert}
+          title="لا تملك صلاحية فتح هذا القسم"
+          text="اطلب من مدير النظام تعديل صلاحيات دورك."
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={`admin-container admin-${adminTab}`}>
       {adminTab === 'menu' && <Overview {...props} />}
@@ -187,8 +205,25 @@ export default function AdminDashboard(props) {
       {adminTab === 'checks' && <ChecksTab {...props} />}
       {adminTab === 'expenses' && <ExpensesTab {...props} />}
       {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
-      {adminTab === 'users' && currentUser && currentUser.role === 'admin' && (
-        <UsersTab {...props} />
+      {adminTab === 'users' && <UsersTab {...props} />}
+      {adminTab === 'roles' && (
+        <RolesTab
+          currentUser={currentUser}
+          triggerCustomAlert={props.triggerCustomAlert}
+          triggerCustomConfirm={props.triggerCustomConfirm}
+        />
+      )}
+      {adminTab === 'settings' && (
+        <SettingsTab
+          triggerCustomAlert={props.triggerCustomAlert}
+          onSettingsChanged={props.onSettingsChanged}
+        />
+      )}
+      {adminTab === 'receipts' && (
+        <ReceiptDesignerTab
+          triggerCustomAlert={props.triggerCustomAlert}
+          triggerCustomConfirm={props.triggerCustomConfirm}
+        />
       )}
       {adminTab === 'clients' && <ClientsTab {...props} />}
       {adminTab === 'backup' && <BackupTab />}

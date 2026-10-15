@@ -1,5 +1,5 @@
 # Supermarket Business & Accounting Audit Report
-**Target System:** Elnagdi POS Application (`elnagdi-pos` v1.2.3)  
+**Target System:** HeroMarket POS (code base v1.2.3, before the HeroMarket redesign)  
 **Audit Domain:** Supermarket & Grocery Retail Operations, Accounting Mathematics, and Inventory Control  
 **Audit Date:** August 1, 2026  
 **Auditor Role:** Senior Retail Operations Consultant & Retail ERP Specialist  
@@ -8,7 +8,7 @@
 
 ## Executive Overview
 
-This audit evaluates the **business logic, accounting mathematics, supermarket domain workflows, and fraud prevention mechanisms** of the Elnagdi POS system. Beyond code syntax, retail software requires watertight financial math, precise inventory deduction, non-manipulable shift closures, and true profit/loss accounting.
+This audit evaluates the **business logic, accounting mathematics, supermarket domain workflows, and fraud prevention mechanisms** of the HeroMarket POS system. Beyond code syntax, retail software requires watertight financial math, precise inventory deduction, non-manipulable shift closures, and true profit/loss accounting.
 
 While the core checkout and shift mechanics are functional, this audit identified **critical accounting leaks, profit inflation vulnerabilities, and missing supermarket domain workflows** that create real-world financial risk.
 

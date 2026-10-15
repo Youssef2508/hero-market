@@ -1,6 +1,6 @@
 # Database Documentation
 
-The database for Elnagdi POS is managed locally in an offline-first **SQLite 3** database file named `market_unified.db`. To optimize performance and ensure data safety, the journal mode is configured to **WAL (Write-Ahead Logging)**, and foreign key constraints are enforced on every session.
+The database for HeroMarket POS is managed locally in an offline-first **SQLite 3** database file named `market_unified.db`. To optimize performance and ensure data safety, the journal mode is configured to **WAL (Write-Ahead Logging)**, and foreign key constraints are enforced on every session.
 
 ---
 

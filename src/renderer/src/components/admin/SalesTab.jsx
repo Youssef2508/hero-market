@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Search, Printer, Undo2, ReceiptText, X } from 'lucide-react'
-import { EmptyState, Pagination, SortableTh } from '../ui'
+import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
@@ -113,7 +113,7 @@ export default function SalesTab({
                 {salesHistory.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="table-empty">
-                      لا توجد فواتير مطابقة للبحث.
+                      {salesSearch ? 'لا توجد فواتير مطابقة للبحث.' : 'لا توجد فواتير مسجلة بعد.'}
                     </td>
                   </tr>
                 ) : (
@@ -195,7 +195,9 @@ export default function SalesTab({
               <dl className="detail-grid">
                 <div>
                   <dt>التاريخ</dt>
-                  <dd className="num">{selectedSale.timestamp}</dd>
+                  <dd>
+                    <Timestamp value={selectedSale.timestamp} />
+                  </dd>
                 </div>
                 <div>
                   <dt>الكاشير</dt>

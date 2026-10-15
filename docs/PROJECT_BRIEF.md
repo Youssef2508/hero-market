@@ -1,7 +1,7 @@
-# Project Brief: Elnagdi POS
+# Project Brief: HeroMarket POS
 
 ## 1. Project Vision
-**Elnagdi POS** (previously Al-Shorouk POS) is a production-grade, offline-first Point of Sale (POS) and inventory management desktop application designed specifically for supermarket cashier desks. The primary focus of the system is to ensure lightning-fast operations, crash resilience, absolute transaction integrity, and precise financial ledger tracking for both client and supplier accounts.
+**HeroMarket POS** is a production-grade, offline-first Point of Sale (POS) and inventory management desktop application designed specifically for supermarket cashier desks. The primary focus of the system is to ensure lightning-fast operations, crash resilience, absolute transaction integrity, and precise financial ledger tracking for both client and supplier accounts.
 
 ---
 

@@ -1,0 +1,16 @@
+'use strict'
+// Feature modules. Each registers named operations with app.operation({ name, permission, schema, handler }).
+module.exports = [
+  require('./auth'),
+  require('./shifts'),
+  require('./pos'),
+  require('./reports'),
+  require('./catalog'),
+  require('./sales'),
+  require('./customers'),
+  require('./finance'),
+  require('./tills'),
+  require('./admin'),
+  require('./settings'),
+  require('./backup')
+]

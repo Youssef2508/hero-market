@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react'
-import { executeQuery } from '../lib/db'
+import { api } from '../lib/api'
 
 function getNowStr(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0')
@@ -76,14 +76,8 @@ export function useAdvancedAnalytics() {
       const from = fromDate.replace('T', ' ') + ':00'
       const to = toDate.replace('T', ' ') + ':59'
 
-      const shiftsInRange = await executeQuery(`
-        SELECT s.id, s.start_time, s.end_time, s.initial_cash, s.expected_end_cash,
-               s.actual_end_cash, s.difference, s.status, u.username
-        FROM shifts s
-        JOIN users u ON s.user_id = u.id
-        WHERE s.start_time >= '${from}' AND s.start_time <= '${to}'
-        ORDER BY s.id ASC;
-      `)
+      const report = await api('reports.advanced', { from, to })
+      const shiftsInRange = report.shifts || []
 
       const shiftIds = shiftsInRange.map((s) => s.id)
 
@@ -112,17 +106,7 @@ export function useAdvancedAnalytics() {
         return
       }
 
-      const idsStr = shiftIds.join(',')
-      const shiftCond = `WHERE shift_id IN (${idsStr})`
-      const salesShiftCond = `WHERE s.shift_id IN (${idsStr})`
-
-      const salesSumRes = await executeQuery(`
-        SELECT SUM(total_amount) as total, COUNT(*) as count, AVG(total_amount) as avg_amount,
-               MAX(total_amount) as max_amount,
-               SUM(CASE WHEN payment_type = 'آجل' THEN total_amount ELSE 0 END) as debt,
-               SUM(CASE WHEN payment_type != 'آجل' THEN total_amount ELSE 0 END) as cash
-        FROM sales ${shiftCond};
-      `)
+      const salesSumRes = [report.salesSum]
       const totalSales = salesSumRes[0]?.total || 0
       const invoiceCount = salesSumRes[0]?.count || 0
       const avgInvoice = salesSumRes[0]?.avg_amount || 0
@@ -130,35 +114,21 @@ export function useAdvancedAnalytics() {
       const debtSales = salesSumRes[0]?.debt || 0
       const cashSales = salesSumRes[0]?.cash || 0
 
-      const profitRes = await executeQuery(`
-        SELECT SUM(si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price))) as profit
-        FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-        ${salesShiftCond};
-      `)
+      const profitRes = [report.profit]
       const netProfitRaw = profitRes[0]?.profit || 0
 
-      const damagedRes = await executeQuery(
-        `SELECT SUM(quantity * cost_price) as total_cost FROM damaged_goods ${shiftCond};`
-      )
+      const damagedRes = [report.damaged]
       const damagedCost = damagedRes[0]?.total_cost || 0
       const netProfit = netProfitRaw - damagedCost
 
-      const expRes = await executeQuery(`SELECT SUM(amount) as total FROM expenses ${shiftCond};`)
+      const expRes = [report.expenses]
       const totalExpenses = expRes[0]?.total || 0
 
-      const returnsRes = await executeQuery(`
-        SELECT SUM(CASE WHEN type='outflow' AND description LIKE 'مرتجع%' THEN amount ELSE 0 END) as returns_total,
-               COUNT(CASE WHEN type='outflow' AND description LIKE 'مرتجع%' THEN 1 END) as returns_count
-        FROM safe_ledger ${shiftCond};
-      `)
+      const returnsRes = [report.returns]
       const totalReturns = returnsRes[0]?.returns_total || 0
       const returnCount = returnsRes[0]?.returns_count || 0
 
-      const safeRes = await executeQuery(`
-        SELECT SUM(CASE WHEN type='inflow' THEN amount ELSE 0 END) as inflows,
-               SUM(CASE WHEN type='outflow' THEN amount ELSE 0 END) as outflows
-        FROM safe_ledger ${shiftCond};
-      `)
+      const safeRes = [report.safe]
       const safeInflows = safeRes[0]?.inflows || 0
       const safeOutflows = safeRes[0]?.outflows || 0
       const netCashFlow = cashSales + safeInflows - safeOutflows - totalExpenses
@@ -180,20 +150,9 @@ export function useAdvancedAnalytics() {
         damagedCost
       })
 
-      const perShiftSales = await executeQuery(`
-        SELECT shift_id, SUM(total_amount) as sales, COUNT(*) as invoices,
-               SUM(CASE WHEN payment_type='آجل' THEN total_amount ELSE 0 END) as debt
-        FROM sales ${shiftCond} GROUP BY shift_id;
-      `)
-      const perShiftProfit = await executeQuery(`
-        SELECT s.shift_id,
-               SUM(si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price))) as profit
-        FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-        ${salesShiftCond} GROUP BY s.shift_id;
-      `)
-      const perShiftExpenses = await executeQuery(
-        `SELECT shift_id, SUM(amount) as expenses FROM expenses ${shiftCond} GROUP BY shift_id;`
-      )
+      const perShiftSales = report.perShiftSales || []
+      const perShiftProfit = report.perShiftProfit || []
+      const perShiftExpenses = report.perShiftExpenses || []
 
       const salesByShift = {}
       perShiftSales.forEach((r) => {
@@ -226,34 +185,16 @@ export function useAdvancedAnalytics() {
       })
       setShiftRows(rows)
 
-      const hourlyRes = await executeQuery(`
-        SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as invoice_count,
-               SUM(total_amount) as total_sales, AVG(total_amount) as avg_sale
-        FROM sales ${shiftCond} GROUP BY hour ORDER BY hour ASC;
-      `)
+      const hourlyRes = report.hourly || []
       setPeakHours(hourlyRes)
 
-      const dailyRes = await executeQuery(`
-        SELECT DATE(timestamp) as day, COUNT(*) as invoice_count, SUM(total_amount) as total_sales
-        FROM sales ${shiftCond} GROUP BY day ORDER BY day ASC;
-      `)
+      const dailyRes = report.daily || []
       setDailyTrend(dailyRes)
 
-      const topRes = await executeQuery(`
-        -- D-009: sale_items has no product_name column; take the name from products (already joined).
-        SELECT si.product_barcode, p.name AS product_name,
-               SUM(si.quantity - si.returned_qty) as qty_sold,
-               SUM(si.total_price) as revenue,
-               SUM(si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price))) as profit
-        FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-        ${salesShiftCond} GROUP BY si.product_barcode ORDER BY qty_sold DESC LIMIT 10;
-      `)
+      const topRes = report.top || []
       setTopProducts(topRes)
 
-      const payRes = await executeQuery(`
-        SELECT payment_type, COUNT(*) as count, SUM(total_amount) as total
-        FROM sales ${shiftCond} GROUP BY payment_type;
-      `)
+      const payRes = report.payments || []
       setPaymentBreakdown(payRes)
     } catch (e) {
       console.error('useAdvancedAnalytics error:', e)

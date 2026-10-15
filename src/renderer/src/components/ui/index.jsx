@@ -22,6 +22,11 @@ export function PageHeader({ icon: Icon, title, description, actions, children }
   )
 }
 
+// An amount and its currency never wrap apart ("16,825.00 ج.م").
+const NBSP = String.fromCharCode(160)
+const keepCurrency = (text) =>
+  typeof text === 'string' ? text.replace(/ (ج\.م)/g, `${NBSP}$1`) : text
+
 export function StatCard({
   icon: Icon,
   label,
@@ -47,7 +52,7 @@ export function StatCard({
         <span className="stat-value" title={typeof value === 'string' ? value : undefined}>
           {value}
         </span>
-        {meta && <span className="stat-meta">{meta}</span>}
+        {meta && <span className="stat-meta">{keepCurrency(meta)}</span>}
       </span>
     </Tag>
   )
@@ -173,4 +178,22 @@ export function Pagination({ page, total, perPage, shown, noun = 'سجل', onPre
       </div>
     </div>
   )
+}
+
+/** A stored local date-time ('YYYY-MM-DD HH:MM:SS'): kept left-to-right inside RTL text, date first. */
+export function Timestamp({ value }) {
+  return (
+    <bdi dir="ltr" className="ts">
+      {value || '—'}
+    </bdi>
+  )
+}
+
+/**
+ * A message mixing Arabic and Latin (template names, usernames, paper sizes): quoted names and
+ * parenthesised codes are isolated so the sentence keeps its reading order in RTL.
+ */
+export function BidiText({ text }) {
+  const parts = String(text ?? '').split(/("[^"]*"|\([^)]*\))/)
+  return parts.map((p, i) => (i % 2 ? <bdi key={i}>{p}</bdi> : p))
 }

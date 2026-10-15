@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { LogOut, Calculator, Package, Smartphone, Wallet } from 'lucide-react'
-import { executeQuery } from '../../lib/db'
+import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 
 const FLOAT_AMOUNT = 200 // عهدة الفكة الثابتة
@@ -40,13 +40,8 @@ const SimpleCloseShiftModal = ({
       return
     }
     const fetchSimple = () => {
-      executeQuery(`
-        SELECT
-          ${currentShift.initial_cash || 0} as initial_cash,
-          COALESCE((SELECT SUM(total_amount) FROM sales WHERE shift_id=${currentShift.id} AND payment_type='نقدي'),0) as cash_sales,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='inflow'),0) as inflow,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='outflow'),0) as outflow
-      `)
+      api('shifts.liveSummary', { shiftId: currentShift.id })
+        .then((r) => [r])
         .then((rows) => {
           if (rows && rows[0]) {
             const r = rows[0]
@@ -210,30 +205,8 @@ const AdvancedCloseShiftModal = ({
       return
     }
     const fetchLiveDetails = () => {
-      executeQuery(`
-        SELECT
-          ${currentShift.initial_cash || 0} as initial_cash,
-          COALESCE((SELECT SUM(total_amount) FROM sales WHERE shift_id=${currentShift.id}),0) as all_sales,
-          COALESCE((SELECT SUM(total_amount) FROM sales WHERE shift_id=${currentShift.id} AND payment_type='آجل'),0) as debt_sales,
-          COALESCE((SELECT SUM(total_amount) FROM sales WHERE shift_id=${currentShift.id} AND payment_type NOT IN ('نقدي','آجل')),0) as digital_sales,
-          COALESCE((SELECT SUM(total_amount) FROM sales WHERE shift_id=${currentShift.id} AND payment_type='نقدي'),0) as cash_sales,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='inflow'),0) as inflow,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='outflow' AND (description LIKE 'مرتجع%')),0) as returns_outflow,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%')),0) as supplier_outflow,
-          COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id=${currentShift.id} AND type='outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%')),0) as general_outflow,
-
-          COALESCE((SELECT SUM(digital_impact) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as momkn_digital_impact,
-          COALESCE((SELECT SUM(cash_impact) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as momkn_cash_impact,
-          COALESCE((SELECT SUM(commission) FROM momkn_transactions WHERE shift_id=${currentShift.id}), 0) as momkn_commission,
-
-          COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as mm_digital_impact,
-          COALESCE((SELECT SUM(cash_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as mm_cash_impact,
-          COALESCE((SELECT SUM(commission) FROM mobile_money_transactions WHERE shift_id=${currentShift.id}), 0) as mm_commission,
-
-          COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='vodafone_cash'), 0) as vfcash_digital_impact,
-          COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='instapay'), 0) as instapay_digital_impact,
-          COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id=${currentShift.id} AND platform='bank_transfer'), 0) as bank_digital_impact
-      `)
+      api('shifts.liveSummary', { shiftId: currentShift.id })
+        .then((r) => [r])
         .then((rows) => {
           if (rows && rows[0]) {
             const r = rows[0]
@@ -479,7 +452,8 @@ const AdvancedCloseShiftModal = ({
 
 export default function CloseShiftModal(props) {
   const { currentUser } = props
-  if (currentUser?.role === 'admin') {
+  // Multi-till close (drawer + Momkn + wallets): the permission the service checks for multi-till data.
+  if (can(currentUser, 'shifts.multi_till')) {
     return <AdvancedCloseShiftModal {...props} />
   }
   return <SimpleCloseShiftModal {...props} />

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { KeyRound, CircleCheck, CircleAlert } from 'lucide-react'
-import { executeQuery } from '../../lib/db' // sqlite interface wrapper
-import { playSound, hashPin, escapeSql } from '../../lib/utils'
+import { api } from '../../lib/api'
+import { playSound } from '../../lib/utils'
 
 const ROLE_LABELS = { admin: 'مدير النظام', manager: 'مشرف', cashier: 'كاشير' }
 
@@ -32,7 +32,7 @@ function PinInput({ label, value, onChange, autoFocus }) {
   )
 }
 
-function ChangePinDialog({ setShowChangePinModal, currentUser, setCurrentUser }) {
+function ChangePinDialog({ setShowChangePinModal, currentUser }) {
   const [currentPin, setCurrentPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -64,41 +64,7 @@ function ChangePinDialog({ setShowChangePinModal, currentUser, setCurrentUser })
     }
 
     try {
-      // Verify current password from DB directly since currentUser.password_hash might be undefined
-      const userRows = await executeQuery(
-        `SELECT password_hash FROM users WHERE id = ${currentUser.id} LIMIT 1;`
-      )
-      // Stored PINs may be SHA-256 hashes (Users screen, release seed) or legacy plain text – accept both, as login does.
-      const stored = userRows && userRows.length > 0 ? String(userRows[0].password_hash) : null
-      const hashedCurrent = await hashPin(currentPin)
-      if (stored === null || (stored !== String(currentPin) && stored !== hashedCurrent)) {
-        setErrorMsg('رمز المرور الحالي غير صحيح!')
-        playSound('error')
-        return
-      }
-
-      // Update in DB (hashed, the same format the Users screen writes)
-      const hashedNew = await hashPin(newPin)
-      // PINs identify the user at login, so they must stay unique (same rule as the Users screen).
-      const dup = await executeQuery(
-        `SELECT id FROM users WHERE (password_hash = '${escapeSql(hashedNew)}' OR password_hash = '${escapeSql(newPin)}') AND id != ${currentUser.id} LIMIT 1;`
-      )
-      if (dup && dup.length > 0) {
-        setErrorMsg('رمز المرور هذا مستخدم لحساب آخر، اختر رمزاً مختلفاً.')
-        playSound('error')
-        return
-      }
-      await executeQuery(`
-        UPDATE users 
-        SET password_hash = '${escapeSql(hashedNew)}' 
-        WHERE id = ${currentUser.id};
-      `)
-
-      // Update current user state
-      setCurrentUser((prev) => ({
-        ...prev,
-        password_hash: hashedNew
-      }))
+      await api('auth.changePin', { currentPin, newPin })
 
       playSound('success')
       setSuccessMsg('تم تغيير رمز المرور بنجاح!')
@@ -112,7 +78,11 @@ function ChangePinDialog({ setShowChangePinModal, currentUser, setCurrentUser })
         setSuccessMsg('')
       }, 1500)
     } catch (err) {
-      setErrorMsg('فشل تحديث رمز المرور: ' + err.message)
+      setErrorMsg(
+        err.status === 400 || err.status === 409
+          ? err.message
+          : 'فشل تحديث رمز المرور: ' + err.message
+      )
       playSound('error')
     }
   }
@@ -134,7 +104,7 @@ function ChangePinDialog({ setShowChangePinModal, currentUser, setCurrentUser })
           <h2 id="pin-title">تغيير رمز المرور</h2>
           <p>
             المستخدم: <strong>{currentUser.username}</strong> (
-            {ROLE_LABELS[currentUser.role] || currentUser.role})
+            {currentUser.roleName || ROLE_LABELS[currentUser.role] || currentUser.role})
           </p>
         </div>
 

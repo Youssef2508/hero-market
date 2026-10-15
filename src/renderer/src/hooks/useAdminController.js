@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { executeQuery } from '../lib/db'
-import { getNowStr } from '../lib/utils'
+import { api, can } from '../lib/api'
 import { useClientsManager } from './useClientsManager'
 import { useSuppliersManager } from './useSuppliersManager'
 import { useChecksManager } from './useChecksManager'
@@ -33,18 +32,10 @@ export function useAdminController({
   const [shiftsHistory, setShiftsHistory] = useState([])
   const [dbStats, setDbStats] = useState({ totalItems: 0, lowStock: 0, lowStockItems: [] })
 
-  // Atomic fetch helpers
+  // Atomic fetch helpers (each one is a named service operation; see src/server/modules/reports.js)
   const fetchStats = async () => {
     try {
-      const totalRes = await executeQuery('SELECT count(*) as count FROM products;')
-      const lowRes = await executeQuery(
-        'SELECT name, stock_qty, reorder_limit, unit FROM products WHERE stock_qty <= reorder_limit AND reorder_limit > 0;'
-      )
-      setDbStats({
-        totalItems: totalRes[0]?.count || 0,
-        lowStock: lowRes.length || 0,
-        lowStockItems: lowRes || []
-      })
+      setDbStats(await api('dashboard.stats'))
     } catch (e) {
       console.error('fetchStats:', e)
     }
@@ -52,124 +43,10 @@ export function useAdminController({
 
   const fetchAnalytics = async (period = 'weekly') => {
     try {
-      const periodDays = {
-        daily: 1,
-        weekly: 7,
-        monthly: 30
-      }
-
-      let shiftIdsFilter = ''
-      if (period !== 'all') {
-        const days = periodDays[period] || 7
-        const sinceDate = new Date()
-        sinceDate.setDate(sinceDate.getDate() - days)
-        sinceDate.setHours(0, 0, 0, 0)
-
-        const sinceStr = getNowStr(sinceDate)
-        const matchingShifts = await executeQuery(
-          `SELECT id FROM shifts WHERE start_time >= '${sinceStr}';`
-        )
-        const ids = matchingShifts.map((sh) => sh.id)
-        if (ids.length > 0) {
-          shiftIdsFilter = ids.join(',')
-        } else {
-          // No shifts found in this period, set zero values
-          setPeriodicAnalytics({
-            totalSales: 0,
-            netProfit: 0,
-            totalExpenses: 0,
-            invoiceCount: 0,
-            debtSales: 0,
-            outstandingDebt: 0,
-            netCashFlow: 0
-          })
-          setAnalytics({ totalSales: 0, netProfit: 0 })
-          return
-        }
-      }
-
-      // Build SQL clauses
-      const shiftConditionSales = shiftIdsFilter ? `WHERE shift_id IN (${shiftIdsFilter})` : ''
-      const shiftConditionExpenses = shiftIdsFilter ? `WHERE shift_id IN (${shiftIdsFilter})` : ''
-      const shiftConditionItems = shiftIdsFilter ? `WHERE s.shift_id IN (${shiftIdsFilter})` : ''
-
-      // 1. Total Sales, count, debt
-      const salesQuery = `
-        SELECT 
-          SUM(total_amount) as total, 
-          COUNT(*) as count,
-          SUM(CASE WHEN payment_type = 'آجل' THEN total_amount ELSE 0 END) as debt
-        FROM sales
-        ${shiftConditionSales};
-      `
-      const salesRes = await executeQuery(salesQuery)
-      const totalSales = salesRes[0]?.total || 0
-      const invoiceCount = salesRes[0]?.count || 0
-      const debtSales = salesRes[0]?.debt || 0
-
-      // 2. Net Profit from sales
-      const profitQuery = `
-        SELECT SUM(si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price))) as profit
-        FROM sale_items si 
-        JOIN sales s ON si.sale_id = s.id
-        JOIN products p ON si.product_barcode = p.barcode
-        ${shiftConditionItems};
-      `
-      const profitRes = await executeQuery(profitQuery)
-      const netProfitSales = profitRes[0]?.profit || 0
-
-      // 2.5 Deduct Damaged Goods Cost
-      const damagedCondition = shiftIdsFilter ? `WHERE shift_id IN (${shiftIdsFilter})` : ''
-      const damagedQuery = `
-        SELECT SUM(quantity * cost_price) as total_damaged_cost
-        FROM damaged_goods
-        ${damagedCondition};
-      `
-      const damagedRes = await executeQuery(damagedQuery)
-      const totalDamagedCost = damagedRes[0]?.total_damaged_cost || 0
-
-      // 3. Expenses
-      const expensesQuery = `
-        SELECT SUM(amount) as total FROM expenses
-        ${shiftConditionExpenses};
-      `
-      const expensesRes = await executeQuery(expensesQuery)
-      const totalExpenses = expensesRes[0]?.total || 0
-
-      // True Net Profit = Gross Profit from Sales - Damaged Goods Loss - Operating Expenses
-      const netProfit = netProfitSales - totalDamagedCost - totalExpenses
-
-      // 4. Safe Inflows and Outflows
-      const safeCondition = shiftIdsFilter ? `WHERE shift_id IN (${shiftIdsFilter})` : ''
-      const safeQuery = `
-        SELECT 
-          SUM(CASE WHEN type = 'inflow' THEN amount ELSE 0 END) as inflows,
-          SUM(CASE WHEN type = 'outflow' THEN amount ELSE 0 END) as outflows
-        FROM safe_ledger
-        ${safeCondition};
-      `
-      const safeRes = await executeQuery(safeQuery)
-      const safeInflows = safeRes[0]?.inflows || 0
-      const safeOutflows = safeRes[0]?.outflows || 0
-
-      // 5. Net Cash Flow (Total sales cash + inflows - outflows)
-      const cashSales = totalSales - debtSales
-      const netCashFlow = cashSales + safeInflows - safeOutflows
-
-      // 5. Total outstanding customer debt (current snapshot)
-      const outstandingRes = await executeQuery(`SELECT SUM(debt_balance) as total FROM clients;`)
-      const outstandingDebt = outstandingRes[0]?.total || 0
-
-      setPeriodicAnalytics({
-        totalSales,
-        netProfit,
-        totalExpenses,
-        invoiceCount,
-        debtSales,
-        outstandingDebt,
-        netCashFlow
-      })
-      setAnalytics({ totalSales, netProfit })
+      // Same period rule and formulas as before, computed by the service.
+      const res = await api('reports.periodic', { period })
+      setPeriodicAnalytics(res)
+      setAnalytics({ totalSales: res.totalSales, netProfit: res.netProfit })
     } catch (e) {
       console.error('fetchAnalytics:', e)
     }
@@ -177,12 +54,7 @@ export function useAdminController({
 
   const fetchShiftsHistory = async () => {
     try {
-      const res = await executeQuery(`
-        SELECT s.*, u.username FROM shifts s
-        JOIN users u ON s.user_id = u.id
-        WHERE s.status = 'closed' ORDER BY s.id DESC;
-      `)
-      setShiftsHistory(res)
+      setShiftsHistory(await api('reports.shiftsHistory'))
     } catch (e) {
       console.error('fetchShiftsHistory:', e)
     }
@@ -192,14 +64,7 @@ export function useAdminController({
 
   const fetchShiftAudits = async () => {
     try {
-      const res = await executeQuery(`
-        SELECT a.*, u.username
-        FROM shift_audits a
-        JOIN shifts s ON a.shift_id = s.id
-        JOIN users u ON s.user_id = u.id
-        ORDER BY a.id DESC;
-      `)
-      setShiftAudits(res)
+      setShiftAudits(await api('reports.shiftAudits'))
     } catch (e) {
       console.error('fetchShiftAudits:', e)
     }
@@ -264,20 +129,28 @@ export function useAdminController({
     triggerCustomConfirm
   })
 
-  // Declared after sub-managers — can safely call their methods
+  // Declared after sub-managers — can safely call their methods.
+  // Only the sections this user may open are loaded (the service would refuse the others).
   const fetchAdminData = async () => {
-    await fetchStats()
-    await fetchShiftsHistory()
-    await fetchShiftAudits()
-    await productsManager.fetchInventoryPage(1, '')
-    await fetchAnalytics()
-    await salesManager.fetchSalesHistory()
-    await bestSellersManager.fetchBestSellers(bestSellersManager.bsPeriod)
-    await usersManager.fetchUsersList()
-    await clientsManager.fetchClientsList()
-    await clientsManager.fetchClientStats()
-    await expensesManager.fetchExpensesList()
-    await damagedGoodsManager.fetchDamagedGoods()
+    const u = currentUser
+    if (can(u, 'pos.sell') || can(u, 'products.view') || can(u, 'reports.view')) await fetchStats()
+    if (can(u, 'shifts.view_all')) {
+      await fetchShiftsHistory()
+      await fetchShiftAudits()
+    }
+    if (can(u, 'products.view')) await productsManager.fetchInventoryPage(1, '')
+    if (can(u, 'reports.view')) {
+      await fetchAnalytics()
+      await bestSellersManager.fetchBestSellers(bestSellersManager.bsPeriod)
+    }
+    if (can(u, 'sales.view')) await salesManager.fetchSalesHistory()
+    if (can(u, 'users.manage')) await usersManager.fetchUsersList()
+    if (can(u, 'customers.view') || can(u, 'customers.manage')) {
+      await clientsManager.fetchClientsList()
+      await clientsManager.fetchClientStats()
+    }
+    if (can(u, 'expenses.manage')) await expensesManager.fetchExpensesList()
+    if (can(u, 'inventory.damaged')) await damagedGoodsManager.fetchDamagedGoods()
   }
 
   return {
@@ -429,6 +302,7 @@ export function useAdminController({
     editUser: usersManager.editUser,
     setEditUser: usersManager.setEditUser,
     fetchUsersList: usersManager.fetchUsersList,
+    rolesList: usersManager.rolesList,
     handleDeleteUser: usersManager.handleDeleteUser,
     handleSystemReset: usersManager.handleSystemReset,
     handleAddUser: usersManager.handleAddUser,

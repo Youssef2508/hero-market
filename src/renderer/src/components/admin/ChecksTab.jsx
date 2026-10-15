@@ -13,7 +13,9 @@ export default function ChecksTab({
   handleMarkCheckPaid,
   handleDeleteCheck
 }) {
-  const today = new Date().toISOString().split('T')[0]
+  // Local date (the UTC date is wrong for a few hours after local midnight – K-27)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   return (
     <>

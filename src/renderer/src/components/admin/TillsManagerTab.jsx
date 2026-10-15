@@ -20,13 +20,12 @@ import {
   Landmark
 } from 'lucide-react'
 import { StatCard } from '../ui'
-import { executeQuery } from '../../lib/db'
+import { api, can } from '../../lib/api'
 import { getFriendlyErrorMessage } from '../../lib/utils'
 import { useMomknTill } from '../../hooks/useMomknTill'
 import { useMobileMoneyTill } from '../../hooks/useMobileMoneyTill'
 import MomknOperationModal from '../modals/MomknOperationModal'
 import MobileMoneyOperationModal from '../modals/MobileMoneyOperationModal'
-import { generateMomknReportHtml, generateMobileMoneyReportHtml } from '../../lib/printTemplates'
 
 // Helper for ultra-safe currency formatting
 const formatVal = (val, dec = 2) => {
@@ -54,7 +53,8 @@ const TillsManagerTab = ({
   // True once the drawer summary for the current shift has loaded (avoids showing misleading zeros).
   const [drawerReady, setDrawerReady] = useState(false)
 
-  const isAdmin = currentUser?.role === 'admin'
+  // Printing and deleting till movements: same permission the service checks.
+  const isAdmin = can(currentUser, 'tills.manage')
 
   // Initialize hooks
   const momkn = useMomknTill({ currentShift, triggerCustomAlert, triggerCustomConfirm })
@@ -67,57 +67,16 @@ const TillsManagerTab = ({
     const initialCash = currentShift.initial_cash || 0
 
     try {
-      const allSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId};
-      `)
-      const cashSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type = 'نقدي';
-      `)
-      const debtRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type = 'آجل';
-      `)
-      const digitalSalesRes = await executeQuery(`
-        SELECT IFNULL(SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount)), 0) as total 
-        FROM sales 
-        WHERE shift_id = ${shiftId} AND payment_type NOT IN ('نقدي', 'آجل');
-      `)
-      const repayRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'inflow';
-      `)
-
-      // Split outflows: Returns, Supplier Payments, General Expenses
-      const returnsRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description LIKE 'مرتجع%' OR description LIKE 'إرجاع%');
-      `)
-      const supplierRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%');
-      `)
-      const expensesRes = await executeQuery(`
-        SELECT IFNULL(SUM(amount), 0) as total
-        FROM safe_ledger
-        WHERE shift_id = ${shiftId} AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'إرجاع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%');
-      `)
-
-      const allSalesTotal = parseFloat(allSalesRes[0]?.total) || 0
-      const cashSalesTotal = parseFloat(cashSalesRes[0]?.total) || 0
-      const debtSalesTotal = parseFloat(debtRes[0]?.total) || 0
-      const digitalSalesTotal = parseFloat(digitalSalesRes[0]?.total) || 0
-      const repayTotal = parseFloat(repayRes[0]?.total) || 0
-      const returnsTotal = parseFloat(returnsRes[0]?.total) || 0
-      const supplierTotal = parseFloat(supplierRes[0]?.total) || 0
-      const expensesTotal = parseFloat(expensesRes[0]?.total) || 0
+      // Same sums as before (sale value = original − discount, returns/suppliers/expenses split by ledger text).
+      const r = await api('tills.drawerSummary', { shiftId })
+      const allSalesTotal = r.allSalesTotal || 0
+      const cashSalesTotal = r.cashSalesTotal || 0
+      const debtSalesTotal = r.debtSalesTotal || 0
+      const digitalSalesTotal = r.digitalSalesTotal || 0
+      const repayTotal = r.repayTotal || 0
+      const returnsTotal = r.returnsTotal || 0
+      const supplierTotal = r.supplierTotal || 0
+      const expensesTotal = r.expensesTotal || 0
 
       const expected =
         initialCash +
@@ -162,19 +121,17 @@ const TillsManagerTab = ({
       triggerCustomAlert('طباعة التقارير مخصصة للمدير فقط!')
       return
     }
-    if (!window.api || !window.api.printer || !window.api.printer.print) {
+    if (!window.api?.printer?.printReport) {
       triggerCustomAlert('طابعة الفواتير غير متصلة أو غير معرفة!')
       return
     }
 
-    const html = generateMomknReportHtml({
-      shift: { ...currentShift, username: currentUser.username },
-      transactions: momkn.transactions,
-      summary: momkn.summary
-    })
-
     window.api.printer
-      .print(html)
+      .printReport('momkn', {
+        shift: { ...currentShift, username: currentUser.username },
+        transactions: momkn.transactions,
+        summary: momkn.summary
+      })
       .then(() => triggerCustomAlert('تم إرسال تقرير ممكن للطابعة بنجاح.'))
       .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }
@@ -184,23 +141,23 @@ const TillsManagerTab = ({
       triggerCustomAlert('طباعة التقارير مخصصة للمدير فقط!')
       return
     }
-    if (!window.api || !window.api.printer || !window.api.printer.print) {
+    if (!window.api?.printer?.printReport) {
       triggerCustomAlert('طابعة الفواتير غير متصلة أو غير معرفة!')
       return
     }
 
-    const html = generateMobileMoneyReportHtml({
-      shift: { ...currentShift, username: currentUser.username },
-      transactions: mobileMoney.rawTransactions, // rawTransactions bypasses platformFilter
-      summary: mobileMoney.summary
-    })
-
     window.api.printer
-      .print(html)
+      .printReport('wallets', {
+        shift: { ...currentShift, username: currentUser.username },
+        transactions: mobileMoney.rawTransactions, // rawTransactions bypasses platformFilter
+        summary: mobileMoney.summary
+      })
       .then(() => triggerCustomAlert('تم إرسال تقرير المحافظ للطابعة بنجاح.'))
       .catch((e) => triggerCustomAlert('فشل الطباعة: ' + getFriendlyErrorMessage(e)))
   }
 
+  // A + or − only on non-zero amounts ("-0.00" reads like an error).
+  const sign = (v, s) => (Math.abs(Number(v) || 0) >= 0.005 ? s : '')
   const signedMoney = (v) => `${(v || 0) >= 0 ? '+' : ''}${formatVal(v)}`
   const toneOfSigned = (v) => ((v || 0) >= 0 ? 'text-success' : 'text-danger')
   const SUBTABS = [
@@ -272,33 +229,33 @@ const TillsManagerTab = ({
               icon={ReceiptText}
               tone="success"
               label="إجمالي مبيعات الفواتير"
-              value={`+${formatVal(mainDrawerSummary.allSales)} ج.م`}
+              value={`${sign(mainDrawerSummary.allSales, '+')}${formatVal(mainDrawerSummary.allSales)} ج.م`}
             />
             {(mainDrawerSummary.debtSales > 0 || mainDrawerSummary.digitalSales > 0) && (
               <StatCard
                 icon={Smartphone}
                 tone="warning"
                 label="آجل وتحويلات (لم تدخل الدرج)"
-                value={`-${formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م`}
+                value={`${sign(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales, '-')}${formatVal(mainDrawerSummary.debtSales + mainDrawerSummary.digitalSales)} ج.م`}
               />
             )}
             <StatCard
               icon={HandCoins}
               tone="success"
               label="سداد ديون عملاء (داخل)"
-              value={`+${formatVal(mainDrawerSummary.inflows)} ج.م`}
+              value={`${sign(mainDrawerSummary.inflows, '+')}${formatVal(mainDrawerSummary.inflows)} ج.م`}
             />
             <StatCard
               icon={Truck}
               tone="danger"
               label="مدفوعات موردين (خارج)"
-              value={`-${formatVal(mainDrawerSummary.supplierPayments)} ج.م`}
+              value={`${sign(mainDrawerSummary.supplierPayments, '-')}${formatVal(mainDrawerSummary.supplierPayments)} ج.م`}
             />
             <StatCard
               icon={NotebookPen}
               tone="danger"
               label="مصروفات ونثريات (خارج)"
-              value={`-${formatVal(mainDrawerSummary.expenses)} ج.م`}
+              value={`${sign(mainDrawerSummary.expenses, '-')}${formatVal(mainDrawerSummary.expenses)} ج.م`}
             />
           </div>
           <div className="balance-banner is-clear drawer-expected">
