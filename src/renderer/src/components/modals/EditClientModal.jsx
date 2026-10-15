@@ -1,4 +1,5 @@
 import { UserPen } from 'lucide-react'
+import PhoneFields from './PhoneFields'
 
 const EditClientModal = ({
   showEditClientModal,
@@ -33,17 +34,7 @@ const EditClientModal = ({
               required
             />
           </div>
-          <div className="form-group">
-            <label>رقم الهاتف</label>
-            <input
-              type="text"
-              className="form-input"
-              value={editClientForm.phone}
-              onChange={(e) =>
-                setEditClientForm((prev) => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))
-              }
-            />
-          </div>
+          <PhoneFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
           <div className="form-group">
             <label>عنوان التوصيل</label>
             <input

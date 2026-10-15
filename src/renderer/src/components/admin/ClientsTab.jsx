@@ -141,7 +141,7 @@ export default function ClientsTab({
               type="button"
               className="btn btn-primary btn-sm"
               onClick={() => {
-                setNewClientForm({ name: '', phone: '', address: '' })
+                setNewClientForm({ name: '', phone: '', phone2: '', hasPhone2: false, address: '' })
                 setShowAddClientModal(true)
               }}
             >
@@ -196,7 +196,10 @@ export default function ClientsTab({
                         onKeyDown={(e) => e.key === 'Enter' && selectAdminClientForProfile(cl)}
                       >
                         <td className="cell-strong">{cl.name}</td>
-                        <td className="num cell-muted nowrap">{cl.phone || '—'}</td>
+                        <td className="num cell-muted nowrap">
+                          {cl.phone || '—'}
+                          {cl.phone2 && <span className="cell-sub">{cl.phone2}</span>}
+                        </td>
                         <td
                           className={`num money-strong ${cl.debt_balance > 0 ? 'text-danger' : cl.debt_balance < 0 ? 'text-accent' : 'cell-muted'}`}
                         >
@@ -243,6 +246,8 @@ export default function ClientsTab({
                       id: c.id,
                       name: c.name,
                       phone: c.phone || '',
+                      phone2: c.phone2 || '',
+                      hasPhone2: Boolean(c.phone2),
                       address: c.address || ''
                     })
                     setShowEditClientModal(true)
@@ -283,7 +288,9 @@ export default function ClientsTab({
               <div className="contact-row">
                 <span>
                   <Phone size={15} aria-hidden="true" />
-                  <span className="num">{c.phone || 'لا يوجد هاتف'}</span>
+                  <bdi dir="ltr" className="num">
+                    {[c.phone, c.phone2].filter(Boolean).join(' / ') || 'لا يوجد هاتف'}
+                  </bdi>
                 </span>
                 <span>
                   <MapPin size={15} aria-hidden="true" />
@@ -507,7 +514,10 @@ export default function ClientsTab({
                             <span className={`rank rank-${idx + 1}`}>{idx + 1}</span>
                           </td>
                           <td className="cell-strong">{client.name}</td>
-                          <td className="num">{client.phone || '—'}</td>
+                          <td className="num">
+                            {client.phone || '—'}
+                            {client.phone2 && <span className="cell-sub">{client.phone2}</span>}
+                          </td>
                           <td className="num money-strong text-accent">
                             {formatMoney(client.totalSpent)} ج.م
                           </td>

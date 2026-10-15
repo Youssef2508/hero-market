@@ -118,7 +118,7 @@ test('FLOWS 5–9: cash, customer (points), credit, discounted and delivery sale
     await sell({
       isDelivery: true,
       items: [{ barcode: 'P28', qty: 1 }],
-      client: { name: 'زبون توصيل', phone: '0111', address: 'المعادي' }
+      client: { name: 'زبون توصيل', phone: '01100000111', address: 'المعادي' }
     })
   )
   const dsale = await one('SELECT client_name, client_id FROM sales WHERE id = $1', [
@@ -126,7 +126,7 @@ test('FLOWS 5–9: cash, customer (points), credit, discounted and delivery sale
   ])
   assert.equal(
     dsale.client_name,
-    'زبون توصيل (0111) - المعادي',
+    'زبون توصيل (01100000111) - المعادي',
     'legacy client_name format for delivery'
   )
   assert.ok(dsale.client_id, 'new customer created inside the sale transaction')

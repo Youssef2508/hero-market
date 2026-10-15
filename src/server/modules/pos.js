@@ -5,6 +5,8 @@
 //  - the new sale id comes from INSERT … RETURNING, never MAX(id) (G-03);
 //  - a new customer is created inside the same transaction (K-12);
 //  - a client-generated key makes retries return the same sale instead of a second one (G-21).
+const path = require('path')
+const { pathToFileURL } = require('url')
 const { postMovement } = require('../inventory/stock')
 const {
   baseUnit,
@@ -251,7 +253,7 @@ module.exports = function posModule(app) {
       const t = likeEscape(term)
       return (
         await ctx.pool.query(
-          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 5`,
+          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 5`,
           [t]
         )
       ).rows
@@ -443,11 +445,24 @@ module.exports = function posModule(app) {
               .rows[0]
             if (!clientRow) throw notFound('العميل غير موجود.')
           } else {
-            const phone = c.phone && c.phone.trim() ? c.phone.trim() : null
+            // A typed number is validated like in the customers screen and matches either of a
+            // customer's two numbers.
+            let phone = null
+            if (c.phone && c.phone.trim()) {
+              const { normalizePhone } = await import(
+                pathToFileURL(path.join(__dirname, '..', '..', 'shared', 'phone.mjs')).href
+              )
+              const r = normalizePhone(c.phone)
+              if (r.error) throw badRequest(`هاتف العميل: ${r.error}`)
+              phone = r.value
+            }
             clientRow = (
               await db.query(
                 phone
-                  ? 'SELECT * FROM clients WHERE name = $1 OR phone = $2 ORDER BY id LIMIT 1 FOR UPDATE'
+                  ? `SELECT * FROM clients WHERE name = $1
+                        OR regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $2
+                        OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $2
+                      ORDER BY id LIMIT 1 FOR UPDATE`
                   : 'SELECT * FROM clients WHERE name = $1 ORDER BY id LIMIT 1 FOR UPDATE',
                 phone ? [c.name, phone] : [c.name]
               )
