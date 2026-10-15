@@ -23,6 +23,7 @@ import { EmptyState, StatCard } from '../ui'
 import { VBarChart } from '../ui/charts'
 import { CHART_COLORS } from '../ui/chartColors'
 import { formatMoney } from '../../lib/utils'
+import { formatHour } from '../../lib/time'
 
 const fmt = (n) => formatMoney(n)
 const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US')
@@ -102,7 +103,9 @@ export default function AdvancedStatsTab() {
     if (bestDay)
       parts.push(`أفضل يوم مبيعاً: ${bestDay.day} بإجمالي ${fmt(bestDay.total_sales)} ج.م.`)
     if (peakHour)
-      parts.push(`أعلى ساعة مبيعاً: الساعة ${peakHour.hour}:00 (${fmt(peakHour.total_sales)} ج.م).`)
+      parts.push(
+        `أعلى ساعة مبيعاً: الساعة ${formatHour(peakHour.hour)} (${fmt(peakHour.total_sales)} ج.م).`
+      )
     if (topProducts.length > 0)
       parts.push(
         `الصنف الأكثر مبيعاً: ${topProducts[0].product_name} (${fmtInt(topProducts[0].qty_sold)} وحدة).`
@@ -270,7 +273,8 @@ export default function AdvancedStatsTab() {
                 <div className="notice notice-warning" style={{ marginBottom: 'var(--sp-4)' }}>
                   <Zap size={16} aria-hidden="true" />
                   <span>
-                    أعلى ساعة مبيعاً: الساعة <strong className="num">{peakHour.hour}:00</strong> —{' '}
+                    أعلى ساعة مبيعاً: الساعة{' '}
+                    <strong className="num">{formatHour(peakHour.hour)}</strong> —{' '}
                     {fmt(peakHour.total_sales)} ج.م ({fmtInt(peakHour.invoice_count)} فاتورة، متوسط{' '}
                     {fmt(peakHour.avg_sale)} ج.م)
                   </span>
@@ -296,7 +300,7 @@ export default function AdvancedStatsTab() {
                         <tr key={i}>
                           <td className="num fw-bold">
                             {isPeak && <Zap size={13} className="text-warning" aria-label="ذروة" />}{' '}
-                            {h.hour}:00
+                            {formatHour(h.hour)}
                           </td>
                           <td className="num">{fmtInt(h.invoice_count)}</td>
                           <td className={`num money-strong ${isPeak ? 'text-warning' : ''}`}>

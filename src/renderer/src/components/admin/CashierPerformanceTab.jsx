@@ -21,6 +21,7 @@ import { EmptyState } from '../ui'
 import { VBarChart } from '../ui/charts'
 import { CHART_COLORS } from '../ui/chartColors'
 import { formatMoney } from '../../lib/utils'
+import { formatHour } from '../../lib/time'
 
 const fmt = (n) => formatMoney(n)
 const fmtI = (n) => Math.round(n || 0).toLocaleString('en-US')
@@ -274,16 +275,16 @@ function DrilldownView({ cashier, drilldown, loading, onBack }) {
             aside={
               peakHour && (
                 <span className="card-subtitle">
-                  الذروة: <span className="num">{peakHour.hour}:00</span> ({fmt(peakHour.sales)}{' '}
-                  ج.م)
+                  الذروة: <span className="num">{formatHour(peakHour.hour)}</span> (
+                  {fmt(peakHour.sales)} ج.م)
                 </span>
               )
             }
           >
             <VBarChart
-              data={drilldown.peakHours}
+              data={drilldown.peakHours.map((h) => ({ ...h, hourLabel: formatHour(h.hour) }))}
               valueKey="sales"
-              labelKey="hour"
+              labelKey="hourLabel"
               colors={['var(--chart-3)']}
             />
           </Panel>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { History, ClipboardCheck } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import { Timestamp } from '../ui'
 
 const KIND_LABELS = {
   opening: 'رصيد افتتاحي',
@@ -155,7 +156,9 @@ export default function StockHistoryModal({ product, onClose, onChanged }) {
               <tbody>
                 {rows.map((m) => (
                   <tr key={m.id}>
-                    <td className="num nowrap cell-muted">{m.created_at}</td>
+                    <td className="num nowrap cell-muted">
+                      <Timestamp value={m.created_at} />
+                    </td>
                     <td>{KIND_LABELS[m.kind] || m.kind}</td>
                     <td className={`num ${Number(m.qty) < 0 ? 'text-danger' : 'text-success'}`}>
                       {qty(m.qty)}
