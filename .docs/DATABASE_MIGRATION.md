@@ -92,3 +92,24 @@ Applied automatically on the first start of a version that contains it.
 
 - **Before upgrading a real store:** run `npm run golive:check` on a **copy** of the store's data and keep the pre-upgrade backup. The upgrade never touches the old SQLite file.
 - **Rollback:** the migration is forward-only. An older app version cannot run on the migrated database, because the guard trigger refuses its direct stock writes. To roll back, reinstall the previous version and restore the backup taken before the upgrade. Sales made after the upgrade must be exported first (النسخ الاحتياطي → حفظ نسخة) and re-entered.
+
+## 8. Migration 0005: units and packaging (stage 4)
+
+- **What it does:**
+  - adds `products.unit_kind`;
+  - creates `product_units` and `product_barcodes`, with a trigger that keeps every scan code unique across products and packaging;
+  - adds unit snapshots (`unit_id`, `unit_name`, `unit_factor` = 1) to sale and purchase lines.
+
+  Prices, quantities, totals and stock are unchanged.
+
+- **How the kind is inferred:**
+  - **weight** when the unit text is a kilogram or gram word, or when the product ever had fractional stock or a fractional sale;
+  - **volume** for litre words;
+  - otherwise **count**.
+- **Risks:**
+  - **Count products can no longer be sold in fractions of a piece.** A product that was inferred as count but is really weighed (for example a unit written as "كيس" for loose goods sold by weight, with whole-number history only) is refused at the till with a clear message. The fix is to set its measuring method in the product form.
+  - Scale labels with an embedded price now give the weight with 3 decimals (previously 2).
+- **Before upgrading a real store:**
+  1. Run `npm run golive:check` on a copy.
+  2. Review the products whose unit is not a weight word but that are sold by weight.
+- **Rollback:** forward-only, like 0004. Restore the pre-upgrade backup.

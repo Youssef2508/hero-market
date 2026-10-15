@@ -127,6 +127,18 @@ const EditProductModal = ({
                 onChange={(e) => setEditProduct((prev) => ({ ...prev, unit: e.target.value }))}
               />
             </div>
+            <div className="form-group">
+              <label>طريقة القياس (الوحدة الأساسية للمخزون)</label>
+              <select
+                className="form-input"
+                value={editProduct.unit_kind || 'count'}
+                onChange={(e) => setEditProduct((prev) => ({ ...prev, unit_kind: e.target.value }))}
+              >
+                <option value="count">بالعدد (قطعة، علبة… أعداد صحيحة)</option>
+                <option value="weight">بالوزن (كيلوجرام، 3 خانات عشرية)</option>
+                <option value="volume">بالحجم (لتر، 3 خانات عشرية)</option>
+              </select>
+            </div>
           </div>
 
           <div className="modal-footer">

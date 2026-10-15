@@ -25,6 +25,7 @@ import {
   Info
 } from 'lucide-react'
 import { Kbd } from '../ui'
+import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
 
 // Payment types are business values written to sales.payment_type – do not rename.
@@ -122,6 +123,9 @@ function CheckoutTerminal({
   triggerClearCart,
   qtyInputRefs,
   handleQtyChangeAttempt,
+  changeLineUnit,
+  pendingWeight,
+  confirmWeight,
   triggerDeleteItem,
   cartSubtotal,
   discount,
@@ -176,9 +180,9 @@ function CheckoutTerminal({
     const prev = prevCartRef.current
     prevCartRef.current = cart
     if (cart.length === 0 || cart === prev) return
-    const prevQty = Object.fromEntries(prev.map((i) => [i.barcode, i.qty]))
-    const changed = cart.find((i) => prevQty[i.barcode] === undefined || i.qty > prevQty[i.barcode])
-    const row = changed && rowRefs.current[changed.barcode]
+    const prevQty = Object.fromEntries(prev.map((i) => [i.key, i.qty]))
+    const changed = cart.find((i) => prevQty[i.key] === undefined || i.qty > prevQty[i.key])
+    const row = changed && rowRefs.current[changed.key]
     if (!row) return
     row.scrollIntoView({ block: 'nearest' })
     if (row.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -245,9 +249,11 @@ function CheckoutTerminal({
     barcodeInputRef.current?.focus()
   }
 
+  // Weighed lines step by 100 g; pieces and packages by one.
+  const stepOf = (item) => (item.kind !== 'count' && !item.unitId ? 0.1 : 1)
   const stepQty = (item, delta) => {
-    const next = Math.round((item.qty + delta) * 1000) / 1000
-    if (next > 0) handleQtyChangeAttempt(item.barcode, String(next))
+    const next = Math.round((item.qty + delta * stepOf(item)) * 1000) / 1000
+    if (next > 0) handleQtyChangeAttempt(item.key, String(next))
   }
 
   // Several products end with the scanned digits: the list is open while the search box is empty.
@@ -274,7 +280,21 @@ function CheckoutTerminal({
   }, [candidatesOpen, setSearchResults, setSelectedSearchIndex, barcodeInputRef])
 
   const itemCount = cart.length
-  const unitCount = cart.reduce((s, i) => s + (parseFloat(i.qty) || 0), 0)
+  // Pieces in base units (a carton of 12 counts 12) and weight/volume separately: never mixed.
+  const baseOf = (i) => (parseFloat(i.qty) || 0) * (Number(i.factor) || 1)
+  const pieceCount = cart
+    .filter((i) => (i.kind || 'count') === 'count')
+    .reduce((s, i) => s + baseOf(i), 0)
+  const kgCount = cart.filter((i) => i.kind === 'weight').reduce((s, i) => s + baseOf(i), 0)
+  const literCount = cart.filter((i) => i.kind === 'volume').reduce((s, i) => s + baseOf(i), 0)
+  const cartSummary = [
+    `${itemCount} صنف`,
+    pieceCount ? `${Math.round(pieceCount)} قطعة` : null,
+    kgCount ? `${(Math.round(kgCount * 1000) / 1000).toFixed(3)} كجم` : null,
+    literCount ? `${(Math.round(literCount * 1000) / 1000).toFixed(3)} لتر` : null
+  ]
+    .filter(Boolean)
+    .join(' · ')
   const showResults = !!searchInput || searchResults.length > 0
   const discountNum = parseFloat(discount) || 0
   const creditNum = parseFloat(appliedCredit) || 0
@@ -390,11 +410,7 @@ function CheckoutTerminal({
           <div className="cart-head">
             <div className="cart-title">
               <h2>الفاتورة الحالية</h2>
-              {itemCount > 0 && (
-                <span className="badge num">
-                  {itemCount} صنف · {Math.round(unitCount * 1000) / 1000} وحدة
-                </span>
-              )}
+              {itemCount > 0 && <span className="badge num">{cartSummary}</span>}
             </div>
             <div className="row">
               <ShortagesButton
@@ -441,10 +457,13 @@ function CheckoutTerminal({
                 </thead>
                 <tbody>
                   {cart.map((item, index) => (
-                    <tr key={item.barcode} ref={(el) => (rowRefs.current[item.barcode] = el)}>
+                    <tr key={item.key} ref={(el) => (rowRefs.current[item.key] = el)}>
                       <td className="col-idx num">{index + 1}</td>
                       <td className="col-name">
-                        <span className="line-name">{item.name}</span>
+                        <span className="line-name">
+                          {item.name}
+                          {item.unitId ? ` (${item.unitName})` : ''}
+                        </span>
                         <span className="line-code mono">{item.barcode}</span>
                       </td>
                       <td className="col-price money">{money(item.price)}</td>
@@ -465,14 +484,14 @@ function CheckoutTerminal({
                             className="qty-input num"
                             value={item.qty}
                             ref={(el) => (qtyInputRefs.current[index] = el)}
-                            onChange={(e) => handleQtyChangeAttempt(item.barcode, e.target.value)}
+                            onChange={(e) => handleQtyChangeAttempt(item.key, e.target.value)}
                             onBlur={(e) => {
                               const val = parseFloat(e.target.value)
                               if (isNaN(val) || val <= 0) {
-                                triggerDeleteItem(item.barcode)
+                                triggerDeleteItem(item.key)
                               }
                             }}
-                            min="0.01"
+                            min="0.001"
                             step="any"
                             aria-label={`كمية ${item.name}`}
                           />
@@ -483,19 +502,45 @@ function CheckoutTerminal({
                             aria-label={`تقليل كمية ${item.name}`}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => stepQty(item, -1)}
-                            disabled={item.qty - 1 <= 0}
+                            disabled={item.qty - stepOf(item) <= 0}
                           >
                             <Minus size={14} />
                           </button>
                         </div>
-                        {item.unit && <span className="line-unit">{item.unit}</span>}
+                        {item.units && item.units.length > 1 ? (
+                          <select
+                            className="line-unit-select"
+                            value={item.unitId ?? ''}
+                            onChange={(e) =>
+                              changeLineUnit(
+                                item.key,
+                                e.target.value === '' ? null : Number(e.target.value)
+                              )
+                            }
+                            aria-label={`وحدة بيع ${item.name}`}
+                          >
+                            {item.units.map((u) => (
+                              <option key={u.id ?? 'base'} value={u.id ?? ''}>
+                                {u.name || 'الوحدة'}
+                                {u.id ? ` (${u.factor})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          item.unit && <span className="line-unit">{item.unit}</span>
+                        )}
+                        {item.kind === 'weight' && !item.unitId && (
+                          <span className="line-unit num">
+                            {Math.round(item.qty * 1000).toLocaleString('en-US')} جم
+                          </span>
+                        )}
                       </td>
                       <td className="col-total money">{money(item.total)}</td>
                       <td className="col-del">
                         <button
                           type="button"
                           className="icon-btn danger"
-                          onClick={() => triggerDeleteItem(item.barcode)}
+                          onClick={() => triggerDeleteItem(item.key)}
                           aria-label={`حذف ${item.name}`}
                           title="حذف الصنف"
                         >
@@ -508,6 +553,8 @@ function CheckoutTerminal({
               </table>
             )}
           </div>
+
+          {pendingWeight && <WeightEntryModal pending={pendingWeight} onDone={confirmWeight} />}
 
           <footer className="pos-hints" aria-label="اختصارات لوحة المفاتيح">
             <span>

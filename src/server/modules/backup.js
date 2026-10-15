@@ -13,6 +13,8 @@ const TABLES = [
   'permission_catalog',
   'users',
   'products',
+  'product_units',
+  'product_barcodes',
   'stock_movements',
   'clients',
   'client_ledger',

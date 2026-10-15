@@ -37,14 +37,25 @@ const AddPurchaseModal = ({
         setLookupError(`الصنف (${barcode}) غير مسجل.`)
         return
       }
+      // Purchasable packaging (carton, box…): quantity and cost are entered in the chosen unit.
+      const extra = await api('productUnits.get', { barcode: p.barcode })
+        .then((r) => r.units.filter((u) => u.purchasable))
+        .catch(() => [])
+      const baseCost = p.cost_price !== undefined ? Number(p.cost_price) : null
       setItems((list) => [
         ...list,
         {
           barcode: p.barcode,
           name: p.name,
           unit: p.unit || '',
+          units: [
+            { id: null, name: p.unit || 'الوحدة الأساسية', factor: 1 },
+            ...extra.map((u) => ({ id: u.id, name: u.name, factor: Number(u.factor) }))
+          ],
+          unitId: null,
+          baseCost,
           qty: '',
-          unitCost: p.cost_price !== undefined ? String(p.cost_price) : ''
+          unitCost: baseCost !== null ? String(baseCost) : ''
         }
       ])
       setCode('')
@@ -143,7 +154,34 @@ const AddPurchaseModal = ({
                           aria-label={`كمية ${l.name}`}
                           style={{ width: 90 }}
                         />
-                        {l.unit && <span className="cell-muted"> {l.unit}</span>}
+                        {l.units && l.units.length > 1 ? (
+                          <select
+                            className="form-input"
+                            value={l.unitId ?? ''}
+                            onChange={(e) => {
+                              const id = e.target.value === '' ? null : Number(e.target.value)
+                              const u = l.units.find((x) => (x.id ?? null) === id)
+                              update(i, {
+                                unitId: id,
+                                unitCost:
+                                  l.baseCost !== null
+                                    ? String(Math.round(l.baseCost * u.factor * 10000) / 10000)
+                                    : l.unitCost
+                              })
+                            }}
+                            aria-label={`وحدة شراء ${l.name}`}
+                            style={{ width: 120, marginTop: 4 }}
+                          >
+                            {l.units.map((u) => (
+                              <option key={u.id ?? 'base'} value={u.id ?? ''}>
+                                {u.name}
+                                {u.id ? ` (${u.factor})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          l.unit && <span className="cell-muted"> {l.unit}</span>
+                        )}
                       </td>
                       <td>
                         <input

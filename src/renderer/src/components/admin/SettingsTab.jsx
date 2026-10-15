@@ -10,6 +10,7 @@ import {
   Monitor
 } from 'lucide-react'
 import { api } from '../../lib/api'
+import ScaleLabelsSection from './ScaleLabelsSection'
 
 const FIELDS = {
   store: [
@@ -247,6 +248,10 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
           </label>
         </div>
       </section>
+
+      {values.scale_labels && (
+        <ScaleLabelsSection value={values.scale_labels} onChange={(v) => set('scale_labels', v)} />
+      )}
 
       {device && (
         <section className="card">

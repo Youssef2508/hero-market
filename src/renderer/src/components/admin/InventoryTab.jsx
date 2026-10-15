@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Pencil, Plus, Search, Trash2, PackageSearch, History, AlertTriangle } from 'lucide-react'
+import {
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  PackageSearch,
+  History,
+  AlertTriangle,
+  Boxes
+} from 'lucide-react'
 import { EmptyState, Pagination, SortableTh } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
 import StockHistoryModal from '../modals/StockHistoryModal'
+import ProductUnitsModal from '../modals/ProductUnitsModal'
 
 /**
  * Products & stock screen. Data and mutations come from useProductsManager
@@ -27,6 +37,7 @@ export default function InventoryTab({
 }) {
   const debounceRef = useRef(null)
   const [historyFor, setHistoryFor] = useState(null)
+  const [unitsFor, setUnitsFor] = useState(null)
   const [negative, setNegative] = useState([])
 
   // Negative stock is allowed (sold before the receipt was entered); list it so it gets fixed.
@@ -173,6 +184,15 @@ export default function InventoryTab({
                           <button
                             type="button"
                             className="icon-btn"
+                            onClick={() => setUnitsFor(p)}
+                            aria-label={`وحدات وعبوات ${p.name}`}
+                            title="الوحدات والعبوات والباركودات"
+                          >
+                            <Boxes size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn"
                             onClick={() => setHistoryFor(p)}
                             aria-label={`سجل حركة ${p.name}`}
                             title="سجل الحركة والجرد"
@@ -208,6 +228,13 @@ export default function InventoryTab({
           onNext={() => fetchInventoryPage(adminPage + 1, adminSearch)}
         />
       </div>
+      {unitsFor && (
+        <ProductUnitsModal
+          product={unitsFor}
+          onClose={() => setUnitsFor(null)}
+          onSaved={() => fetchInventoryPage(adminPage, adminSearch)}
+        />
+      )}
       {historyFor && (
         <StockHistoryModal
           product={historyFor}

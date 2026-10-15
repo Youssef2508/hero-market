@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { normalizeDigits, playSound, round2 } from '../lib/utils'
+import { normalizeDigits, playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 
@@ -63,7 +63,6 @@ export function usePOSController({
   fetchAdminData,
   triggerCustomAlert,
   triggerCustomConfirm,
-  parseScaleBarcode,
   setCurrentView,
   appSettings,
   onLoggedIn
@@ -290,53 +289,32 @@ export function usePOSController({
     }
   }
 
+  // Search results are plain product rows: resolve them so the line gets its units (and the
+  // weight entry for products sold by the kilogram).
+  const addProductByBarcode = async (barcode) => {
+    try {
+      const resolved = await api('pos.resolve', { code: barcode })
+      if (resolved) addToCart(resolved)
+    } catch (err) {
+      triggerCustomAlert(err.message)
+    }
+  }
+
   // Handle Barcode Scanner Form Submit
   const handleBarcodeSubmit = async (e) => {
     if (e) e.preventDefault()
     if (!barcodeInput) return
 
-    let rawInput = barcodeInput.trim()
-    // Declared here (not inside the else-branch) because the suffix lookup below reads it.
-    let parsed = { isWeighted: false, barcode: rawInput }
+    const rawInput = barcodeInput.trim()
     try {
-      let product = null
+      // The service resolves the scan to a product and a unit: product barcode, extra or
+      // packaging barcode, or a scale label (weight or price) per the store's settings.
+      let product = await api('pos.resolve', { code: rawInput })
 
-      // Try exact match, stripped leading zeros, or padded leading zero
-      product = await api('pos.lookup', {
-        codes: [rawInput, rawInput.replace(/^0+/, ''), '0' + rawInput].filter(Boolean)
-      })
-      if (!product) {
-        // If no exact match, check weighted scale barcode parsing
-        parsed = parseScaleBarcode(rawInput)
-        const lookupProduct = async (p) => {
-          if (p.isWeighted) {
-            const code = String(p.barcode || '')
-            const item = await api('pos.lookup', {
-              codes: [code, code.replace(/^0+/, '')].filter(Boolean)
-            })
-            if (item) {
-              let forcedQty = p.qty
-              if (p.isPriceEmbedded && p.totalPrice && parseFloat(item.retail_price) > 0) {
-                forcedQty = round2(p.totalPrice / parseFloat(item.retail_price))
-              }
-              return { ...item, forcedQty: forcedQty > 0 ? forcedQty : 1 }
-            }
-            return null
-          } else {
-            const code = String(p.barcode || '')
-            return api('pos.lookup', {
-              codes: [code, code.replace(/^0+/, ''), '0' + code].filter(Boolean)
-            })
-          }
-        }
-
-        product = await lookupProduct(parsed)
-      }
-
-      if (!product && !parsed.isWeighted && rawInput.length >= 6 && rawInput.length <= 12) {
+      if (!product && rawInput.length >= 6 && rawInput.length <= 12) {
         const candidates = await api('pos.suffixCandidates', { suffix: rawInput })
         if (candidates.length === 1) {
-          product = candidates[0]
+          product = await api('pos.resolve', { code: candidates[0].barcode })
         } else if (candidates.length > 1) {
           setSearchResults(candidates)
           setBarcodeInput('')
@@ -345,7 +323,7 @@ export function usePOSController({
       }
 
       if (product) {
-        addToCart(product, product.forcedQty)
+        addToCart(product)
         setBarcodeInput('')
       } else {
         const missingBarcode = rawInput
@@ -373,9 +351,9 @@ export function usePOSController({
       if (res.approved) {
         playSound('success')
         if (pendingAction.type === 'DELETE_ITEM') {
-          setCart((prev) => prev.filter((item) => item.barcode !== pendingAction.payload))
+          setCart((prev) => prev.filter((item) => item.key !== pendingAction.payload))
         } else if (pendingAction.type === 'QTY_REDUCTION') {
-          updateQty(pendingAction.payload.barcode, pendingAction.payload.qty)
+          updateQty(pendingAction.payload.key, pendingAction.payload.qty)
         } else if (pendingAction.type === 'CLEAR_CART') {
           setCart([])
           setDiscount(0)
@@ -448,7 +426,7 @@ export function usePOSController({
           ? searchResults[selectedSearchIndex]
           : searchResults[0]
       if (targetItem) {
-        addToCart(targetItem)
+        addProductByBarcode(targetItem.barcode)
         setSearchInput('')
         setSearchResults([])
         setSelectedSearchIndex(-1)
@@ -487,6 +465,7 @@ export function usePOSController({
         shiftId: currentShift.id,
         items: cart.map((item) => ({
           barcode: item.barcode,
+          unitId: item.unitId ?? null,
           qty: item.qty,
           unitPrice: item.price
         })),
@@ -542,7 +521,8 @@ export function usePOSController({
               paymentType: paymentType || 'نقدي',
               client: { name: clientName, phone: clientPhone, address: clientAddress },
               items: cart.map((item) => ({
-                name: item.name || 'صنف',
+                // Packaging lines name their unit on the receipt (e.g. "كيك (كرتونة)").
+                name: item.unitId ? `${item.name || 'صنف'} (${item.unitName})` : item.name || 'صنف',
                 barcode: item.barcode,
                 qty: item.qty,
                 price: item.price,
@@ -715,6 +695,7 @@ export function usePOSController({
   }
 
   return {
+    addProductByBarcode,
     pin,
     setPin,
     handlePinSubmit,

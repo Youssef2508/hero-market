@@ -21,7 +21,8 @@ export function useProductsManager({
     wholesale_price: '',
     stock_qty: '',
     reorder_limit: '',
-    unit: ''
+    unit: '',
+    unit_kind: 'count'
   })
   const [editProduct, setEditProduct] = useState({
     barcode: '',
@@ -77,7 +78,8 @@ export function useProductsManager({
       wholesale_price,
       stock_qty,
       reorder_limit,
-      unit
+      unit,
+      unit_kind
     } = newProduct
     if (!barcode || !name) {
       triggerCustomAlert('يرجى ملء الباركود والاسم!')
@@ -96,7 +98,8 @@ export function useProductsManager({
           wholesale_price: parseFloat(wholesale_price) || 0,
           stock_qty: parseFloat(stock_qty) || 0,
           reorder_limit: parseFloat(reorder_limit) || 0,
-          unit: unit || ''
+          unit: unit || '',
+          unit_kind: unit_kind || 'count'
         })
         triggerCustomAlert('تمت إضافة المنتج بنجاح!')
         setShowAddModal(false)
@@ -108,7 +111,8 @@ export function useProductsManager({
           wholesale_price: '',
           stock_qty: '',
           reorder_limit: '',
-          unit: ''
+          unit: '',
+          unit_kind: 'count'
         })
         if (fetchAdminData) await fetchAdminData()
       } catch (err) {
@@ -137,7 +141,8 @@ export function useProductsManager({
       stock_qty,
       stock_base,
       reorder_limit,
-      unit
+      unit,
+      unit_kind
     } = editProduct
     if (!name) {
       triggerCustomAlert('يرجى ملء الاسم!')
@@ -159,7 +164,8 @@ export function useProductsManager({
           // sales made meanwhile are kept (K-37).
           stock_base: stock_base === undefined || stock_base === null ? null : Number(stock_base),
           reorder_limit: parseFloat(reorder_limit) || 0,
-          unit: unit || ''
+          unit: unit || '',
+          unit_kind: unit_kind || 'count'
         })
         if (setToastMessage) {
           setToastMessage('تم تحديث بيانات المنتج بنجاح!')

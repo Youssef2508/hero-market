@@ -3,6 +3,7 @@
 // Returns use the legacy refund formulas, now inside one locked transaction each.
 const { badRequest, notFound, conflict } = require('../errors')
 const { postMovement } = require('../inventory/stock')
+const { toBaseQty } = require('../inventory/units')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -132,7 +133,7 @@ module.exports = function salesModule(app) {
       ctx.tx(async (db) => {
         const item = (
           await db.query(
-            'SELECT si.*, p.name FROM sale_items si LEFT JOIN products p ON si.product_barcode = p.barcode WHERE si.id = $1 FOR UPDATE OF si',
+            'SELECT si.*, p.name, p.unit_kind FROM sale_items si LEFT JOIN products p ON si.product_barcode = p.barcode WHERE si.id = $1 FOR UPDATE OF si',
             [saleItemId]
           )
         ).rows[0]
@@ -148,6 +149,10 @@ module.exports = function salesModule(app) {
             `الرجاء إدخال كمية مرتجع صحيحة (أكبر من 0 ولا تزيد عن المتبقي: ${maxReturnable}).`
           )
         }
+        // The quantity is in the line's unit (e.g. 0.25 carton = 6 packets); stock gets the base
+        // equivalent, which must suit the product (whole pieces, or kg/l with 3 decimals).
+        const factor = Number(item.unit_factor) || 1
+        const { baseQty } = toBaseQty(item.unit_kind || 'count', quantity, factor, item.name || '')
         const originalAmt =
           Number(sale.original_amount) || Number(sale.total_amount) + Number(sale.discount) || 1
         const currentDiscount = Number(sale.discount) || 0
@@ -159,7 +164,7 @@ module.exports = function salesModule(app) {
         // Returned goods re-enter at the current average cost (the average does not change).
         await postMovement(db, ctx, {
           barcode: item.product_barcode,
-          qty: quantity,
+          qty: baseQty,
           kind: 'return',
           refType: 'sale_item',
           refId: item.id
@@ -236,7 +241,7 @@ module.exports = function salesModule(app) {
           if (remaining > 0)
             await postMovement(db, ctx, {
               barcode: i.product_barcode,
-              qty: remaining,
+              qty: Math.round(remaining * (Number(i.unit_factor) || 1) * 1000) / 1000,
               kind: 'return',
               refType: 'sale_item',
               refId: i.id
