@@ -352,6 +352,26 @@
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
+/* Weight of a weighed cart line: tap to correct it before payment. */
+.line-weight-btn {
+  display: block;
+  margin: 3px auto 0;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+.line-weight-btn:hover {
+  background: var(--accent-soft-hover);
+}
+.line-weight-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 /* Unit of a cart line when the product has packaging (piece, box, carton…). */
 .line-unit-select {
   display: block;

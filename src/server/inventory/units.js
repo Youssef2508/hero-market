@@ -107,7 +107,8 @@ async function loadUnit(db, product, unitId, { purpose = 'sell' } = {}) {
 
 // ── Scale labels ─────────────────────────────────────────────
 const DEFAULT_SCALE = {
-  enabled: true,
+  // Off by default: the store weighs on an ordinary scale and types the weight (owner, 2026-10-15).
+  enabled: false,
   length: 13,
   codeStart: 2,
   codeLength: 5,

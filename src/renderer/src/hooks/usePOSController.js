@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { normalizeDigits, playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
+import { receiptQty } from '../lib/weight'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
@@ -524,7 +525,8 @@ export function usePOSController({
                 // Packaging lines name their unit on the receipt (e.g. "كيك (كرتونة)").
                 name: item.unitId ? `${item.name || 'صنف'} (${item.unitName})` : item.name || 'صنف',
                 barcode: item.barcode,
-                qty: item.qty,
+                // Weighed lines print their weight with the unit (e.g. 0.250 كجم).
+                qty: receiptQty(item.qty, item),
                 price: item.price,
                 total: item.total
               })),
@@ -616,12 +618,17 @@ export function usePOSController({
         const isItemReturned = retQty >= qty
         const isItemPartReturned = retQty > 0 && !isItemReturned
         let name = item.product_name || item.name || `باركود ${item.product_barcode || ''}`
+        if (item.unit_id) name = `${name} (${item.unit_name})`
         if (isItemReturned) name = `${name} (مرتجع)`
         else if (isItemPartReturned) name = `${name} (مرتجع ${retQty})`
         return {
           name,
           barcode: item.product_barcode,
-          qty: isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty,
+          qty: receiptQty(isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty, {
+            kind: item.unit_kind,
+            unitId: item.unit_id,
+            unitName: item.unit_name
+          }),
           price: Number(item.unit_price) || 0,
           total: Number(item.total_price) || 0
         }

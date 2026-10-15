@@ -33,10 +33,14 @@ export default function ScaleLabelsSection({ value, onChange }) {
       <div className="card-header">
         <h2 className="card-title">
           <Scale size={18} aria-hidden="true" />
-          ملصقات الميزان
+          ملصقات ميزان الباركود (اختياري)
         </h2>
       </div>
-      <div className="card-body">
+      <details className="card-body">
+        <summary>
+          غير مطلوب عند الوزن على ميزان عادي وإدخال الوزن يدوياً (الوضع الافتراضي). فعّله فقط إذا
+          اشتريت ميزاناً يطبع ملصقات باركود.
+        </summary>
         <label className="check-row">
           <input
             type="checkbox"
@@ -129,7 +133,7 @@ export default function ScaleLabelsSection({ value, onChange }) {
             ))}
           </div>
         </details>
-      </div>
+      </details>
     </section>
   )
 }

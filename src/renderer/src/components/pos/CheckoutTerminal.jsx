@@ -126,6 +126,7 @@ function CheckoutTerminal({
   changeLineUnit,
   pendingWeight,
   confirmWeight,
+  editWeight,
   triggerDeleteItem,
   cartSubtotal,
   discount,
@@ -530,9 +531,15 @@ function CheckoutTerminal({
                           item.unit && <span className="line-unit">{item.unit}</span>
                         )}
                         {item.kind === 'weight' && !item.unitId && (
-                          <span className="line-unit num">
+                          <button
+                            type="button"
+                            className="line-weight-btn num"
+                            onClick={() => editWeight(item.key)}
+                            aria-label={`تعديل وزن ${item.name}`}
+                            title="تعديل الوزن"
+                          >
                             {Math.round(item.qty * 1000).toLocaleString('en-US')} جم
-                          </span>
+                          </button>
                         )}
                       </td>
                       <td className="col-total money">{money(item.total)}</td>
