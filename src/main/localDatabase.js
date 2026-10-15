@@ -13,20 +13,41 @@ import net from 'net'
 import crypto from 'crypto'
 import pg from 'pg'
 import { isToolSafePath, asciiMachineDir, runnablePgsqlRoot, pgsqlStamp } from './pgPaths'
+import { storeDir } from './userDataPath'
 
 const DB_NAME = 'heromarket'
 const DB_USER = 'heromarket'
 
 /**
- * Folder for the cluster, its log and the temporary password file. The PostgreSQL tools take their
- * arguments in the Windows ANSI code page, so a profile path with other characters (e.g. an Arabic
- * user name) cannot be used: such machines get an ASCII-only folder under ProgramData instead.
+ * Folder for the cluster, its log and the temporary password file: the shared store folder
+ * (%ProgramData%\HeroMarket for an installed app – always ASCII). The PostgreSQL tools take their
+ * arguments in the Windows ANSI code page, so a development or test folder with other characters
+ * (e.g. an Arabic user name) gets an ASCII-only folder under ProgramData instead.
  */
 function chooseBaseDir() {
-  const userData = app.getPath('userData')
-  if (isToolSafePath(userData)) return userData
-  const id = crypto.createHash('sha256').update(userData).digest('hex').slice(0, 10)
+  const base = storeDir()
+  if (isToolSafePath(base)) return base
+  const id = crypto.createHash('sha256').update(base).digest('hex').slice(0, 10)
   return asciiMachineDir(`store-${id}`)
+}
+
+// Data folders whose server this app session started (and may stop on quit).
+const startedHere = new Set()
+
+/** Can the store's server be reached with its credentials (possibly started by another session)? */
+async function reachable(cfg) {
+  const client = new pg.Client({
+    connectionString: localUrl(cfg, 'postgres'),
+    connectionTimeoutMillis: 3000
+  })
+  client.on('error', () => {})
+  try {
+    await client.connect()
+    await client.end()
+    return true
+  } catch {
+    return false
+  }
 }
 
 const paths = (base) => ({
@@ -172,7 +193,10 @@ export async function ensureLocalDatabase(local, persist) {
     persist(cfg)
   }
 
-  if (!(await isRunning(p.data))) {
+  // Another Windows session of this PC may already run the store's server (per-machine install):
+  // use it as it is rather than starting a second one on the same data folder.
+  const sharedRunning = hasCluster && (await reachable(cfg))
+  if (!sharedRunning && !(await isRunning(p.data))) {
     if (!(await portFree(cfg.port))) {
       cfg = { ...cfg, port: await choosePort(cfg.port + 1) }
       persist(cfg)
@@ -199,6 +223,7 @@ export async function ensureLocalDatabase(local, persist) {
       }
       throw new Error(`PostgreSQL did not start: ${started.output.slice(-400)} ${tail}`)
     }
+    startedHere.add(p.data)
   }
   const client = new pg.Client({ connectionString: localUrl(cfg, 'postgres') })
   await client.connect()
@@ -222,10 +247,44 @@ export function localDataDir(local) {
   return paths(local.dir || chooseBaseDir()).data
 }
 
-/** Stop the cluster described by `local` (the value ensureLocalDatabase returned). */
-export async function stopLocalDatabase(local) {
+/**
+ * Stop the cluster described by `local` (the value ensureLocalDatabase returned) when the app quits:
+ * only if this session started it and no other HeroMarket session is still connected (another
+ * Windows user of the same PC). `force` stops it regardless (pre-upgrade snapshot).
+ */
+export async function stopLocalDatabase(local, { force = false } = {}) {
   if (!local) return
   const { data } = paths(local.dir || chooseBaseDir())
   if (!fs.existsSync(join(data, 'PG_VERSION'))) return
+  if (!force) {
+    if (!startedHere.has(data)) return
+    const others = await otherSessions(local)
+    if (others > 0) {
+      console.log(`[db] left running: ${others} connection(s) from another HeroMarket session`)
+      return
+    }
+  }
   if (await isRunning(data)) await run('pg_ctl', ['stop', '-D', data, '-m', 'fast', '-w'])
+  startedHere.delete(data)
+}
+
+/** Connections of other HeroMarket processes (this session's pool is closed before stopping). */
+async function otherSessions(local) {
+  const client = new pg.Client({
+    connectionString: localUrl(local, 'postgres'),
+    connectionTimeoutMillis: 3000
+  })
+  client.on('error', () => {})
+  try {
+    await client.connect()
+    const { rows } = await client.query(
+      `SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE application_name = 'heromarket-service' AND pid <> pg_backend_pid()`
+    )
+    return rows[0].n
+  } catch {
+    return 0
+  } finally {
+    await client.end().catch(() => {})
+  }
 }

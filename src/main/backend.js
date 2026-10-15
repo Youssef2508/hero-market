@@ -16,12 +16,13 @@ import crypto from 'crypto'
 import os from 'os'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
 import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
-import { legacyDatabaseFile } from './userDataPath'
+import { legacyDatabaseFile, storeDir, ensureStoreDir, perUserConfigFile } from './userDataPath'
+import { copyAndVerify } from './upgradeSnapshot'
 import { verifyPinnedChain } from './tlsPin'
 
 const nodeRequire = createRequire(import.meta.url)
 const isDev = !app.isPackaged
-const configFile = () => join(app.getPath('userData'), 'heromarket.json')
+const configFile = () => join(storeDir(), 'heromarket.json')
 
 let backend = null // { mode, call(op, body, headers) }
 let token = null
@@ -223,7 +224,7 @@ async function importLegacyIfPresent(databaseUrl) {
     if (imported) await rebrandStoreName(pool)
     if (imported || done.rows[0].users > 0) return null
     stage = 'importing'
-    const backups = join(app.getPath('userData'), 'backups')
+    const backups = join(storeDir(), 'backups')
     const report = await importLegacy(pool, legacy, {
       backupDir: join(backups, 'legacy-sqlite'),
       logger: quiet
@@ -267,10 +268,10 @@ async function snapshotBeforeUpgrade(local, persist) {
   }
   if (!needsSnapshot(applied, all)) return null
   stage = 'backup'
-  const dir = join(app.getPath('userData'), 'backups', 'pre-upgrade')
+  const dir = join(storeDir(), 'backups', 'pre-upgrade')
   let target = null
   let failure = null
-  await stopLocalDatabase(local)
+  await stopLocalDatabase(local, { force: true })
   try {
     target = snapshotDataDir(
       localDataDir(local),
@@ -291,8 +292,46 @@ async function snapshotBeforeUpgrade(local, persist) {
   return target
 }
 
+/**
+ * 1.4.0 moved the store's data from one Windows user's profile to the shared store folder. A store
+ * that was set up per user before is adopted once: its database folder is copied and verified file
+ * by file (upgradeSnapshot.js), the configuration is written to the shared folder, and the old
+ * files are kept untouched as a fallback (heromarket.json is renamed so it is not adopted twice).
+ */
+function adoptPerUserStore() {
+  const old = perUserConfigFile()
+  if (!old || fs.existsSync(configFile()) || !fs.existsSync(old)) return null
+  const cfg = JSON.parse(fs.readFileSync(old, 'utf8'))
+  stage = 'moving'
+  if (cfg.local && cfg.local.dir) {
+    const from = join(cfg.local.dir, 'pgdata')
+    const to = join(storeDir(), 'pgdata')
+    if (fs.existsSync(join(from, 'PG_VERSION'))) {
+      if (fs.existsSync(to) && fs.readdirSync(to).length)
+        throw new Error(
+          `يوجد بالفعل مجلد قاعدة بيانات في ${to}. لم يتم نقل بيانات المستخدم الحالي؛ راجع الدعم الفني.`
+        )
+      copyAndVerify(from, to)
+    }
+    cfg.local = { ...cfg.local, dir: storeDir() }
+  }
+  writeConfig(cfg)
+  fs.renameSync(old, `${old}.moved-to-${storeDir().replace(/[\\/:]/g, '_')}`)
+  console.log('[backend] per-user store adopted into', storeDir())
+  return cfg
+}
+
 async function doStart() {
   lastError = null
+  try {
+    ensureStoreDir()
+    adoptPerUserStore()
+  } catch (e) {
+    backend = null
+    lastError = e.message
+    stage = null
+    return
+  }
   let cfg = readConfig()
   if (
     !cfg ||
@@ -379,6 +418,7 @@ export async function stopBackend() {
   if (starting) await starting.catch(() => {})
   if (backend) await backend.close().catch(() => {})
   backend = null
+  // Stopped only if this session started it and no other session is still using it.
   if (localStarted) await stopLocalDatabase(localStarted).catch(() => {})
   localStarted = null
 }

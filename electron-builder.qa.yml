@@ -6,10 +6,11 @@ extends: ./electron-builder.yml
 appId: com.heromarket.pos.qa
 productName: HeroMarket POS QA
 extraMetadata:
-  # Own package name → own program folder (%LOCALAPPDATA%Programsheromarket-pos-qa).
+  # Own package name → own program folder (C:\Program Files\HeroMarket POS QA).
   name: heromarket-pos-qa
   heromarket:
     dataDir: HeroMarket-QA
+    storeDir: HeroMarket-QA
     legacyDir: HeroMarket-QA-legacy
 nsis:
   artifactName: HeroMarket-QA-Setup-${version}.${ext}

@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
+import { execFileSync } from 'child_process'
 
 // Imported first by src/main/index.js so it runs before any module reads app.getPath('userData').
 //
@@ -30,6 +31,52 @@ app.setPath(
       app.isPackaged ? folders.dataDir || 'HeroMarket' : 'HeroMarket-dev'
     )
 )
+
+/**
+ * The store's data: database cluster, heromarket.json (database password, server secret), backups
+ * and logs. Version 1.4.0 installs per machine, so every Windows user of the cashier PC opens the
+ * same store: the data lives in %ProgramData%\HeroMarket (always an ASCII path), not in one user's
+ * profile. The window's own preferences (theme, last user name) stay per Windows user in userData.
+ * Development and HEROMARKET_USER_DATA sessions keep everything in their own folder.
+ */
+export function storeDir() {
+  if (process.env.HEROMARKET_USER_DATA || !app.isPackaged) return app.getPath('userData')
+  const programData = process.env.ProgramData || 'C:\\ProgramData'
+  return join(programData, folders.storeDir || 'HeroMarket')
+}
+
+/**
+ * Create the store folder once and let every local user of this PC work in it. The first account
+ * to start HeroMarket owns the new folder and grants the Users group (S-1-5-32-545) modify rights,
+ * inherited by the database files created inside. Without this, a second Windows account could
+ * read but not write the database. Failure to set the rights is reported, not fatal: the account
+ * that created the folder can always work in it.
+ */
+export function ensureStoreDir() {
+  const dir = storeDir()
+  fs.mkdirSync(dir, { recursive: true })
+  if (process.platform !== 'win32' || !app.isPackaged || process.env.HEROMARKET_USER_DATA)
+    return dir
+  const marker = join(dir, '.shared-v1')
+  if (!fs.existsSync(marker)) {
+    try {
+      execFileSync('icacls', [dir, '/grant', '*S-1-5-32-545:(OI)(CI)M', '/T', '/C', '/Q'], {
+        windowsHide: true,
+        stdio: 'ignore'
+      })
+      fs.writeFileSync(marker, new Date().toISOString())
+    } catch (e) {
+      console.error('[store] could not share the store folder with all users:', e.message)
+    }
+  }
+  return dir
+}
+
+/** heromarket.json of a pre-1.4.0 per-user installation (data inside this user's profile). */
+export function perUserConfigFile() {
+  if (!app.isPackaged || process.env.HEROMARKET_USER_DATA) return null
+  return join(app.getPath('userData'), 'heromarket.json')
+}
 
 // Versions before the PostgreSQL release (≤ 1.3) stored one SQLite file in this folder, named after
 // the open-source project the code base started from. It is only read, once, to import the store's

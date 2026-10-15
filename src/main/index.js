@@ -1,4 +1,4 @@
-import './userDataPath'
+import { ensureStoreDir } from './userDataPath'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -19,7 +19,7 @@ import { registerDataIpc } from './dataIpc'
 
 // Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
 if (app.isPackaged) {
-  const logPath = join(app.getPath('userData'), 'app.log')
+  const logPath = join(ensureStoreDir(), 'app.log')
 
   if (fs.existsSync(logPath)) {
     try {

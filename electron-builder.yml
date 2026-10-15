@@ -44,15 +44,16 @@ win:
         - '!bin/wx*.dll'
         - '!bin/testplug.dll'
         - '!lib/*.lib'
-# Installer (.docs/INSTALLATION_GUIDE.md): one click, no admin rights, installs for the current
-# Windows user under %LOCALAPPDATA%ProgramsHeroMarket POS, creates Desktop and Start Menu
-# shortcuts and starts the app. Upgrading = running a newer installer: the program files are
-# replaced, the store's data in %APPDATA%HeroMarket is never touched by the installer (the app
-# itself takes a verified snapshot before migrating, src/main/upgradeSnapshot.js). Uninstalling
-# removes the program and keeps the data.
+# Installer (.docs/INSTALLATION_GUIDE.md), version 1.4.0: per machine. One click after the Windows
+# administrator prompt; installs under C:\Program Files\HeroMarket POS for every Windows user of the
+# PC, creates Desktop and Start Menu shortcuts for all users and starts the app. The store's data
+# lives in %ProgramData%\HeroMarket (shared by all users, src/main/userDataPath.js) and is never
+# touched by the installer: upgrading = running a newer installer (the app itself takes a verified
+# snapshot before migrating, src/main/upgradeSnapshot.js); uninstalling removes the program and
+# keeps the data.
 nsis:
   oneClick: true
-  perMachine: false
+  perMachine: true
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   artifactName: HeroMarket-Setup-${version}.${ext}

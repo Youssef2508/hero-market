@@ -1,9 +1,10 @@
 // IPC surface between the renderer and the HeroMarket service. The renderer can only name an
 // operation and pass data; there is no SQL channel anymore.
-import { app, ipcMain, dialog } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import { describeRoot } from './tlsPin'
+import { storeDir } from './userDataPath'
 
 const OP_RE = /^[a-zA-Z]+\.[a-zA-Z]+$/
 
@@ -99,7 +100,7 @@ export function registerDataIpc({
     // Safety copy of the current data before anything is replaced (G-14).
     const safety = await callOperation('backup.export', {})
     if (safety.error) return { success: false, error: safety.error.message }
-    const dir = join(app.getPath('userData'), 'backups')
+    const dir = join(storeDir(), 'backups')
     fs.mkdirSync(dir, { recursive: true })
     const safetyPath = join(
       dir,

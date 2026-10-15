@@ -35,6 +35,41 @@ export function needsSnapshot(applied, all) {
 }
 
 /**
+ * Copy a PostgreSQL data folder (server stopped) to `to` and verify every file by SHA-256, empty
+ * directories included (pg_tblspc, pg_notify… matter to PostgreSQL). The lock files of a running
+ * server are not copied. Returns { files: {rel: sha256}, directories, bytes }. Throws on any
+ * difference. Used for pre-upgrade snapshots and for moving a store to the shared folder (1.4.0).
+ */
+export function copyAndVerify(from, to) {
+  if (!fs.existsSync(path.join(from, 'PG_VERSION')))
+    throw new Error(`No PostgreSQL data folder at ${from}`)
+  fs.mkdirSync(to, { recursive: true })
+  const files = walk(from).filter((f) => !/^postmaster\.(pid|opts)$/.test(path.basename(f)))
+  const out = { files: {}, directories: [], bytes: 0 }
+  for (const rel of files) {
+    const src = path.join(from, rel)
+    const dst = path.join(to, rel)
+    fs.mkdirSync(path.dirname(dst), { recursive: true })
+    fs.copyFileSync(src, dst)
+    const a = sha256(src)
+    const b = sha256(dst)
+    if (a !== b) throw new Error(`Copy verification failed for ${rel}`)
+    out.files[rel] = a
+    out.bytes += fs.statSync(dst).size
+  }
+  const walkDirs = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true }))
+      if (e.isDirectory()) {
+        out.directories.push(path.relative(from, path.join(d, e.name)))
+        walkDirs(path.join(d, e.name))
+      }
+  }
+  walkDirs(from)
+  for (const d of out.directories) fs.mkdirSync(path.join(to, d), { recursive: true })
+  return out
+}
+
+/**
  * Copy `dataDir` (PostgreSQL stopped) into `<backupsDir>/<stamp>-<label>/pgdata`, verify every file
  * by SHA-256 and write manifest.json. Returns the snapshot folder. Throws on any difference.
  */
@@ -43,34 +78,16 @@ export function snapshotDataDir(dataDir, backupsDir, label, now = new Date()) {
     throw new Error(`No PostgreSQL data folder at ${dataDir}`)
   const stamp = now.toISOString().replace(/[:.]/g, '-')
   const target = path.join(backupsDir, `${stamp}-${label.replace(/[^\w.-]/g, '_')}`)
-  const copy = path.join(target, 'pgdata')
-  fs.mkdirSync(copy, { recursive: true })
-  const files = walk(dataDir).filter((f) => !/^postmaster\.(pid|opts)$/.test(path.basename(f)))
-  const manifest = { createdAt: now.toISOString(), label, source: dataDir, files: {}, bytes: 0 }
-  for (const rel of files) {
-    const src = path.join(dataDir, rel)
-    const dst = path.join(copy, rel)
-    fs.mkdirSync(path.dirname(dst), { recursive: true })
-    fs.copyFileSync(src, dst)
-    const a = sha256(src)
-    const b = sha256(dst)
-    if (a !== b) throw new Error(`Snapshot verification failed for ${rel}`)
-    manifest.files[rel] = a
-    manifest.bytes += fs.statSync(dst).size
+  const copied = copyAndVerify(dataDir, path.join(target, 'pgdata'))
+  const manifest = {
+    createdAt: now.toISOString(),
+    label,
+    source: dataDir,
+    files: copied.files,
+    bytes: copied.bytes,
+    directories: copied.directories,
+    fileCount: Object.keys(copied.files).length
   }
-  // Empty directories matter to PostgreSQL (pg_tblspc, pg_notify…): recreate them too.
-  const dirs = []
-  const walkDirs = (d) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true }))
-      if (e.isDirectory()) {
-        dirs.push(path.relative(dataDir, path.join(d, e.name)))
-        walkDirs(path.join(d, e.name))
-      }
-  }
-  walkDirs(dataDir)
-  for (const d of dirs) fs.mkdirSync(path.join(copy, d), { recursive: true })
-  manifest.directories = dirs
-  manifest.fileCount = files.length
   fs.writeFileSync(path.join(target, 'manifest.json'), JSON.stringify(manifest, null, 2))
   return target
 }
