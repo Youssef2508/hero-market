@@ -241,7 +241,7 @@ test('credit sale needs a customer; a new customer is created in the same transa
       shiftId: shift.id,
       paymentType: 'آجل',
       items: [{ barcode: 'A1', qty: 20 }],
-      client: { name: 'عميل جديد', phone: '0100', address: 'شارع' }
+      client: { name: 'عميل جديد', phone: '01000000100', address: 'شارع' }
     },
     cashier
   )

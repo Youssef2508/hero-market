@@ -1201,3 +1201,28 @@ input[data-computed='true'] {
   white-space: normal;
   line-height: 1.35;
 }
+
+/* Customer phone numbers (at most two): primary, optional second with a remove button. */
+.phone-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.phone-fields legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.phone-row .form-input {
+  flex: 1;
+}
+.phone-add {
+  align-self: flex-start;
+}

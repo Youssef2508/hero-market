@@ -1,4 +1,5 @@
 import { UserPlus } from 'lucide-react'
+import PhoneFields from './PhoneFields'
 
 const AddClientModal = ({
   showAddClientModal,
@@ -34,18 +35,7 @@ const AddClientModal = ({
               placeholder="مثال: محمد أحمد علي"
             />
           </div>
-          <div className="form-group">
-            <label>رقم الهاتف</label>
-            <input
-              type="text"
-              className="form-input"
-              value={newClientForm.phone}
-              onChange={(e) =>
-                setNewClientForm((prev) => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))
-              }
-              placeholder="مثال: 01012345678"
-            />
-          </div>
+          <PhoneFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
           <div className="form-group">
             <label>عنوان التوصيل</label>
             <input

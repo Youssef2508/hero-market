@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
+import { formPhones, phoneFormError } from '../lib/phoneForm'
 import { parseLocaleDateString } from '../lib/utils'
 
 export function useClientsManager({
@@ -16,8 +17,9 @@ export function useClientsManager({
   const [repaymentAmount, setRepaymentAmount] = useState('')
   const [showAddClientModal, setShowAddClientModal] = useState(false)
   const [showEditClientModal, setShowEditClientModal] = useState(false)
-  const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', address: '' })
-  const [editClientForm, setEditClientForm] = useState({ id: '', name: '', phone: '', address: '' })
+  const EMPTY_CLIENT = { name: '', phone: '', phone2: '', hasPhone2: false, address: '' }
+  const [newClientForm, setNewClientForm] = useState(EMPTY_CLIENT)
+  const [editClientForm, setEditClientForm] = useState({ id: '', ...EMPTY_CLIENT })
   const [bestCustomerOfMonth, setBestCustomerOfMonth] = useState(null)
   const [highestPointsCustomer, setHighestPointsCustomer] = useState(null)
   const [monthlyClientsReport, setMonthlyClientsReport] = useState([])
@@ -142,15 +144,24 @@ export function useClientsManager({
 
   const handleAddClient = async (e) => {
     if (e) e.preventDefault()
-    const { name, phone, address } = newClientForm
+    const { name, address } = newClientForm
     if (!name) {
       triggerCustomAlert('يرجى إدخال اسم العميل!')
       return
     }
+    const phoneError = phoneFormError(newClientForm)
+    if (phoneError) {
+      triggerCustomAlert(phoneError)
+      return
+    }
     try {
-      await api('clients.create', { name, phone: phone || '', address: address || '' })
+      await api('clients.create', {
+        name,
+        phones: formPhones(newClientForm),
+        address: address || ''
+      })
       triggerCustomAlert('تمت إضافة العميل بنجاح!')
-      setNewClientForm({ name: '', phone: '', address: '' })
+      setNewClientForm(EMPTY_CLIENT)
       setShowAddClientModal(false)
       await fetchClientsList()
       await fetchClientStats()
@@ -161,16 +172,21 @@ export function useClientsManager({
 
   const handleEditClient = async (e) => {
     if (e) e.preventDefault()
-    const { id, name, phone, address } = editClientForm
+    const { id, name, address } = editClientForm
     if (!name) {
       triggerCustomAlert('يرجى إدخال اسم العميل!')
+      return
+    }
+    const phoneError = phoneFormError(editClientForm)
+    if (phoneError) {
+      triggerCustomAlert(phoneError)
       return
     }
     try {
       const updated = await api('clients.update', {
         id,
         name,
-        phone: phone || '',
+        phones: formPhones(editClientForm),
         address: address || ''
       })
       triggerCustomAlert('تم تحديث بيانات العميل!')

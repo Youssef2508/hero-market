@@ -364,3 +364,20 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Consequences**:
   - Migration 0006 marks old invoices `pricing_version = 1`, and their return formula is unchanged except for K-40.
   - Old invoices keep their single invoice-level discount, with zero line shares, so their report figures are unchanged.
+
+## D-045 Customers have at most two phone numbers (owner, 2026-10-15)
+
+- **Decision**: a second nullable column `clients.phone2` (migration 0007), not a separate phone table.
+  - The limit is part of the schema itself.
+  - Searches, receipts, backups and synchronisation keep one row per customer.
+- **Database rules**:
+  - a second number needs a first;
+  - the two numbers must differ;
+  - a trigger keeps every number unique across both columns of all customers.
+- **Validation**: one shared rule (`src/shared/phone.mjs`) used by the service and the screens.
+  - Arabic-Indic digits, spaces, dashes and brackets are accepted and cleaned.
+  - "+" or "00" mark an international number.
+  - 7–15 digits; an Egyptian mobile written locally (01…) must be exactly 11 digits.
+- **API**: `clients.create` and `clients.update` take `phones` (at most 2, schema-enforced). The old single `phone` field still works.
+- **Existing records** are kept as they are. Numbers are cleaned when a customer is next saved. Duplicate checks compare digits, so "0100 123 4567" equals "01001234567" (this also fixes the earlier mismatch, where the check compared digits but stored the raw text).
+- **Till**: a number typed at checkout is validated the same way and matches a customer by either number.

@@ -2,8 +2,31 @@
 // Customers (useClientsManager): directory, monthly report, profile, add/edit/delete, repayments.
 const { badRequest, conflict, notFound } = require('../errors')
 
+const path = require('path')
+const { pathToFileURL } = require('url')
+
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
-const cleanPhone = (p) => (p ? String(p).replace(/\D/g, '').trim() : '')
+
+// Shared with the screens (src/shared/phone.mjs): same validation everywhere.
+let phoneLib = null
+async function phones() {
+  if (!phoneLib)
+    phoneLib = await import(
+      pathToFileURL(path.join(__dirname, '..', '..', 'shared', 'phone.mjs')).href
+    )
+  return phoneLib
+}
+
+/** Validated numbers of a customer body: `phones` [primary, second?] or legacy `phone`/`phone2`. */
+async function bodyPhones(c) {
+  const list = Array.isArray(c.phones) ? c.phones : [c.phone, c.phone2]
+  const { phones: out, error } = (await phones()).normalizePhones(list)
+  if (error) throw badRequest(error)
+  return { phone: out[0] || null, phone2: out[1] || null }
+}
+
+// Stored numbers compared by their digits (and +), so "0100 123 4567" equals "01001234567".
+const DIGITS = (col) => `regexp_replace(COALESCE(${col}, ''), '[^0-9+]', '', 'g')`
 
 const clientSchema = {
   type: 'object',
@@ -12,16 +35,22 @@ const clientSchema = {
     id: { type: 'integer' },
     name: { type: 'string', minLength: 1, maxLength: 120 },
     phone: { type: ['string', 'null'], maxLength: 40 },
+    phone2: { type: ['string', 'null'], maxLength: 40 },
+    // Preferred form: primary first; at most two numbers (also enforced by the database).
+    phones: { type: 'array', maxItems: 2, items: { type: ['string', 'null'], maxLength: 40 } },
     address: { type: ['string', 'null'], maxLength: 300 }
   }
 }
 
-async function assertPhoneFree(db, phone, exceptId = null) {
-  const p = cleanPhone(phone)
-  if (!p) return
+async function assertPhonesFree(db, list, exceptId = null) {
+  const wanted = list.filter(Boolean)
+  if (!wanted.length) return
   const r = await db.query(
-    'SELECT id FROM clients WHERE phone = $1 AND ($2::int IS NULL OR id <> $2) LIMIT 1',
-    [p, exceptId]
+    `SELECT id FROM clients
+      WHERE ($2::int IS NULL OR id <> $2)
+        AND (${DIGITS('phone')} = ANY($1::text[]) OR ${DIGITS('phone2')} = ANY($1::text[]))
+      LIMIT 1`,
+    [wanted, exceptId]
   )
   if (r.rows.length) throw conflict('رقم الهاتف هذا مسجل لعميل آخر بالفعل!')
 }
@@ -35,7 +64,7 @@ module.exports = function customersModule(app) {
       if (!search) return (await ctx.pool.query('SELECT * FROM clients ORDER BY name ASC, id')).rows
       return (
         await ctx.pool.query(
-          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY name ASC, id`,
+          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY name ASC, id`,
           [likeEscape(search)]
         )
       ).rows
@@ -55,10 +84,10 @@ module.exports = function customersModule(app) {
         ).rows[0] || null
       const report = (
         await ctx.pool.query(
-          `SELECT s.client_id AS id, COALESCE(c.name, 'عميل محذوف') AS name, COALESCE(c.phone, '') AS phone, SUM(s.total_amount) AS "totalSpent"
+          `SELECT s.client_id AS id, COALESCE(c.name, 'عميل محذوف') AS name, COALESCE(c.phone, '') AS phone, c.phone2, SUM(s.total_amount) AS "totalSpent"
            FROM sales s LEFT JOIN clients c ON c.id = s.client_id
            WHERE s.client_id IS NOT NULL AND date_trunc('month', s.timestamp) = date_trunc('month', LOCALTIMESTAMP)
-           GROUP BY s.client_id, c.name, c.phone
+           GROUP BY s.client_id, c.name, c.phone, c.phone2
            ORDER BY "totalSpent" DESC, s.client_id`
         )
       ).rows
@@ -115,12 +144,12 @@ module.exports = function customersModule(app) {
     schema: clientSchema,
     handler: async (ctx, c) =>
       ctx.tx(async (db) => {
-        await assertPhoneFree(db, c.phone)
         // K-26: an empty phone is stored as NULL (the unique index treats '' as a value).
-        const phone = c.phone && c.phone.trim() ? c.phone.trim() : null
+        const { phone, phone2 } = await bodyPhones(c)
+        await assertPhonesFree(db, [phone, phone2])
         const r = await db.query(
-          `INSERT INTO clients (name, phone, address, debt_balance, points, created_at) VALUES ($1, $2, $3, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-          [c.name, phone, c.address || '']
+          `INSERT INTO clients (name, phone, phone2, address, debt_balance, points, created_at) VALUES ($1, $2, $3, $4, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
+          [c.name, phone, phone2, c.address || '']
         )
         await ctx.audit(db, 'client_create', `إضافة العميل "${c.name}"`)
         return r.rows[0]
@@ -133,11 +162,11 @@ module.exports = function customersModule(app) {
     schema: { ...clientSchema, required: ['id', 'name'] },
     handler: async (ctx, c) =>
       ctx.tx(async (db) => {
-        await assertPhoneFree(db, c.phone, c.id)
-        const phone = c.phone && c.phone.trim() ? c.phone.trim() : null
+        const { phone, phone2 } = await bodyPhones(c)
+        await assertPhonesFree(db, [phone, phone2], c.id)
         const r = await db.query(
-          'UPDATE clients SET name = $2, phone = $3, address = $4 WHERE id = $1 RETURNING *',
-          [c.id, c.name, phone, c.address || '']
+          'UPDATE clients SET name = $2, phone = $3, phone2 = $4, address = $5 WHERE id = $1 RETURNING *',
+          [c.id, c.name, phone, phone2, c.address || '']
         )
         if (!r.rowCount) throw notFound('العميل غير موجود.')
         await ctx.audit(db, 'client_update', `تعديل بيانات العميل "${c.name}"`)
