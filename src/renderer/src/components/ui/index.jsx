@@ -2,6 +2,7 @@
 // styles/screens.css; these components only standardise markup.
 import { Moon, Sun, Inbox } from 'lucide-react'
 import { useTheme } from '../../theme/ThemeProvider'
+import { formatStamp } from '../../lib/time'
 
 export function PageHeader({ icon: Icon, title, description, actions, children }) {
   return (
@@ -180,11 +181,14 @@ export function Pagination({ page, total, perPage, shown, noun = 'سجل', onPre
   )
 }
 
-/** A stored local date-time ('YYYY-MM-DD HH:MM:SS'): kept left-to-right inside RTL text, date first. */
+/**
+ * A stored local date-time ('YYYY-MM-DD HH:MM:SS') shown with a 12-hour time ("2026-10-15 03:45 PM"),
+ * kept left-to-right inside RTL text; the exact stored value is in the tooltip.
+ */
 export function Timestamp({ value }) {
   return (
-    <bdi dir="ltr" className="ts">
-      {value || '—'}
+    <bdi dir="ltr" className="ts" title={value || undefined}>
+      {value ? formatStamp(value) : '—'}
     </bdi>
   )
 }

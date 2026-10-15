@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { Search, Printer, Undo2, ReceiptText, X } from 'lucide-react'
 import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import { splitStamp } from '../../lib/time'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 
 // "YYYY-MM-DD HH:MM:SS" → date on the first line, time underneath (keeps the column narrow).
 function Stamp({ value }) {
-  const [date, ...rest] = String(value || '').split(' ')
+  const { date, time } = splitStamp(value)
   return (
     <>
       <span className="nowrap">{date}</span>
-      {rest.length > 0 && <span className="cell-sub">{rest.join(' ')}</span>}
+      {time && <span className="cell-sub">{time}</span>}
     </>
   )
 }

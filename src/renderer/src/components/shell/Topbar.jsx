@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ClipboardCheck, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
 import { Kbd } from '../ui'
+import { formatClock } from '../../lib/time'
 
 const ROLE_LABELS = { admin: 'مدير النظام', manager: 'مشرف', cashier: 'كاشير' }
 
@@ -128,7 +129,7 @@ export default function Topbar({
           title={now.toLocaleDateString('ar-EG', { dateStyle: 'full' })}
         >
           <span>{now.toLocaleDateString('en-GB')}</span>
-          <strong>{now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</strong>
+          <strong>{formatClock(now)}</strong>
         </div>
 
         {!canShift ? null : hasShift ? (
