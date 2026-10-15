@@ -31,6 +31,15 @@ extraResources:
     to: "brand-logo.png"
 asarUnpack:
   - resources/**
+# Hardening of the packaged program (1.4.0 audit): HeroMarket-POS.exe cannot be used as a plain
+# Node.js runtime (ELECTRON_RUN_AS_NODE), ignores NODE_OPTIONS and the --inspect / remote debugging
+# switches, and only runs the app.asar it was built with (integrity checked at start).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 win:
   executableName: HeroMarket-POS
   icon: build/icon.ico
