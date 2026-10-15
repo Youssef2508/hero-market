@@ -23,9 +23,12 @@ import {
   PiggyBank,
   CornerDownLeft,
   Info,
-  Undo2
+  Undo2,
+  FolderTree
 } from 'lucide-react'
 import { Kbd } from '../ui'
+import CategoryBrowser from './CategoryBrowser'
+import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
 
@@ -123,6 +126,7 @@ function CheckoutTerminal({
   cart,
   triggerClearCart,
   onReturn,
+  addByBarcode,
   qtyInputRefs,
   handleQtyChangeAttempt,
   changeLineUnit,
@@ -141,9 +145,12 @@ function CheckoutTerminal({
   clientName,
   handleClientNameChange,
   clientPhone,
+  setClientPhone,
   handleClientPhoneChange,
   clientAddress,
   setClientAddress,
+  clientAddressId,
+  setClientAddressId,
   clientSearchResults,
   selectClient,
   paymentType,
@@ -174,6 +181,26 @@ function CheckoutTerminal({
   selectedClient,
   triggerCustomAlert
 }) {
+  // Saved numbers of the selected customer (pick one; "رقم آخر" types a new one for this order).
+  const savedPhones = selectedClient
+    ? [selectedClient.phone, selectedClient.phone2].filter(Boolean)
+    : []
+  // "Another number…" belongs to the customer it was chosen for: picking another customer resets it.
+  const [typingPhoneFor, setTypingPhoneFor] = useState(null)
+  const typingPhone = selectedClient != null && typingPhoneFor === selectedClient.id
+  // Category browsing panel (1.4.0). F6 opens/closes it; the cart stays as it is.
+  const [browsing, setBrowsing] = useState(false)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'F6' && !document.querySelector('.modal-overlay')) {
+        e.preventDefault()
+        setBrowsing((b) => !b)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const rowRefs = useRef({})
   const prevCartRef = useRef(cart)
   const resultsRef = useRef(null)
@@ -306,6 +333,13 @@ function CheckoutTerminal({
     <div className="pos">
       {/* ── Product entry + cart ── */}
       <section className="pos-main" aria-label="إدخال الأصناف والفاتورة">
+        <CategoryBrowser
+          open={browsing}
+          onClose={() => setBrowsing(false)}
+          onAdd={addByBarcode}
+          cart={cart}
+          cartTotal={cartTotal}
+        />
         <div className="pos-entry">
           <form onSubmit={handleBarcodeSubmit} className="scan-field" role="search">
             <ScanBarcode className="scan-icon" size={22} aria-hidden="true" />
@@ -421,6 +455,17 @@ function CheckoutTerminal({
                 onPrint={handlePrintShortagesToPaper}
                 onPdf={handlePrintShortages}
               />
+              <button
+                type="button"
+                className={`btn btn-sm ${browsing ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setBrowsing((b) => !b)}
+                aria-pressed={browsing}
+                title="تصفح الأصناف حسب التصنيف (F6)"
+              >
+                <FolderTree size={15} aria-hidden="true" />
+                تصفح
+                <Kbd>F6</Kbd>
+              </button>
               {onReturn && (
                 <button
                   type="button"
@@ -703,18 +748,62 @@ function CheckoutTerminal({
                   autoComplete="off"
                 />
               </div>
-              <div className="search-field">
-                <Phone size={15} aria-hidden="true" />
-                <input
-                  type="text"
-                  className="input num"
-                  placeholder="رقم الهاتف"
-                  value={clientPhone}
-                  onChange={(e) => handleClientPhoneChange(e.target.value)}
-                  aria-label="هاتف العميل"
-                  autoComplete="off"
-                />
-              </div>
+              {selectedClient && savedPhones.length > 0 && !typingPhone ? (
+                // A returning customer: pick one of the saved numbers instead of typing it again.
+                <div className="search-field">
+                  <Phone size={15} aria-hidden="true" />
+                  <select
+                    className="input num"
+                    aria-label="هاتف العميل"
+                    value={savedPhones.includes(clientPhone) ? clientPhone : savedPhones[0]}
+                    onChange={(e) => {
+                      if (e.target.value === 'other') {
+                        setTypingPhoneFor(selectedClient.id)
+                        setClientPhone('')
+                      } else setClientPhone(e.target.value)
+                    }}
+                  >
+                    {savedPhones.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                    <option value="other">رقم آخر…</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="search-field">
+                  <Phone size={15} aria-hidden="true" />
+                  <input
+                    type="text"
+                    className="input num"
+                    placeholder={selectedClient ? 'رقم جديد لهذا العميل' : 'رقم الهاتف'}
+                    value={clientPhone}
+                    onChange={(e) =>
+                      selectedClient
+                        ? setClientPhone(e.target.value)
+                        : handleClientPhoneChange(e.target.value)
+                    }
+                    aria-label="هاتف العميل"
+                    autoComplete="off"
+                  />
+                  {selectedClient && savedPhones.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setTypingPhoneFor(null)
+                        setClientPhone(savedPhones[0])
+                      }}
+                    >
+                      الأرقام المحفوظة
+                    </button>
+                  )}
+                </div>
+              )}
+              {selectedClient && typingPhone && savedPhones.length < 2 && clientPhone && (
+                <p className="field-hint">سيُحفظ الرقم الجديد للعميل ليظهر في الطلبات القادمة.</p>
+              )}
               {clientSearchResults.length > 0 && (
                 <div className="popover client-results" role="listbox">
                   {clientSearchResults.map((c) => (
@@ -752,19 +841,43 @@ function CheckoutTerminal({
               />
               طلب توصيل (دليفري)
             </label>
-            {isDelivery && (
+            {isDelivery && selectedClient && selectedClient.addresses?.length > 0 && (
               <div className="search-field">
                 <MapPin size={15} aria-hidden="true" />
-                <input
-                  type="text"
+                <select
                   className="input"
-                  placeholder="عنوان التوصيل بالتفصيل"
-                  value={clientAddress}
-                  onChange={(e) => setClientAddress(e.target.value)}
                   aria-label="عنوان التوصيل"
-                />
+                  value={clientAddressId ?? 'typed'}
+                  onChange={(e) =>
+                    setClientAddressId(e.target.value === 'typed' ? null : Number(e.target.value))
+                  }
+                >
+                  {selectedClient.addresses.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {(ADDRESS_LABELS[a.label] || '') + ': '}
+                      {a.address}
+                      {a.details ? ` – ${a.details}` : ''}
+                      {a.isDefault ? ' (افتراضي)' : ''}
+                    </option>
+                  ))}
+                  <option value="typed">عنوان آخر…</option>
+                </select>
               </div>
             )}
+            {isDelivery &&
+              !(selectedClient && selectedClient.addresses?.length > 0 && clientAddressId) && (
+                <div className="search-field">
+                  <MapPin size={15} aria-hidden="true" />
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="عنوان التوصيل بالتفصيل"
+                    value={clientAddress}
+                    onChange={(e) => setClientAddress(e.target.value)}
+                    aria-label="عنوان التوصيل"
+                  />
+                </div>
+              )}
 
             {selectedClient && (
               <div className="client-balance">

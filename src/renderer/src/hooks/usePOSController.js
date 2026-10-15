@@ -76,6 +76,8 @@ export function usePOSController({
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
 
   const [clientAddress, setClientAddress] = useState('')
+  // A saved address of the selected customer chosen for delivery (null = typed address).
+  const [clientAddressId, setClientAddressId] = useState(null)
   const [selectedClient, setSelectedClient] = useState(null)
   // Automatic discounts (administrator rules) priced by the service for the current cart.
   const [appliedDiscounts, setAppliedDiscounts] = useState([])
@@ -121,6 +123,7 @@ export function usePOSController({
     setClientPhone('')
     setIsDelivery(false)
     setClientAddress('')
+    setClientAddressId(null)
     setSelectedClient(null)
     setClientSearchResults([])
     setCurrentView('pos')
@@ -334,8 +337,10 @@ export function usePOSController({
     try {
       const resolved = await api('pos.resolve', { code: barcode })
       if (resolved) addToCart(resolved)
+      return !!resolved
     } catch (err) {
       triggerCustomAlert(err.message)
+      return false
     }
   }
 
@@ -487,7 +492,9 @@ export function usePOSController({
               id: selectedClient ? selectedClient.id : null,
               name: clientName,
               phone: clientPhone || '',
-              address: clientAddress || ''
+              // A saved address goes by id (checked on the server); otherwise the typed text.
+              address: isDelivery && selectedClient && clientAddressId ? '' : clientAddress || '',
+              addressId: isDelivery && selectedClient && clientAddressId ? clientAddressId : null
             }
           : null
       }
@@ -526,7 +533,11 @@ export function usePOSController({
               time: timePart,
               cashier: currentUser?.username,
               paymentType: paymentType || 'نقدي',
-              client: { name: clientName, phone: clientPhone, address: clientAddress },
+              client: {
+                name: clientName,
+                phone: clientPhone,
+                address: result.deliveryAddress || clientAddress
+              },
               items: cart.map((item) => ({
                 // Packaging lines name their unit on the receipt (e.g. "كيك (كرتونة)").
                 name: item.unitId ? `${item.name || 'صنف'} (${item.unitName})` : item.name || 'صنف',
@@ -566,6 +577,7 @@ export function usePOSController({
       setClientName('')
       setClientPhone('')
       setClientAddress('')
+      setClientAddressId(null)
       setIsDelivery(false)
       setSelectedClient(null)
       setClientSearchResults([])
@@ -676,6 +688,7 @@ export function usePOSController({
   const handleClientNameChange = async (val) => {
     setClientName(val)
     setSelectedClient(null)
+    setClientAddressId(null)
     if (!val.trim()) {
       setClientSearchResults([])
       return
@@ -691,6 +704,7 @@ export function usePOSController({
   const handleClientPhoneChange = async (val) => {
     setClientPhone(val)
     setSelectedClient(null)
+    setClientAddressId(null)
     if (!val.trim()) {
       setClientSearchResults([])
       return
@@ -707,7 +721,11 @@ export function usePOSController({
     setSelectedClient(client)
     setClientName(client.name)
     setClientPhone(client.phone || '')
-    setClientAddress(client.address || '')
+    // Saved addresses: the default is preselected for a delivery; the cashier may pick another.
+    const saved = Array.isArray(client.addresses) ? client.addresses : []
+    const def = saved.find((a) => a.isDefault) || saved[0]
+    setClientAddressId(def ? def.id : null)
+    setClientAddress(def ? '' : client.address || '')
     setClientSearchResults([])
   }
 
@@ -731,6 +749,8 @@ export function usePOSController({
     setSelectedSearchIndex,
     clientAddress,
     setClientAddress,
+    clientAddressId,
+    setClientAddressId,
     selectedClient,
     setSelectedClient,
     clientSearchResults,

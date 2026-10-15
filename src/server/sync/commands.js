@@ -21,9 +21,11 @@ const { round4, toBaseQty } = require('../inventory/units')
 const { helpers: finance } = require('../modules/finance')
 
 const OWNER = 'المالك (عن بعد)'
-const PRODUCT_FIELDS = ['name', 'unit', 'reorder_limit', 'category']
+const PRODUCT_FIELDS = ['name', 'unit', 'reorder_limit', 'category_id']
 const PRICE_FIELDS = ['retail_price', 'wholesale_price', 'cost_price']
 const NUMERIC = new Set(['reorder_limit', 'retail_price', 'wholesale_price', 'cost_price'])
+// Categories are compared by id (null = no category); the text column mirrors the name.
+const sameCategory = (a, b) => (a ?? null) === (b === undefined ? null : b)
 
 class Rejected extends Error {}
 
@@ -71,8 +73,20 @@ async function editFields(db, ctx, payload, allowed, label) {
   for (const n of names) {
     if (NUMERIC.has(n) && !(Number.isFinite(Number(fields[n])) && Number(fields[n]) >= 0))
       throw new Rejected(`قيمة غير صالحة للحقل ${n}.`)
-    if (same(n, p[n], base[n])) apply[n] = NUMERIC.has(n) ? Number(fields[n]) : fields[n]
+    const unchanged = n === 'category_id' ? sameCategory(p[n], base[n]) : same(n, p[n], base[n])
+    if (unchanged) apply[n] = NUMERIC.has(n) ? Number(fields[n]) : fields[n]
     else conflicts.push({ field: n, base: base[n], local: p[n], remote: fields[n] })
+  }
+  if ('category_id' in apply) {
+    // The same rule as at the shop: an existing, active category (or none).
+    const id = apply.category_id === null ? null : Number(apply.category_id)
+    if (id !== null) {
+      const c = (await db.query('SELECT name, is_active FROM categories WHERE id = $1', [id]))
+        .rows[0]
+      if (!c || !c.is_active) throw new Rejected('التصنيف غير موجود أو موقوف على جهاز المتجر.')
+      apply.category = c.name
+    } else apply.category = ''
+    apply.category_id = id
   }
   const applied = Object.keys(apply)
   if (!applied.length) return { status: 'rejected', detail: { reason: 'conflict', conflicts } }

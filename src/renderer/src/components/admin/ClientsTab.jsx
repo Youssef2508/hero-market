@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { addressRows } from '../../lib/addressForm'
+import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import {
   Award,
   TrendingUp,
@@ -141,7 +143,13 @@ export default function ClientsTab({
               type="button"
               className="btn btn-primary btn-sm"
               onClick={() => {
-                setNewClientForm({ name: '', phone: '', phone2: '', hasPhone2: false, address: '' })
+                setNewClientForm({
+                  name: '',
+                  phone: '',
+                  phone2: '',
+                  hasPhone2: false,
+                  addresses: []
+                })
                 setShowAddClientModal(true)
               }}
             >
@@ -248,7 +256,7 @@ export default function ClientsTab({
                       phone: c.phone || '',
                       phone2: c.phone2 || '',
                       hasPhone2: Boolean(c.phone2),
-                      address: c.address || ''
+                      addresses: addressRows(c)
                     })
                     setShowEditClientModal(true)
                   }}
@@ -292,11 +300,26 @@ export default function ClientsTab({
                     {[c.phone, c.phone2].filter(Boolean).join(' / ') || 'لا يوجد هاتف'}
                   </bdi>
                 </span>
-                <span>
-                  <MapPin size={15} aria-hidden="true" />
-                  {c.address || 'لا يوجد عنوان'}
-                </span>
               </div>
+              <ul className="address-list" aria-label="عناوين التوصيل">
+                {addressRows(c).length === 0 ? (
+                  <li className="cell-muted">
+                    <MapPin size={15} aria-hidden="true" /> لا يوجد عنوان
+                  </li>
+                ) : (
+                  addressRows(c).map((a) => (
+                    <li key={a.key}>
+                      <MapPin size={15} aria-hidden="true" />
+                      <span className="badge">{ADDRESS_LABELS[a.label] || a.label}</span>
+                      <span>
+                        {a.address}
+                        {a.details ? ` – ${a.details}` : ''}
+                      </span>
+                      {a.isDefault && <span className="badge badge-success">افتراضي</span>}
+                    </li>
+                  ))
+                )}
+              </ul>
 
               <div className="stat-grid stat-grid-2">
                 <StatCard

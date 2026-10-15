@@ -22,6 +22,7 @@ const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
 const { readAll } = require('./settings')
 const { priceCart, activeRules } = require('../pricing/discounts')
+const { ADDRESSES } = require('./customers').helpers
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
@@ -46,6 +47,11 @@ async function buildLines(db, items, products) {
   for (const i of items) {
     const p = products.get(i.barcode)
     if (!p) throw notFound(`الصنف (${i.barcode}) غير مسجل في قاعدة البيانات!`)
+    if (p.is_active === false)
+      throw conflict(`الصنف "${p.name}" موقوف عن البيع. احذفه من الفاتورة.`, {
+        barcode: p.barcode,
+        inactive: true
+      })
     const unit = await loadUnit(db, p, i.unitId, { purpose: 'sell' })
     const label = unit.id === null ? p.name : `${p.name} – ${unit.name}`
     const { qty, baseQty } = toBaseQty(p.unit_kind || 'count', i.qty, unit.factor, label)
@@ -93,7 +99,7 @@ module.exports = function posModule(app) {
     },
     handler: async (ctx, { codes }) => {
       const { rows } = await ctx.pool.query(
-        'SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1',
+        'SELECT * FROM products WHERE barcode = ANY($1::text[]) AND is_active LIMIT 1',
         [codes]
       )
       return rows[0] ? maskCost(ctx, rows)[0] : null
@@ -164,6 +170,8 @@ module.exports = function posModule(app) {
         }
       }
       if (!product) return null
+      if (product.is_active === false)
+        throw conflict(`الصنف "${product.name}" موقوف عن البيع.`, { inactive: true })
       const units = (
         await db.query(
           'SELECT id, name, factor, retail_price FROM product_units WHERE product_barcode = $1 AND is_active AND sellable ORDER BY factor, id',
@@ -212,7 +220,7 @@ module.exports = function posModule(app) {
         ctx,
         (
           await ctx.pool.query(
-            `SELECT * FROM products WHERE barcode LIKE '%' || $1 ESCAPE '\\' LIMIT 5`,
+            `SELECT * FROM products WHERE barcode LIKE '%' || $1 ESCAPE '\\' AND is_active LIMIT 5`,
             [likeEscape(suffix)]
           )
         ).rows
@@ -233,7 +241,7 @@ module.exports = function posModule(app) {
         ctx,
         (
           await ctx.pool.query(
-            `SELECT * FROM products WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 8`,
+            `SELECT * FROM products WHERE (name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\') AND is_active ORDER BY name LIMIT 8`,
             [t]
           )
         ).rows
@@ -253,7 +261,9 @@ module.exports = function posModule(app) {
       const t = likeEscape(term)
       return (
         await ctx.pool.query(
-          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' LIMIT 5`,
+          `SELECT c.*, ${ADDRESSES} AS addresses FROM clients c
+            WHERE c.name ILIKE '%' || $1 || '%' ESCAPE '\\' OR c.phone ILIKE '%' || $1 || '%' ESCAPE '\\'
+               OR c.phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY c.name, c.id LIMIT 8`,
           [t]
         )
       ).rows
@@ -382,7 +392,9 @@ module.exports = function posModule(app) {
             id: { type: ['integer', 'null'] },
             name: { type: 'string', maxLength: 120 },
             phone: { type: 'string', maxLength: 40 },
-            address: { type: 'string', maxLength: 300 }
+            address: { type: 'string', maxLength: 300 },
+            // One of the customer's saved addresses for a delivery (client_addresses.id).
+            addressId: { type: ['integer', 'null'] }
           }
         }
       }
@@ -439,11 +451,42 @@ module.exports = function posModule(app) {
         const c = b.client && b.client.name && b.client.name.trim() ? b.client : null
         let clientId = null
         let clientRow = null
+        let orderPhone = null // the number used for this order (known customers)
+        let savedPhone = null // a new number kept on the customer
+        let savedAddress = null // a new address kept on the customer
         if (c) {
           if (c.id) {
             clientRow = (await db.query('SELECT * FROM clients WHERE id = $1 FOR UPDATE', [c.id]))
               .rows[0]
             if (!clientRow) throw notFound('العميل غير موجود.')
+            // The number used for this order (one of the saved ones, or a new one). A new number
+            // is kept on the customer when a slot is free, so the next order can just pick it.
+            if (c.phone && c.phone.trim()) {
+              const { normalizePhone } = await import(
+                pathToFileURL(path.join(__dirname, '..', '..', 'shared', 'phone.mjs')).href
+              )
+              const r = normalizePhone(c.phone)
+              if (r.error) throw badRequest(`هاتف العميل: ${r.error}`)
+              const digits = (v) => String(v || '').replace(/[^0-9+]/g, '')
+              const known = [clientRow.phone, clientRow.phone2].map(digits)
+              orderPhone = r.value
+              if (!known.includes(r.value) && (!clientRow.phone || !clientRow.phone2)) {
+                const taken = await db.query(
+                  `SELECT 1 FROM clients WHERE id <> $1
+                     AND (regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $2
+                       OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $2) LIMIT 1`,
+                  [clientRow.id, r.value]
+                )
+                if (!taken.rowCount) {
+                  const col = clientRow.phone ? 'phone2' : 'phone'
+                  await db.query(`UPDATE clients SET ${col} = $2 WHERE id = $1`, [
+                    clientRow.id,
+                    r.value
+                  ])
+                  savedPhone = r.value
+                }
+              }
+            }
           } else {
             // A typed number is validated like in the customers screen and matches either of a
             // customer's two numbers.
@@ -487,9 +530,16 @@ module.exports = function posModule(app) {
                 await db.query(
                   `INSERT INTO clients (name, phone, address, debt_balance, points, created_at)
                    VALUES ($1, $2, $3, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-                  [c.name.trim(), phone, c.address || '']
+                  [c.name.trim(), phone, (c.address || '').trim()]
                 )
               ).rows[0]
+              // A new customer's address becomes their default delivery address (1.4.0).
+              if ((c.address || '').trim())
+                await db.query(
+                  `INSERT INTO client_addresses (client_id, label, address, is_default)
+                   VALUES ($1, 'other', $2, true)`,
+                  [clientRow.id, c.address.trim()]
+                )
             }
           }
           clientId = clientRow.id
@@ -516,10 +566,64 @@ module.exports = function posModule(app) {
         const deposit = Math.min(Number(b.depositChange || 0), change)
         if (deposit > 0 && !clientId) throw badRequest('حفظ الباقي في الرصيد يتطلب تحديد العميل.')
 
+        // Delivery address (1.4.0): one of the customer's saved addresses, a typed one, or the
+        // customer's default. Kept on the invoice as it was at the time of the sale.
+        let deliveryAddress = null
+        if (b.isDelivery) {
+          if (c && c.addressId) {
+            if (!clientId) throw badRequest('اختر العميل أولاً ثم عنوان التوصيل.')
+            const a = (
+              await db.query(
+                'SELECT address, details FROM client_addresses WHERE id = $1 AND client_id = $2',
+                [c.addressId, clientId]
+              )
+            ).rows[0]
+            if (!a) throw badRequest('عنوان التوصيل المختار لا يخص هذا العميل.')
+            deliveryAddress = a.details ? `${a.address} – ${a.details}` : a.address
+          } else if (c && (c.address || '').trim()) {
+            deliveryAddress = c.address.trim()
+            // A new address typed for a known customer is saved (up to three), so the next order
+            // can pick it instead of typing it again.
+            if (c.id && clientId) {
+              const saved = (
+                await db.query(
+                  'SELECT address, is_default FROM client_addresses WHERE client_id = $1',
+                  [clientId]
+                )
+              ).rows
+              const dup = saved.some(
+                (a) => a.address.trim().toLowerCase() === deliveryAddress.toLowerCase()
+              )
+              if (!dup && saved.length < 3 && deliveryAddress.length <= 300) {
+                await db.query(
+                  `INSERT INTO client_addresses (client_id, label, address, is_default)
+                   VALUES ($1, 'other', $2, $3)`,
+                  [clientId, deliveryAddress, saved.length === 0]
+                )
+                if (saved.length === 0)
+                  await db.query('UPDATE clients SET address = $2 WHERE id = $1', [
+                    clientId,
+                    deliveryAddress
+                  ])
+                savedAddress = deliveryAddress
+              }
+            }
+          } else if (clientId) {
+            const a = (
+              await db.query(
+                'SELECT address, details FROM client_addresses WHERE client_id = $1 AND is_default',
+                [clientId]
+              )
+            ).rows[0]
+            if (a) deliveryAddress = a.details ? `${a.address} – ${a.details}` : a.address
+          }
+          if (!deliveryAddress) throw badRequest('اكتب عنوان التوصيل أو اختر أحد عناوين العميل.')
+        }
+
         let clientName = c ? c.name : ''
         if (c) {
-          if (c.phone) clientName += ` (${c.phone})`
-          if (b.isDelivery && c.address) clientName += ` - ${c.address}`
+          if (orderPhone || c.phone) clientName += ` (${orderPhone || c.phone})`
+          if (deliveryAddress) clientName += ` - ${deliveryAddress}`
         }
 
         // What this invoice leaves on the customer's account and the store balance it consumes:
@@ -533,8 +637,8 @@ module.exports = function posModule(app) {
               : 0
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,
@@ -546,7 +650,9 @@ module.exports = function posModule(app) {
               clientId,
               b.clientRef,
               onAccount,
-              clientId ? credit : 0
+              clientId ? credit : 0,
+              !!b.isDelivery,
+              deliveryAddress
             ]
           )
         ).rows[0]
@@ -666,6 +772,9 @@ module.exports = function posModule(app) {
           change,
           deposit,
           clientId,
+          deliveryAddress,
+          savedPhone,
+          savedAddress,
           duplicate: false
         }
       })

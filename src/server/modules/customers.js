@@ -17,6 +17,83 @@ async function phones() {
   return phoneLib
 }
 
+// Addresses (src/shared/address.mjs): at most three, one default.
+let addressLib = null
+async function addressRules() {
+  if (!addressLib)
+    addressLib = await import(
+      pathToFileURL(path.join(__dirname, '..', '..', 'shared', 'address.mjs')).href
+    )
+  return addressLib
+}
+
+/**
+ * Replace a customer's addresses with `list` (already validated): kept ones are updated, new ones
+ * inserted, missing ones deleted; clients.address mirrors the default for older screens.
+ */
+async function saveAddresses(db, clientId, list) {
+  const own = new Set(
+    (
+      await db.query('SELECT id FROM client_addresses WHERE client_id = $1 FOR UPDATE', [clientId])
+    ).rows.map((r) => r.id)
+  )
+  const keep = list.filter((a) => a.id !== undefined).map((a) => a.id)
+  if (keep.some((id) => !own.has(id))) throw badRequest('العنوان لا يخص هذا العميل.')
+  await db.query(
+    'DELETE FROM client_addresses WHERE client_id = $1 AND NOT (id = ANY($2::int[]))',
+    [clientId, keep]
+  )
+  // Clear the default first: only one default is allowed at any moment (unique index).
+  await db.query('UPDATE client_addresses SET is_default = false WHERE client_id = $1', [clientId])
+  for (const a of list) {
+    if (a.id !== undefined)
+      await db.query(
+        `UPDATE client_addresses SET label = $3, address = $4, details = $5, is_default = $6,
+                updated_at = LOCALTIMESTAMP(0) WHERE id = $1 AND client_id = $2`,
+        [a.id, clientId, a.label, a.address, a.details, a.isDefault]
+      )
+    else
+      await db.query(
+        `INSERT INTO client_addresses (client_id, label, address, details, is_default)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [clientId, a.label, a.address, a.details, a.isDefault]
+      )
+  }
+  const def = list.find((a) => a.isDefault)
+  await db.query('UPDATE clients SET address = $2 WHERE id = $1', [
+    clientId,
+    def ? def.address : ''
+  ])
+}
+
+/** Validated addresses of a customer body: `addresses`, or the legacy single `address`. */
+async function bodyAddresses(db, c) {
+  if (Array.isArray(c.addresses)) {
+    const { addresses, error } = (await addressRules()).normalizeAddresses(c.addresses)
+    if (error) throw badRequest(error)
+    return addresses
+  }
+  if (c.address === undefined) return undefined // not part of this request: keep as they are
+  // Older clients send one address: it replaces the default and keeps the others.
+  const others = c.id
+    ? (
+        await db.query(
+          'SELECT id, label, address, details FROM client_addresses WHERE client_id = $1 AND NOT is_default ORDER BY id',
+          [c.id]
+        )
+      ).rows
+    : []
+  const list = [
+    ...(String(c.address || '').trim()
+      ? [{ label: 'other', address: c.address, isDefault: true }]
+      : []),
+    ...others.map((o) => ({ ...o, isDefault: false }))
+  ]
+  const { addresses, error } = (await addressRules()).normalizeAddresses(list)
+  if (error) throw badRequest(error)
+  return addresses
+}
+
 /** Validated numbers of a customer body: `phones` [primary, second?] or legacy `phone`/`phone2`. */
 async function bodyPhones(c) {
   const list = Array.isArray(c.phones) ? c.phones : [c.phone, c.phone2]
@@ -38,9 +115,28 @@ const clientSchema = {
     phone2: { type: ['string', 'null'], maxLength: 40 },
     // Preferred form: primary first; at most two numbers (also enforced by the database).
     phones: { type: 'array', maxItems: 2, items: { type: ['string', 'null'], maxLength: 40 } },
-    address: { type: ['string', 'null'], maxLength: 300 }
+    address: { type: ['string', 'null'], maxLength: 300 },
+    // Up to three delivery addresses (also enforced by the database), one default.
+    addresses: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          label: { type: 'string', enum: ['home', 'work', 'other'] },
+          address: { type: 'string', maxLength: 300 },
+          details: { type: ['string', 'null'], maxLength: 200 },
+          isDefault: { type: 'boolean' }
+        }
+      }
+    }
   }
 }
+
+const ADDRESSES = `COALESCE((SELECT json_agg(json_build_object('id', a.id, 'label', a.label, 'address', a.address,
+  'details', a.details, 'isDefault', a.is_default) ORDER BY a.is_default DESC, a.id)
+  FROM client_addresses a WHERE a.client_id = c.id), '[]'::json)`
 
 async function assertPhonesFree(db, list, exceptId = null) {
   const wanted = list.filter(Boolean)
@@ -112,7 +208,11 @@ module.exports = function customersModule(app) {
     handler: async (ctx, { clientId }) => {
       const db = ctx.pool
       const client =
-        (await db.query('SELECT * FROM clients WHERE id = $1', [clientId])).rows[0] || null
+        (
+          await db.query(`SELECT c.*, ${ADDRESSES} AS addresses FROM clients c WHERE c.id = $1`, [
+            clientId
+          ])
+        ).rows[0] || null
       const purchases = (
         await db.query(
           `SELECT s.*, u.username, (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) AS items_count
@@ -146,13 +246,19 @@ module.exports = function customersModule(app) {
       ctx.tx(async (db) => {
         // K-26: an empty phone is stored as NULL (the unique index treats '' as a value).
         const { phone, phone2 } = await bodyPhones(c)
+        const addresses = await bodyAddresses(db, { ...c, id: undefined })
         await assertPhonesFree(db, [phone, phone2])
         const r = await db.query(
-          `INSERT INTO clients (name, phone, phone2, address, debt_balance, points, created_at) VALUES ($1, $2, $3, $4, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-          [c.name, phone, phone2, c.address || '']
+          `INSERT INTO clients (name, phone, phone2, address, debt_balance, points, created_at) VALUES ($1, $2, $3, '', 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
+          [c.name.trim(), phone, phone2]
         )
+        if (addresses && addresses.length) await saveAddresses(db, r.rows[0].id, addresses)
         await ctx.audit(db, 'client_create', `إضافة العميل "${c.name}"`)
-        return r.rows[0]
+        return (
+          await db.query(`SELECT c.*, ${ADDRESSES} AS addresses FROM clients c WHERE c.id = $1`, [
+            r.rows[0].id
+          ])
+        ).rows[0]
       })
   })
 
@@ -165,12 +271,18 @@ module.exports = function customersModule(app) {
         const { phone, phone2 } = await bodyPhones(c)
         await assertPhonesFree(db, [phone, phone2], c.id)
         const r = await db.query(
-          'UPDATE clients SET name = $2, phone = $3, phone2 = $4, address = $5 WHERE id = $1 RETURNING *',
-          [c.id, c.name, phone, phone2, c.address || '']
+          'UPDATE clients SET name = $2, phone = $3, phone2 = $4 WHERE id = $1 RETURNING *',
+          [c.id, c.name.trim(), phone, phone2]
         )
         if (!r.rowCount) throw notFound('العميل غير موجود.')
+        const addresses = await bodyAddresses(db, c)
+        if (addresses !== undefined) await saveAddresses(db, c.id, addresses)
         await ctx.audit(db, 'client_update', `تعديل بيانات العميل "${c.name}"`)
-        return r.rows[0]
+        return (
+          await db.query(`SELECT c.*, ${ADDRESSES} AS addresses FROM clients c WHERE c.id = $1`, [
+            c.id
+          ])
+        ).rows[0]
       })
   })
 
@@ -247,3 +359,5 @@ module.exports = function customersModule(app) {
       })
   })
 }
+
+module.exports.helpers = { ADDRESSES, saveAddresses, addressRules }

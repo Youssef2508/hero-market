@@ -1,4 +1,5 @@
 import { PackagePlus } from 'lucide-react'
+import CategorySelect from './CategorySelect'
 
 const AddProductModal = ({
   showAddModal,
@@ -169,6 +170,14 @@ const AddProductModal = ({
                 <option value="weight">بالوزن (كيلوجرام، 3 خانات عشرية)</option>
                 <option value="volume">بالحجم (لتر، 3 خانات عشرية)</option>
               </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="add-product-category">التصنيف</label>
+              <CategorySelect
+                id="add-product-category"
+                value={newProduct.category_id ?? null}
+                onChange={(id) => setNewProduct((prev) => ({ ...prev, category_id: id }))}
+              />
             </div>
           </div>
 

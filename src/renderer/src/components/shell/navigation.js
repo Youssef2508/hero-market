@@ -28,6 +28,7 @@ import {
   UserCog,
   ScrollText,
   DatabaseBackup,
+  FolderTree,
   Cloud,
   ShieldCheck,
   BadgePercent,
@@ -131,6 +132,15 @@ export const NAV_GROUPS = [
           c.setAdminSearch('')
           c.fetchInventoryPage(1, '')
         }
+      },
+      {
+        id: 'categories',
+        permission: ['categories.manage'],
+        label: 'التصنيفات',
+        icon: FolderTree,
+        view: 'admin',
+        tab: 'categories',
+        description: 'تصنيفات الأصناف وترتيبها كما تظهر للكاشير عند التصفح.'
       },
       {
         id: 'reordering',

@@ -33,8 +33,25 @@ const productSchema = {
     reorder_limit: { type: 'number', minimum: 0 },
     unit: { type: 'string', maxLength: 40 },
     // How the base unit is measured: count (whole pieces), weight (kg, 3 decimals), volume (l, 3 decimals)
-    unit_kind: { type: 'string', enum: ['count', 'weight', 'volume'] }
+    unit_kind: { type: 'string', enum: ['count', 'weight', 'volume'] },
+    // Primary category (categories.id); null = uncategorised. Omitted on update = unchanged.
+    category_id: { type: ['integer', 'null'] },
+    // false = stopped from sale (hidden from search and browsing, refused at checkout).
+    is_active: { type: 'boolean' }
   }
+}
+
+/**
+ * The category a product may be assigned to: an existing, active category (or none). Returns
+ * { id, name } – the name is mirrored in products.category for older readers.
+ */
+async function categoryRef(db, id) {
+  if (id === null || id === undefined) return { id: null, name: '' }
+  const c = (await db.query('SELECT id, name, is_active FROM categories WHERE id = $1', [id]))
+    .rows[0]
+  if (!c) throw badRequest('التصنيف المختار غير موجود.')
+  if (!c.is_active) throw badRequest(`التصنيف "${c.name}" موقوف؛ فعّله أولاً أو اختر تصنيفاً آخر.`)
+  return { id: c.id, name: c.name }
 }
 
 /** A stock value (target or opening) must fit the product kind; negative values are allowed. */
@@ -57,23 +74,37 @@ module.exports = function catalogModule(app) {
         page: { type: 'integer', minimum: 1 },
         search: { type: 'string', maxLength: 100 },
         sortField: { type: 'string' },
-        sortAsc: { type: 'boolean' }
+        sortAsc: { type: 'boolean' },
+        // A category id, or 0 for products without a category.
+        categoryId: { type: ['integer', 'null'] }
       }
     },
-    handler: async (ctx, { page = 1, search = '', sortField = 'name', sortAsc = true }) => {
+    handler: async (
+      ctx,
+      { page = 1, search = '', sortField = 'name', sortAsc = true, categoryId }
+    ) => {
       const field = SORTABLE.includes(sortField) ? sortField : 'name'
       const params = []
-      let where = ''
+      const conds = []
       if (search) {
         params.push(likeEscape(search))
-        where = `WHERE barcode ILIKE '%' || $1 || '%' ESCAPE '\\' OR name ILIKE '%' || $1 || '%' ESCAPE '\\'`
+        conds.push(
+          `(p.barcode ILIKE '%' || $${params.length} || '%' ESCAPE '\\' OR p.name ILIKE '%' || $${params.length} || '%' ESCAPE '\\')`
+        )
       }
+      if (categoryId === 0) conds.push('p.category_id IS NULL')
+      else if (Number.isInteger(categoryId)) {
+        params.push(categoryId)
+        conds.push(`p.category_id = $${params.length}`)
+      }
+      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
       const total = (
-        await ctx.pool.query(`SELECT count(*) AS count FROM products ${where}`, params)
+        await ctx.pool.query(`SELECT count(*) AS count FROM products p ${where}`, params)
       ).rows[0].count
       const rows = (
         await ctx.pool.query(
-          `SELECT * FROM products ${where} ORDER BY ${field} ${sortAsc ? 'ASC' : 'DESC'}, barcode LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
+          `SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id = p.category_id
+            ${where} ORDER BY p.${field} ${sortAsc ? 'ASC' : 'DESC'}, p.barcode LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
           params
         )
       ).rows
@@ -104,9 +135,10 @@ module.exports = function catalogModule(app) {
         const barcode = p.barcode.trim()
         const kind = p.unit_kind || 'count'
         if (Number(p.stock_qty)) checkStockValue(kind, p.stock_qty)
+        const category = await categoryRef(db, p.category_id)
         await db.query(
-          `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind)
-           VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8)`,
+          `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
+           VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11)`,
           [
             barcode,
             p.name,
@@ -115,7 +147,10 @@ module.exports = function catalogModule(app) {
             p.wholesale_price || 0,
             p.reorder_limit || 0,
             p.unit || '',
-            kind
+            kind,
+            category.id,
+            category.name,
+            p.is_active !== false
           ]
         )
         if (Number(p.stock_qty)) {
@@ -155,8 +190,17 @@ module.exports = function catalogModule(app) {
             )
         }
         if (p.stock_qty !== undefined && p.stock_qty !== null) checkStockValue(kind, p.stock_qty)
+        // Category and active status change only when the form sends them (older forms do not).
+        const category =
+          p.category_id === undefined
+            ? { id: before.category_id, name: before.category || '' }
+            : p.category_id === before.category_id
+              ? { id: before.category_id, name: before.category || '' }
+              : await categoryRef(db, p.category_id)
+        const active = p.is_active === undefined ? before.is_active : p.is_active
         await db.query(
-          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7, unit_kind = $8
+          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7, unit_kind = $8,
+                  category_id = $9, category = $10, is_active = $11
            WHERE barcode = $1`,
           [
             p.barcode,
@@ -166,7 +210,10 @@ module.exports = function catalogModule(app) {
             p.wholesale_price || 0,
             p.reorder_limit || 0,
             p.unit || '',
-            kind
+            kind,
+            category.id,
+            category.name,
+            active
           ]
         )
         // K-37: the form's stock is a target relative to what it showed (stock_base), so sales
@@ -201,6 +248,9 @@ module.exports = function catalogModule(app) {
           const b = p[k] ?? (k === 'name' || k === 'unit' ? '' : 0)
           if (String(a) !== String(b)) changes[k] = { from: a, to: b }
         }
+        if (category.id !== before.category_id)
+          changes.category = { from: before.category || '', to: category.name }
+        if (active !== before.is_active) changes.is_active = { from: before.is_active, to: active }
         if (adjusted)
           changes.stock_qty = {
             from: Number(before.stock_qty) || 0,

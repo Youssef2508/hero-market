@@ -205,6 +205,8 @@ function App() {
     setSelectedSearchIndex,
     clientAddress,
     setClientAddress,
+    clientAddressId,
+    setClientAddressId,
     selectedClient,
     clientSearchResults,
     handleClientNameChange,
@@ -654,6 +656,7 @@ function App() {
           <CheckoutTerminal
             cart={cart}
             triggerClearCart={triggerClearCart}
+            addByBarcode={addProductByBarcode}
             onReturn={
               can(currentUser, 'sales.return_request') || can(currentUser, 'sales.return')
                 ? () => setReturnRequestOpen(true)
@@ -677,9 +680,12 @@ function App() {
             clientName={clientName}
             handleClientNameChange={handleClientNameChange}
             clientPhone={clientPhone}
+            setClientPhone={setClientPhone}
             handleClientPhoneChange={handleClientPhoneChange}
             clientAddress={clientAddress}
             setClientAddress={setClientAddress}
+            clientAddressId={clientAddressId}
+            setClientAddressId={setClientAddressId}
             clientSearchResults={clientSearchResults}
             selectClient={selectClient}
             paymentType={paymentType}

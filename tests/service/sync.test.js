@@ -573,10 +573,11 @@ test('conflicts: fields changed on the PC since the owner looked are kept and re
       fields: { retail_price: 12, wholesale_price: 9.5 },
       base: { retail_price: 10, wholesale_price: 9 }
     })
+    const soda = ok(await site.pc.call('categories.save', { name: 'مياه غازية' }, site.owner))
     const nameId = await site.command('product_edit', {
       barcode: 'CAN',
-      fields: { name: 'كانز 330 مل', category: 'مياه غازية' },
-      base: { name: 'كانز', category: 'مشروبات' }
+      fields: { name: 'كانز 330 مل', category_id: soda.id },
+      base: { name: 'كانز', category_id: null }
     })
     const allConflict = await site.command('product_edit', {
       barcode: 'RICE',
@@ -586,8 +587,14 @@ test('conflicts: fields changed on the PC since the owner looked are kept and re
     await syncUntilConverged(site)
     const can = await one(site.pc.pool, "SELECT * FROM products WHERE barcode = 'CAN'")
     assert.deepEqual(
-      [Number(can.retail_price), Number(can.wholesale_price), can.name, can.category],
-      [11, 9.5, 'كانز 330 مل', 'مياه غازية']
+      [
+        Number(can.retail_price),
+        Number(can.wholesale_price),
+        can.name,
+        can.category,
+        can.category_id
+      ],
+      [11, 9.5, 'كانز 330 مل', 'مياه غازية', soda.id]
     )
     const cmds = Object.fromEntries(
       (await q(site.cloud.pool, 'SELECT id::text, status, result FROM cloud_commands')).map((c) => [
