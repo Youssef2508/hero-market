@@ -456,23 +456,38 @@ module.exports = function posModule(app) {
               if (r.error) throw badRequest(`هاتف العميل: ${r.error}`)
               phone = r.value
             }
-            clientRow = (
-              await db.query(
-                phone
-                  ? `SELECT * FROM clients WHERE name = $1
-                        OR regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $2
-                        OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $2
-                      ORDER BY id LIMIT 1 FOR UPDATE`
-                  : 'SELECT * FROM clients WHERE name = $1 ORDER BY id LIMIT 1 FOR UPDATE',
-                phone ? [c.name, phone] : [c.name]
-              )
-            ).rows[0]
+            // A typed phone identifies the customer (either of their numbers); a name alone only
+            // when exactly one customer has it. Matching "name OR phone" (audit 1.4.0) could put
+            // a credit sale on another person who shares the name.
+            if (phone) {
+              clientRow = (
+                await db.query(
+                  `SELECT * FROM clients
+                    WHERE regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $1
+                       OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $1
+                    ORDER BY id LIMIT 1 FOR UPDATE`,
+                  [phone]
+                )
+              ).rows[0]
+            } else {
+              const named = (
+                await db.query(
+                  'SELECT * FROM clients WHERE name = $1 ORDER BY id LIMIT 2 FOR UPDATE',
+                  [c.name.trim()]
+                )
+              ).rows
+              if (named.length > 1)
+                throw conflict(
+                  `يوجد أكثر من عميل باسم "${c.name.trim()}". اختر العميل من القائمة أو اكتب رقم هاتفه.`
+                )
+              clientRow = named[0]
+            }
             if (!clientRow) {
               clientRow = (
                 await db.query(
                   `INSERT INTO clients (name, phone, address, debt_balance, points, created_at)
                    VALUES ($1, $2, $3, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-                  [c.name, phone, c.address || '']
+                  [c.name.trim(), phone, c.address || '']
                 )
               ).rows[0]
             }
@@ -507,10 +522,19 @@ module.exports = function posModule(app) {
           if (b.isDelivery && c.address) clientName += ` - ${c.address}`
         }
 
+        // What this invoice leaves on the customer's account and the store balance it consumes:
+        // a later return goes back through these first, not out of the drawer (migration 0011).
+        const onAccount = !clientId
+          ? 0
+          : b.paymentType === 'آجل'
+            ? total
+            : b.paymentType === 'دفع جزئي'
+              ? round2(Math.max(0, total - Math.min(total, Math.max(0, paid || 0))))
+              : 0
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,
@@ -520,7 +544,9 @@ module.exports = function posModule(app) {
               b.paymentType,
               clientName,
               clientId,
-              b.clientRef
+              b.clientRef,
+              onAccount,
+              clientId ? credit : 0
             ]
           )
         ).rows[0]

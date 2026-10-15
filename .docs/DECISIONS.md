@@ -480,3 +480,25 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Rejected:**
   - selling during recovery with large id gaps (invoice numbers would jump by millions);
   - merging both sides after the fact (ambiguous and error-prone).
+
+## D-049 Integrity and security fixes from the 1.4.0 audit (before merging PRs #1–#15)
+
+- **A closed shift is final** (migration 0011).
+  - Sales, drawer rows, expenses and till movements lock their shift and require it open, for every insert, update and delete.
+  - Closing locks the shift before computing its figures.
+  - Before, a sale committing during a close could land on the closed shift, and deleting an expense of a closed shift changed its totals.
+  - Bulk administrative work (restore, legacy import, cloud recovery, system reset) is exempt through `hm.bulk_load` / `hm.ledger_rebuild`.
+- **One open shift per user**, also for simultaneous requests (advisory lock in the trigger).
+- **Refunds go through the customer's account first.** Each invoice keeps what it left on the customer's account (`on_account_open`) and the store balance it consumed (`credit_open`). A return reduces those first; only the rest is cash from an open drawer.
+  - Before, a part-paid invoice was refunded entirely in cash, including the unpaid part.
+  - Before, balance spent on an invoice came back as cash.
+  - Before, a whole-invoice return of a balance-paid invoice returned nothing.
+  - Cash and credit (آجل) invoices refund exactly as before.
+  - A cash refund now needs an open shift (the actor's, or the invoice's own while still open), instead of posting into a closed shift.
+- **The till matches a typed customer by phone** (either number). Without a phone, it matches by name only when the name is unique; otherwise it asks the cashier to choose. Before, "name OR phone" could put a credit sale on another person with the same name.
+- **A supplier with a balance cannot be deleted** (as for customers).
+- **Printing never goes through a command shell:** PowerShell and Typst are started with argument lists. Printer names reject quotes and shell characters, and product names enter Typst as string literals.
+- **Electron:** the renderer is sandboxed, and only the named `window.api` bridge is exposed (the generic `ipcRenderer` bridge of @electron-toolkit is removed).
+- **Access before validation:** sign-in and permissions are checked before the request body is validated, so a caller without access receives 401/403 and no schema details. Credentials are redacted from logs.
+- **Remote stock receipts** follow the shop's quantity rules (whole pieces for count products).
+- **Tests:** `tests/service/integrity.test.js` (10), including real concurrency (a sale and a drawer row waiting on a close; four simultaneous shift openings).

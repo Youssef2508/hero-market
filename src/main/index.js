@@ -14,7 +14,7 @@ import {
 } from './backend'
 import { getPrintSettings } from './printSettings'
 import fs from 'fs'
-import { initializePrinter, registerSalePrinting } from './printer'
+import { initializePrinter, registerSalePrinting, runPrintScript } from './printer'
 import { registerDataIpc } from './dataIpc'
 
 // Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
@@ -123,7 +123,8 @@ function createWindow() {
     ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      // Sandboxed renderer: the page and its preload get no Node.js access (audit 1.4.0).
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -191,8 +192,14 @@ app.whenReady().then(() => {
       let tableRows = ''
       if (items && items.length > 0) {
         items.forEach((item, index) => {
-          const nameClean = String(item.name || '').replace(/[[\]]/g, '') // escape typst brackets
-          tableRows += `    [${index + 1}], [${nameClean}], [${item.stock_qty || 0}], [${item.min_limit || 0}],\n`
+          // Names are inserted as Typst string literals, never as markup: a product name cannot
+          // run Typst code such as #read() (audit 1.4.0).
+          const name = String(item.name || '')
+            .replace(/[\r\n]+/g, ' ')
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"')
+          const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+          tableRows += `    [${index + 1}], [#"${name}"], [${num(item.stock_qty)}], [${num(item.min_limit)}],\n`
         })
       }
 
@@ -256,17 +263,22 @@ ${tableRows}  )
         ? join(process.cwd(), 'typst.exe')
         : join(process.resourcesPath, 'typst.exe')
 
-      const { exec } = require('child_process')
+      const { execFile } = require('child_process')
       return new Promise((resolve, reject) => {
-        exec(`"${typstBin}" compile "${tempTypPath}" "${pdfOutputPath}"`, (err) => {
-          if (err) {
-            console.error('Typst compile error:', err)
-            reject(err)
-          } else {
-            shell.openPath(pdfOutputPath)
-            resolve({ success: true, path: pdfOutputPath })
+        execFile(
+          typstBin,
+          ['compile', tempTypPath, pdfOutputPath],
+          { windowsHide: true },
+          (err) => {
+            if (err) {
+              console.error('Typst compile error:', err)
+              reject(err)
+            } else {
+              shell.openPath(pdfOutputPath)
+              resolve({ success: true, path: pdfOutputPath })
+            }
           }
-        })
+        )
       })
     } catch (e) {
       console.error('Failed to generate shortages PDF:', e)
@@ -305,50 +317,9 @@ ${tableRows}  )
       ''
     ]
 
-    const textContent = lines.join('\r\n')
-    console.log('[PRINTER-SHORTAGES] Invoked with items count:', items.length)
-    console.log('[PRINTER-SHORTAGES] Text Content built:\n', textContent)
-
-    return new Promise((resolve, reject) => {
-      const ts = Date.now()
-      const os = require('os')
-      const tempTxtPath = join(os.tmpdir(), `shortages_${ts}.txt`)
-
-      try {
-        fs.writeFileSync(tempTxtPath, textContent, { encoding: 'utf8' })
-        console.log('[PRINTER-SHORTAGES] Text file written:', tempTxtPath)
-
-        const script = app.isPackaged
-          ? join(process.resourcesPath, 'print_receipt.ps1')
-          : join(__dirname, '../../resources/print_receipt.ps1')
-        const cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${script}" -TextFile "${tempTxtPath}" -PrinterName "${printerName}"`
-        console.log('[PRINTER-SHORTAGES] Running cmd:', cmd)
-
-        const { exec } = require('child_process')
-        exec(cmd, { timeout: 20000 }, (err, stdout, stderr) => {
-          console.log('[PRINTER-SHORTAGES] stdout:', stdout ? stdout.trim() : '')
-          if (stderr) console.warn('[PRINTER-SHORTAGES] stderr:', stderr.trim())
-          try {
-            if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath)
-          } catch (_) {}
-          if (err) {
-            console.error('[PRINTER-SHORTAGES] Error:', err.message)
-            return reject(err)
-          }
-          resolve(true)
-        })
-      } catch (err) {
-        console.error('[PRINTER-SHORTAGES] Catch error:', err)
-        try {
-          if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath)
-        } catch (_) {}
-        reject(err)
-      }
-    })
+    // Through the same no-shell printing path as receipts (audit 1.4.0).
+    return runPrintScript(lines, { printerName })
   })
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
 
   startBackend().then((st) => console.log('[backend]', JSON.stringify(st)))
   createWindow()

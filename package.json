@@ -29,7 +29,6 @@
     "pg:dev": "node scripts/pg-dev.js"
   },
   "dependencies": {
-    "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@fontsource-variable/cairo": "^5.2.5",
     "fastify": "^5.12.7",

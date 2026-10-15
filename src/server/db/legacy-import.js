@@ -406,6 +406,7 @@ async function importLegacy(
           [sourcePath, sourceSha256]
         )
         // Historical rows (e.g. sales on shifts that are closed today) must not be re-validated by triggers.
+        await client.query("SELECT set_config('hm.bulk_load', 'on', true)")
         for (const t of TRIGGER_TABLES)
           await client.query(`ALTER TABLE "${t}" DISABLE TRIGGER USER`)
         for (const { plan, values } of plans) await insertRows(client, plan, values)

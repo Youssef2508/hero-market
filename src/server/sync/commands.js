@@ -17,7 +17,7 @@
 // stays pending.
 const { ServiceError } = require('../errors')
 const { receiveStock } = require('../inventory/stock')
-const { round4 } = require('../inventory/units')
+const { round4, toBaseQty } = require('../inventory/units')
 const { helpers: finance } = require('../modules/finance')
 
 const OWNER = 'المالك (عن بعد)'
@@ -131,9 +131,18 @@ const HANDLERS = {
       const qty = Number(i.qty)
       const cost = Number(i.unitCost)
       if (!(qty > 0) || !(cost >= 0)) throw new Rejected(`كمية أو تكلفة غير صالحة (${i.barcode}).`)
+      // The same quantity rules as a receipt at the shop: whole pieces for count products, up to
+      // three decimals for kg/l (audit 1.4.0).
+      const product = (
+        await db.query('SELECT name, unit_kind FROM products WHERE barcode = $1', [
+          String(i.barcode)
+        ])
+      ).rows[0]
+      if (!product) throw new Rejected(`الصنف (${i.barcode}) غير مسجل على جهاز المتجر.`)
+      const { baseQty } = toBaseQty(product.unit_kind || 'count', qty, 1, product.name)
       const mv = await receiveStock(db, ctx, {
         barcode: String(i.barcode),
-        qty,
+        qty: baseQty,
         unitCost: round4(cost),
         refType: 'remote_receipt',
         refId: null,

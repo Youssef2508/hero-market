@@ -3,6 +3,7 @@ import { Undo2, Search, CircleAlert, CircleCheck, Loader2 } from 'lucide-react'
 import { api, can } from '../../lib/api'
 import { normalizeDigits, playSound } from '../../lib/utils'
 import { formatStamp } from '../../lib/time'
+import { refundText } from '../../lib/refundText'
 import PasswordInput from '../auth/PasswordInput'
 
 /**
@@ -83,11 +84,8 @@ function ReturnDialog({ onClose, currentUser, currentShift }) {
         mode === 'whole'
           ? await api('sales.returnEntire', { saleId: sale.id, ...common })
           : await api('sales.returnItem', { saleItemId: item.id, quantity: qtyNum, ...common })
-      const refund = r.netRefund ?? r.refund
       playSound('success')
-      setDone(
-        `تم المرتجع. المبلغ المسترد: ${money(refund)} ج.م${sale.payment_type === 'آجل' ? ' (خُصم من حساب العميل)' : ' (من الدرج)'}`
-      )
+      setDone(refundText(r))
       setSale(r.sale)
       setItems(r.items || [])
       setSupPassword('')

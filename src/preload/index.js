@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 
 // Renderer API. There is deliberately no SQL channel: data goes through named service operations,
 // which the HeroMarket service authorises (see src/server and .docs/ARCHITECTURE.md).
+// Only these named channels are reachable from the page: the generic ipcRenderer bridge of
+// @electron-toolkit is not exposed (audit 1.4.0), so a page script cannot invoke any other channel.
+// The preload runs sandboxed: it may only use the electron module's renderer APIs.
 const api = {
   call: (op, body) => ipcRenderer.invoke('api:call', op, body),
   backend: {
@@ -28,17 +30,5 @@ const api = {
   printShortagesToPrinter: (items) => ipcRenderer.invoke('print-shortages-to-printer', items)
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  window.electron = electronAPI
-  window.api = api
-}
+// Context isolation is always on (src/main/index.js); the API is exposed through the bridge only.
+contextBridge.exposeInMainWorld('api', api)

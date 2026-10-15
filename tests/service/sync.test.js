@@ -629,13 +629,17 @@ test('refused commands are recorded once and never retried; unknown types are re
         { barcode: 'SUGAR', qty: -3, unitCost: 25 }
       ]
     })
+    // Half a bag of a product sold by the piece: refused like at the shop.
+    const fractional = await site.command('stock_receipt', {
+      items: [{ barcode: 'RICE', qty: 2.5, unitCost: 20 }]
+    })
     const riceBefore = await stockOf(site, 'RICE')
     await syncUntilConverged(site)
     const rows = await q(
       site.cloud.pool,
       'SELECT id::text, status, result FROM cloud_commands ORDER BY seq'
     )
-    for (const id of [unknownProduct, badType, negative]) {
+    for (const id of [unknownProduct, badType, negative, fractional]) {
       const c = rows.find((r) => r.id === id)
       assert.equal(c.status, 'rejected', id)
       assert.ok(c.result.reason)

@@ -283,6 +283,10 @@ module.exports = function financeModule(app) {
         const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [supplierId]))
           .rows[0]
         if (!s) throw notFound('المورد غير موجود.')
+        // Like customers: a supplier still owed money (or owing it) cannot disappear with its
+        // ledger (audit 1.4.0).
+        if (Math.abs(Number(s.debt_balance) || 0) > 0.004)
+          throw conflict('لا يمكن حذف مورد لديه رصيد مالي (له أو عليه). سدّد الرصيد أولاً.')
         // Invoices that received goods are part of the stock history and cannot disappear.
         const received = await db.query(
           'SELECT 1 FROM supplier_purchase_items i JOIN supplier_purchases p ON p.id = i.purchase_id WHERE p.supplier_id = $1 LIMIT 1',

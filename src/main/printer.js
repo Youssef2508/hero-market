@@ -1,5 +1,5 @@
 import { ipcMain, app, BrowserWindow, dialog } from 'electron'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -27,45 +27,11 @@ function getScriptPath() {
 }
 
 export function initializePrinter({ callOperation }) {
+  // Legacy HTML receipts (reprints of old invoices), printed as plain lines.
   ipcMain.handle('print-receipt', async (event, htmlContent) => {
     const { storeName, branchName, printerName } = await getPrintSettings(callOperation)
-
-    return new Promise((resolve, reject) => {
-      const ts = Date.now()
-      const txt = join(tmpdir(), `receipt_${ts}.txt`)
-
-      try {
-        const text = buildReceiptText(htmlContent, storeName, branchName)
-        writeFileSync(txt, text, { encoding: 'utf8' })
-        console.log('[PRINTER] Text file written:', txt)
-
-        const script = getScriptPath()
-        const cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${script}" -TextFile "${txt}" -PrinterName "${printerName}"`
-        console.log('[PRINTER] Running:', cmd)
-
-        exec(cmd, { timeout: 20000 }, (err, stdout, stderr) => {
-          try {
-            if (existsSync(txt)) unlinkSync(txt)
-          } catch (_) {}
-
-          if (err) {
-            console.error('[PRINTER] Error:', err.message)
-            return reject(new Error(`Print failed: ${err.message}`))
-          }
-          console.log('[PRINTER]', stdout.trim())
-          if (stderr) console.warn('[PRINTER] stderr:', stderr.trim())
-
-          stdout.includes('PRINT_DONE')
-            ? resolve(true)
-            : reject(new Error('Not confirmed: ' + stdout))
-        })
-      } catch (err) {
-        try {
-          if (existsSync(txt)) unlinkSync(txt)
-        } catch (_) {}
-        reject(err)
-      }
-    })
+    const text = buildReceiptText(htmlContent, storeName, branchName)
+    return runPrintScript(text.split(/\r?\n/), { printerName })
   })
 }
 
@@ -100,17 +66,28 @@ export function runPrintScript(
     )
     try {
       writeFileSync(txt, lines.join('\r\n'), { encoding: 'utf8' })
+      // Arguments are passed as a list, never through a command shell: a printer name or path
+      // can contain any character without being able to run anything (audit 1.4.0).
       const args = [
-        `-File "${getScriptPath()}"`,
-        `-TextFile "${txt}"`,
-        `-PrinterName "${String(printerName).replace(/"/g, '')}"`,
-        `-FontSize ${Number(fontSize) || 8}`,
-        `-Paper "${paper === '58mm' ? '58mm' : '80mm'}"`,
-        `-LogoFile "${String(logoFile || '').replace(/"/g, '')}"`,
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        getScriptPath(),
+        '-TextFile',
+        txt,
+        '-PrinterName',
+        String(printerName || ''),
+        '-FontSize',
+        String(Number(fontSize) || 8),
+        '-Paper',
+        paper === '58mm' ? '58mm' : '80mm',
+        '-LogoFile',
+        String(logoFile || ''),
         ...(templateLayout ? ['-TemplateLayout'] : [])
       ]
-      const cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass ${args.join(' ')}`
-      exec(cmd, { timeout: 20000 }, (err, stdout) => {
+      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true }, (err, stdout) => {
         try {
           if (existsSync(txt)) unlinkSync(txt)
         } catch (_) {}

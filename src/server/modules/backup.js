@@ -131,6 +131,8 @@ module.exports = function backupModule(app) {
       const result = await ctx.tx(async (db) => {
         // Rows rewritten by the restore are not queued one by one: synchronisation restarts below.
         await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
+        // Restored history includes closed shifts and their money movements (migration 0011).
+        await db.query("SELECT set_config('hm.bulk_load', 'on', true)")
         const counts = {}
         for (const t of TRIGGER_TABLES) await db.query(`ALTER TABLE "${t}" DISABLE TRIGGER USER`)
         await db.query('DELETE FROM sessions')
