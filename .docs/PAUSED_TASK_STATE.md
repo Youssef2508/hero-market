@@ -2,7 +2,7 @@
 
 Update this file at every milestone. When resuming, trust this file **and** `git status` / `git log` over memory.
 
-_Last updated: 2026-10-14 (stage 4 phase 0 and phase 1 implemented; architecture revised for one PC + owner-only cloud)._
+_Last updated: 2026-10-15 (stage 4 phase 2 implemented; phase 3 next)._
 
 ## Where things are
 
@@ -21,6 +21,7 @@ _Last updated: 2026-10-14 (stage 4 phase 0 and phase 1 implemented; architecture
 | #4  | `feature/stage3-hardening` → `feature/electron-upgrade`       | K-34/G-26, G-19, G-24 TLS, D-040, K-19, K-35, go-live plan and script, gap reconciliation                    |
 | #5  | `feature/k24-close-formula` → `feature/stage3-hardening`      | K-24 option 1 (one drawer formula everywhere); stage 4 architecture review                                   |
 | #6  | `feature/stage4-ledger` → `feature/k24-close-formula`         | K-36; stage 4 phase 1 (stock ledger, K-37, K-38, negative stock, moving average); architecture revision 2    |
+| #7  | `feature/stage4-units` → `feature/stage4-ledger`              | Stage 4 phase 2: units and packaging, weighed products, scale-label settings                                 |
 
 CI's `pull_request` trigger only covers `main`, so stacked PRs are verified by their push runs.
 
@@ -30,14 +31,7 @@ CI's `pull_request` trigger only covers `main`, so stacked PRs are verified by t
 
 The owner's stage 4 decisions are final ([OWNER_DECISIONS.md](OWNER_DECISIONS.md)); do not ask again.
 
-1. **Phase 2 – units and packaging** (next to implement):
-   - base unit (kilograms with 3 decimals for weighed products);
-   - product units with factors, barcodes and prices;
-   - unit-aware cart, sale, purchase and return lines with snapshots;
-   - scale-label settings.
-
-   See [STAGE4_ARCHITECTURE_REVIEW.md](STAGE4_ARCHITECTURE_REVIEW.md) §6.
-
+1. ~~Phase 2 – units and packaging~~ – done (PR #7).
 2. **Phase 3:**
    - username + password with PIN migration and a recovery code;
    - approvals for cashier returns (with a reason), discounts above role limits, and shift differences above EGP 50;

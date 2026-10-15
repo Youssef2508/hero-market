@@ -171,6 +171,21 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 - **Product form:** a changed stock posts the difference against the value the form showed. A count posts counted − the stock shown when counting started, with a mandatory reason.
 - **Purchase invoices:** item lines are received into stock; their total must equal the invoice total.
 
+## 11c. Units and packaging (stage 4)
+
+- **Base unit and kind:**
+  - Each product has a base unit (stock is counted in it) and a kind:
+    - count: whole pieces;
+    - weight: kilograms with 3 decimals;
+    - volume: litres with 3 decimals.
+  - A carton may be sold in fractions only when the result is whole pieces (half a carton of 24 = 12).
+- **Extra units:** each converts with a factor. Its price is its own, or the base price × factor (rounded to 0.01); the base unit keeps its exact price. Units removed from a product are deactivated and kept for history.
+- **Scans:**
+  - A scan resolves to a product **and** a unit: the product barcode, an extra barcode, a packaging barcode, or a scale label (configurable prefixes for weight or price).
+  - A weighed product scanned from its plain barcode asks for the weight in grams or kilograms.
+- **Lines:** sale and purchase lines keep unit, factor, price and cost per unit. Stock moves by quantity × factor. Returns are in the line's unit, with its snapshot factor.
+- **Purchases:** a purchase in cartons feeds the moving average with cost per base unit = carton cost ÷ factor.
+
 ## 12. Unknowns and open decisions
 
 - K-24: decided (option 1). Expected drawer cash = opening cash + cash sales as sold + cash inflows − every cash outflow; both close dialogs show this service figure.
