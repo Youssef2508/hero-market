@@ -684,8 +684,24 @@
   inset-inline-start: 10px;
 }
 .customer .search-field > input {
+  flex: 1;
+  min-width: 0;
   padding-inline-start: 32px;
   min-height: 38px;
+}
+/* "Back to the saved numbers" sits inside the phone box, so the number keeps the full width. */
+.customer .saved-phones-btn {
+  position: absolute;
+  inset-inline-end: 4px;
+  width: 30px;
+  height: 30px;
+}
+.customer .search-field:has(.saved-phones-btn) > input {
+  padding-inline-end: 36px;
+}
+/* Notes about saving a number or an address take the whole row. */
+.customer-fields > .field-hint {
+  grid-column: 1 / -1;
 }
 .client-results {
   top: calc(100% + 4px);

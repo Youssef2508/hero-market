@@ -563,12 +563,23 @@ export function usePOSController({
           })
       }
 
+      // Owner rule: what was used for this order but not kept on the customer is said plainly.
+      const notSaved = [
+        result.notSaved?.phone === 'other_customer' &&
+          'رقم الهاتف مسجَّل لعميل آخر، فاستُخدم لهذا الطلب فقط ولم يُحفظ لهذا العميل.',
+        result.notSaved?.phone === 'no_free_slot' &&
+          'للعميل رقمان محفوظان، فاستُخدم الرقم لهذا الطلب فقط ولم يُحفظ.',
+        result.notSaved?.address === 'limit' &&
+          'للعميل 3 عناوين محفوظة، فاستُخدم العنوان لهذا الطلب فقط ولم يُحفظ.'
+      ].filter(Boolean)
       setToastMessage(
         result.duplicate
           ? `الفاتورة رقم ${displaySaleId} كانت قد سُجِّلت بالفعل، ولم تُسجَّل مرة ثانية.`
-          : 'تم إنهاء الفاتورة بنجاح!'
+          : notSaved.length
+            ? { type: 'warning', text: ['تم إنهاء الفاتورة بنجاح.', ...notSaved].join('\n') }
+            : 'تم إنهاء الفاتورة بنجاح!'
       )
-      setTimeout(() => setToastMessage(null), 3000)
+      setTimeout(() => setToastMessage(null), notSaved.length ? 7000 : 3000)
       setCart([])
       setDiscount(0)
       setAppliedCredit(0)

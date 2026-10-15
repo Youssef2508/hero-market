@@ -10,6 +10,7 @@ import {
   needsSnapshot,
   pendingVersions,
   snapshotDataDir,
+  copyAndVerify,
   verifySnapshot,
   pruneSnapshots
 } from '../../src/main/upgradeSnapshot.js'
@@ -25,7 +26,7 @@ test('a snapshot is needed only for an existing database with pending migrations
   assert.deepEqual(pendingVersions(['0001'], all), ['0002', '0003'])
 })
 
-test('snapshot copies every file and empty folder, verifies hashes, detects tampering, keeps 3', () => {
+test('snapshot copies every file and empty folder, verifies hashes, detects tampering, keeps 3', async () => {
   const base = tmp('hm-snap-')
   const data = path.join(base, 'pgdata')
   try {
@@ -35,18 +36,54 @@ test('snapshot copies every file and empty folder, verifies hashes, detects tamp
     fs.writeFileSync(path.join(data, 'base', '1', '1259'), Buffer.alloc(8192, 7))
     fs.writeFileSync(path.join(data, 'postmaster.pid'), 'stale') // never copied
     const backups = path.join(base, 'backups')
-    const snap = snapshotDataDir(data, backups, 'db-0004-to-0006', new Date('2026-10-15T10:00:00Z'))
+    const snap = await snapshotDataDir(
+      data,
+      backups,
+      'db-0004-to-0006',
+      new Date('2026-10-15T10:00:00Z')
+    )
     assert.ok(fs.existsSync(path.join(snap, 'pgdata', 'pg_tblspc')))
     assert.ok(!fs.existsSync(path.join(snap, 'pgdata', 'postmaster.pid')))
     assert.deepEqual(verifySnapshot(snap), { ok: true, files: 2 })
     fs.writeFileSync(path.join(snap, 'pgdata', 'base', '1', '1259'), 'changed')
     assert.equal(verifySnapshot(snap).ok, false)
     for (const h of [11, 12, 13])
-      snapshotDataDir(data, backups, 'x', new Date(`2026-10-15T${h}:00:00Z`))
+      await snapshotDataDir(data, backups, 'x', new Date(`2026-10-15T${h}:00:00Z`))
     const removed = pruneSnapshots(backups)
     assert.equal(removed.length, 1)
     assert.equal(fs.readdirSync(backups).length, 3)
-    assert.throws(() => snapshotDataDir(path.join(base, 'nope'), backups, 'x'))
+    await assert.rejects(() => snapshotDataDir(path.join(base, 'nope'), backups, 'x'))
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('copying a store never freezes the app: the event loop keeps running during the copy', async () => {
+  const base = tmp('hm-copy-')
+  const data = path.join(base, 'pgdata')
+  try {
+    fs.mkdirSync(path.join(data, 'base', '1'), { recursive: true })
+    fs.writeFileSync(path.join(data, 'PG_VERSION'), '17\n')
+    // 400 files of 256 KB (100 MB): long enough that a blocking copy would stall for seconds.
+    const block = Buffer.alloc(256 * 1024, 3)
+    for (let i = 0; i < 400; i++)
+      fs.writeFileSync(path.join(data, 'base', '1', String(16000 + i)), block)
+    let longest = 0
+    let last = Date.now()
+    const ticker = setInterval(() => {
+      const now = Date.now()
+      longest = Math.max(longest, now - last)
+      last = now
+    }, 10)
+    const started = Date.now()
+    const out = await copyAndVerify(data, path.join(base, 'copy'))
+    const took = Date.now() - started
+    clearInterval(ticker)
+    assert.equal(Object.keys(out.files).length, 401)
+    assert.ok(
+      longest < Math.max(500, took / 4),
+      `the main process stalled for ${longest} ms during a ${took} ms copy`
+    )
   } finally {
     fs.rmSync(base, { recursive: true, force: true })
   }
@@ -103,7 +140,7 @@ test('Windows: PostgreSQL starts on a snapshot of a real cluster and the data is
     await c.query("CREATE TABLE store (k text); INSERT INTO store VALUES ('sale-42')")
     await c.end()
     assert.equal(run('pg_ctl', ['stop', '-D', data, '-m', 'fast', '-w']).status, 0)
-    const snap = snapshotDataDir(data, path.join(base, 'backups'), 'real')
+    const snap = await snapshotDataDir(data, path.join(base, 'backups'), 'real')
     assert.equal(verifySnapshot(snap).ok, true)
     const port2 = await freePort()
     const copy = path.join(snap, 'pgdata')

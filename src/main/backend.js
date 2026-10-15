@@ -273,7 +273,7 @@ async function snapshotBeforeUpgrade(local, persist) {
   let failure = null
   await stopLocalDatabase(local, { force: true })
   try {
-    target = snapshotDataDir(
+    target = await snapshotDataDir(
       localDataDir(local),
       dir,
       `app-${app.getVersion()}-db-${applied[applied.length - 1]}-to-${all[all.length - 1]}`
@@ -298,7 +298,7 @@ async function snapshotBeforeUpgrade(local, persist) {
  * by file (upgradeSnapshot.js), the configuration is written to the shared folder, and the old
  * files are kept untouched as a fallback (heromarket.json is renamed so it is not adopted twice).
  */
-function adoptPerUserStore() {
+async function adoptPerUserStore() {
   const old = perUserConfigFile()
   if (!old || fs.existsSync(configFile()) || !fs.existsSync(old)) return null
   const cfg = JSON.parse(fs.readFileSync(old, 'utf8'))
@@ -311,7 +311,14 @@ function adoptPerUserStore() {
         throw new Error(
           `يوجد بالفعل مجلد قاعدة بيانات في ${to}. لم يتم نقل بيانات المستخدم الحالي؛ راجع الدعم الفني.`
         )
-      copyAndVerify(from, to)
+      // Copied beside the target and renamed only once every file is verified, so a move
+      // interrupted by closing the app (or a power cut) leaves no half database: the partial copy
+      // is ours and is started over; the original folder is never touched.
+      const partial = `${to}.partial`
+      fs.rmSync(partial, { recursive: true, force: true })
+      await copyAndVerify(from, partial)
+      if (fs.existsSync(to)) fs.rmdirSync(to) // empty (checked above)
+      fs.renameSync(partial, to)
     }
     cfg.local = { ...cfg.local, dir: storeDir() }
   }
@@ -325,7 +332,7 @@ async function doStart() {
   lastError = null
   try {
     ensureStoreDir()
-    adoptPerUserStore()
+    await adoptPerUserStore()
   } catch (e) {
     backend = null
     lastError = e.message

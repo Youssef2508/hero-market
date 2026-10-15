@@ -167,6 +167,10 @@
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
+.field-hint.is-warning {
+  color: var(--warning-text);
+  font-weight: var(--fw-semibold);
+}
 .field-error {
   font-size: var(--fs-xs);
   color: var(--danger-text);
@@ -886,6 +890,17 @@ th.sortable:hover {
 .toast.toast-error .toast-icon {
   background: var(--danger-soft);
   color: var(--danger-text);
+}
+.toast.toast-warning {
+  border-color: var(--warning-border);
+}
+.toast.toast-warning .toast-icon {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+/* Several lines (a sale plus what was not saved on the customer) stay on separate lines. */
+.toast-text {
+  white-space: pre-line;
 }
 @keyframes hm-toast {
   from {

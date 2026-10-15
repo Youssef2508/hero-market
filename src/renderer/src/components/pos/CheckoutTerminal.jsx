@@ -24,13 +24,15 @@ import {
   CornerDownLeft,
   Info,
   Undo2,
-  FolderTree
+  FolderTree,
+  List
 } from 'lucide-react'
 import { Kbd } from '../ui'
 import CategoryBrowser from './CategoryBrowser'
 import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
+import { api } from '../../lib/api'
 
 // Payment types are business values written to sales.payment_type – do not rename.
 const PAYMENT_METHODS = [
@@ -188,6 +190,60 @@ function CheckoutTerminal({
   // "Another number…" belongs to the customer it was chosen for: picking another customer resets it.
   const [typingPhoneFor, setTypingPhoneFor] = useState(null)
   const typingPhone = selectedClient != null && typingPhoneFor === selectedClient.id
+
+  // Before payment, say whether a new number or address will be kept on the customer (owner rule:
+  // a number of another customer, a third number or a fourth address serve this order only).
+  const phoneKey =
+    selectedClient && typingPhone && clientPhone.trim()
+      ? `${selectedClient.id}|${clientPhone.trim()}`
+      : null
+  const [phoneCheck, setPhoneCheck] = useState(null)
+  useEffect(() => {
+    if (!phoneKey) return
+    let alive = true
+    const [id, phone] = [Number(phoneKey.split('|')[0]), phoneKey.slice(phoneKey.indexOf('|') + 1)]
+    const timer = setTimeout(() => {
+      api('pos.phoneOwner', { phone, clientId: id }).then(
+        (r) => alive && setPhoneCheck({ ...r, key: phoneKey }),
+        () => {}
+      )
+    }, 300)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [phoneKey])
+  const phoneInfo =
+    phoneCheck && phoneCheck.key === phoneKey && phoneCheck.valid ? phoneCheck : null
+  const phoneNote =
+    !phoneInfo || phoneInfo.savedHere
+      ? null
+      : phoneInfo.otherCustomer
+        ? {
+            warn: true,
+            text: 'هذا الرقم مسجَّل لعميل آخر: سيُستخدم لهذا الطلب فقط ولن يُحفظ لهذا العميل.'
+          }
+        : !phoneInfo.freeSlot
+          ? {
+              warn: true,
+              text: 'للعميل رقمان محفوظان: سيُستخدم هذا الرقم لهذا الطلب فقط ولن يُحفظ.'
+            }
+          : { warn: false, text: 'سيُحفظ الرقم الجديد للعميل ليظهر في الطلبات القادمة.' }
+  const savedAddresses = selectedClient?.addresses || []
+  const typedAddress =
+    isDelivery && selectedClient && !clientAddressId ? (clientAddress || '').trim() : ''
+  const addressIsSaved =
+    !!typedAddress &&
+    savedAddresses.some((a) => a.address.trim().toLowerCase() === typedAddress.toLowerCase())
+  const addressNote =
+    !typedAddress || addressIsSaved
+      ? null
+      : savedAddresses.length >= 3
+        ? {
+            warn: true,
+            text: 'للعميل 3 عناوين محفوظة: سيُستخدم هذا العنوان لهذا الطلب فقط ولن يُحفظ.'
+          }
+        : { warn: false, text: 'سيُحفظ العنوان الجديد للعميل ليظهر في الطلبات القادمة.' }
   // Category browsing panel (1.4.0). F6 opens/closes it; the cart stays as it is.
   const [browsing, setBrowsing] = useState(false)
   useEffect(() => {
@@ -790,19 +846,23 @@ function CheckoutTerminal({
                   {selectedClient && savedPhones.length > 0 && (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="icon-btn saved-phones-btn"
+                      aria-label="الأرقام المحفوظة"
+                      title="الرجوع إلى الأرقام المحفوظة"
                       onClick={() => {
                         setTypingPhoneFor(null)
                         setClientPhone(savedPhones[0])
                       }}
                     >
-                      الأرقام المحفوظة
+                      <List size={16} aria-hidden="true" />
                     </button>
                   )}
                 </div>
               )}
-              {selectedClient && typingPhone && savedPhones.length < 2 && clientPhone && (
-                <p className="field-hint">سيُحفظ الرقم الجديد للعميل ليظهر في الطلبات القادمة.</p>
+              {phoneNote && (
+                <p className={`field-hint ${phoneNote.warn ? 'is-warning' : ''}`} role="status">
+                  {phoneNote.text}
+                </p>
               )}
               {clientSearchResults.length > 0 && (
                 <div className="popover client-results" role="listbox">
@@ -878,6 +938,11 @@ function CheckoutTerminal({
                   />
                 </div>
               )}
+            {addressNote && (
+              <p className={`field-hint ${addressNote.warn ? 'is-warning' : ''}`} role="status">
+                {addressNote.text}
+              </p>
+            )}
 
             {selectedClient && (
               <div className="client-balance">

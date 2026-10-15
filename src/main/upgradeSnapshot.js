@@ -23,6 +23,18 @@ function walk(dir, base = dir, out = []) {
 
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
 
+// Streamed, so a copy of a whole store (hundreds of MB) never blocks the app's main process: the
+// window and its "preparing data" screen keep responding while the copy runs (1.4.0: a synchronous
+// copy froze the start-up for 17 s on 157 MB).
+const sha256Async = (file) =>
+  new Promise((resolve, reject) => {
+    const h = crypto.createHash('sha256')
+    fs.createReadStream(file)
+      .on('data', (d) => h.update(d))
+      .on('end', () => resolve(h.digest('hex')))
+      .on('error', reject)
+  })
+
 /** Pending migration versions (applied: versions in schema_migrations; all: shipped versions). */
 export function pendingVersions(applied, all) {
   const done = new Set(applied)
@@ -40,7 +52,7 @@ export function needsSnapshot(applied, all) {
  * server are not copied. Returns { files: {rel: sha256}, directories, bytes }. Throws on any
  * difference. Used for pre-upgrade snapshots and for moving a store to the shared folder (1.4.0).
  */
-export function copyAndVerify(from, to) {
+export async function copyAndVerify(from, to) {
   if (!fs.existsSync(path.join(from, 'PG_VERSION')))
     throw new Error(`No PostgreSQL data folder at ${from}`)
   fs.mkdirSync(to, { recursive: true })
@@ -49,13 +61,12 @@ export function copyAndVerify(from, to) {
   for (const rel of files) {
     const src = path.join(from, rel)
     const dst = path.join(to, rel)
-    fs.mkdirSync(path.dirname(dst), { recursive: true })
-    fs.copyFileSync(src, dst)
-    const a = sha256(src)
-    const b = sha256(dst)
+    await fs.promises.mkdir(path.dirname(dst), { recursive: true })
+    await fs.promises.copyFile(src, dst)
+    const [a, b] = await Promise.all([sha256Async(src), sha256Async(dst)])
     if (a !== b) throw new Error(`Copy verification failed for ${rel}`)
     out.files[rel] = a
-    out.bytes += fs.statSync(dst).size
+    out.bytes += (await fs.promises.stat(dst)).size
   }
   const walkDirs = (d) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true }))
@@ -73,12 +84,12 @@ export function copyAndVerify(from, to) {
  * Copy `dataDir` (PostgreSQL stopped) into `<backupsDir>/<stamp>-<label>/pgdata`, verify every file
  * by SHA-256 and write manifest.json. Returns the snapshot folder. Throws on any difference.
  */
-export function snapshotDataDir(dataDir, backupsDir, label, now = new Date()) {
+export async function snapshotDataDir(dataDir, backupsDir, label, now = new Date()) {
   if (!fs.existsSync(path.join(dataDir, 'PG_VERSION')))
     throw new Error(`No PostgreSQL data folder at ${dataDir}`)
   const stamp = now.toISOString().replace(/[:.]/g, '-')
   const target = path.join(backupsDir, `${stamp}-${label.replace(/[^\w.-]/g, '_')}`)
-  const copied = copyAndVerify(dataDir, path.join(target, 'pgdata'))
+  const copied = await copyAndVerify(dataDir, path.join(target, 'pgdata'))
   const manifest = {
     createdAt: now.toISOString(),
     label,

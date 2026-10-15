@@ -270,6 +270,47 @@ module.exports = function posModule(app) {
     }
   })
 
+  // While a number is typed for a selected customer, the till says beforehand whether it will be
+  // saved: not when it belongs to another customer, not when both slots are taken. Only a yes/no
+  // about another customer is returned (no name), and the checkout applies the same rules.
+  app.operation({
+    name: 'pos.phoneOwner',
+    permission: 'pos.sell',
+    schema: {
+      type: 'object',
+      required: ['phone', 'clientId'],
+      properties: {
+        phone: { type: 'string', maxLength: 40 },
+        clientId: { type: 'integer', minimum: 1 }
+      }
+    },
+    handler: async (ctx, { phone, clientId }) => {
+      const { normalizePhone } = await import(
+        pathToFileURL(path.join(__dirname, '..', '..', 'shared', 'phone.mjs')).href
+      )
+      const r = normalizePhone(phone)
+      if (r.error || !r.value) return { valid: false, error: r.error || '' }
+      const { rows } = await ctx.pool.query(
+        `SELECT id, regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') AS p1,
+                regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') AS p2
+           FROM clients
+          WHERE id = $1
+             OR regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $2
+             OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $2`,
+        [clientId, r.value]
+      )
+      const self = rows.find((x) => x.id === clientId)
+      const savedHere = !!self && [self.p1, self.p2].includes(r.value)
+      return {
+        valid: true,
+        value: r.value,
+        savedHere,
+        otherCustomer: rows.some((x) => x.id !== clientId),
+        freeSlot: !!self && (!self.p1 || !self.p2)
+      }
+    }
+  })
+
   // After a checkout whose reply was lost (timeout, dropped link) the till asks whether that attempt
   // was recorded before it sells a changed cart. Waiting on the attempt's advisory lock makes an
   // in-flight checkout with this key finish first, so the answer is final.
@@ -454,6 +495,8 @@ module.exports = function posModule(app) {
         let orderPhone = null // the number used for this order (known customers)
         let savedPhone = null // a new number kept on the customer
         let savedAddress = null // a new address kept on the customer
+        let phoneNotSaved = null // why a typed number was used but not kept
+        let addressNotSaved = null // why a typed address was used but not kept
         if (c) {
           if (c.id) {
             clientRow = (await db.query('SELECT * FROM clients WHERE id = $1 FOR UPDATE', [c.id]))
@@ -470,14 +513,18 @@ module.exports = function posModule(app) {
               const digits = (v) => String(v || '').replace(/[^0-9+]/g, '')
               const known = [clientRow.phone, clientRow.phone2].map(digits)
               orderPhone = r.value
-              if (!known.includes(r.value) && (!clientRow.phone || !clientRow.phone2)) {
+              if (!known.includes(r.value)) {
+                // Owner rule (1.4.0): a number of another customer, or one beyond the two slots,
+                // serves this order only; the reply says so, and the till tells the cashier.
                 const taken = await db.query(
                   `SELECT 1 FROM clients WHERE id <> $1
                      AND (regexp_replace(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $2
                        OR regexp_replace(COALESCE(phone2, ''), '[^0-9+]', '', 'g') = $2) LIMIT 1`,
                   [clientRow.id, r.value]
                 )
-                if (!taken.rowCount) {
+                if (taken.rowCount) phoneNotSaved = 'other_customer'
+                else if (clientRow.phone && clientRow.phone2) phoneNotSaved = 'no_free_slot'
+                else {
                   const col = clientRow.phone ? 'phone2' : 'phone'
                   await db.query(`UPDATE clients SET ${col} = $2 WHERE id = $1`, [
                     clientRow.id,
@@ -594,7 +641,9 @@ module.exports = function posModule(app) {
               const dup = saved.some(
                 (a) => a.address.trim().toLowerCase() === deliveryAddress.toLowerCase()
               )
-              if (!dup && saved.length < 3 && deliveryAddress.length <= 300) {
+              // Owner rule (1.4.0): a fourth address serves this order (and its invoice) only.
+              if (!dup && saved.length >= 3) addressNotSaved = 'limit'
+              if (!dup && saved.length < 3) {
                 await db.query(
                   `INSERT INTO client_addresses (client_id, label, address, is_default)
                    VALUES ($1, 'other', $2, $3)`,
@@ -775,6 +824,7 @@ module.exports = function posModule(app) {
           deliveryAddress,
           savedPhone,
           savedAddress,
+          notSaved: { phone: phoneNotSaved, address: addressNotSaved },
           duplicate: false
         }
       })

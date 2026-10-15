@@ -340,6 +340,7 @@ test('returning customers: a new address or number typed at the till is kept for
   const r1 = ok(await sell({ phone: '0109 555 0002', address: 'الكيت كات' }))
   assert.equal(r1.savedAddress, 'الكيت كات')
   assert.equal(r1.savedPhone, '01095550002')
+  assert.deepEqual(r1.notSaved, { phone: null, address: null })
   const found = ok(await svc.call('pos.searchClients', { term: 'زبون دائم' }, cashier))[0]
   assert.deepEqual([found.phone, found.phone2], ['01095550001', '01095550002'])
   assert.deepEqual(found.addresses.map((a) => a.address).sort(), ['الكيت كات', 'العجوزة'].sort())
@@ -354,6 +355,12 @@ test('returning customers: a new address or number typed at the till is kept for
   const r4 = ok(await sell({ address: 'الوراق' }))
   assert.equal(r4.savedAddress, null)
   assert.equal(r4.deliveryAddress, 'الوراق')
+  assert.equal(r4.notSaved.address, 'limit', 'the cashier is told the fourth address was not kept')
+  assert.equal(
+    (await q('SELECT delivery_address FROM sales WHERE id = $1', [r4.saleId]))[0].delivery_address,
+    'الوراق',
+    'the invoice still carries the fourth address'
+  )
   assert.equal(
     (await q('SELECT count(*)::int AS n FROM client_addresses WHERE client_id = $1', [c.id]))[0].n,
     3
@@ -361,6 +368,12 @@ test('returning customers: a new address or number typed at the till is kept for
   // Both phone slots full: a third number is used for the order only.
   const r5 = ok(await sell({ phone: '01095550003', addressId: kit.id }))
   assert.equal(r5.savedPhone, null)
+  assert.equal(r5.notSaved.phone, 'no_free_slot')
+  assert.match(
+    (await q('SELECT client_name FROM sales WHERE id = $1', [r5.saleId]))[0].client_name,
+    /01095550003/,
+    'the order uses the typed number'
+  )
   // A number of another customer is never attached to this one.
   const other = ok(await create({ name: 'شخص آخر', phones: ['01095550009'] }))
   const c2 = ok(
@@ -380,5 +393,44 @@ test('returning customers: a new address or number typed at the till is kept for
     )
   )
   assert.equal(r6.savedPhone, null)
+  assert.equal(r6.notSaved.phone, 'other_customer')
   assert.equal((await q('SELECT phone2 FROM clients WHERE id = $1', [c2.id]))[0].phone2, null)
+  assert.match(
+    (await q('SELECT client_name FROM sales WHERE id = $1', [r6.saleId]))[0].client_name,
+    /01095550009/,
+    'the order still uses the number'
+  )
+  assert.equal(
+    (await q('SELECT client_id FROM sales WHERE id = $1', [r6.saleId]))[0].client_id,
+    c2.id,
+    'the sale stays on the selected customer, not the owner of the number'
+  )
+})
+
+test('before payment the till learns whether a typed number will be kept (owner rule)', async (t) => {
+  if (!requireDb(t)) return
+  const a = ok(await create({ name: 'صاحب الرقم', phones: ['01097770001'] }))
+  const b = ok(await create({ name: 'برقم حر', phones: ['01097770002'] }))
+  const full = ok(await create({ name: 'برقمين', phones: ['01097770003', '01097770004'] }))
+  const check = (phone, clientId) => svc.call('pos.phoneOwner', { phone, clientId }, cashier)
+  const r1 = ok(await check('٠١٠٩ ٧٧٧ ٠٠٠١', b.id))
+  assert.deepEqual(
+    [r1.valid, r1.value, r1.otherCustomer, r1.savedHere],
+    [true, '01097770001', true, false],
+    'Arabic digits and spaces: recognised as the other customer’s number'
+  )
+  assert.equal(r1.name, undefined, 'the other customer is not named')
+  const r2 = ok(await check('01097770009', b.id))
+  assert.deepEqual([r2.otherCustomer, r2.freeSlot, r2.savedHere], [false, true, false])
+  const r3 = ok(await check('01097770009', full.id))
+  assert.deepEqual([r3.otherCustomer, r3.freeSlot], [false, false])
+  const r4 = ok(await check('01097770002', b.id))
+  assert.equal(r4.savedHere, true)
+  const r5 = ok(await check('12', b.id))
+  assert.equal(r5.valid, false)
+  // Without a signed-in user the question is refused.
+  assert.equal(
+    (await svc.call('pos.phoneOwner', { phone: '01097770001', clientId: a.id })).status,
+    401
+  )
 })

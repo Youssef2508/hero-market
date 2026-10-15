@@ -544,6 +544,7 @@ function App() {
   }
 
   const toastIsError = typeof toastMessage === 'object' && toastMessage?.type === 'error'
+  const toastIsWarning = typeof toastMessage === 'object' && toastMessage?.type === 'warning'
   const auditRows = [
     { label: 'إجمالي مبيعات الفواتير', value: auditBreakdown?.grossSales || 0, sign: '' },
     {
@@ -605,14 +606,20 @@ function App() {
     <>
       {toastMessage && (
         <div
-          className={`toast ${toastIsError ? 'toast-error' : ''}`}
+          className={`toast ${toastIsError ? 'toast-error' : toastIsWarning ? 'toast-warning' : ''}`}
           role="status"
           aria-live="polite"
         >
           <span className="toast-icon" aria-hidden="true">
-            {toastIsError ? <TriangleAlert size={18} /> : <CircleCheck size={18} />}
+            {toastIsError || toastIsWarning ? (
+              <TriangleAlert size={18} />
+            ) : (
+              <CircleCheck size={18} />
+            )}
           </span>
-          {typeof toastMessage === 'object' ? toastMessage.text : toastMessage}
+          <span className="toast-text">
+            {typeof toastMessage === 'object' ? toastMessage.text : toastMessage}
+          </span>
         </div>
       )}
 
