@@ -32,3 +32,6 @@ test-results/
 # Local development PostgreSQL (scripts/pg-dev.js)
 .pgdata/
 .migration-backups/
+
+# Microsoft VC++ redistributable, downloaded and signature-checked at build time (scripts/fetch-vcredist.js)
+build/vcredist/

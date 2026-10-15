@@ -533,7 +533,7 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 ## D-052 Per-machine installation, shared store folder and program hardening (1.4.0)
 
-- **Install for all users:** the installer is per-machine (`C:\Program Files\HeroMarket POS`, one administrator prompt). The store's data moved to `%ProgramData%\HeroMarket`.
+- **Install for all users:** the installer is per-machine (`C:\Program Files\HeroMarket-POS`, one administrator prompt). The store's data moved to `%ProgramData%\HeroMarket`.
   - On first creation, the local Users group is given modify rights, inherited by the database files.
   - Every Windows account on the cashier PC therefore opens the same shop.
   - Each person still signs in to HeroMarket with their own account.

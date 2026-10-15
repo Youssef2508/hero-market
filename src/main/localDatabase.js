@@ -87,6 +87,19 @@ function exe(name) {
   return join(binDir(), process.platform === 'win32' ? `${name}.exe` : name)
 }
 
+// Windows exit status of a program that cannot load a DLL (0xC0000135): on a PC without the
+// Microsoft Visual C++ runtime the PostgreSQL tools stop before printing anything (seen on a clean
+// Windows, 1.4.0 release checks). The installer installs the runtime; this explains it if missing.
+const DLL_NOT_FOUND = [0xc0000135, -1073741515]
+function toolError(what, result) {
+  if (DLL_NOT_FOUND.includes(result.code))
+    return new Error(
+      'تعذر تشغيل قاعدة البيانات لأن مكونات Microsoft Visual C++ غير مثبتة على هذا الجهاز. أعد تشغيل برنامج تثبيت HeroMarket ليثبّتها، ثم افتح البرنامج.'
+    )
+  const exit = result.code == null ? '' : ` (exit ${result.code})`
+  return new Error(`${what}${exit}: ${result.output.slice(-800)}`)
+}
+
 /** Run a PostgreSQL tool and resolve with its exit code and output (stdio is never left attached). */
 function run(tool, args) {
   return new Promise((resolve, reject) => {
@@ -181,7 +194,7 @@ export async function ensureLocalDatabase(local, persist) {
         '--auth-host=scram-sha-256',
         '--auth-local=scram-sha-256'
       ])
-      if (init.code !== 0) throw new Error(`initdb failed: ${init.output.slice(-800)}`)
+      if (init.code !== 0) throw toolError('initdb failed', init)
     } finally {
       fs.rmSync(pwFile, { force: true })
     }
@@ -215,6 +228,7 @@ export async function ensureLocalDatabase(local, persist) {
       `-p ${cfg.port} -c listen_addresses=127.0.0.1`
     ])
     if (started.code !== 0) {
+      if (DLL_NOT_FOUND.includes(started.code)) throw toolError('pg_ctl start failed', started)
       let tail = ''
       try {
         tail = fs.readFileSync(p.log, 'utf8').slice(-800)

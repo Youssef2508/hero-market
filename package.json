@@ -22,8 +22,8 @@
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true });\"",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run clean && npm run build && electron-builder --dir",
-    "build:win": "npm run clean && npm run build && electron-builder --win",
-    "build:win:qa": "npm run clean && npm run build && electron-builder --win --config electron-builder.qa.yml",
+    "build:win": "npm run clean && npm run build && node scripts/fetch-vcredist.js && electron-builder --win",
+    "build:win:qa": "npm run clean && npm run build && node scripts/fetch-vcredist.js && electron-builder --win --config electron-builder.qa.yml",
     "build:mac": "npm run clean && npm run build && electron-builder --mac",
     "build:linux": "npm run clean && npm run build && electron-builder --linux",
     "pg:dev": "node scripts/pg-dev.js"

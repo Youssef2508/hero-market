@@ -22,11 +22,14 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 
 ## Installation changes
 
-- **Installed for all Windows users of the PC** (`C:\Program Files\HeroMarket POS`). Windows asks for administrator approval once during installation.
+- **Installed for all Windows users of the PC** (`C:\Program Files\HeroMarket-POS`). Windows asks for administrator approval once during installation.
 - **Store data in `C:\ProgramData\HeroMarket`**, shared by every Windows account on the PC.
   - Data from an earlier version is moved in automatically on the first start, and every file is checked.
   - The old folder is kept.
-- **Stronger protection of the program files** against misuse and tampering.
+- **The program can no longer be misused as a general script runner**, and it refuses to start if the index of its program package was modified.
+  - Changes deeper inside the program files are **not** detected when it starts. They are kept out because only an administrator can change `C:\Program Files`.
+  - Code signing would add detection; it is not bought yet.
+- **The Microsoft Visual C++ runtime is installed when missing.** The database needs it; without it, a clean Windows could not create the shop's database.
 
 ## Fixes from the 1.4.0 audit
 

@@ -54,13 +54,15 @@ win:
         - '!bin/testplug.dll'
         - '!lib/*.lib'
 # Installer (.docs/INSTALLATION_GUIDE.md), version 1.4.0: per machine. One click after the Windows
-# administrator prompt; installs under C:\Program Files\HeroMarket POS for every Windows user of the
+# administrator prompt; installs under C:\Program Files\HeroMarket-POS for every Windows user of the
 # PC, creates Desktop and Start Menu shortcuts for all users and starts the app. The store's data
 # lives in %ProgramData%\HeroMarket (shared by all users, src/main/userDataPath.js) and is never
 # touched by the installer: upgrading = running a newer installer (the app itself takes a verified
 # snapshot before migrating, src/main/upgradeSnapshot.js); uninstalling removes the program and
 # keeps the data.
 nsis:
+  # Installs the Microsoft Visual C++ runtime the database needs when a clean PC lacks it.
+  include: build/installer.nsh
   oneClick: true
   perMachine: true
   runAfterFinish: true

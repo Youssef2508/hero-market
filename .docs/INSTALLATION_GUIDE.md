@@ -14,7 +14,7 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 2. Double-click it.
    - The installer is **not code-signed yet**, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. This message disappears once a code-signing certificate is bought (see [DEPLOYMENT_RECOMMENDATION.md](DEPLOYMENT_RECOMMENDATION.md) §5).
 3. Windows asks **"Do you want to allow this app to make changes to your device?"**. Click **Yes** (an administrator's password may be asked once). There are no other questions. The installer:
-   - puts the program in `C:\Program Files\HeroMarket POS`, for **every Windows user of this PC**;
+   - puts the program in `C:\Program Files\HeroMarket-POS`, for **every Windows user of this PC**;
    - creates a **HeroMarket POS** shortcut on the Desktop and in the Start Menu of every user;
    - opens the program.
 
@@ -50,7 +50,7 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 - **Recovery code lost as well:**
   1. Close HeroMarket.
   2. Press **Win + R** and type:
-     `"C:\Program Files\HeroMarket POS\HeroMarket-POS.exe" --reset-password=<your username>`
+     `"C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --reset-password=<your username>`
   3. A window shows a temporary password; sign in with it and choose a new one.
 
   This works only on the store PC itself and is written to the event log. Anyone who can use that PC's Windows account can do it, so protect the Windows account with its own password.
@@ -78,7 +78,7 @@ Until then the shop works fully without it.
 | Copy of the old version's data (first start)                  | `C:\ProgramData\HeroMarket\backups\legacy-sqlite`                            |
 | Data of version 1.3 or earlier (left as it was)               | `%APPDATA%\HeroMarket` of the Windows user who used it                       |
 | Window preferences (theme, last username) of one Windows user | `%APPDATA%\HeroMarket`                                                       |
-| The program files                                             | `C:\Program Files\HeroMarket POS` (replaced by every upgrade, holds no data) |
+| The program files                                             | `C:\Program Files\HeroMarket-POS` (replaced by every upgrade, holds no data) |
 
 `heromarket.json` holds the database password and the server secret.
 
