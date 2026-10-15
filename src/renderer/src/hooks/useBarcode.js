@@ -12,7 +12,7 @@ export function useBarcode({
   currentView,
   openShiftModal,
   closeShiftModal,
-  managerApprovalModal,
+  supervisorModal,
   showAddModal,
   adminTab,
   customAlert,
@@ -33,7 +33,7 @@ export function useBarcode({
       currentView === 'pos' &&
       !openShiftModal &&
       !closeShiftModal &&
-      !managerApprovalModal &&
+      !supervisorModal &&
       !customAlert &&
       !customConfirm
     ) {
@@ -44,7 +44,7 @@ export function useBarcode({
     currentView,
     openShiftModal,
     closeShiftModal,
-    managerApprovalModal,
+    supervisorModal,
     customAlert,
     customConfirm
   ])
@@ -60,7 +60,7 @@ export function useBarcode({
         isLocked ||
         openShiftModal ||
         closeShiftModal ||
-        managerApprovalModal ||
+        supervisorModal ||
         customAlert ||
         customConfirm
       ) {
@@ -180,7 +180,7 @@ export function useBarcode({
     currentView,
     openShiftModal,
     closeShiftModal,
-    managerApprovalModal,
+    supervisorModal,
     showAddModal,
     adminTab,
     customAlert,

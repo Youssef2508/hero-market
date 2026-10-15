@@ -1,4 +1,4 @@
-import { UserCog } from 'lucide-react'
+import { UserCog, KeyRound } from 'lucide-react'
 
 const EditUserModal = ({
   showEditUserModal,
@@ -6,6 +6,7 @@ const EditUserModal = ({
   editUser,
   setEditUser,
   handleEditUser,
+  handleResetPassword,
   rolesList = []
 }) => {
   if (!showEditUserModal) return null
@@ -35,16 +36,15 @@ const EditUserModal = ({
             />
           </div>
           <div className="form-group">
-            <label>رمز المرور الجديد (4 أرقام - اتركه كـ •••• لعدم التغيير) *</label>
-            <input
-              type="text"
-              pattern="\d{4}|••••"
-              maxLength="4"
-              className="form-input"
-              value={editUser.pin}
-              onChange={(e) => setEditUser((prev) => ({ ...prev, pin: e.target.value }))}
-              required
-            />
+            <label>كلمة المرور</label>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleResetPassword(editUser)}
+            >
+              <KeyRound size={15} aria-hidden="true" />
+              إعادة تعيين كلمة المرور (كلمة مؤقتة)
+            </button>
           </div>
           <div className="form-group">
             <label>الدور *</label>

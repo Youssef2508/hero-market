@@ -23,12 +23,34 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 4. On the first start the program prepares its database on this computer. This takes up to a minute.
    - If the PC still has the old version's data (`%APPDATA%\elnagdi-pos`), it is copied in automatically. The old file is only read, never changed.
    - Then the **إعداد المتجر لأول مرة** screen asks you to create the first administrator. There is no default password.
+   - Next, the **recovery code** is shown once. Write it on paper and keep it away from the till (§3a).
 
 ## 3. Daily use
 
 - **Open:** double-click **HeroMarket POS** on the Desktop, wait for the login screen, and sign in. The database starts by itself.
 - **Close:** close the window. The program stops its database cleanly. If Windows is shut down with the program open, the database recovers by itself on the next start.
 - Without internet everything works: sales, invoices, stock and shifts are saved on this computer immediately.
+
+## 3a. Sign-in and passwords
+
+- **Everyone signs in with a username and a password.** Passwords have at least 8 characters, letters and digits together, and must not contain the username.
+- **After updating from a version with PINs:** each person types their username and their **old PIN** once. The program then asks them to choose a password. From then on the PIN no longer works.
+- **New staff member:** الإدارة → المستخدمون → إضافة حساب. A temporary password appears once; give it to the person. They choose their own password at their first sign-in.
+- **A staff member forgot their password:** الإدارة → المستخدمون → تعديل → **إعادة تعيين كلمة المرور**. A new temporary password appears once.
+- **You (the owner) forgot your password:**
+  1. On the sign-in screen click **نسيت كلمة المرور؟**.
+  2. Type your username, the **recovery code** from the paper, and a new password.
+  3. A **new** recovery code is shown. Write it down, because the old one no longer works.
+- **Recovery code lost as well:**
+  1. Close HeroMarket.
+  2. Press **Win + R** and type:
+     `"%LOCALAPPDATA%\Programs\heromarket-pos\HeroMarket-POS.exe" --reset-password=<your username>`
+  3. A window shows a temporary password; sign in with it and choose a new one.
+
+  This works only on the store PC itself and is written to the event log. Anyone who can use that PC's Windows account can do it, so protect the Windows account with its own password.
+
+- **Returns by cashiers:** the cashier presses **مرتجع** on the till, types the invoice number, chooses the item or the whole invoice and writes the reason. A supervisor types their own username and password to approve (or refuse). Everything is recorded.
+- **Closing a shift with a difference above EGP 50** (over or short) also needs a supervisor's username and password.
 
 ## 4. Where the data is
 

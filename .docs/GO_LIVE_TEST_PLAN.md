@@ -39,9 +39,10 @@ They run on a development PC with the repository, Node 22.5 or later and the dev
 ```powershell
 npm run pg:dev                               # in a second window, keep it running
 $url = (npm run --silent pg:dev -- url) -replace '/[a-z_]+$', '/postgres'
-$env:HEROMARKET_GOLIVE_PIN = '<an existing administrator PIN>'   # optional, enables A4; never written anywhere
+$env:HEROMARKET_GOLIVE_USER = '<an existing username>'          # optional, with the PIN enables A4
+$env:HEROMARKET_GOLIVE_PIN = '<that user''s PIN>'                # never written anywhere
 npm run golive:check -- --sqlite D:\copies\market_unified.db --admin-url $url --report golive-evidence\A-report.json
-Remove-Item Env:HEROMARKET_GOLIVE_PIN
+Remove-Item Env:HEROMARKET_GOLIVE_PIN, Env:HEROMARKET_GOLIVE_USER
 ```
 
 | Check | What it proves                                                                                                                                                                               |
@@ -49,7 +50,7 @@ Remove-Item Env:HEROMARKET_GOLIVE_PIN
 | A1    | The given file has the same SHA-256 before and after the run: the import works on its own copy only                                                                                          |
 | A2    | Import into a new, empty PostgreSQL database: every table's rows match (count and per-row SHA-256), no broken references                                                                     |
 | A3    | What the store sees is identical in SQLite and PostgreSQL: stock, retail and cost price per product, every customer's and supplier's balance, sales count and total per day and payment type |
-| A4    | An existing PIN still logs in after the move (legacy PIN hashes are upgraded on first login)                                                                                                 |
+| A4    | An existing user's username + PIN is accepted after the move, once, to choose a password (nothing is changed by the check)                                                                   |
 | A5    | A backup made through the service restores into a second new database, and A3 between the two databases finds no difference                                                                  |
 
 Both temporary databases are dropped at the end. Exit code 0 means every check that ran passed.
@@ -92,11 +93,11 @@ On the **test PC**:
 
 ### T3 Logins and accounts (check 3)
 
-1. On the T1 test PC: log in with the existing administrator PIN, then with each cashier's PIN. A PIN that worked in 1.3 must work unchanged.
+1. On the T1 test PC: sign in with the administrator's username and existing PIN, choose a password and **write the recovery code on paper**. Then each cashier does the same with their own PIN. A PIN that worked in 1.3 must be accepted once.
 2. الإدارة → المستخدمون (and الأدوار والصلاحيات): check each person's role, disable former staff, and create any missing accounts.
-3. Change every PIN that was shared or written down under the old system.
+3. Check that nobody's old PIN still signs in, and that a cashier's return asks for a supervisor.
 
-**Evidence:** a screenshot of the user list. **Never write PINs into the evidence folder.**
+**Evidence:** a screenshot of the user list. **Never write PINs, passwords or the recovery code into the evidence folder.**
 
 ### T5 Receipt on the store's thermal printer (check 5)
 

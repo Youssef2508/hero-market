@@ -381,3 +381,50 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **API**: `clients.create` and `clients.update` take `phones` (at most 2, schema-enforced). The old single `phone` field still works.
 - **Existing records** are kept as they are. Numbers are cleaned when a customer is next saved. Duplicate checks compare digits, so "0100 123 4567" equals "01001234567" (this also fixes the earlier mismatch, where the check compared digits but stored the raw text).
 - **Till**: a number typed at checkout is validated the same way and matches a customer by either number.
+
+## D-046 Staff passwords and supervisor approvals (stage 4 phase 3, owner decisions 2026-10-14)
+
+**Sign-in**
+
+- Users sign in with **username + password**; the username ignores case. A PIN no longer identifies a user.
+- **Moving existing users (no forced reset day).** Migration 0008 changes no existing value.
+  - Each user's next sign-in takes their username + current PIN. That is accepted exactly once: the user must choose a password before any session is issued.
+  - Choosing the password erases the PIN (`pin_lookup`, `pin_hash`, legacy `password_hash`).
+  - Users not yet moved keep working until they sign in once.
+- **Passwords**:
+  - 8–128 characters with letters and digits; not a common password; must not contain the username (3+ letters).
+  - Stored as scrypt, like the PINs were.
+  - The service is the authority; the screens only show early hints.
+- **Temporary passwords.** New accounts, administrator resets and the local reset command give a temporary password (shown once). It must be replaced at the next sign-in, and the user's sessions end.
+- **Recovery code.**
+  - A super administrator receives a one-time code (4 × 5 characters, no look-alike letters) at setup or when choosing a first password. It is shown once and stored only as a scrypt hash.
+  - `auth.recover` sets a new password with it and issues a new code.
+  - A signed-in super administrator can replace a lost code with their current password.
+- **Local reset**, for someone at the store PC when no administrator can sign in:
+  - command: `"HeroMarket-POS.exe" --reset-password=<username>` (or `node src/server/cli.js reset-password <username>` on a server);
+  - it gives a temporary password and writes the event log;
+  - it never re-enables a disabled account.
+  - Physical access to the PC is the boundary, as before (the database files are on that PC anyway).
+- **Lockouts and sessions are unchanged** (5 per terminal, 20 per address). They also apply to recovery codes, password changes and supervisor approvals.
+
+**Approvals**
+
+- The approval travels **with the action** (`approver: { username, password, decision }`). The service checks the supervisor and performs the action in one transaction, so an approval cannot be reused for another action, amount or invoice.
+  - The old free-standing `auth.verifyApprover` (PIN) and the unused cart-approval dialog are removed. Cart edits never need approval (K-10).
+- **Returns.**
+  - New permission `sales.return_request`: cashiers by default, granted once to the built-in cashier role on upgrade.
+  - A cashier can open an invoice by number and return one line or the whole invoice. A reason (3+ characters) and a supervisor holding `sales.return` and `pos.approve` are required.
+  - Users with `sales.return` return directly, and their reason is optional.
+  - Every return is recorded in `sale_returns` (who, reason, refund, approval, shift).
+- **Shift difference.**
+  - Closing with |actual − expected| **above** EGP 50.00 needs a supervisor (`pos.approve`). Exactly 50.00 does not.
+  - A supervisor closing their own shift acknowledges it themselves, recorded with `self_approved`.
+  - The shift links its approval (`shifts.difference_approval_id`). The note is optional.
+- **Recording.**
+  - `approvals` keeps every decision:
+    - **approved** – written with the action, so it exists only if the action happened;
+    - **refused** – the supervisor signed in and pressed "رفض";
+    - **failed** – wrong credentials, no authority, the requester approving themselves, or a supervisor who still has to choose a password.
+  - Refused and failed rows are written on a separate connection, so they survive the rollback. They are also written to the event log.
+  - A refused or failed approval changes nothing else (tested on stock, money, invoice, customer balance and returns).
+- **Discounts need no approval** (D-044 withdrew discount authority from cashiers entirely).

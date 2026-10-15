@@ -5,6 +5,7 @@ const crypto = require('crypto')
 const { Client } = require('pg')
 const { createService } = require('../../src/server/app')
 const { pinLookup, hashPin } = require('../../src/server/auth/pin')
+const { hashPassword } = require('../../src/server/auth/password')
 
 const BASE_URL = process.env.HEROMARKET_TEST_DATABASE_URL
 const TEST_SECRET = 'test-secret-'.padEnd(40, 'x')
@@ -62,18 +63,60 @@ async function startService(databaseUrl, options = {}) {
   return { ...svc, call, close: () => svc.app.close() }
 }
 
-/** Insert a user with a built-in role directly (for tests that do not exercise user management). */
-async function createUser(svc, { username, pin, roleKey }) {
-  const { rows } = await svc.pool.query(
-    `INSERT INTO users (username, role, role_id, pin_lookup, pin_hash, is_active, created_at)
-     VALUES ($1, $2, (SELECT id FROM roles WHERE key = $2), $3, $4, true, LOCALTIMESTAMP(0)) RETURNING id`,
-    [username, roleKey, pinLookup(TEST_SECRET, pin), hashPin(pin)]
-  )
+// Tests identify their users by a short code ("pin"); since stage 4 phase 3 the user signs in with
+// username + password, so the code maps to the username and a password derived from it.
+const usersByCode = new Map()
+const passwordFor = (code) => `Test-${code}-pw`
+
+/** First-run setup through the service (auth.setup); the owner then logs in with `login(svc, pin)`. */
+async function setupOwner(svc, { username, pin, setupCode }) {
+  const r = await svc.call('auth.setup', { username, password: passwordFor(pin), setupCode })
+  if (r.status === 200) usersByCode.set(String(pin), username)
+  return r
+}
+
+/**
+ * A user created by an administrator signs in with the temporary password and chooses
+ * `passwordFor(code)`; returns the session token (and `login(svc, code)` works afterwards).
+ */
+async function activateUser(svc, username, temporaryPassword, code) {
+  const r = await svc.call('auth.setPassword', {
+    username,
+    currentPassword: temporaryPassword,
+    newPassword: passwordFor(code)
+  })
+  if (r.status !== 200) throw new Error(`activation failed: ${JSON.stringify(r.body)}`)
+  usersByCode.set(String(code), username)
+  return r.body.token
+}
+
+/**
+ * Insert a user with a built-in role directly (for tests that do not exercise user management).
+ * The user has a password (`passwordFor(pin)`); `legacyPin: true` instead stores only a PIN, as an
+ * account from before the password change.
+ */
+async function createUser(svc, { username, pin, roleKey, legacyPin = false }) {
+  const { rows } = legacyPin
+    ? await svc.pool.query(
+        `INSERT INTO users (username, role, role_id, pin_lookup, pin_hash, is_active, created_at)
+         VALUES ($1, $2, (SELECT id FROM roles WHERE key = $2), $3, $4, true, LOCALTIMESTAMP(0)) RETURNING id`,
+        [username, roleKey, pinLookup(TEST_SECRET, pin), hashPin(pin)]
+      )
+    : await svc.pool.query(
+        `INSERT INTO users (username, role, role_id, password_scrypt, is_active, created_at)
+         VALUES ($1, $2, (SELECT id FROM roles WHERE key = $2), $3, true, LOCALTIMESTAMP(0)) RETURNING id`,
+        [username, roleKey, hashPassword(passwordFor(pin))]
+      )
+  usersByCode.set(String(pin), username)
   return rows[0].id
 }
 
 async function login(svc, pin) {
-  const r = await svc.call('auth.login', { pin }, null, { 'x-heromarket-terminal': `test-${pin}` })
+  const username = usersByCode.get(String(pin))
+  if (!username) throw new Error(`no test user with code ${pin}`)
+  const r = await svc.call('auth.login', { username, password: passwordFor(pin) }, null, {
+    'x-heromarket-terminal': `test-${pin}`
+  })
   if (r.status !== 200) throw new Error(`login failed: ${JSON.stringify(r.body)}`)
   return r.body.token
 }
@@ -105,5 +148,8 @@ module.exports = {
   createUser,
   login,
   seedProducts,
-  TEST_SECRET
+  TEST_SECRET,
+  passwordFor,
+  setupOwner,
+  activateUser
 }

@@ -8,6 +8,9 @@ const {
   startService,
   createUser,
   login,
+  setupOwner,
+  activateUser,
+  passwordFor,
   seedProducts
 } = require('./helpers')
 
@@ -19,7 +22,7 @@ before(async () => {
   if (!process.env.HEROMARKET_TEST_DATABASE_URL) return
   db = await freshDatabase()
   svc = await startService(db.url)
-  owner = (await svc.call('auth.setup', { username: 'owner', pin: '9090' })).body.token
+  owner = (await setupOwner(svc, { username: 'owner', pin: '9090' })).body.token
   await createUser(svc, { username: 'mgr', pin: '3030', roleKey: 'manager' })
   await createUser(svc, { username: 'cash', pin: '4040', roleKey: 'cashier' })
   manager = await login(svc, '3030')
@@ -68,13 +71,9 @@ test('custom role: create, assign, permissions take effect immediately, revoke',
     owner
   )
   assert.equal(created.status, 200)
-  const u = await svc.call(
-    'users.create',
-    { username: 'viewer', pin: '5151', roleId: created.body.id },
-    owner
-  )
+  const u = await svc.call('users.create', { username: 'viewer', roleId: created.body.id }, owner)
   assert.equal(u.status, 200)
-  const viewer = await login(svc, '5151')
+  const viewer = await activateUser(svc, 'viewer', u.body.temporaryPassword, '5151')
   assert.equal((await svc.call('products.page', {}, viewer)).status, 200)
   assert.equal((await svc.call('sales.page', {}, viewer)).status, 403)
   const upd = await svc.call(
@@ -117,30 +116,20 @@ test('no escalation: cannot grant or assign beyond your own permissions', async 
       owner
     )
   ).body.id
-  await svc.call('users.create', { username: 'deleg', pin: '6161', roleId: delegated }, owner)
-  const d = await login(svc, '6161')
+  const dc = await svc.call('users.create', { username: 'deleg', roleId: delegated }, owner)
+  const d = await activateUser(svc, 'deleg', dc.body.temporaryPassword, '6161')
   assert.equal(
     (await svc.call('roles.create', { name: 'تصعيد', permissions: ['system.reset'] }, d)).status,
     403
   )
   assert.equal(
-    (
-      await svc.call(
-        'users.create',
-        { username: 'x1', pin: '7171', roleId: await roleId('super_admin') },
-        d
-      )
-    ).status,
+    (await svc.call('users.create', { username: 'x1', roleId: await roleId('super_admin') }, d))
+      .status,
     403
   )
   assert.equal(
-    (
-      await svc.call(
-        'users.create',
-        { username: 'x2', pin: '7272', roleId: await roleId('store_admin') },
-        d
-      )
-    ).status,
+    (await svc.call('users.create', { username: 'x2', roleId: await roleId('store_admin') }, d))
+      .status,
     403
   )
   assert.equal(
@@ -183,11 +172,11 @@ test('the last active super administrator cannot be removed, demoted or disabled
   )
   const second = await svc.call(
     'users.create',
-    { username: 'owner2', pin: '8282', roleId: await roleId('super_admin') },
+    { username: 'owner2', roleId: await roleId('super_admin') },
     owner
   )
   assert.equal(second.status, 200)
-  const owner2 = await login(svc, '8282')
+  const owner2 = await activateUser(svc, 'owner2', second.body.temporaryPassword, '8282')
   // owner2 demotes owner: allowed because another super admin (owner2) remains
   assert.equal(
     (
@@ -226,7 +215,10 @@ test('disabling a user revokes their sessions', async (t) => {
     200
   )
   assert.equal((await svc.call('auth.me', {}, cashier)).status, 401)
-  assert.equal((await svc.call('auth.login', { pin: '4040' })).status, 401)
+  assert.equal(
+    (await svc.call('auth.login', { username: 'cash', password: passwordFor('4040') })).status,
+    401
+  )
   await svc.call(
     'users.update',
     { id, username: 'cash', roleId: await roleId('cashier'), isActive: true },

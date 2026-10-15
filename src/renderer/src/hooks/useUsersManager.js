@@ -12,11 +12,11 @@ export function useUsersManager({
   const [showAddUserModal, setShowAddUserModal] = useState(false)
   const [showEditUserModal, setShowEditUserModal] = useState(false)
   // roleId refers to roles.id; the legacy role text is kept by the service for labels.
-  const [newUser, setNewUser] = useState({ username: '', pin: '', roleId: '' })
+  // New accounts and password resets get a temporary password from the service, shown once.
+  const [newUser, setNewUser] = useState({ username: '', roleId: '' })
   const [editUser, setEditUser] = useState({
     id: '',
     username: '',
-    pin: '',
     roleId: '',
     isActive: true
   })
@@ -70,20 +70,19 @@ export function useUsersManager({
 
   const handleAddUser = async (e) => {
     if (e) e.preventDefault()
-    const { username, pin, roleId } = newUser
-    if (!username || !pin || !roleId) {
+    const { username, roleId } = newUser
+    if (!username || !roleId) {
       triggerCustomAlert('يرجى ملء كافة الحقول!')
       return
     }
-    if (!/^\d{4}$/.test(pin)) {
-      triggerCustomAlert('رمز المرور (PIN) يجب أن يكون مكوناً من 4 أرقام فقط!')
-      return
-    }
     try {
-      await api('users.create', { username, pin, roleId: Number(roleId) })
-      triggerCustomAlert('تم إضافة حساب الموظف الجديد بنجاح!')
+      const r = await api('users.create', { username, roleId: Number(roleId) })
+      triggerCustomAlert(
+        `كلمة المرور المؤقتة للمستخدم "${username.trim()}":\n\n${r.temporaryPassword}\n\nأعطها للموظف. سيختار كلمة مرور خاصة به عند أول تسجيل دخول، ولن تظهر هذه الكلمة مرة أخرى.`,
+        'تم إنشاء الحساب'
+      )
       setShowAddUserModal(false)
-      setNewUser({ username: '', pin: '', roleId: '' })
+      setNewUser({ username: '', roleId: '' })
       await fetchUsersList()
     } catch (err) {
       triggerCustomAlert(
@@ -94,21 +93,15 @@ export function useUsersManager({
 
   const handleEditUser = async (e) => {
     if (e) e.preventDefault()
-    const { id, username, pin, roleId, isActive } = editUser
+    const { id, username, roleId, isActive } = editUser
     if (!username || !roleId) {
       triggerCustomAlert('يرجى ملء كافة الحقول!')
-      return
-    }
-    const changePin = pin && pin !== '••••'
-    if (changePin && !/^\d{4}$/.test(pin)) {
-      triggerCustomAlert('رمز المرور (PIN) يجب أن يكون مكوناً من 4 أرقام فقط!')
       return
     }
     try {
       await api('users.update', {
         id,
         username,
-        pin: changePin ? pin : null,
         roleId: Number(roleId),
         isActive: isActive !== false
       })
@@ -122,7 +115,33 @@ export function useUsersManager({
     }
   }
 
+  // Forgotten password: a temporary one replaces it; the user's sessions end.
+  const handleResetPassword = (u) => {
+    triggerCustomConfirm(
+      `إعادة تعيين كلمة مرور "${u.username}"؟ ستتوقف كلمة المرور الحالية ويتم تسجيل خروجه من كل الأجهزة.`,
+      async () => {
+        try {
+          const r = await api('users.update', {
+            id: u.id,
+            username: u.username,
+            roleId: Number(u.roleId),
+            resetPassword: true
+          })
+          setShowEditUserModal(false)
+          triggerCustomAlert(
+            `كلمة المرور المؤقتة للمستخدم "${u.username}":\n\n${r.temporaryPassword}\n\nأعطها للموظف. سيختار كلمة مرور خاصة به عند أول تسجيل دخول، ولن تظهر هذه الكلمة مرة أخرى.`,
+            'كلمة مرور مؤقتة'
+          )
+          await fetchUsersList()
+        } catch (err) {
+          triggerCustomAlert('فشلت إعادة التعيين: ' + err.message)
+        }
+      }
+    )
+  }
+
   return {
+    handleResetPassword,
     usersList,
     setUsersList,
     showAddUserModal,

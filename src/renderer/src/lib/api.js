@@ -10,12 +10,15 @@ export class ApiError extends Error {
   }
 }
 
+// Sign-in operations answer 401 for a wrong password; that is not an expired session.
+const SIGN_IN = new Set(['auth.login', 'auth.setup', 'auth.setPassword', 'auth.recover'])
+
 export async function api(op, body = {}) {
   if (!window.api || !window.api.call)
     throw new ApiError('واجهة البيانات غير متاحة.', { code: 'no_bridge', status: 0 })
   const res = await window.api.call(op, body)
   if (res && res.error) {
-    if (res.status === 401 && op !== 'auth.login' && op !== 'auth.setup') {
+    if (res.status === 401 && !SIGN_IN.has(op)) {
       // Session expired, revoked (user disabled) or cleared by a restore: back to the lock screen.
       window.dispatchEvent(new CustomEvent('heromarket:session-expired'))
     }

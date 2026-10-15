@@ -6,6 +6,20 @@ const ROLE_BADGE = {
   cashier: { label: 'كاشير', className: 'badge-accent' }
 }
 
+// How the user signs in (users.list login_state).
+const LOGIN_STATE = {
+  pin: {
+    label: 'لم يختر كلمة مرور',
+    className: 'badge-warning',
+    title: 'يدخل مرة واحدة باسم المستخدم ورمز PIN القديم ثم يختار كلمة مرور'
+  },
+  temporary: {
+    label: 'كلمة مرور مؤقتة',
+    className: 'badge-warning',
+    title: 'يختار كلمة مرور خاصة عند أول تسجيل دخول'
+  }
+}
+
 /**
  * Users management (admin only). Data and mutations come from useUsersManager.
  */
@@ -31,7 +45,7 @@ export default function UsersTab({
             type="button"
             className="btn btn-primary btn-sm"
             onClick={() => {
-              setNewUser({ username: '', pin: '', roleId: '' })
+              setNewUser({ username: '', roleId: '' })
               setShowAddUserModal(true)
             }}
           >
@@ -80,6 +94,14 @@ export default function UsersTab({
                           ) : (
                             <span className="badge badge-danger">معطل</span>
                           )}
+                          {LOGIN_STATE[u.login_state] && (
+                            <span
+                              className={`badge ms-2 ${LOGIN_STATE[u.login_state].className}`}
+                              title={LOGIN_STATE[u.login_state].title}
+                            >
+                              {LOGIN_STATE[u.login_state].label}
+                            </span>
+                          )}
                         </td>
                         <td>
                           <span className={`badge ${badge.className}`}>
@@ -95,7 +117,6 @@ export default function UsersTab({
                                 setEditUser({
                                   id: u.id,
                                   username: u.username,
-                                  pin: '••••',
                                   roleId: u.role_id,
                                   isActive: u.is_active
                                 })

@@ -130,6 +130,10 @@ async function startStandalone(cfg) {
   return {
     mode: 'standalone',
     close: () => svc.app.close(),
+    resetPassword: (username) =>
+      nodeRequire(join(serverDir(), 'auth', 'reset.js')).resetPassword(svc.pool, username, {
+        via: 'reset-password'
+      }),
     call: async (op, body, headers) => {
       const res = await svc.app.inject({
         method: 'POST',
@@ -357,6 +361,17 @@ export function status() {
   }
 }
 
+/**
+ * "--reset-password=<username>" on this PC: starts the local database, gives the user a temporary
+ * password and stops again. Needs the store's own database (local or standalone mode).
+ */
+export async function resetPasswordOnThisPc(username) {
+  await startBackend()
+  if (!backend) throw new Error(lastError || 'not_configured')
+  if (!backend.resetPassword) throw new Error('client_mode')
+  return backend.resetPassword(username)
+}
+
 export async function stopBackend() {
   if (starting) await starting.catch(() => {})
   if (backend) await backend.close().catch(() => {})
@@ -369,6 +384,9 @@ export async function stopBackend() {
  * Forward one operation. Login/setup responses hand the token to this module only;
  * logout clears it. Errors come back as { error: { code, message } } with an HTTP-like status.
  */
+// Operations that sign a user in and return a session token (kept in this process only).
+const SIGN_IN = new Set(['auth.login', 'auth.setup', 'auth.setPassword', 'auth.recover'])
+
 export async function callOperation(op, body) {
   if (!backend) {
     return {
@@ -381,7 +399,7 @@ export async function callOperation(op, body) {
   }
   const headers = { 'x-heromarket-terminal': terminalName() }
   // A new login on this till ends the previous session (e.g. after a renderer reload or a lock).
-  if ((op === 'auth.login' || op === 'auth.setup') && token) {
+  if (SIGN_IN.has(op) && token) {
     const previous = token
     token = null
     await backend
@@ -392,14 +410,14 @@ export async function callOperation(op, body) {
   try {
     const res = await backend.call(op, body, headers)
     if (res.status >= 400) {
-      if (res.status === 401 && op !== 'auth.login') token = null
+      if (res.status === 401 && !SIGN_IN.has(op)) token = null
       return {
         status: res.status,
         error: res.body?.error || { code: 'error', message: 'حدث خطأ غير متوقع.' }
       }
     }
     let data = res.body
-    if ((op === 'auth.login' || op === 'auth.setup') && data && data.token) {
+    if (SIGN_IN.has(op) && data && data.token) {
       token = data.token
       const { token: _hidden, ...rest } = data
       data = rest

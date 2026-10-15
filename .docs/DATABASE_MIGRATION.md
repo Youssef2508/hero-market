@@ -31,7 +31,7 @@ The importer refuses a source whose columns are not all present in the target, s
 7. **Commit**, then a foreign-key re-check of every declared relation (must be 0 violations). A row in `legacy_import_runs` stores the full report.
 8. **Store name (owner decision, 2026-10-14).** If the store name is exactly the default name shipped by version 1.3, it becomes `"هيرو ماركت"`. The change is logged (`settings_update`, previous value in the log details) and runs once. Any other name is kept. `scripts/import-sqlite.js --keep-store-name` skips this step.
 
-Users then log in with their **existing PINs**. On the first login a legacy SHA-256 or plain-text PIN is verified and replaced by the HMAC lookup key plus a scrypt hash. Legacy roles map to `admin` → `super_admin`, `manager` → `manager` and `cashier` → `cashier`.
+Users then sign in with their username and **existing PIN** once (stage 4 phase 3, migration 0008): the PIN, legacy SHA-256 or plain text included, is verified and the user must choose a password, which erases the PIN. Legacy roles map to `admin` → `super_admin`, `manager` → `manager` and `cashier` → `cashier`.
 
 ## 3. Running it
 

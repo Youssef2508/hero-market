@@ -8,11 +8,26 @@
 //  - every change is audited; permission changes take effect on the next request (no caching).
 const { badRequest, conflict, forbidden, notFound } = require('../errors')
 const { PERMISSIONS, KEYS } = require('../auth/permissions')
-const { pinLookup, hashPin } = require('../auth/pin')
+const { hashPassword, newTemporaryPassword } = require('../auth/password')
 const { activeSuperAdmins, permissionsForRole } = require('../auth/access')
 const { helpers: authHelpers } = require('./auth')
 
-const pinSchema = { type: 'string', pattern: '^[0-9]{4,8}$' }
+// Sign-in state shown to administrators: 'pin' (not moved to a password yet), 'temporary'
+// (must choose a password at the next sign-in) or 'password'.
+const LOGIN_STATE = `CASE WHEN u.password_scrypt IS NULL THEN 'pin'
+  WHEN u.must_change_password THEN 'temporary' ELSE 'password' END`
+
+/**
+ * Temporary password for a new or reset account: the administrator's choice (same rules as any
+ * password) or a generated one. The user must replace it at their first sign-in.
+ */
+function temporaryPassword(given, username) {
+  if (given) {
+    authHelpers.assertNewPassword(given, username)
+    return given
+  }
+  return newTemporaryPassword()
+}
 
 async function roleWithPerms(db, roleId) {
   const role = (await db.query('SELECT * FROM roles WHERE id = $1', [roleId])).rows[0]
@@ -44,7 +59,7 @@ module.exports = function adminModule(app) {
       (
         await ctx.pool.query(
           `SELECT u.id, u.username, u.role, u.is_active, u.created_at, r.id AS role_id, r.key AS role_key, r.name AS role_name,
-                  (u.pin_lookup IS NOT NULL) AS pin_upgraded
+                  ${LOGIN_STATE} AS login_state
            FROM users u LEFT JOIN roles r ON r.id = u.role_id ORDER BY u.username ASC`
         )
       ).rows
@@ -55,21 +70,25 @@ module.exports = function adminModule(app) {
     permission: 'users.manage',
     schema: {
       type: 'object',
-      required: ['username', 'pin', 'roleId'],
+      required: ['username', 'roleId'],
       properties: {
         username: { type: 'string', minLength: 2, maxLength: 40 },
-        pin: pinSchema,
+        password: { type: 'string', maxLength: 128 },
         roleId: { type: 'integer' }
       }
     },
     handler: async (ctx, u) =>
       ctx.tx(async (db) => {
         const username = u.username.trim()
-        if ((await db.query('SELECT 1 FROM users WHERE username = $1', [username])).rowCount) {
+        // Sign-in ignores case, so names that differ only in case would be ambiguous.
+        if (
+          (await db.query('SELECT 1 FROM users WHERE lower(username) = lower($1)', [username]))
+            .rowCount
+        ) {
           throw conflict('اسم المستخدم هذا مسجل مسبقاً! يرجى اختيار اسم آخر.')
         }
         const role = await assertAssignable(db, ctx, u.roleId)
-        await authHelpers.assertPinFree(db, ctx.secret, u.pin)
+        const temporary = temporaryPassword(u.password, username)
         const legacyRole =
           role.key === 'super_admin'
             ? 'admin'
@@ -79,12 +98,13 @@ module.exports = function adminModule(app) {
                 ? 'cashier'
                 : role.key || 'custom'
         const r = await db.query(
-          `INSERT INTO users (username, role, role_id, pin_lookup, pin_hash, is_active, created_at)
-           VALUES ($1, $2, $3, $4, $5, true, LOCALTIMESTAMP(0)) RETURNING id`,
-          [username, legacyRole, role.id, pinLookup(ctx.secret, u.pin), hashPin(u.pin)]
+          `INSERT INTO users (username, role, role_id, password_scrypt, must_change_password, is_active, created_at)
+           VALUES ($1, $2, $3, $4, true, true, LOCALTIMESTAMP(0)) RETURNING id`,
+          [username, legacyRole, role.id, hashPassword(temporary)]
         )
         await ctx.audit(db, 'user_create', `إنشاء مستخدم جديد "${username}" بدور ${role.name}`)
-        return { id: r.rows[0].id }
+        // Shown once to the administrator, who hands it to the user.
+        return { id: r.rows[0].id, temporaryPassword: temporary }
       })
   })
 
@@ -97,7 +117,9 @@ module.exports = function adminModule(app) {
       properties: {
         id: { type: 'integer' },
         username: { type: 'string', minLength: 2, maxLength: 40 },
-        pin: { type: ['string', 'null'], pattern: '^([0-9]{4,8})?$' },
+        // Replace the user's password with a temporary one (forgotten password, new staff member).
+        resetPassword: { type: 'boolean' },
+        password: { type: 'string', maxLength: 128 },
         roleId: { type: 'integer' },
         isActive: { type: 'boolean' }
       }
@@ -130,16 +152,28 @@ module.exports = function adminModule(app) {
         }
         const username = u.username.trim()
         if (
-          (await db.query('SELECT 1 FROM users WHERE username = $1 AND id <> $2', [username, u.id]))
-            .rowCount
+          (
+            await db.query('SELECT 1 FROM users WHERE lower(username) = lower($1) AND id <> $2', [
+              username,
+              u.id
+            ])
+          ).rowCount
         ) {
           throw conflict('اسم المستخدم هذا مسجل مسبقاً! يرجى اختيار اسم آخر.')
         }
-        if (u.pin) {
-          await authHelpers.assertPinFree(db, ctx.secret, u.pin, u.id)
+        let temporary = null
+        if (u.resetPassword) {
+          if (isSelf) throw forbidden('لتغيير كلمة مرورك استخدم "تغيير كلمة المرور".')
+          temporary = temporaryPassword(u.password, username)
+          // The old password and any PIN stop working; the user's sessions end.
           await db.query(
-            'UPDATE users SET pin_lookup = $1, pin_hash = $2, password_hash = NULL WHERE id = $3',
-            [pinLookup(ctx.secret, u.pin), hashPin(u.pin), u.id]
+            `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
+                    password_hash = NULL WHERE id = $2`,
+            [hashPassword(temporary), u.id]
+          )
+          await db.query(
+            'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE user_id = $1 AND revoked_at IS NULL',
+            [u.id]
           )
         }
         const legacyRole =
@@ -167,9 +201,10 @@ module.exports = function adminModule(app) {
             role: roleChanged ? { from: before.role_name, to: role.name } : undefined,
             active:
               before.is_active !== active ? { from: before.is_active, to: active } : undefined,
-            pinChanged: !!u.pin
+            passwordReset: !!temporary
           }
         )
+        return temporary ? { temporaryPassword: temporary } : { ok: true }
       })
   })
 

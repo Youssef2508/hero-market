@@ -5,7 +5,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
-const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+const {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  setupOwner
+} = require('./helpers')
 
 let db, svc, admin, cashier, shift, client, supplier
 const ref = () => crypto.randomUUID()
@@ -26,7 +33,7 @@ before(async () => {
   if (!process.env.HEROMARKET_TEST_DATABASE_URL) return
   db = await freshDatabase()
   svc = await startService(db.url)
-  admin = ok(await svc.call('auth.setup', { username: 'owner', pin: '9191' })).token
+  admin = ok(await setupOwner(svc, { username: 'owner', pin: '9191' })).token
   await createUser(svc, { username: 'c1', pin: '2121', roleKey: 'cashier' })
   cashier = await login(svc, '2121')
   shift = ok(await svc.call('shifts.open', { startingCash: 200 }, admin))

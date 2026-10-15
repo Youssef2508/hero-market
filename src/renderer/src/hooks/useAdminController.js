@@ -307,6 +307,7 @@ export function useAdminController({
     handleSystemReset: usersManager.handleSystemReset,
     handleAddUser: usersManager.handleAddUser,
     handleEditUser: usersManager.handleEditUser,
+    handleResetPassword: usersManager.handleResetPassword,
 
     // expensesManager
     expensesList: expensesManager.expensesList,

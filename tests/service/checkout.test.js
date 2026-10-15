@@ -8,7 +8,8 @@ const {
   startService,
   createUser,
   login,
-  seedProducts
+  seedProducts,
+  passwordFor
 } = require('./helpers')
 
 let db, svc, cashier, inventoryUser, shift
@@ -21,6 +22,7 @@ before(async () => {
   svc = await startService(db.url)
   await createUser(svc, { username: 'cashier1', pin: '1111', roleKey: 'cashier' })
   await createUser(svc, { username: 'stock1', pin: '2222', roleKey: 'inventory' })
+  await createUser(svc, { username: 'super1', pin: '3333', roleKey: 'manager' })
   await seedProducts(
     svc,
     `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
@@ -351,7 +353,25 @@ test('drawer audit and close use the legacy formulas; selling on a closed shift 
     (await q('SELECT notes FROM shift_audits WHERE id = $1', [audit.id]))[0].notes,
     'عجز فكة'
   )
-  const closed = await svc.call('shifts.close', { shiftId: shift.id, actualCash: 300 }, cashier)
+  // The count differs from the expected cash by more than EGP 50: a supervisor must acknowledge it
+  // (phase 3); without one the shift stays open.
+  const unacknowledged = await svc.call(
+    'shifts.close',
+    { shiftId: shift.id, actualCash: 300 },
+    cashier
+  )
+  assert.equal(unacknowledged.status, 403)
+  assert.equal(unacknowledged.body.error.code, 'approval_required')
+  assert.equal((await q('SELECT status FROM shifts WHERE id = $1', [shift.id]))[0].status, 'open')
+  const closed = await svc.call(
+    'shifts.close',
+    {
+      shiftId: shift.id,
+      actualCash: 300,
+      approver: { username: 'super1', password: passwordFor('3333') }
+    },
+    cashier
+  )
   assert.equal(closed.status, 200)
   assert.equal(Math.round(closed.body.expected * 100), Math.round((200 + cashSales) * 100))
   const r = await svc.call(

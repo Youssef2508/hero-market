@@ -7,6 +7,8 @@
 //   node src/server/cli.js serve      migrate, then listen on HOST:PORT
 //   node src/server/cli.js migrate    apply pending migrations and exit
 //   node src/server/cli.js health     exit 0 when the running server reports healthy (container probe)
+//   node src/server/cli.js reset-password <username>
+//                                      temporary password for a user who cannot sign in (printed once)
 //
 // Configuration (environment; *_FILE variants read the value from a file, e.g. a Docker secret):
 //   HEROMARKET_DATABASE_URL[_FILE]  postgres://user:password@host:5432/heromarket   (required)
@@ -77,10 +79,29 @@ async function health() {
   if (res.status !== 200 || body.status !== 'ok') throw new Error(JSON.stringify(body))
 }
 
-const commands = { serve, migrate: migrateOnly, health }
+async function resetPasswordCommand() {
+  const username = process.argv[3]
+  if (!username) {
+    console.error('usage: node src/server/cli.js reset-password <username>')
+    process.exit(2)
+  }
+  const { resetPassword } = require('./auth/reset')
+  const pool = createPool(setting('HEROMARKET_DATABASE_URL', { required: true }), { max: 1 })
+  try {
+    const r = await resetPassword(pool, username, { via: 'cli' })
+    console.log(`Temporary password for "${r.username}": ${r.temporaryPassword}`)
+    console.log('It must be changed at the next sign-in. It is not shown again.')
+  } finally {
+    await pool.end()
+  }
+}
+
+const commands = { serve, migrate: migrateOnly, health, 'reset-password': resetPasswordCommand }
 const command = commands[process.argv[2]]
 if (!command) {
-  console.error('usage: node src/server/cli.js serve | migrate | health')
+  console.error(
+    'usage: node src/server/cli.js serve | migrate | health | reset-password <username>'
+  )
   process.exit(2)
 }
 command().catch((err) => {

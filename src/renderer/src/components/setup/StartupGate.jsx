@@ -3,6 +3,9 @@ import { Database, Server, ShieldCheck, Loader2, UserPlus, Monitor, HardDrive } 
 import { BrandMark, Wordmark } from '../brand/BrandMark'
 import { ThemeToggle } from '../ui'
 import { api } from '../../lib/api'
+import PasswordInput from '../auth/PasswordInput'
+import RecoveryCodeNotice from '../auth/RecoveryCodeNotice'
+import { passwordHint, passwordReady } from '../../lib/passwordHint'
 
 /**
  * Shown before the lock screen:
@@ -170,12 +173,13 @@ function ConnectForm({ backendInfo, onRetry }) {
 
 function SetupForm({ onSetupDone }) {
   const [username, setUsername] = useState('')
-  const [pin, setPin] = useState('')
-  const [confirmPin, setConfirmPin] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [setupCode, setSetupCode] = useState('')
   const [codeRequired, setCodeRequired] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [created, setCreated] = useState(null) // { user, recoveryCode } until the code is noted
 
   useEffect(() => {
     api('auth.status')
@@ -186,18 +190,19 @@ function SetupForm({ onSetupDone }) {
   const submit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!/^\d{4}$/.test(pin)) return setError('رمز المرور يجب أن يكون 4 أرقام.')
-    if (pin !== confirmPin) return setError('تأكيد رمز المرور غير متطابق.')
-    if (['0000', '1234', '1111'].includes(pin))
-      return setError('اختر رمزاً غير متوقع (ليس 0000 أو 1234 أو 1111).')
+    if (!passwordReady(password, confirm))
+      return setError(passwordHint(password, confirm) || 'تأكيد كلمة المرور غير مطابق.')
     setBusy(true)
     try {
       const res = await api('auth.setup', {
         username: username.trim(),
-        pin,
+        password,
         ...(codeRequired ? { setupCode: setupCode.trim() } : {})
       })
-      onSetupDone(res.user)
+      setPassword('')
+      setConfirm('')
+      if (res.recoveryCode) setCreated(res)
+      else onSetupDone(res.user)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -205,11 +210,17 @@ function SetupForm({ onSetupDone }) {
     }
   }
 
+  if (created)
+    return (
+      <RecoveryCodeNotice code={created.recoveryCode} onDone={() => onSetupDone(created.user)} />
+    )
+
+  const hint = passwordHint(password, confirm)
   return (
     <form className="setup-form" onSubmit={submit}>
       <header className="lock-head">
         <h1>إعداد المتجر لأول مرة</h1>
-        <p>أنشئ حساب مدير النظام. لا يوجد حساب أو رمز افتراضي.</p>
+        <p>أنشئ حساب مدير النظام. لا يوجد حساب أو كلمة مرور افتراضية.</p>
       </header>
       {codeRequired && (
         <label className="field">
@@ -234,6 +245,7 @@ function SetupForm({ onSetupDone }) {
           className="input"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
           required
           minLength={2}
           maxLength={40}
@@ -242,30 +254,36 @@ function SetupForm({ onSetupDone }) {
       </label>
       <div className="form-grid">
         <label className="field">
-          <span className="field-label">رمز المرور (4 أرقام)</span>
-          <input
-            className="input input-lg pin-field"
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          <span className="field-label">كلمة المرور</span>
+          <PasswordInput
+            className="input input-lg"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            maxLength={128}
+            aria-describedby="setup-password-hint"
             required
           />
         </label>
         <label className="field">
-          <span className="field-label">تأكيد رمز المرور</span>
-          <input
-            className="input input-lg pin-field"
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            value={confirmPin}
-            onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+          <span className="field-label">تأكيد كلمة المرور</span>
+          <PasswordInput
+            className="input input-lg"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+            maxLength={128}
             required
           />
         </label>
       </div>
+      <p
+        id="setup-password-hint"
+        className={hint ? 'field-error' : 'field-hint'}
+        aria-live="polite"
+      >
+        {hint || '8 أحرف على الأقل، حروف وأرقام معاً، ولا تحتوي على اسم المستخدم.'}
+      </p>
       {error && (
         <p className="field-error" role="alert">
           {error}

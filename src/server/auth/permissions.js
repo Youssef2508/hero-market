@@ -19,8 +19,9 @@ const PERMISSIONS = [
   {
     key: 'pos.approve',
     module: 'pos',
-    label: 'اعتماد عمليات الكاشير برمز المشرف',
-    description: 'الموافقة برمز المشرف على العمليات التي تتطلب ذلك على شاشة الكاشير'
+    label: 'اعتماد عمليات الكاشير',
+    description:
+      'الموافقة باسم المستخدم وكلمة المرور على مرتجعات الكاشير وفروق إغلاق الوردية التي تتجاوز 50 ج.م'
   },
   // Shifts and tills
   {
@@ -71,6 +72,12 @@ const PERMISSIONS = [
     module: 'sales',
     label: 'المرتجعات',
     description: 'إرجاع صنف أو فاتورة كاملة'
+  },
+  {
+    key: 'sales.return_request',
+    module: 'sales',
+    label: 'طلب مرتجع بموافقة المشرف',
+    description: 'فتح الفاتورة برقمها وتنفيذ مرتجع بعد موافقة المشرف وكتابة السبب'
   },
   // Catalogue and stock
   {
@@ -241,7 +248,13 @@ const SYSTEM_ROLES = [
     key: 'cashier',
     name: 'كاشير',
     description: 'البيع وإدارة ورديته وحركات الأدراج.',
-    permissions: ['pos.sell', 'pos.credit', 'shifts.operate', 'tills.operate']
+    permissions: [
+      'pos.sell',
+      'pos.credit',
+      'shifts.operate',
+      'tills.operate',
+      'sales.return_request'
+    ]
   },
   {
     key: 'inventory',
