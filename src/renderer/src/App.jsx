@@ -28,6 +28,8 @@ import TillsManagerTab from './components/admin/TillsManagerTab'
 import AppModals from './components/modals/AppModals'
 import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePasswordModal from './components/modals/ChangePasswordModal'
+import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
+import { ALL_NAV_ITEMS } from './components/shell/navigation'
 
 function App() {
   // Refs
@@ -85,6 +87,8 @@ function App() {
   }
 
   const [showChangePassword, setShowChangePassword] = useState(false)
+  // A restored backup waits for recovery from the cloud (stage 4 phase 4).
+  const [recoveryPending, setRecoveryPending] = useState(false)
   const [noPrint, setNoPrint] = useState(false)
 
   // Custom non-blocking alert state
@@ -481,7 +485,12 @@ function App() {
       triggerCustomAlert('انتهت الجلسة أو تغيّرت صلاحيات الحساب. يرجى تسجيل الدخول مرة أخرى.')
     }
     window.addEventListener('heromarket:session-expired', onExpired)
-    return () => window.removeEventListener('heromarket:session-expired', onExpired)
+    const onRecovery = () => setRecoveryPending(true)
+    window.addEventListener('heromarket:recovery-pending', onRecovery)
+    return () => {
+      window.removeEventListener('heromarket:session-expired', onExpired)
+      window.removeEventListener('heromarket:recovery-pending', onRecovery)
+    }
   }, [])
 
   // Store default for automatic receipt printing (the cashier can still toggle it per sale).
@@ -492,6 +501,9 @@ function App() {
   // Data the shell needs right after a login (previously loaded at mount, before login).
   const onLoggedIn = (user) => {
     loadAppSettings()
+    api('sync.state')
+      .then((r) => setRecoveryPending(!!r.recoveryPending))
+      .catch(() => {})
     adminController.fetchStats()
     if (user.permissions.includes('checks.manage')) adminController.fetchChecksDueToday()
   }
@@ -731,6 +743,21 @@ function App() {
         setReturnRequestOpen={setReturnRequestOpen}
         addProductBarcodeRef={addProductBarcodeRef}
         {...adminController}
+      />
+
+      <RecoveryPendingModal
+        open={recoveryPending}
+        currentUser={currentUser}
+        onClose={() => setRecoveryPending(false)}
+        onOpenSync={() => {
+          setRecoveryPending(false)
+          const item = ALL_NAV_ITEMS.find((i) => i.id === 'sync')
+          if (item) handleNavigate(item)
+        }}
+        onLock={() => {
+          setRecoveryPending(false)
+          handleLock()
+        }}
       />
 
       <ChangePasswordModal

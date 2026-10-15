@@ -202,6 +202,12 @@ const PERMISSIONS = [
     module: 'admin',
     label: 'إعادة ضبط بيانات التشغيل',
     description: 'مسح بيانات التشغيل (إجراء خطير)'
+  },
+  {
+    key: 'sync.manage',
+    module: 'admin',
+    label: 'المزامنة السحابية',
+    description: 'ربط المتجر بالسحابة، حالة المزامنة، والاسترجاع بعد استعادة نسخة احتياطية'
   }
 ]
 
@@ -217,7 +223,9 @@ const MANAGEMENT = ALL.filter(
       'shifts.multi_till',
       'tills.manage',
       // Discounts are the administrator's alone (owner, 2026-10-15).
-      'discounts.manage'
+      'discounts.manage',
+      // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
+      'sync.manage'
     ].includes(k)
 )
 

@@ -33,6 +33,9 @@ class BaseTransport {
   checksums() {
     return this.call('sync.checksums', {})
   }
+  recoverRows(afterEpoch, afterVersion, limit = 2000) {
+    return this.call('sync.recover', { afterEpoch, afterVersion, limit }).then((r) => r.rows)
+  }
 }
 
 class InProcessTransport extends BaseTransport {

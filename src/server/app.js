@@ -12,6 +12,10 @@ const { KEYS } = require('./auth/permissions')
 
 const SESSION_HOURS = 12
 
+// While a restored database waits for recovery from the cloud (stage 4 phase 4), only these
+// operations run: signing in, the recovery itself, store settings, and backups.
+const DURING_RECOVERY = /^(auth\.|sync\.|backup\.|settings\.public$)/
+
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex')
 }
@@ -99,6 +103,12 @@ async function createService(cfg) {
             !def.anyPermission.some((p) => auth.user.permissions.includes(p))
           )
             throw forbidden()
+          if (app.syncFlags?.recoveryPending && !DURING_RECOVERY.test(def.name))
+            throw new ServiceError(
+              423,
+              'recovery_pending',
+              'تمت استعادة نسخة احتياطية: يجب استرجاع البيانات من السحابة (أو تخطي ذلك) من شاشة المزامنة قبل متابعة العمل.'
+            )
         }
         const ctx = {
           pool,

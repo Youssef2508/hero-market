@@ -104,6 +104,17 @@ HEROMARKET_DB_NAME=heromarket_qa env -u ELECTRON_RUN_AS_NODE npx electron-vite d
 
 The app allows a single instance. A killed instance can leave the debugging port bound for a while; use another port (for example 9333) if a new instance cannot bind it.
 
+### Local test cloud (synchronisation)
+
+```powershell
+node scripts/cloud-dev.js serve                       # http://127.0.0.1:8790, database heromarket_cloud_dev
+node scripts/cloud-dev.js register <store id>         # prints a device token once
+node scripts/cloud-dev.js command <store id> stock_receipt '{"items":[{"barcode":"…","qty":12,"unitCost":5}]}'
+node scripts/cloud-dev.js commands <store id>         # commands and their status
+```
+
+The store id is shown on **المزامنة السحابية**. Link with the address `http://127.0.0.1:8790` (plain HTTP is accepted only for this machine). Nothing leaves the PC.
+
 ## 5. Checks
 
 | Command                                                               | What it does                                                                                                                     |

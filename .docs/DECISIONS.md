@@ -458,3 +458,24 @@ Format: context → decision → reason → consequences (→ alternatives).
   - copying the store tables one-to-one into the cloud (out-of-order rows break foreign keys);
   - a high-water-mark cursor (it skips late commits);
   - sending parsed JSON (it loses numeric precision).
+
+## D-048 Recovery after a restore pauses work; batches never split a local transaction (stage 4 phase 4)
+
+- **Context:** a restored backup lacks what happened after it. Part of that already reached the cloud and can come back. If the shop sells before it comes back, new sales reuse invoice numbers that the cloud already holds for the lost sales.
+- **Decision:**
+  - A backup records its sync point (store, epoch, version).
+  - Restoring a backup on a **linked** store sets `recovery_pending`. The service then refuses every operation except sign-in, `sync.*`, `backup.*` and `settings.public`, with 423 "recovery_pending", and the screens explain why.
+  - The administrator recovers or skips:
+    - **Recover** (`sync.recover`) writes back every row and deletion newer than the point, in one transaction, in foreign-key order, with triggers paused. Users and roles use the allow-list (no password data). Sequences continue after the recovered ids, and stock is re-checked against movements. The next cycle then takes a new epoch.
+    - **Skip** (`sync.skipRecovery`, confirm "SKIP") is logged and deletes nothing in the cloud.
+  - A backup of another store is refused.
+  - An unlinked store never pauses.
+  - Outbox rows record their transaction (`tx_id`), and batches are cut only at transaction boundaries. Only a bulk transaction larger than 4,000 rows is split.
+- **Link settings:**
+  - Stored in `sync_state` (URL, store id, device token, enabled), which is not in backups and never synchronised.
+  - Administrators only (`sync.manage`); HTTPS only, except for localhost.
+  - The token is never returned or logged.
+  - Changing the store after synchronising needs an explicit relink.
+- **Rejected:**
+  - selling during recovery with large id gaps (invoice numbers would jump by millions);
+  - merging both sides after the fact (ambiguous and error-prone).

@@ -288,6 +288,10 @@ select {
 .card-body {
   padding: var(--sp-5);
 }
+.card-footer {
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--border);
+}
 .card-flush {
   padding: 0;
   overflow: hidden;

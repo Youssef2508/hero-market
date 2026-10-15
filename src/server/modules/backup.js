@@ -128,7 +128,7 @@ module.exports = function backupModule(app) {
         )
       }
       const actor = ctx.user
-      return ctx.tx(async (db) => {
+      const result = await ctx.tx(async (db) => {
         // Rows rewritten by the restore are not queued one by one: synchronisation restarts below.
         await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
         const counts = {}
@@ -173,9 +173,13 @@ module.exports = function backupModule(app) {
         // the cloud stops accepting changes from the database that was replaced (D-047).
         await db.query('DELETE FROM sync_outbox')
         await db.query('DELETE FROM sync_row_versions')
-        await db.query('UPDATE sync_state SET epoch = NULL, recover_from = $1', [
-          JSON.stringify({ backupCreatedAt: backup.createdAt, sync: backup.sync || null })
-        ])
+        // A store linked to the cloud first writes back what reached the cloud after this backup;
+        // writes pause until then (or until an administrator skips it).
+        await db.query(
+          `UPDATE sync_state SET epoch = NULL, recover_from = $1,
+                  recovery_pending = (enabled AND cloud_url IS NOT NULL AND device_token IS NOT NULL)`,
+          [JSON.stringify({ backupCreatedAt: backup.createdAt, sync: backup.sync || null })]
+        )
         await db.query(
           `INSERT INTO system_logs (timestamp, user_id, username, action_type, description, details)
            VALUES (LOCALTIMESTAMP(0), NULL, $1, 'database_restore', $2, $3)`,
@@ -187,9 +191,12 @@ module.exports = function backupModule(app) {
         )
         return { restored: counts, createdAt: backup.createdAt }
       })
+      if (app.refreshSyncFlags) await app.refreshSyncFlags()
+      return result
     }
   })
 }
 
 module.exports.exportAll = exportAll
 module.exports.TABLES = TABLES
+module.exports.TRIGGER_TABLES = TRIGGER_TABLES

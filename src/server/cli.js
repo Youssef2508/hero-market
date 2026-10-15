@@ -17,6 +17,7 @@
 //   HOST / PORT                     listen address (default 127.0.0.1:8787)
 //   HEROMARKET_SETUP_CODE           first-run code (default: random, printed to the log while no users exist)
 //   HEROMARKET_LOG_LEVEL            info | warn | error | debug
+//   HEROMARKET_SYNC_AGENT           1 = run the cloud sync agent here (once linked in the app)
 const fs = require('fs')
 const crypto = require('crypto')
 const { createService } = require('./app')
@@ -41,7 +42,8 @@ async function serve() {
     secret: setting('HEROMARKET_SECRET', { required: true }),
     timeZone: process.env.HEROMARKET_TIMEZONE,
     // Anyone on the network could otherwise claim the first administrator account.
-    setupCode: setting('HEROMARKET_SETUP_CODE') || crypto.randomInt(10 ** 7, 10 ** 8).toString()
+    setupCode: setting('HEROMARKET_SETUP_CODE') || crypto.randomInt(10 ** 7, 10 ** 8).toString(),
+    syncAgent: process.env.HEROMARKET_SYNC_AGENT === '1'
   })
   await svc.prepare()
   const { rows } = await svc.pool.query('SELECT count(*)::int AS n FROM users')
