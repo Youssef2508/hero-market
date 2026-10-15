@@ -29,6 +29,7 @@ import {
   ScrollText,
   DatabaseBackup,
   ShieldCheck,
+  BadgePercent,
   Settings
 } from 'lucide-react'
 
@@ -249,6 +250,15 @@ export const NAV_GROUPS = [
         view: 'admin',
         tab: 'roles',
         description: 'إنشاء الأدوار وتحديد صلاحيات كل دور.'
+      },
+      {
+        id: 'discounts',
+        permission: ['discounts.manage'],
+        label: 'الخصومات',
+        icon: BadgePercent,
+        view: 'admin',
+        tab: 'discounts',
+        description: 'خصومات الأصناف والفاتورة التي تُطبَّق تلقائياً عند البيع.'
       },
       {
         id: 'settings',

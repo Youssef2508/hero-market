@@ -94,7 +94,17 @@ test('FLOWS 5–9: cash, customer (points), credit, discounted and delivery sale
     Number((await one('SELECT debt_balance FROM clients WHERE id = $1', [client.id])).debt_balance),
     150
   )
-  const disc = ok(await sell({ discount: 10, items: [{ barcode: 'P28', qty: 10 }] }))
+  // Discounted sale: discounts now come only from the administrator's rules (owner, 2026-10-15).
+  // A product rule of 1.00 per unit on P28 gives the same 10.00 off 10 units as the old manual discount.
+  const rule = ok(
+    await svc.call(
+      'discounts.save',
+      { name: 'عرض P28', scope: 'product', productBarcode: 'P28', valueType: 'amount', value: 1 },
+      admin
+    )
+  )
+  const disc = ok(await sell({ items: [{ barcode: 'P28', qty: 10 }] }))
+  ok(await svc.call('discounts.setActive', { id: rule.id, isActive: false }, admin))
   assert.equal(disc.total, 140)
   const sale = await one(
     'SELECT original_amount, discount, total_amount FROM sales WHERE id = $1',
@@ -144,7 +154,7 @@ test('FLOWS 10–13: full and partial returns for cash and credit sales; no doub
     409,
     'second full return refused'
   )
-  // Partial return (2 units) of the discounted sale: refund keeps the discount ratio (10/150)
+  // Partial return (2 units) of the discounted sale: refund = drop in the line's net (2.00 of 10.00 discount)
   const item = await one('SELECT id FROM sale_items WHERE sale_id = $1', [disc.saleId])
   const r = ok(
     await svc.call(

@@ -3,8 +3,9 @@
 // (useAdminController, useBestSellersManager, useAdvancedAnalytics, useCashierPerformance), so the
 // hooks keep their own post-processing unchanged. SQLite functions are mapped 1:1:
 // DATE(ts) → to_char(ts, 'YYYY-MM-DD'), strftime('%H', ts) → EXTRACT(HOUR …).
-const PROFIT = `si.total_price - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price * si.unit_factor))`
-const PROFIT_SAFE = `si.total_price - ((si.quantity - COALESCE(si.returned_qty, 0)) * COALESCE(NULLIF(si.cost_price, 0), COALESCE(p.cost_price, 0) * si.unit_factor))`
+// Line net = gross − its discount shares (automatic discounts; 0 on legacy invoices).
+const PROFIT = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price * si.unit_factor))`
+const PROFIT_SAFE = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - COALESCE(si.returned_qty, 0)) * COALESCE(NULLIF(si.cost_price, 0), COALESCE(p.cost_price, 0) * si.unit_factor))`
 const PERIOD_DAYS = { daily: 1, weekly: 7, monthly: 30 }
 const TS = '^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$'
 const rangeSchema = {
@@ -161,7 +162,7 @@ module.exports = function reportsModule(app) {
       const top = await rows(
         db,
         `SELECT si.product_barcode AS barcode, p.name AS name, p.unit AS unit, p.retail_price AS price, p.cost_price AS cost,
-                p.stock_qty AS stock, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS total_qty_sold, SUM(si.total_price) AS total_revenue,
+                p.stock_qty AS stock, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS total_qty_sold, SUM(si.total_price - si.line_discount - si.cart_discount) AS total_revenue,
                 COUNT(DISTINCT CASE WHEN (si.quantity - si.returned_qty) > 0 THEN si.sale_id END) AS times_ordered
          FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
          WHERE s.shift_id = ANY($1::int[])
@@ -253,7 +254,7 @@ module.exports = function reportsModule(app) {
         ),
         top: await rows(
           db,
-          `SELECT si.product_barcode, p.name AS product_name, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS qty_sold, SUM(si.total_price) AS revenue,
+          `SELECT si.product_barcode, p.name AS product_name, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS qty_sold, SUM(si.total_price - si.line_discount - si.cart_discount) AS revenue,
                   SUM(${PROFIT}) AS profit
            FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
            WHERE s.shift_id = ANY($1::int[]) GROUP BY si.product_barcode, p.barcode ORDER BY qty_sold DESC, si.product_barcode LIMIT 10`,
@@ -350,7 +351,7 @@ module.exports = function reportsModule(app) {
         // K-25: the legacy query read a non-existent sale_items.product_name; the name comes from products.
         topProducts: await rows(
           db,
-          `SELECT p.name AS product_name, SUM((si.quantity - COALESCE(si.returned_qty, 0)) * si.unit_factor) AS qty, SUM(si.total_price) AS revenue
+          `SELECT p.name AS product_name, SUM((si.quantity - COALESCE(si.returned_qty, 0)) * si.unit_factor) AS qty, SUM(si.total_price - si.line_discount - si.cart_discount) AS revenue
            FROM sale_items si JOIN sales s ON si.sale_id = s.id LEFT JOIN products p ON si.product_barcode = p.barcode
            WHERE s.shift_id = ANY($1::int[]) GROUP BY si.product_barcode, p.name ORDER BY qty DESC, si.product_barcode LIMIT 5`,
           ids

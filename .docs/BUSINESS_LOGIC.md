@@ -186,6 +186,14 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 - **Lines:** sale and purchase lines keep unit, factor, price and cost per unit. Stock moves by quantity × factor. Returns are in the line's unit, with its snapshot factor.
 - **Purchases:** a purchase in cartons feeds the moving average with cost per base unit = carton cost ÷ factor.
 
+## 11d. Automatic discounts (D-044)
+
+- No operator can enter, choose or remove a discount. The administrator manages rules in **الخصومات**.
+- Product rules: a percentage, or an amount per base unit. The best one per line applies.
+- Cart rules: a percentage or a fixed amount from a threshold, compared after product discounts, inclusive. The best single tier applies.
+- The cart discount is shared across lines exactly (to the piastre). Invoices keep shares and rule names.
+- Returns refund the drop in the line's net. The invoice's discount stays as sold (K-40).
+
 ## 12. Unknowns and open decisions
 
 - K-24: decided (option 1). Expected drawer cash = opening cash + cash sales as sold + cash inflows − every cash outflow; both close dialogs show this service figure.

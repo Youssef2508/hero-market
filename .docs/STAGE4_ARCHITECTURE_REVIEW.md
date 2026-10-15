@@ -18,7 +18,7 @@ Revision 2, 2026-10-14. It replaces revision 1 (store server plus cloud peers) a
 | Costing                  | Moving average. The rule for negative stock is defined and tested (§7.2, implemented).                                                                                |
 | Quantities               | Weighed products in kilograms with 3 decimals; no cash rounding of totals.                                                                                            |
 | Returns                  | Cashiers may return with supervisor approval and a mandatory reason.                                                                                                  |
-| Discounts                | Limits per role; supervisor approval above the limit.                                                                                                                 |
+| Discounts                | **Replaced 2026-10-15:** administrator-managed rules applied automatically; no operator discounts (D-044, implemented).                                               |
 | Shift difference         | Supervisor acknowledgement above EGP 50.                                                                                                                              |
 | Till offline from server | Not applicable (no separate server).                                                                                                                                  |
 | Hosting                  | Cheapest option that is reliable. No paid resource is created without the owner's explicit approval (§10).                                                            |
@@ -200,7 +200,6 @@ Unchanged from revision 1, with the owner's choices:
   - There is no remote account for staff, and the local password database is **not** sent to the cloud (only usernames for reports).
 - **Supervisor approvals (phase 3)**: the supervisor types their own username and password on the till. Approvals and refusals are both audited.
   - **Returns** by cashiers: approval plus a reason.
-  - **Discounts** above the role's limit: approval.
   - **Shift difference** above EGP 50: acknowledgement.
   - **Cart edits**: never.
 

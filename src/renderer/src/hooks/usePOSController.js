@@ -34,7 +34,6 @@ export function usePOSController({
 
   cart,
   setCart,
-  discount,
   setDiscount,
   paidAmount,
   setPaidAmount,
@@ -83,6 +82,36 @@ export function usePOSController({
 
   const [clientAddress, setClientAddress] = useState('')
   const [selectedClient, setSelectedClient] = useState(null)
+  // Automatic discounts (administrator rules) priced by the service for the current cart.
+  const [appliedDiscounts, setAppliedDiscounts] = useState([])
+  const pricingSeqRef = useRef(0)
+  const refreshPricing = async () => {
+    const seq = ++pricingSeqRef.current
+    if (cart.length === 0) {
+      setDiscount(0)
+      setAppliedDiscounts([])
+      return
+    }
+    try {
+      const r = await api('pos.price', {
+        items: cart.map((item) => ({
+          barcode: item.barcode,
+          unitId: item.unitId ?? null,
+          qty: item.qty
+        }))
+      })
+      if (seq !== pricingSeqRef.current) return // a newer cart is being priced
+      setDiscount(r.discount)
+      setAppliedDiscounts(r.applied)
+    } catch {
+      // Pricing problems (e.g. an invalid quantity) surface at checkout with their message.
+    }
+  }
+  useEffect(() => {
+    const t = setTimeout(refreshPricing, 120)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart])
   const [clientSearchResults, setClientSearchResults] = useState([])
 
   const handleLock = () => {
@@ -462,7 +491,6 @@ export function usePOSController({
     let attempt = null
 
     try {
-      const finalDiscount = parseFloat(discount) || 0
       const payload = {
         shiftId: currentShift.id,
         items: cart.map((item) => ({
@@ -471,7 +499,8 @@ export function usePOSController({
           qty: item.qty,
           unitPrice: item.price
         })),
-        discount: finalDiscount,
+        // The total shown to the customer; the service refuses the sale if its own differs.
+        expectedTotal: cartTotal,
         paymentType,
         paidAmount: paidAmount ? parseFloat(paidAmount) || 0 : null,
         appliedCredit: parseFloat(appliedCredit) || 0,
@@ -532,7 +561,7 @@ export function usePOSController({
                 total: item.total
               })),
               subTotal: result.subTotal,
-              discount: finalDiscount,
+              discount: result.discount,
               total: result.total,
               paid: paidShown,
               change: paidAmount ? Math.max(0, (parseFloat(paidAmount) || 0) - result.total) : 0
@@ -581,7 +610,11 @@ export function usePOSController({
       const errText = String(e?.message || e || '')
       const unknown = attempt && outcomeUnknown(e)
       if (unknown) unresolvedCheckoutRef.current = attempt
-      if (unknown) {
+      if (!unknown && e.status === 409 && e.details && e.details.total !== undefined) {
+        // Discounts or prices changed since the cart was shown: show the new total first.
+        refreshPricing()
+        triggerCustomAlert(errText, 'تنبيه الفاتورة')
+      } else if (unknown) {
         triggerCustomAlert(
           `تعذر التأكد من حفظ الفاتورة: ${errText.slice(0, 200)}\nلا تغيّر السلة. اضغط F1 مرة أخرى بعد عودة الاتصال؛ إذا كانت الفاتورة قد سُجِّلت فلن تُسجَّل مرة ثانية.`
         )
@@ -703,6 +736,7 @@ export function usePOSController({
   }
 
   return {
+    appliedDiscounts,
     addProductByBarcode,
     pin,
     setPin,

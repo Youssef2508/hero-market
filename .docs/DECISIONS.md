@@ -320,3 +320,47 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Status**:
   - Nothing created.
   - The owner must approve, and must create the billing account with their own card.
+
+## D-044 Discounts: administrator rules applied automatically; no operator discounts (owner, 2026-10-15)
+
+- **Context**:
+  - The till accepted a manual invoice discount from anyone with `pos.discount`, and the cashier role had it.
+  - The owner decided that cashiers have **no** discount authority: the administrator defines rules in advance, and checkout applies them automatically and identically whoever operates the till.
+- **Decision**:
+  - Manual discounts are refused for every operator (403). The `pos.discount` permission is removed. `discounts.manage` goes to the super and store administrators only.
+  - Rules (`discount_rules`) are of two kinds:
+    - **product**: a percentage, or an amount per base unit (per piece or per kg);
+    - **cart**: a percentage or a fixed amount when the total reaches a threshold.
+
+    Each rule has an optional start and end time and can be active or inactive. Rules are never deleted.
+
+  - Evaluation is server-side only (`pricing/discounts.js`):
+    1. line gross = quantity × price, rounded to 0.01;
+    2. the best product rule per line (no stacking), capped at the line;
+    3. cart thresholds compared with the total **after** product discounts, **inclusive** (EGP 500.00 qualifies for a 500 tier, 499.99 does not);
+    4. the best single cart rule (tiers do not stack);
+    5. ties go to the larger discount, then the older rule;
+    6. the cart discount is allocated to lines by largest remainder in whole piastres.
+  - **Till and checkout:**
+    - The till shows the service's preview (`pos.price`) and sends the total it showed. Checkout recomputes it and refuses a different total (409), so the customer never pays an amount they were not shown.
+    - Each invoice keeps the line shares (`line_discount`, `cart_discount`) and the applied rules by name and value (`sale_discounts`). Price or rule changes never alter history.
+  - **Returns** of rule-priced sales refund the drop in the line's net. Successive partial returns add up exactly to what was paid.
+  - **Reports** use line net (gross − shares) for revenue and profit.
+  - Every rule creation, change, activation and deactivation is audited with before/after values. Stale edits are refused (version check).
+- **Rejected**:
+  - Role discount limits with supervisor approval: superseded by the owner's decision.
+  - Stacking several product or cart rules: it is hard to predict and to audit.
+  - Thresholds before product discounts: a customer would get a cart discount on money they did not pay.
+- **Optional promotion types, not implemented** (recommendations only):
+  - buy X get Y;
+  - a bundle price;
+  - category-wide percentages;
+  - time-of-day offers;
+  - customer-specific prices;
+  - loyalty-point redemption.
+
+  Category-wide discounts would need product categories as data; today the category is free text.
+
+- **Consequences**:
+  - Migration 0006 marks old invoices `pricing_version = 1`, and their return formula is unchanged except for K-40.
+  - Old invoices keep their single invoice-level discount, with zero line shares, so their report figures are unchanged.

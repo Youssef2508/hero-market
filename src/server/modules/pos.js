@@ -19,6 +19,7 @@ const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
 const { readAll } = require('./settings')
+const { priceCart, activeRules } = require('../pricing/discounts')
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
@@ -32,6 +33,48 @@ async function summarizeSale(db, saleId) {
     [saleId]
   )
   return rows[0]
+}
+
+/**
+ * Price the till's items from the catalogue: unit, validated quantity, unit price, gross line total
+ * and cost per unit. `products` maps barcode → product row. A stale unit price is refused.
+ */
+async function buildLines(db, items, products) {
+  const lines = []
+  for (const i of items) {
+    const p = products.get(i.barcode)
+    if (!p) throw notFound(`الصنف (${i.barcode}) غير مسجل في قاعدة البيانات!`)
+    const unit = await loadUnit(db, p, i.unitId, { purpose: 'sell' })
+    const label = unit.id === null ? p.name : `${p.name} – ${unit.name}`
+    const { qty, baseQty } = toBaseQty(p.unit_kind || 'count', i.qty, unit.factor, label)
+    const price = unitPrice(p, unit)
+    if (i.unitPrice !== undefined && Math.abs(Number(i.unitPrice) - price) > 0.0001) {
+      throw conflict(
+        `تغيّر سعر الصنف "${label}" إلى ${price.toFixed(2)} ج.م أثناء البيع. احذفه وأعد إضافته ثم أكمل.`,
+        {
+          barcode: p.barcode,
+          unitId: unit.id,
+          price
+        }
+      )
+    }
+    const avg = Number(p.cost_price) || 0
+    lines.push({
+      barcode: p.barcode,
+      name: p.name,
+      unitId: unit.id,
+      unitName: unit.id === null ? p.unit || null : unit.name,
+      factor: unit.factor,
+      qty,
+      baseQty,
+      price,
+      total: round2(qty * price),
+      // Cost per selling unit (snapshot): the average per base unit × factor.
+      cost: round4(avg * unit.factor),
+      baseCost: avg
+    })
+  }
+  return lines
 }
 
 module.exports = function posModule(app) {
@@ -239,6 +282,63 @@ module.exports = function posModule(app) {
       })
   })
 
+  // Price preview for the till: the same lines and automatic discounts checkout will apply, with
+  // nothing written. The till shows this total and sends it back as expectedTotal.
+  app.operation({
+    name: 'pos.price',
+    permission: 'pos.sell',
+    schema: {
+      type: 'object',
+      required: ['items'],
+      properties: {
+        items: {
+          type: 'array',
+          maxItems: 500,
+          items: {
+            type: 'object',
+            required: ['barcode', 'qty'],
+            properties: {
+              barcode: { type: 'string', maxLength: 64 },
+              unitId: { type: ['integer', 'null'] },
+              qty: { type: 'number', exclusiveMinimum: 0 },
+              unitPrice: { type: 'number' }
+            }
+          }
+        }
+      }
+    },
+    handler: async (ctx, b) => {
+      if (!b.items.length)
+        return { lines: [], subTotal: 0, discount: 0, afterDiscount: 0, applied: [] }
+      const barcodes = [...new Set(b.items.map((i) => i.barcode))]
+      const db = ctx.pool
+      const rows = (
+        await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[])', [barcodes])
+      ).rows
+      const products = new Map(rows.map((r) => [r.barcode, r]))
+      const lines = await buildLines(db, b.items, products)
+      const pricing = priceCart(
+        lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
+        await activeRules(db, barcodes)
+      )
+      return {
+        lines: pricing.lines.map((pl, i) => ({
+          barcode: lines[i].barcode,
+          unitId: lines[i].unitId,
+          gross: pl.gross,
+          lineDiscount: pl.lineDiscount,
+          cartDiscount: pl.cartDiscount,
+          net: pl.net,
+          productRule: pl.productRule
+        })),
+        subTotal: pricing.subTotal,
+        discount: pricing.discount,
+        afterDiscount: pricing.afterDiscount,
+        applied: pricing.applied
+      }
+    }
+  })
+
   app.operation({
     name: 'pos.checkout',
     permission: 'pos.sell',
@@ -264,7 +364,11 @@ module.exports = function posModule(app) {
             }
           }
         },
+        // Manual discounts no longer exist (owner, 2026-10-15): only 0 is accepted.
         discount: { type: 'number', minimum: 0 },
+        // The total the till showed (after automatic discounts and applied credit). If the
+        // service computes another total (a rule or price changed), the sale is refused.
+        expectedTotal: { type: 'number' },
         paymentType: { type: 'string', enum: PAYMENT_TYPES },
         paidAmount: { type: ['number', 'null'], minimum: 0 },
         appliedCredit: { type: 'number', minimum: 0 },
@@ -282,11 +386,12 @@ module.exports = function posModule(app) {
       }
     },
     handler: async (ctx, b) => {
-      const discount = Number(b.discount || 0)
       const credit = Number(b.appliedCredit || 0)
       if (CREDIT_TYPES.includes(b.paymentType) && !ctx.can('pos.credit'))
         throw forbidden('البيع الآجل يتطلب صلاحية.')
-      if (discount > 0 && !ctx.can('pos.discount')) throw forbidden('منح الخصم يتطلب صلاحية.')
+      // No operator can grant a discount: discounts come only from the administrator's rules.
+      if (Number(b.discount || 0) > 0)
+        throw forbidden('الخصومات تُطبَّق تلقائياً حسب قواعد الإدارة؛ لا يمكن إدخال خصم يدوي.')
       // One line per product unit (a carton and loose packets of one product are two lines).
       const lineKeys = b.items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)
       if (new Set(lineKeys).size !== lineKeys.length) throw badRequest('الصنف مكرر في الفاتورة.')
@@ -319,42 +424,14 @@ module.exports = function posModule(app) {
           )
         ).rows
         const products = new Map(prodRows.map((p) => [p.barcode, p]))
-        const lines = []
-        for (const i of b.items) {
-          const p = products.get(i.barcode)
-          if (!p) throw notFound(`الصنف (${i.barcode}) غير مسجل في قاعدة البيانات!`)
-          const unit = await loadUnit(db, p, i.unitId, { purpose: 'sell' })
-          const label = unit.id === null ? p.name : `${p.name} – ${unit.name}`
-          const { qty, baseQty } = toBaseQty(p.unit_kind || 'count', i.qty, unit.factor, label)
-          const price = unitPrice(p, unit)
-          if (i.unitPrice !== undefined && Math.abs(Number(i.unitPrice) - price) > 0.0001) {
-            throw conflict(
-              `تغيّر سعر الصنف "${label}" إلى ${price.toFixed(2)} ج.م أثناء البيع. احذفه وأعد إضافته ثم أكمل.`,
-              {
-                barcode: p.barcode,
-                unitId: unit.id,
-                price
-              }
-            )
-          }
-          const avg = Number(p.cost_price) || 0
-          lines.push({
-            barcode: p.barcode,
-            name: p.name,
-            unitId: unit.id,
-            unitName: unit.id === null ? p.unit || null : unit.name,
-            factor: unit.factor,
-            qty,
-            baseQty,
-            price,
-            total: round2(qty * price),
-            // Cost per selling unit (snapshot): the average per base unit × factor.
-            cost: round4(avg * unit.factor),
-            baseCost: avg
-          })
-        }
+        const lines = await buildLines(db, b.items, products)
         const subTotal = round2(lines.reduce((s, l) => s + l.total, 0))
-        if (discount > subTotal) throw badRequest('قيمة الخصم أكبر من إجمالي الفاتورة.')
+        // Automatic discounts, evaluated here from the rules in force (never from the till).
+        const pricing = priceCart(
+          lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
+          await activeRules(db, barcodes)
+        )
+        const discount = pricing.discount
 
         // Customer: same resolution order as before (selected → by name/phone → new).
         const c = b.client && b.client.name && b.client.name.trim() ? b.client : null
@@ -397,6 +474,12 @@ module.exports = function posModule(app) {
             throw badRequest('قيمة الخصم من الرصيد أكبر من الرصيد المتاح.')
         }
         const total = round2(Math.max(0, subTotal - discount - credit))
+        if (b.expectedTotal !== undefined && Math.abs(Number(b.expectedTotal) - total) > 0.005) {
+          throw conflict(
+            `تغيّر إجمالي الفاتورة إلى ${total.toFixed(2)} ج.م (خصومات أو أسعار محدّثة). راجع الإجمالي ثم أكمل.`,
+            { total, discount, applied: pricing.applied }
+          )
+        }
         const paid =
           b.paidAmount === null || b.paidAmount === undefined ? null : Number(b.paidAmount)
         const change = paid ? round2(Math.max(0, paid - total)) : 0
@@ -411,8 +494,8 @@ module.exports = function posModule(app) {
 
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,
@@ -427,11 +510,24 @@ module.exports = function posModule(app) {
           )
         ).rows[0]
         const saleId = sale.id
-        for (const l of lines) {
+        for (const [i, l] of lines.entries()) {
+          const pl = pricing.lines[i]
           await db.query(
-            `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price, unit_id, unit_name, unit_factor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [saleId, l.barcode, l.qty, l.price, l.total, l.cost, l.unitId, l.unitName, l.factor]
+            `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price, unit_id, unit_name, unit_factor, line_discount, cart_discount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+              saleId,
+              l.barcode,
+              l.qty,
+              l.price,
+              l.total,
+              l.cost,
+              l.unitId,
+              l.unitName,
+              l.factor,
+              pl.lineDiscount,
+              pl.cartDiscount
+            ]
           )
           // Negative stock is allowed (owner decision); the sale leaves at the line's cost.
           await postMovement(db, ctx, {
@@ -442,6 +538,13 @@ module.exports = function posModule(app) {
             refType: 'sale',
             refId: saleId
           })
+        }
+
+        for (const a of pricing.applied) {
+          await db.query(
+            'INSERT INTO sale_discounts (sale_id, rule_id, scope, name, value_type, value, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [saleId, a.ruleId, a.scope, a.name, a.valueType, a.value, a.amount]
+          )
         }
 
         if (clientId) {
@@ -510,13 +613,18 @@ module.exports = function posModule(app) {
           timestamp: sale.timestamp,
           subTotal,
           discount,
+          discounts: pricing.applied,
+          lines: lines.map((l, i) => ({
+            ...l,
+            lineDiscount: pricing.lines[i].lineDiscount,
+            cartDiscount: pricing.lines[i].cartDiscount
+          })),
           appliedCredit: credit,
           total,
           paid,
           change,
           deposit,
           clientId,
-          lines,
           duplicate: false
         }
       })
