@@ -17,12 +17,6 @@ const PERMISSIONS = [
     description: 'إتمام بيع آجل أو دفع جزئي على حساب عميل'
   },
   {
-    key: 'pos.discount',
-    module: 'pos',
-    label: 'منح خصم على الفاتورة',
-    description: 'إدخال قيمة خصم عند البيع'
-  },
-  {
     key: 'pos.approve',
     module: 'pos',
     label: 'اعتماد عمليات الكاشير برمز المشرف',
@@ -102,6 +96,12 @@ const PERMISSIONS = [
     module: 'inventory',
     label: 'التوالف والهوالك',
     description: 'تسجيل وحذف التوالف'
+  },
+  {
+    key: 'discounts.manage',
+    module: 'products',
+    label: 'إدارة الخصومات',
+    description: 'إنشاء وتعديل وتفعيل قواعد الخصم التي تُطبَّق تلقائياً عند البيع'
   },
   {
     key: 'inventory.adjust',
@@ -203,9 +203,15 @@ const ALL = PERMISSIONS.map((p) => p.key)
 
 const MANAGEMENT = ALL.filter(
   (k) =>
-    !['users.manage', 'roles.manage', 'system.reset', 'shifts.multi_till', 'tills.manage'].includes(
-      k
-    )
+    ![
+      'users.manage',
+      'roles.manage',
+      'system.reset',
+      'shifts.multi_till',
+      'tills.manage',
+      // Discounts are the administrator's alone (owner, 2026-10-15).
+      'discounts.manage'
+    ].includes(k)
 )
 
 // Built-in roles. Existing users map: admin → super_admin, manager → manager, cashier → cashier.
@@ -235,7 +241,7 @@ const SYSTEM_ROLES = [
     key: 'cashier',
     name: 'كاشير',
     description: 'البيع وإدارة ورديته وحركات الأدراج.',
-    permissions: ['pos.sell', 'pos.credit', 'pos.discount', 'shifts.operate', 'tills.operate']
+    permissions: ['pos.sell', 'pos.credit', 'shifts.operate', 'tills.operate']
   },
   {
     key: 'inventory',

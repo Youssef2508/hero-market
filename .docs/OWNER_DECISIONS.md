@@ -10,7 +10,9 @@
 - **Costing:** moving average; the negative-stock rule is defined and tested (done).
 - **Quantities:** kilograms with three decimals; no cash rounding of totals.
 - **Returns:** cashiers may return with supervisor approval and a mandatory reason.
-- **Discounts:** role limits; supervisor approval above them.
+- **Discounts (replaced 2026-10-15):** cashiers have no discount authority; the administrator manages rules that apply automatically (D-044). Role limits and supervisor approval for discounts are **withdrawn**.
+- **Weighing (2026-10-15):** manual weighing on an ordinary scale; no scale-label integration required.
+- **Clock (2026-10-15):** 12-hour display with AM/PM.
 - **Shift differences:** supervisor acknowledgement above EGP 50.
 - **Hosting:** the cheapest reliable option; no paid resource without explicit approval (recommendation in STAGE4_ARCHITECTURE_REVIEW.md §10).
 

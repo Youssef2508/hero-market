@@ -177,8 +177,16 @@ test('K-24: an outflow without a description counts in the close exactly as in t
 test('K-24: partial payment counts only the upfront cash; discounts count as sold', async (t) => {
   if (!requireDb(t)) return
   const shift = ok(await svc.call('shifts.open', { startingCash: 0 }, admin))
-  // Cash sale 160 with a discount of 10 → 150 into the drawer.
-  ok(await sell(shift.id, [{ barcode: 'P80', qty: 2, unitPrice: 80 }], 'نقدي', { discount: 10 }))
+  // Cash sale 160 with an automatic discount of 10 (rule: 5.00 per unit) → 150 into the drawer.
+  const rule = ok(
+    await svc.call(
+      'discounts.save',
+      { name: 'عرض P80', scope: 'product', productBarcode: 'P80', valueType: 'amount', value: 5 },
+      admin
+    )
+  )
+  ok(await sell(shift.id, [{ barcode: 'P80', qty: 2, unitPrice: 80 }]))
+  ok(await svc.call('discounts.setActive', { id: rule.id, isActive: false }, admin))
   // Partial payment: 100 total, 40 paid now, 60 on the customer's account.
   ok(
     await sell(shift.id, [{ barcode: 'P50', qty: 2, unitPrice: 50 }], 'دفع جزئي', {

@@ -37,6 +37,7 @@ const RolesTab = lazy(() => import('./RolesTab'))
 const SettingsTab = lazy(() => import('./SettingsTab'))
 const ReceiptDesignerTab = lazy(() => import('./ReceiptDesignerTab'))
 const TillsManagerTab = lazy(() => import('./TillsManagerTab'))
+const DiscountsTab = lazy(() => import('./DiscountsTab'))
 
 function Overview({
   currentUser,
@@ -236,6 +237,7 @@ export default function AdminDashboard(props) {
             triggerCustomConfirm={props.triggerCustomConfirm}
           />
         )}
+        {adminTab === 'discounts' && <DiscountsTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'clients' && <ClientsTab {...props} />}
         {adminTab === 'backup' && <BackupTab />}
         {adminTab === 'reordering' && <ReorderingTab />}

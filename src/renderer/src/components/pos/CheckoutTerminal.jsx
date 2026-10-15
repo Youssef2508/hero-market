@@ -130,7 +130,7 @@ function CheckoutTerminal({
   triggerDeleteItem,
   cartSubtotal,
   discount,
-  setDiscount,
+  appliedDiscounts = [],
   paidAmount,
   setPaidAmount,
   changeRemaining,
@@ -599,7 +599,14 @@ function CheckoutTerminal({
               <dt>إجمالي الأصناف</dt>
               <dd className="money">{money(cartSubtotal)}</dd>
             </div>
-            {discountNum > 0 && (
+            {/* Automatic discounts from the administrator's rules (no manual discount). */}
+            {appliedDiscounts.map((d) => (
+              <div key={d.ruleId}>
+                <dt>خصم: {d.name}</dt>
+                <dd className="money text-danger">− {money(d.amount)}</dd>
+              </div>
+            ))}
+            {appliedDiscounts.length === 0 && discountNum > 0 && (
               <div>
                 <dt>الخصم</dt>
                 <dd className="money text-danger">− {money(discountNum)}</dd>
@@ -639,16 +646,6 @@ function CheckoutTerminal({
           </fieldset>
 
           <div className="money-fields">
-            <label className="field">
-              <span className="field-label">الخصم (ج.م)</span>
-              <input
-                type="number"
-                className="input input-amount num"
-                value={discount === 0 ? '' : discount}
-                placeholder="0.00"
-                onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-              />
-            </label>
             <label className="field">
               <span className="field-label">
                 {paymentType === 'دفع جزئي' ? 'المدفوع مقدماً' : 'المدفوع من العميل'}

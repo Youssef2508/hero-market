@@ -259,20 +259,24 @@ test('credit sale needs a customer; a new customer is created in the same transa
   )
 })
 
-test('discount bounds: cannot exceed the subtotal', async (t) => {
+// Owner decision (2026-10-15): no operator grants discounts; only the administrator's rules apply.
+test('a manual discount is refused for every operator and nothing is written', async (t) => {
   if (!requireDb(t)) return
+  const before = (await q('SELECT count(*)::int AS n FROM sales'))[0].n
   const r = await svc.call(
     'pos.checkout',
     {
       clientRef: ref(),
       shiftId: shift.id,
       paymentType: 'نقدي',
-      discount: 50,
+      discount: 5,
       items: [{ barcode: 'A1', qty: 1 }]
     },
     cashier
   )
-  assert.equal(r.status, 400)
+  assert.equal(r.status, 403)
+  assert.match(r.body.error.message, /تلقائياً/)
+  assert.equal((await q('SELECT count(*)::int AS n FROM sales'))[0].n, before)
 })
 
 test('concurrent checkouts of the same product: every sale recorded once, stock = start − sold', async (t) => {

@@ -192,6 +192,7 @@ function App() {
     setBarcodeInput,
     handleBarcodeSubmit,
     addProductByBarcode,
+    appliedDiscounts,
     searchInput,
     setSearchInput,
     handleSearchChange,
@@ -658,7 +659,7 @@ function App() {
             triggerDeleteItem={triggerDeleteItem}
             cartSubtotal={cartSubtotal}
             discount={discount}
-            setDiscount={setDiscount}
+            appliedDiscounts={appliedDiscounts}
             paidAmount={paidAmount}
             setPaidAmount={setPaidAmount}
             changeRemaining={changeDue}

@@ -22,10 +22,12 @@ test('permission catalogue: unique keys, every built-in role uses known keys', (
 })
 
 test('built-in roles reproduce the original access rules', () => {
-  // Original cashier: sell (cash, wallets, credit), discount, own shift, tills – nothing in management.
+  assert.ok(!KEYS.has('pos.discount'), 'the manual discount permission no longer exists')
+  assert.ok(role('store_admin').permissions.includes('discounts.manage'))
+  // Cashier: sell (cash, wallets, credit), own shift, tills – nothing in management. No discount
+  // authority at all (owner, 2026-10-15): discounts come only from the administrator's rules.
   assert.deepEqual(role('cashier').permissions.sort(), [
     'pos.credit',
-    'pos.discount',
     'pos.sell',
     'shifts.operate',
     'tills.operate'
@@ -36,7 +38,8 @@ test('built-in roles reproduce the original access rules', () => {
     'roles.manage',
     'system.reset',
     'shifts.multi_till',
-    'tills.manage'
+    'tills.manage',
+    'discounts.manage'
   ]) {
     assert.ok(!role('manager').permissions.includes(p), `manager must not have ${p}`)
   }

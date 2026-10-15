@@ -153,14 +153,31 @@ module.exports = function salesModule(app) {
         // equivalent, which must suit the product (whole pieces, or kg/l with 3 decimals).
         const factor = Number(item.unit_factor) || 1
         const { baseQty } = toBaseQty(item.unit_kind || 'count', quantity, factor, item.name || '')
-        const originalAmt =
-          Number(sale.original_amount) || Number(sale.total_amount) + Number(sale.discount) || 1
-        const currentDiscount = Number(sale.discount) || 0
-        const ratio = currentDiscount > 0 && originalAmt > 0 ? currentDiscount / originalAmt : 0
-        const gross = quantity * Number(item.unit_price)
-        const discountShare = round2(gross * ratio)
-        const netRefund = round2(gross - discountShare)
         const newReturned = already + quantity
+        const remBefore = Number(item.quantity) - already
+        const remAfter = Number(item.quantity) - newReturned
+        // Rounded per line like checkout (weighed lines: 0.2 kg × 240 must be 48.00, not 47.999…).
+        const grossAfter = round2(remAfter * Number(item.unit_price))
+        let netRefund
+        let lineDiscountAfter = 0
+        let cartDiscountAfter = 0
+        if (Number(sale.pricing_version) === 2) {
+          // Rule-priced sale: the line keeps its own discounts. The refund is the drop in the
+          // line's net, so successive partial returns add up exactly to what was paid.
+          const ld = Number(item.line_discount) || 0
+          const cd = Number(item.cart_discount) || 0
+          lineDiscountAfter = remBefore > 0 ? round2((ld * remAfter) / remBefore) : 0
+          cartDiscountAfter = remBefore > 0 ? round2((cd * remAfter) / remBefore) : 0
+          const netBefore = Number(item.total_price) - ld - cd
+          netRefund = round2(netBefore - (grossAfter - lineDiscountAfter - cartDiscountAfter))
+        } else {
+          // Legacy invoice-level discount: refund keeps the invoice's discount ratio as sold.
+          const originalAmt =
+            Number(sale.original_amount) || Number(sale.total_amount) + Number(sale.discount) || 1
+          const ratio = Number(sale.discount) > 0 ? Number(sale.discount) / originalAmt : 0
+          const gross = quantity * Number(item.unit_price)
+          netRefund = round2(gross - round2(gross * ratio))
+        }
         // Returned goods re-enter at the current average cost (the average does not change).
         await postMovement(db, ctx, {
           barcode: item.product_barcode,
@@ -169,17 +186,15 @@ module.exports = function salesModule(app) {
           refType: 'sale_item',
           refId: item.id
         })
-        await db.query('UPDATE sale_items SET returned_qty = $1, total_price = $2 WHERE id = $3', [
-          newReturned,
-          // Rounded per line like checkout (weighed lines: 0.2 kg × 240 must be 48.00, not 47.999…).
-          round2((Number(item.quantity) - newReturned) * Number(item.unit_price)),
-          item.id
-        ])
         await db.query(
-          `UPDATE sales SET discount = GREATEST(0, discount - $1),
-             total_amount = GREATEST(0, (SELECT COALESCE(SUM(total_price), 0) FROM sale_items WHERE sale_id = $2) - GREATEST(0, discount - $1))
-           WHERE id = $2`,
-          [discountShare, sale.id]
+          'UPDATE sale_items SET returned_qty = $1, total_price = $2, line_discount = $3, cart_discount = $4 WHERE id = $5',
+          [newReturned, grossAfter, lineDiscountAfter, cartDiscountAfter, item.id]
+        )
+        // K-40: the invoice's discount stays as sold (the drawer counts sales as sold and the refund
+        // as an outflow); only the remaining total goes down by the refund.
+        await db.query(
+          'UPDATE sales SET total_amount = GREATEST(0, total_amount - $1) WHERE id = $2',
+          [netRefund, sale.id]
         )
         if (sale.payment_type === 'آجل' && sale.client_id) {
           await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
@@ -249,10 +264,11 @@ module.exports = function salesModule(app) {
             })
         }
         await db.query(
-          'UPDATE sale_items SET returned_qty = quantity, total_price = 0 WHERE sale_id = $1',
+          'UPDATE sale_items SET returned_qty = quantity, total_price = 0, line_discount = 0, cart_discount = 0 WHERE sale_id = $1',
           [saleId]
         )
-        await db.query('UPDATE sales SET total_amount = 0, discount = 0 WHERE id = $1', [saleId])
+        // K-40: discount stays as sold; the whole remaining total is refunded.
+        await db.query('UPDATE sales SET total_amount = 0 WHERE id = $1', [saleId])
         const refund = Number(sale.total_amount) || 0
         if (sale.payment_type === 'آجل' && sale.client_id) {
           await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [

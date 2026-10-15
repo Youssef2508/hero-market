@@ -13,5 +13,6 @@ module.exports = [
   require('./tills'),
   require('./admin'),
   require('./settings'),
-  require('./backup')
+  require('./backup'),
+  require('./discounts')
 ]
