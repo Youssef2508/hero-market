@@ -124,7 +124,7 @@ test('import keeps every row and value; backup verified; source untouched; re-ru
   }
 })
 
-test('after import: legacy PIN logs in with the mapped role and is upgraded to a keyed hash', async (t) => {
+test('after import: a legacy PIN is accepted once to choose a password, keeps the mapped role, then stops working', async (t) => {
   if (!requireDb(t)) return
   const target = await migratedDatabase()
   try {
@@ -132,17 +132,44 @@ test('after import: legacy PIN logs in with the mapped role and is upgraded to a
     await target.pool.end()
     const svc = await startService(target.url)
     try {
-      const r = await svc.call('auth.login', { pin: '1234' })
+      // Phase 3: username + the old (plain-text) PIN → no session yet, a password must be chosen.
+      const first = await svc.call('auth.login', { username: 'admin', password: '1234' })
+      assert.equal(first.status, 200)
+      assert.equal(first.body.passwordChangeRequired, true)
+      assert.equal(first.body.token, undefined, 'no session before a password is chosen')
+      const r = await svc.call('auth.setPassword', {
+        username: 'admin',
+        currentPassword: '1234',
+        newPassword: 'Store-Owner-2026'
+      })
       assert.equal(r.status, 200)
       assert.equal(r.body.user.roleKey, 'super_admin')
+      assert.match(
+        r.body.recoveryCode,
+        /^[A-Z0-9]{5}(-[A-Z0-9]{5}){3}$/,
+        'owner gets a recovery code'
+      )
       const [u] = (
         await svc.pool.query(
-          "SELECT password_hash, pin_lookup, pin_hash FROM users WHERE username = 'admin'"
+          "SELECT password_hash, pin_lookup, pin_hash, password_scrypt FROM users WHERE username = 'admin'"
         )
       ).rows
-      assert.ok(u.pin_lookup && u.pin_hash.startsWith('scrypt$'))
-      assert.notEqual(u.password_hash, '1234', 'plain-text PIN no longer stored')
-      const c = await svc.call('auth.login', { pin: '1111' })
+      assert.deepEqual(
+        [u.password_hash, u.pin_lookup, u.pin_hash],
+        [null, null, null],
+        'PIN erased'
+      )
+      assert.ok(u.password_scrypt.startsWith('scrypt$'))
+      assert.equal(
+        (await svc.call('auth.login', { username: 'admin', password: '1234' })).status,
+        401,
+        'the old PIN no longer works'
+      )
+      const c = await svc.call('auth.setPassword', {
+        username: 'cashier1',
+        currentPassword: '1111',
+        newPassword: 'Cashier-pass-1'
+      })
       assert.equal(c.body.user.roleKey, 'cashier')
       const history = await svc.call('sales.page', { page: 1, pageSize: 10 }, r.body.token)
       assert.equal(history.status, 200)

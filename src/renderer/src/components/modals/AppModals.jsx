@@ -1,7 +1,8 @@
 import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
 import CustomAlertModal from './CustomAlertModal'
-import ManagerApprovalModal from './ManagerApprovalModal'
+import SupervisorApprovalModal from './SupervisorApprovalModal'
+import ReturnRequestModal from './ReturnRequestModal'
 import AddProductModal from './AddProductModal'
 import EditProductModal from './EditProductModal'
 import AddUserModal from './AddUserModal'
@@ -40,12 +41,10 @@ export default function AppModals({
   customConfirm,
   closeCustomConfirm,
 
-  managerApprovalModal,
-  managerPin,
-  setManagerPin,
-  setManagerApprovalModal,
-  setPendingAction,
-  handleManagerAuthSubmit,
+  approvalRequest,
+  setApprovalRequest,
+  returnRequestOpen,
+  setReturnRequestOpen,
 
   showAddModal,
   setShowAddModal,
@@ -68,6 +67,7 @@ export default function AppModals({
 
   showEditUserModal,
   setShowEditUserModal,
+  handleResetPassword,
   editUser,
   setEditUser,
   handleEditUser,
@@ -136,13 +136,16 @@ export default function AppModals({
 
       <CustomConfirmModal customConfirm={customConfirm} closeCustomConfirm={closeCustomConfirm} />
 
-      <ManagerApprovalModal
-        managerApprovalModal={managerApprovalModal}
-        managerPin={managerPin}
-        setManagerPin={setManagerPin}
-        setManagerApprovalModal={setManagerApprovalModal}
-        setPendingAction={setPendingAction}
-        handleManagerAuthSubmit={handleManagerAuthSubmit}
+      <SupervisorApprovalModal
+        request={approvalRequest}
+        onCancel={() => setApprovalRequest(null)}
+      />
+
+      <ReturnRequestModal
+        open={returnRequestOpen}
+        onClose={() => setReturnRequestOpen(false)}
+        currentUser={currentUser}
+        currentShift={currentShift}
       />
 
       <AddProductModal
@@ -177,6 +180,7 @@ export default function AppModals({
         editUser={editUser}
         setEditUser={setEditUser}
         handleEditUser={handleEditUser}
+        handleResetPassword={handleResetPassword}
         rolesList={rolesList}
       />
 

@@ -4,6 +4,7 @@
 const { badRequest, notFound, conflict } = require('../errors')
 const { postMovement } = require('../inventory/stock')
 const { toBaseQty } = require('../inventory/units')
+const { authorize, approverSchema } = require('../auth/approvals')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -14,6 +15,11 @@ const ORDER = {
   items_count: 'items_count',
   payment_type: 's.payment_type'
 }
+const returnNote = (reason, approval, ctx) =>
+  (String(reason || '').trim() ? ` – السبب: ${String(reason).trim()}` : '') +
+  (approval.approver && approval.approver !== ctx.user.username
+    ? ` – بموافقة المشرف "${approval.approver}"`
+    : '')
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 
@@ -47,6 +53,50 @@ async function refundShift(db, ctx, currentShiftId, sale) {
     if (s) return s.id
   }
   return sale.shift_id
+}
+
+/**
+ * Returns (owner decision 2026-10-14): users with sales.return return directly; users with only
+ * sales.return_request (cashiers) need a supervisor holding sales.return and pos.approve, and a
+ * reason. The approval is checked inside the return's own transaction.
+ */
+function returnApproval(ctx, db, { subjectType, subjectId, amount, reason, approver, saleId }) {
+  return authorize(ctx, db, {
+    action: 'sale_return',
+    selfAllowed: ctx.can('sales.return'),
+    approverPermissions: ['sales.return', 'pos.approve'],
+    subjectType,
+    subjectId,
+    amount,
+    reason,
+    reasonRequired: true,
+    approver,
+    details: { saleId }
+  })
+}
+
+async function recordReturn(db, ctx, row) {
+  await db.query(
+    `INSERT INTO sale_returns (sale_id, sale_item_id, quantity, refund, reason, user_id, username, approval_id, shift_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      row.saleId,
+      row.saleItemId ?? null,
+      row.quantity ?? null,
+      row.refund,
+      String(row.reason || '').trim() || null,
+      ctx.user.id,
+      ctx.user.username,
+      row.approvalId ?? null,
+      row.shiftId ?? null
+    ]
+  )
+}
+
+const returnFields = {
+  currentShiftId: { type: ['integer', 'null'] },
+  reason: { type: 'string', maxLength: 300 },
+  approver: approverSchema
 }
 
 module.exports = function salesModule(app) {
@@ -95,7 +145,8 @@ module.exports = function salesModule(app) {
 
   app.operation({
     name: 'sales.detail',
-    anyPermission: ['sales.view', 'customers.view'],
+    // Cashiers open an invoice by its number to request a return.
+    anyPermission: ['sales.view', 'customers.view', 'sales.return_request'],
     schema: { type: 'object', required: ['saleId'], properties: { saleId: { type: 'integer' } } },
     handler: async (ctx, { saleId }) => {
       const sale = (await ctx.pool.query('SELECT * FROM sales WHERE id = $1', [saleId])).rows[0]
@@ -119,17 +170,17 @@ module.exports = function salesModule(app) {
 
   app.operation({
     name: 'sales.returnItem',
-    permission: 'sales.return',
+    anyPermission: ['sales.return', 'sales.return_request'],
     schema: {
       type: 'object',
       required: ['saleItemId', 'quantity'],
       properties: {
         saleItemId: { type: 'integer' },
         quantity: { type: 'number', exclusiveMinimum: 0 },
-        currentShiftId: { type: ['integer', 'null'] }
+        ...returnFields
       }
     },
-    handler: async (ctx, { saleItemId, quantity, currentShiftId }) =>
+    handler: async (ctx, { saleItemId, quantity, currentShiftId, reason, approver }) =>
       ctx.tx(async (db) => {
         const item = (
           await db.query(
@@ -178,6 +229,14 @@ module.exports = function salesModule(app) {
           const gross = quantity * Number(item.unit_price)
           netRefund = round2(gross - round2(gross * ratio))
         }
+        const approval = await returnApproval(ctx, db, {
+          subjectType: 'sale_item',
+          subjectId: item.id,
+          amount: netRefund,
+          reason,
+          approver,
+          saleId: sale.id
+        })
         // Returned goods re-enter at the current average cost (the average does not change).
         await postMovement(db, ctx, {
           barcode: item.product_barcode,
@@ -205,20 +264,31 @@ module.exports = function salesModule(app) {
             `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
             [sale.client_id, netRefund, `إرجاع صنف من فاتورة آجل #${sale.id}`]
           )
-        } else {
+        }
+        const shiftId = await refundShift(db, ctx, currentShiftId, sale)
+        if (!(sale.payment_type === 'آجل' && sale.client_id)) {
           await db.query(
             `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
             [
-              await refundShift(db, ctx, currentShiftId, sale),
+              shiftId,
               netRefund,
               `مرتجع صنف ${item.name || item.product_barcode} (${quantity}) للفاتورة #${sale.id}`
             ]
           )
         }
+        await recordReturn(db, ctx, {
+          saleId: sale.id,
+          saleItemId: item.id,
+          quantity,
+          refund: netRefund,
+          reason,
+          approvalId: approval.approvalId,
+          shiftId
+        })
         await ctx.audit(
           db,
           'sale_return',
-          `إرجاع ${quantity} من "${item.name || item.product_barcode}" من الفاتورة #${sale.id} بقيمة ${netRefund.toFixed(2)} ج.م`
+          `إرجاع ${quantity} من "${item.name || item.product_barcode}" من الفاتورة #${sale.id} بقيمة ${netRefund.toFixed(2)} ج.م${returnNote(reason, approval, ctx)}`
         )
         return {
           netRefund,
@@ -230,13 +300,13 @@ module.exports = function salesModule(app) {
 
   app.operation({
     name: 'sales.returnEntire',
-    permission: 'sales.return',
+    anyPermission: ['sales.return', 'sales.return_request'],
     schema: {
       type: 'object',
       required: ['saleId'],
-      properties: { saleId: { type: 'integer' }, currentShiftId: { type: ['integer', 'null'] } }
+      properties: { saleId: { type: 'integer' }, ...returnFields }
     },
-    handler: async (ctx, { saleId, currentShiftId }) =>
+    handler: async (ctx, { saleId, currentShiftId, reason, approver }) =>
       ctx.tx(async (db) => {
         const sale = (await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]))
           .rows[0]
@@ -252,6 +322,15 @@ module.exports = function salesModule(app) {
         ) {
           throw conflict('تم إرجاع هذه الفاتورة بالكامل من قبل.')
         }
+        const refund = Number(sale.total_amount) || 0
+        const approval = await returnApproval(ctx, db, {
+          subjectType: 'sale',
+          subjectId: sale.id,
+          amount: refund,
+          reason,
+          approver,
+          saleId: sale.id
+        })
         for (const i of items) {
           const remaining = Number(i.quantity) - (Number(i.returned_qty) || 0)
           if (remaining > 0)
@@ -269,7 +348,6 @@ module.exports = function salesModule(app) {
         )
         // K-40: discount stays as sold; the whole remaining total is refunded.
         await db.query('UPDATE sales SET total_amount = 0 WHERE id = $1', [saleId])
-        const refund = Number(sale.total_amount) || 0
         if (sale.payment_type === 'آجل' && sale.client_id) {
           await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
             refund,
@@ -279,20 +357,25 @@ module.exports = function salesModule(app) {
             `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
             [sale.client_id, refund, `إرجاع كامل فاتورة آجل #${saleId}`]
           )
-        } else {
+        }
+        const shiftId = await refundShift(db, ctx, currentShiftId, sale)
+        if (!(sale.payment_type === 'آجل' && sale.client_id)) {
           await db.query(
             `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-            [
-              await refundShift(db, ctx, currentShiftId, sale),
-              refund,
-              `مرتجع كامل الفاتورة #${saleId}`
-            ]
+            [shiftId, refund, `مرتجع كامل الفاتورة #${saleId}`]
           )
         }
+        await recordReturn(db, ctx, {
+          saleId,
+          refund,
+          reason,
+          approvalId: approval.approvalId,
+          shiftId
+        })
         await ctx.audit(
           db,
           'sale_return',
-          `إرجاع كامل الفاتورة #${saleId} بقيمة ${refund.toFixed(2)} ج.م`
+          `إرجاع كامل الفاتورة #${saleId} بقيمة ${refund.toFixed(2)} ج.م${returnNote(reason, approval, ctx)}`
         )
         return {
           refund,

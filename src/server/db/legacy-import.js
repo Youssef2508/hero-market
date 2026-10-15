@@ -36,7 +36,19 @@ const PRIMARY_KEY = { products: 'barcode', settings: 'key' } // all others: id
 const TRIGGER_TABLES = ['products', 'sales', 'shifts']
 // Columns added by later migrations; not part of the legacy data set.
 const NON_LEGACY_COLUMNS = {
-  users: ['role_id', 'pin_lookup', 'pin_hash', 'is_active', 'created_at', 'updated_at'],
+  users: [
+    'role_id',
+    'pin_lookup',
+    'pin_hash',
+    'is_active',
+    'created_at',
+    'updated_at',
+    'password_scrypt',
+    'must_change_password',
+    'password_changed_at',
+    'recovery_hash',
+    'recovery_created_at'
+  ],
   sales: ['client_ref']
 }
 

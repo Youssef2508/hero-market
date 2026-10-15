@@ -3,7 +3,7 @@ import { CircleCheck, TriangleAlert, ClipboardCheck, NotebookPen } from 'lucide-
 import packageInfo from '../../../package.json'
 
 import { playSound } from './lib/utils'
-import { api } from './lib/api'
+import { api, can } from './lib/api'
 import { canAccessAdmin } from './components/shell/navigation'
 import StartupGate from './components/setup/StartupGate'
 
@@ -27,7 +27,7 @@ import TillsManagerTab from './components/admin/TillsManagerTab'
 // Import Modals Components
 import AppModals from './components/modals/AppModals'
 import CustomAlertModal from './components/modals/CustomAlertModal'
-import ChangePinModal from './components/modals/ChangePinModal'
+import ChangePasswordModal from './components/modals/ChangePasswordModal'
 
 function App() {
   // Refs
@@ -61,14 +61,14 @@ function App() {
     setCloseShiftModal,
     actualEndCash,
     setActualEndCash,
-    managerApprovalModal,
-    setManagerApprovalModal,
-    managerPin,
-    setManagerPin,
-    pendingAction,
-    setPendingAction,
+    approvalRequest,
+    setApprovalRequest,
+    returnRequestOpen,
+    setReturnRequestOpen,
     handleLock: rawHandleLock
   } = useShift()
+  // A supervisor dialog is open: barcode capture and the hourly audit wait.
+  const supervisorModal = !!approvalRequest || returnRequestOpen
 
   // Startup: connection to the service, then first-run administrator setup (no default password).
   const [startupPhase, setStartupPhase] = useState('checking') // checking | connect | setup | ready
@@ -84,7 +84,7 @@ function App() {
     }
   }
 
-  const [showChangePinModal, setShowChangePinModal] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const [noPrint, setNoPrint] = useState(false)
 
   // Custom non-blocking alert state
@@ -182,9 +182,7 @@ function App() {
 
   // usePOSController hook — all checkout terminal handlers & states
   const {
-    pin,
-    setPin,
-    handlePinSubmit,
+    completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
     handleLock,
@@ -208,7 +206,6 @@ function App() {
     handleClientNameChange,
     handleClientPhoneChange,
     selectClient,
-    handleManagerAuthSubmit,
     handleCheckout,
     handleReprintSale
   } = usePOSController({
@@ -234,12 +231,7 @@ function App() {
     setCloseShiftModal,
     actualEndCash,
     setActualEndCash,
-    managerApprovalModal,
-    setManagerApprovalModal,
-    managerPin,
-    setManagerPin,
-    pendingAction,
-    setPendingAction,
+    setApprovalRequest,
     rawHandleLock,
     cart,
     setCart,
@@ -287,7 +279,7 @@ function App() {
     currentView,
     openShiftModal,
     closeShiftModal,
-    managerApprovalModal,
+    supervisorModal,
     showAddModal: adminController.showAddModal,
     adminTab,
     customAlert,
@@ -369,7 +361,7 @@ function App() {
         const isModalOpen =
           openShiftModal ||
           closeShiftModal ||
-          managerApprovalModal ||
+          supervisorModal ||
           showAuditModal ||
           customAlert ||
           customConfirm
@@ -388,7 +380,7 @@ function App() {
     cart,
     openShiftModal,
     closeShiftModal,
-    managerApprovalModal,
+    supervisorModal,
     showAuditModal,
     customAlert,
     customConfirm,
@@ -589,7 +581,7 @@ function App() {
   if (isLocked) {
     return (
       <>
-        <LockScreen pin={pin} setPin={setPin} handlePinSubmit={handlePinSubmit} />
+        <LockScreen onSignedIn={completeSignIn} />
         <CustomAlertModal customAlert={customAlert} closeCustomAlert={closeCustomAlert} />
       </>
     )
@@ -620,7 +612,7 @@ function App() {
         onCloseShift={() => setCloseShiftModal(true)}
         onAudit={triggerAuditCheck}
         onLock={handleLock}
-        onChangePin={() => setShowChangePinModal(true)}
+        onChangePassword={() => setShowChangePassword(true)}
         version={packageInfo.version}
       >
         {currentView === 'admin' && canAccessAdmin(currentUser) ? (
@@ -650,6 +642,11 @@ function App() {
           <CheckoutTerminal
             cart={cart}
             triggerClearCart={triggerClearCart}
+            onReturn={
+              can(currentUser, 'sales.return_request') || can(currentUser, 'sales.return')
+                ? () => setReturnRequestOpen(true)
+                : null
+            }
             qtyInputRefs={qtyInputRefs}
             handleQtyChangeAttempt={handleQtyChangeAttempt}
             changeLineUnit={changeLineUnit}
@@ -728,21 +725,18 @@ function App() {
         closeCustomAlert={closeCustomAlert}
         customConfirm={customConfirm}
         closeCustomConfirm={closeCustomConfirm}
-        managerApprovalModal={managerApprovalModal}
-        managerPin={managerPin}
-        setManagerPin={setManagerPin}
-        setManagerApprovalModal={setManagerApprovalModal}
-        setPendingAction={setPendingAction}
-        handleManagerAuthSubmit={handleManagerAuthSubmit}
+        approvalRequest={approvalRequest}
+        setApprovalRequest={setApprovalRequest}
+        returnRequestOpen={returnRequestOpen}
+        setReturnRequestOpen={setReturnRequestOpen}
         addProductBarcodeRef={addProductBarcodeRef}
         {...adminController}
       />
 
-      <ChangePinModal
-        showChangePinModal={showChangePinModal}
-        setShowChangePinModal={setShowChangePinModal}
+      <ChangePasswordModal
+        open={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
         currentUser={currentUser}
-        setCurrentUser={setCurrentUser}
       />
 
       {/* Periodic drawer audit */}

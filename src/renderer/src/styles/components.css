@@ -1226,3 +1226,66 @@ input[data-computed='true'] {
 .phone-add {
   align-self: flex-start;
 }
+
+/* ── Passwords, recovery code, returns from the till (stage 4 phase 3) ── */
+.password-input {
+  position: relative;
+  display: flex;
+}
+.password-input .input {
+  flex: 1;
+  padding-inline-start: 40px;
+}
+.password-toggle {
+  position: absolute;
+  inset-inline-start: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.recovery-code {
+  display: block;
+  padding: var(--sp-4);
+  border: 2px dashed var(--accent-border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 1.35rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  text-align: center;
+  user-select: all;
+}
+.recovery-tips {
+  margin: 0;
+  padding-inline-start: 1.2em;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+.recovery-notice h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recovery-input {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  letter-spacing: 0.05em;
+}
+.return-lookup {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+.return-lookup .field {
+  flex: 1;
+}
+.return-sale {
+  margin: 0;
+  color: var(--text-2);
+}
+.return-items {
+  max-height: 220px;
+  overflow: auto;
+}
+.return-items tr.is-muted {
+  opacity: 0.5;
+}

@@ -35,21 +35,9 @@ const AddUserModal = ({
               placeholder="مثال: أحمد محمد"
             />
           </div>
-          <div className="form-group">
-            <label>رمز المرور / PIN (4 أرقام) *</label>
-            <input
-              type="text"
-              pattern="\d{4}"
-              maxLength="4"
-              className="form-input"
-              value={newUser.pin}
-              onChange={(e) =>
-                setNewUser((prev) => ({ ...prev, pin: e.target.value.replace(/\D/g, '') }))
-              }
-              required
-              placeholder="مثال: 1234"
-            />
-          </div>
+          <p className="field-hint">
+            ستظهر كلمة مرور مؤقتة بعد الإضافة. يختار الموظف كلمة مرور خاصة به عند أول تسجيل دخول.
+          </p>
           <div className="form-group">
             <label>الدور *</label>
             <select

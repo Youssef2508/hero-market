@@ -1,5 +1,5 @@
 import './userDataPath'
-import { app, shell, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -9,7 +9,8 @@ import {
   callOperation,
   waitForStatus as backendStatus,
   writeConfig,
-  clearSession
+  clearSession,
+  resetPasswordOnThisPc
 } from './backend'
 import { getPrintSettings } from './printSettings'
 import fs from 'fs'
@@ -59,9 +60,46 @@ if (app.isPackaged) {
   }
 }
 
+// Local password reset: "HeroMarket-POS.exe" --reset-password=<username> (see src/server/auth/reset.js).
+const RESET_ARG = '--reset-password='
+const resetUser = process.argv.find((a) => a.startsWith(RESET_ARG))?.slice(RESET_ARG.length)
+
 // One instance per PC: a second copy would share – and on quit stop – the local database.
 if (!app.requestSingleInstanceLock()) {
-  app.exit(0)
+  if (resetUser)
+    app.whenReady().then(() => {
+      dialog.showErrorBox(
+        'إعادة تعيين كلمة المرور',
+        'أغلق برنامج HeroMarket أولاً، ثم أعد تشغيل أمر إعادة تعيين كلمة المرور.'
+      )
+      app.exit(1)
+    })
+  else app.exit(0)
+}
+
+async function runPasswordReset(username) {
+  let code = 0
+  try {
+    const r = await resetPasswordOnThisPc(username)
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'إعادة تعيين كلمة المرور',
+      message: `كلمة المرور المؤقتة للمستخدم "${r.username}":\n\n${r.temporaryPassword}\n\nاكتبها الآن، فلن تظهر مرة أخرى. يجب تغييرها عند أول تسجيل دخول.`,
+      buttons: ['تم']
+    })
+  } catch (e) {
+    code = 1
+    const msg =
+      e.code === 'unknown_user'
+        ? `لا يوجد مستخدم بالاسم "${username}".`
+        : e.message === 'client_mode'
+          ? 'هذا الجهاز متصل بخادم متجر؛ أعد تعيين كلمة المرور على الخادم.'
+          : `تعذرت إعادة تعيين كلمة المرور: ${e.message}`
+    dialog.showErrorBox('إعادة تعيين كلمة المرور', msg)
+  } finally {
+    await stopBackend().catch(() => {})
+    app.exit(code)
+  }
 }
 app.on('second-instance', () => {
   const win = BrowserWindow.getAllWindows()[0]
@@ -135,6 +173,11 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  if (resetUser) {
+    runPasswordReset(resetUser)
+    return
+  }
 
   // Data service (PostgreSQL via the HeroMarket service) and printer
   registerDataIpc({ callOperation, backendStatus, startBackend, writeConfig, clearSession })

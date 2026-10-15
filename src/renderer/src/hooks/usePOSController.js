@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { normalizeDigits, playSound } from '../lib/utils'
+import { playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 import { receiptQty } from '../lib/weight'
@@ -8,7 +8,8 @@ import { formatClock, ltrText } from '../lib/time'
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
  * including shifts logging, barcode parsing, search suggestions, printing,
- * manager authorization and checkout. All data goes through the HeroMarket service (lib/api).
+ * supervisor approval of shift differences and checkout. All data goes through the HeroMarket
+ * service (lib/api).
  */
 export function usePOSController({
   currentUser,
@@ -25,11 +26,7 @@ export function usePOSController({
   vfcashStartCash,
   setCloseShiftModal,
   actualEndCash,
-  setManagerApprovalModal,
-  managerPin,
-  setManagerPin,
-  pendingAction,
-  setPendingAction,
+  setApprovalRequest,
   rawHandleLock,
 
   cart,
@@ -47,7 +44,6 @@ export function usePOSController({
   setIsDelivery,
   cartTotal,
   addToCart,
-  updateQty,
 
   barcodeInputRef,
 
@@ -68,7 +64,6 @@ export function usePOSController({
   appSettings,
   onLoggedIn
 }) {
-  const [pin, setPin] = useState('')
   const searchDebounceRef = useRef(null)
   const [barcodeInput, setBarcodeInput] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -119,7 +114,6 @@ export function usePOSController({
     api('auth.logout').catch(() => {})
     rawHandleLock()
     setCart([])
-    setPin('')
     setBarcodeInput('')
     setSearchInput('')
     setSearchResults([])
@@ -132,46 +126,30 @@ export function usePOSController({
     setCurrentView('pos')
   }
 
-  // Pin Authenticator
-  const handlePinSubmit = async (customPin = null) => {
-    if (customPin && typeof customPin.preventDefault === 'function') {
-      customPin.preventDefault()
-      customPin = null
+  // Signed in on the lock screen (auth.login / auth.setPassword / auth.recover answer).
+  const completeSignIn = (res) => {
+    const user = res.user
+    setCurrentUser(user)
+    if (onLoggedIn) onLoggedIn(user)
+    setIsLocked(false) // Unlock the screen layout
+    if (!user.permissions.includes('reports.view')) {
+      setCurrentView('pos')
     }
-    const cleanPin = normalizeDigits(customPin !== null ? customPin : pin)
-    if (!cleanPin) return
-    try {
-      const res = await api('auth.login', { pin: cleanPin })
-      const user = res.user
-      setCurrentUser(user)
-      setPin('')
-      if (onLoggedIn) onLoggedIn(user)
-      setIsLocked(false) // Unlock the screen layout
-      if (!user.permissions.includes('reports.view')) {
-        setCurrentView('pos')
+    if (res.openShift) {
+      setCurrentShift(res.openShift)
+      // A dialog left from the previous user (e.g. their open-shift prompt) must not stay open.
+      setOpenShiftModal(false)
+      playSound('success')
+    } else if (user.permissions.includes('shifts.operate')) {
+      setCurrentShift(null)
+      try {
+        setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+      } catch {
+        /* setter unavailable */
       }
-      if (res.openShift) {
-        setCurrentShift(res.openShift)
-        playSound('success')
-      } else if (user.permissions.includes('shifts.operate')) {
-        setCurrentShift(null)
-        try {
-          setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
-        } catch {
-          /* setter unavailable */
-        }
-        setOpenShiftModal(true)
-      } else {
-        setCurrentShift(null)
-      }
-    } catch (err) {
-      playSound('error')
-      if (err.status === 401) {
-        triggerCustomAlert('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
-      } else {
-        triggerCustomAlert(err.message)
-      }
-      setPin('')
+      setOpenShiftModal(true)
+    } else {
+      setCurrentShift(null)
     }
   }
 
@@ -223,10 +201,8 @@ export function usePOSController({
     }
 
     try {
-      const finalizeShiftClose = async () => {
+      const afterClose = async (closed) => {
         try {
-          // The service computes the expected drawer cash with the legacy formula and closes the shift.
-          const closed = await api('shifts.close', { shiftId: currentShift.id, actualCash: actual })
           const live = closed.live || {}
           const shiftRow = closed.shift || currentShift
 
@@ -269,6 +245,38 @@ export function usePOSController({
           handleLock()
           setCloseShiftModal(false)
         } catch (e) {
+          console.error('Failed after closing the shift:', e)
+        }
+      }
+
+      const finalizeShiftClose = async () => {
+        try {
+          // The service computes the expected drawer cash with the legacy formula and closes the shift.
+          const closed = await api('shifts.close', { shiftId: currentShift.id, actualCash: actual })
+          await afterClose(closed)
+        } catch (e) {
+          if (e.code === 'approval_required') {
+            // Difference above EGP 50: a supervisor acknowledges it (owner decision 2026-10-14).
+            const d = e.details || {}
+            playSound('error')
+            setApprovalRequest({
+              title: 'فرق في إغلاق الوردية',
+              summary: `الفرق ${Number(d.difference).toFixed(2)} ج.م (المتوقع ${Number(d.expected).toFixed(2)}، الفعلي ${Number(d.actual).toFixed(2)}) يتجاوز 50 ج.م ويحتاج إلى اعتماد المشرف.`,
+              noteLabel: 'سبب الفرق (اختياري)',
+              noteRequired: false,
+              onSubmit: async (approver, note) => {
+                const closed = await api('shifts.close', {
+                  shiftId: currentShift.id,
+                  actualCash: actual,
+                  approver,
+                  note: note || undefined
+                })
+                setApprovalRequest(null)
+                await afterClose(closed)
+              }
+            })
+            return
+          }
           console.error('Failed to close shift:', e)
           playSound('error')
           triggerCustomAlert('فشل إغلاق الوردية: ' + e.message)
@@ -369,38 +377,6 @@ export function usePOSController({
     } catch (err) {
       console.error('Barcode lookup error:', err)
       playSound('error')
-    }
-  }
-
-  // Manager Authentication
-  const handleManagerAuthSubmit = async (e) => {
-    if (e) e.preventDefault()
-    if (!managerPin) return
-
-    try {
-      const res = await api('auth.verifyApprover', { pin: managerPin })
-      if (res.approved) {
-        playSound('success')
-        if (pendingAction.type === 'DELETE_ITEM') {
-          setCart((prev) => prev.filter((item) => item.key !== pendingAction.payload))
-        } else if (pendingAction.type === 'QTY_REDUCTION') {
-          updateQty(pendingAction.payload.key, pendingAction.payload.qty)
-        } else if (pendingAction.type === 'CLEAR_CART') {
-          setCart([])
-          setDiscount(0)
-          setPaidAmount('')
-        }
-        setManagerApprovalModal(false)
-        setPendingAction(null)
-      } else {
-        playSound('error')
-        triggerCustomAlert('رمز التحقق للمشرف غير صحيح! العملية مرفوضة.')
-        setManagerPin('')
-      }
-    } catch (err) {
-      console.error('Manager auth error:', err)
-      playSound('error')
-      triggerCustomAlert(err.message)
     }
   }
 
@@ -738,9 +714,7 @@ export function usePOSController({
   return {
     appliedDiscounts,
     addProductByBarcode,
-    pin,
-    setPin,
-    handlePinSubmit,
+    completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
     handleLock,
@@ -764,7 +738,6 @@ export function usePOSController({
     handleClientNameChange,
     handleClientPhoneChange,
     selectClient,
-    handleManagerAuthSubmit,
     handleCheckout,
     handleReprintSale
   }

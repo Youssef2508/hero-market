@@ -14,7 +14,7 @@ function useClock() {
   return now
 }
 
-function UserMenu({ currentUser, onChangePin, onLock }) {
+function UserMenu({ currentUser, onChangePassword, onLock }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -66,11 +66,11 @@ function UserMenu({ currentUser, onChangePin, onLock }) {
             className="dropdown-item"
             onClick={() => {
               setOpen(false)
-              onChangePin()
+              onChangePassword()
             }}
           >
             <KeyRound size={17} aria-hidden="true" />
-            تغيير رمز المرور
+            تغيير كلمة المرور
           </button>
           <div className="dropdown-sep" />
           <button
@@ -102,7 +102,7 @@ export default function Topbar({
   onCloseShift,
   onAudit,
   onLock,
-  onChangePin
+  onChangePassword
 }) {
   const now = useClock()
   const hasShift = !!(currentShift && currentShift.id)
@@ -175,7 +175,7 @@ export default function Topbar({
           </>
         )}
 
-        <UserMenu currentUser={currentUser} onChangePin={onChangePin} onLock={onLock} />
+        <UserMenu currentUser={currentUser} onChangePassword={onChangePassword} onLock={onLock} />
       </div>
     </header>
   )

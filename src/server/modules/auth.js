@@ -1,64 +1,28 @@
 'use strict'
+// Sign-in (stage 4 phase 3): username + password. PINs are only accepted once, to move an existing
+// user to a password (see src/server/auth/credentials.js); choosing the password erases the PIN.
 const crypto = require('crypto')
-const { pinLookup, hashPin, verifyPin, legacyCandidates, isValidPin } = require('../auth/pin')
 const { describeUser } = require('../auth/access')
-const { badRequest, unauthorized, conflict, tooMany } = require('../errors')
+const { checkCredentials } = require('../auth/credentials')
+const {
+  passwordProblem,
+  hashPassword,
+  verifyPassword,
+  newRecoveryCode,
+  hashRecoveryCode,
+  verifyRecoveryCode,
+  burnTime
+} = require('../auth/password')
+const { guardKeys, checkGuard, recordFailure, clearTerminal } = require('../auth/guard')
+const { badRequest, unauthorized, conflict } = require('../errors')
 const { sha256 } = require('../app')
 
-// Two layers: 5 failures in 5 min lock one terminal for 60 s (the original till behaviour), and
-// 20 failures in 15 min lock the whole source address for 15 min. The terminal name is chosen by the
-// client, so only the per-address limit stops a network client from rotating names to guess PINs.
-const LIMITS = {
-  terminal: { max: 5, windowMs: 5 * 60 * 1000, lockMs: 60 * 1000 },
-  address: { max: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
-}
-
-function guardKeys(ctx, prefix = '') {
-  return [
-    [`${prefix}t|${ctx.terminal || 'unknown'}|${ctx.ip}`, LIMITS.terminal],
-    [`${prefix}a|${ctx.ip}`, LIMITS.address]
-  ]
-}
-
-function checkGuard(guard, keys) {
-  const now = Date.now()
-  for (const [key] of keys) {
-    const g = guard.get(key)
-    if (g && g.lockedUntil > now) {
-      const secs = Math.ceil((g.lockedUntil - now) / 1000)
-      throw tooMany(`محاولات دخول خاطئة كثيرة. حاول مرة أخرى بعد ${secs} ثانية.`)
-    }
-  }
-}
-
-function recordFailure(guard, keys) {
-  const now = Date.now()
-  if (guard.size > 5000) {
-    for (const [k, g] of guard)
-      if (g.lockedUntil < now && now - g.first > LIMITS.address.windowMs) guard.delete(k)
-  }
-  for (const [key, limit] of keys) {
-    let g = guard.get(key)
-    if (!g || now - g.first > limit.windowMs) g = { failures: 0, first: now, lockedUntil: 0 }
-    g.failures += 1
-    if (g.failures >= limit.max) {
-      g.lockedUntil = now + limit.lockMs
-      g.failures = 0
-      g.first = now
-    }
-    guard.set(key, g)
-  }
-}
+const WRONG = 'اسم المستخدم أو كلمة المرور غير صحيحة.'
 
 function safeEqual(a, b) {
   const x = Buffer.from(a)
   const y = Buffer.from(b)
   return x.length === y.length && crypto.timingSafeEqual(x, y)
-}
-
-/** A successful login clears the terminal counter only; address-level failures still count. */
-function clearTerminal(guard, keys) {
-  guard.delete(keys[0][0])
 }
 
 async function createSession(db, ctx, userId) {
@@ -71,52 +35,64 @@ async function createSession(db, ctx, userId) {
   return token
 }
 
-/** Find the active user owning `pin`; upgrades a legacy PIN to the keyed hash on success. */
-async function findUserByPin(db, secret, pin) {
-  const lookup = pinLookup(secret, pin)
-  const modern = await db.query(
-    'SELECT id, pin_hash FROM users WHERE pin_lookup = $1 AND is_active',
-    [lookup]
-  )
-  if (modern.rows.length) {
-    return verifyPin(pin, modern.rows[0].pin_hash) ? modern.rows[0].id : null
-  }
-  const [sha, plain] = legacyCandidates(pin)
-  const legacy = await db.query(
-    'SELECT id FROM users WHERE pin_lookup IS NULL AND is_active AND (password_hash = $1 OR password_hash = $2) ORDER BY id',
-    [sha, plain]
-  )
-  if (legacy.rows.length !== 1) {
-    // Keyed lookups made with another server secret (backup restored on another installation,
-    // or a rotated secret): verify against the scrypt hashes and re-key the match.
-    const keyed = await db.query(
-      'SELECT id, pin_hash FROM users WHERE is_active AND pin_hash IS NOT NULL ORDER BY id LIMIT 200'
-    )
-    const hit = keyed.rows.find((u) => verifyPin(pin, u.pin_hash))
-    if (!hit) return null
-    await db.query('UPDATE users SET pin_lookup = $1 WHERE id = $2', [lookup, hit.id])
-    return hit.id
-  }
-  const id = legacy.rows[0].id
-  await db.query(
-    'UPDATE users SET pin_lookup = $1, pin_hash = $2, password_hash = NULL, updated_at = LOCALTIMESTAMP(0) WHERE id = $3',
-    [lookup, hashPin(pin), id]
-  )
-  return id
-}
-
-/** Throws when another user already uses this PIN (PINs identify the user at login). */
-async function assertPinFree(db, secret, pin, exceptUserId = null) {
-  const [sha, plain] = legacyCandidates(pin)
+async function openShiftOf(db, userId) {
   const { rows } = await db.query(
-    `SELECT id FROM users WHERE ($1::int IS NULL OR id <> $1)
-       AND (pin_lookup = $2 OR (pin_lookup IS NULL AND (password_hash = $3 OR password_hash = $4))) LIMIT 1`,
-    [exceptUserId, pinLookup(secret, pin), sha, plain]
+    "SELECT * FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY id LIMIT 1",
+    [userId]
   )
-  if (rows.length) throw conflict('رمز المرور هذا مستخدم لحساب آخر، اختر رمزاً مختلفاً.')
+  return rows[0] || null
 }
 
-const pinSchema = { type: 'string', pattern: '^[0-9]{4,8}$' }
+/**
+ * Store a new password: erases any PIN, clears the "must change" flag, ends the user's other
+ * sessions. A super administrator without a recovery code receives one (returned once, stored hashed).
+ */
+async function storePassword(db, userId, password, { keepSessions = false } = {}) {
+  await db.query(
+    `UPDATE users SET password_scrypt = $1, must_change_password = false, password_changed_at = LOCALTIMESTAMP(0),
+            pin_lookup = NULL, pin_hash = NULL, password_hash = NULL, updated_at = LOCALTIMESTAMP(0)
+      WHERE id = $2`,
+    [hashPassword(password), userId]
+  )
+  if (!keepSessions)
+    await db.query(
+      'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId]
+    )
+  return ensureRecoveryCode(db, userId)
+}
+
+/** Issue a recovery code to a super administrator who has none. Returns the code or null. */
+async function ensureRecoveryCode(db, userId, { replace = false } = {}) {
+  const { rows } = await db.query(
+    `SELECT u.recovery_hash, r.key AS role_key FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
+    [userId]
+  )
+  const u = rows[0]
+  if (!u || u.role_key !== 'super_admin' || (u.recovery_hash && !replace)) return null
+  const code = newRecoveryCode()
+  await db.query(
+    'UPDATE users SET recovery_hash = $1, recovery_created_at = LOCALTIMESTAMP(0) WHERE id = $2',
+    [hashRecoveryCode(code), userId]
+  )
+  return code
+}
+
+function assertNewPassword(password, username) {
+  const problem = passwordProblem(password, username)
+  if (problem) throw badRequest(problem, { code: 'weak_password' })
+}
+
+const passwordSchema = { type: 'string', minLength: 1, maxLength: 128 }
+const usernameSchema = { type: 'string', minLength: 1, maxLength: 40 }
+
+async function audit(db, userId, username, action, description) {
+  await db.query(
+    `INSERT INTO system_logs (timestamp, user_id, username, action_type, description)
+     VALUES (LOCALTIMESTAMP(0), $1, $2, $3, $4)`,
+    [userId, username, action, description]
+  )
+}
 
 module.exports = function authModule(app) {
   app.operation({
@@ -135,77 +111,178 @@ module.exports = function authModule(app) {
     public: true,
     schema: {
       type: 'object',
-      required: ['username', 'pin'],
+      required: ['username', 'password'],
       properties: {
         username: { type: 'string', minLength: 2, maxLength: 40 },
-        pin: pinSchema,
+        password: passwordSchema,
         setupCode: { type: 'string', maxLength: 64 }
       }
     },
-    handler: async (ctx, { username, pin, setupCode }) => {
+    handler: async (ctx, { username, password, setupCode }) => {
       if (ctx.setupCode) {
         const key = guardKeys(ctx, 'setup|')
-        checkGuard(app.loginGuard, key)
+        checkGuard(ctx.guard, key)
         if (!safeEqual(String(setupCode || '').trim(), ctx.setupCode)) {
-          recordFailure(app.loginGuard, key)
+          recordFailure(ctx.guard, key)
           throw unauthorized('رمز الإعداد غير صحيح. تجده في سجل تشغيل خادم HeroMarket.')
         }
       }
-      // The first account has every permission: refuse the PINs anyone would try first.
-      if (['0000', '1234', '1111'].includes(String(pin).trim()))
-        throw badRequest('اختر رمزاً غير متوقع لمدير النظام (ليس 0000 أو 1234 أو 1111).')
+      const name = username.trim()
+      assertNewPassword(password, name)
       return ctx.tx(async (db) => {
         await db.query('LOCK TABLE users IN EXCLUSIVE MODE')
         const { rows } = await db.query('SELECT count(*)::int AS n FROM users')
         if (rows[0].n > 0) throw conflict('تم إعداد النظام بالفعل.')
         const role = await db.query("SELECT id FROM roles WHERE key = 'super_admin'")
         const user = await db.query(
-          `INSERT INTO users (username, role, role_id, pin_lookup, pin_hash, is_active, created_at)
-           VALUES ($1, 'admin', $2, $3, $4, true, LOCALTIMESTAMP(0)) RETURNING id`,
-          [username.trim(), role.rows[0].id, pinLookup(ctx.secret, pin), hashPin(pin)]
+          `INSERT INTO users (username, role, role_id, is_active, created_at)
+           VALUES ($1, 'admin', $2, true, LOCALTIMESTAMP(0)) RETURNING id`,
+          [name, role.rows[0].id]
         )
         const id = user.rows[0].id
-        await db.query(
-          `INSERT INTO system_logs (timestamp, user_id, username, action_type, description)
-           VALUES (LOCALTIMESTAMP(0), $1, $2, 'user_create', 'إعداد النظام: إنشاء أول مدير للنظام')`,
-          [id, username.trim()]
-        )
+        const recoveryCode = await storePassword(db, id, password)
+        await audit(db, id, name, 'user_create', 'إعداد النظام: إنشاء أول مدير للنظام')
         const token = await createSession(db, ctx, id)
-        return { token, user: await describeUser(db, id) }
+        return { token, user: await describeUser(db, id), recoveryCode }
       })
     }
   })
 
+  // Sign-in. When the user must choose a password (first sign-in with the old PIN, or a temporary
+  // password) no session is issued: the answer is { passwordChangeRequired: true } and the terminal
+  // continues with auth.setPassword using the same current secret.
   app.operation({
     name: 'auth.login',
     public: true,
     schema: {
       type: 'object',
-      required: ['pin'],
-      properties: { pin: { type: 'string', maxLength: 16 } }
+      required: ['username', 'password'],
+      properties: { username: usernameSchema, password: passwordSchema }
     },
-    handler: async (ctx, { pin }) => {
+    handler: async (ctx, { username, password }) => {
       const key = guardKeys(ctx)
-      checkGuard(app.loginGuard, key)
-      const clean = String(pin).trim()
-      if (!isValidPin(clean)) {
-        recordFailure(app.loginGuard, key)
-        throw unauthorized('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
+      checkGuard(ctx.guard, key)
+      const { account, state } = await checkCredentials(ctx.pool, username, password)
+      if (state === 'invalid') {
+        recordFailure(ctx.guard, key)
+        throw unauthorized(WRONG)
       }
-      return ctx.tx(async (db) => {
-        const userId = await findUserByPin(db, ctx.secret, clean)
-        if (!userId) {
-          recordFailure(app.loginGuard, key)
-          throw unauthorized('رمز الدخول خاطئ، يرجى المحاولة مرة أخرى.')
+      clearTerminal(ctx.guard, key)
+      if (state === 'change_required')
+        return {
+          passwordChangeRequired: true,
+          username: account.username,
+          firstPassword: !account.password_scrypt
         }
-        clearTerminal(app.loginGuard, key)
-        const token = await createSession(db, ctx, userId)
-        const user = await describeUser(db, userId)
-        const shift = await db.query(
-          "SELECT * FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY id LIMIT 1",
-          [userId]
+      return ctx.tx(async (db) => {
+        const token = await createSession(db, ctx, account.id)
+        return {
+          token,
+          user: await describeUser(db, account.id),
+          openShift: await openShiftOf(db, account.id)
+        }
+      })
+    }
+  })
+
+  // Choose a password with the current secret (old PIN, temporary password or current password).
+  app.operation({
+    name: 'auth.setPassword',
+    public: true,
+    schema: {
+      type: 'object',
+      required: ['username', 'currentPassword', 'newPassword'],
+      properties: {
+        username: usernameSchema,
+        currentPassword: passwordSchema,
+        newPassword: passwordSchema
+      }
+    },
+    handler: async (ctx, { username, currentPassword, newPassword }) => {
+      const key = guardKeys(ctx)
+      checkGuard(ctx.guard, key)
+      const { account, state } = await checkCredentials(ctx.pool, username, currentPassword)
+      if (state === 'invalid') {
+        recordFailure(ctx.guard, key)
+        throw unauthorized(WRONG)
+      }
+      clearTerminal(ctx.guard, key)
+      assertNewPassword(newPassword, account.username)
+      if (newPassword === currentPassword)
+        throw badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية.', {
+          code: 'weak_password'
+        })
+      return ctx.tx(async (db) => {
+        const recoveryCode = await storePassword(db, account.id, newPassword)
+        await audit(
+          db,
+          account.id,
+          account.username,
+          'user_update',
+          account.password_scrypt
+            ? `تعيين كلمة مرور جديدة للمستخدم "${account.username}"`
+            : `تفعيل كلمة المرور للمستخدم "${account.username}" وإلغاء رمز PIN`
         )
-        return { token, user, openShift: shift.rows[0] || null }
+        const token = await createSession(db, ctx, account.id)
+        return {
+          token,
+          user: await describeUser(db, account.id),
+          openShift: await openShiftOf(db, account.id),
+          recoveryCode
+        }
+      })
+    }
+  })
+
+  // Forgotten password of a super administrator: the one-time recovery code. A new code is issued.
+  app.operation({
+    name: 'auth.recover',
+    public: true,
+    schema: {
+      type: 'object',
+      required: ['username', 'recoveryCode', 'newPassword'],
+      properties: {
+        username: usernameSchema,
+        recoveryCode: { type: 'string', minLength: 1, maxLength: 64 },
+        newPassword: passwordSchema
+      }
+    },
+    handler: async (ctx, { username, recoveryCode, newPassword }) => {
+      const key = guardKeys(ctx, 'recover|')
+      checkGuard(ctx.guard, key)
+      return ctx.tx(async (db) => {
+        const { rows } = await db.query(
+          `SELECT u.id, u.username, u.recovery_hash FROM users u JOIN roles r ON r.id = u.role_id
+            WHERE lower(u.username) = lower($1) AND u.is_active AND r.key = 'super_admin'
+            ORDER BY (u.username = $1) DESC LIMIT 1 FOR UPDATE OF u`,
+          [String(username).trim()]
+        )
+        const u = rows[0]
+        const ok = u?.recovery_hash
+          ? verifyRecoveryCode(recoveryCode, u.recovery_hash)
+          : burnTime(recoveryCode)
+        if (!ok) {
+          recordFailure(ctx.guard, key)
+          throw unauthorized('اسم المستخدم أو رمز الاسترداد غير صحيح.')
+        }
+        clearTerminal(ctx.guard, key)
+        assertNewPassword(newPassword, u.username)
+        await db.query('UPDATE users SET recovery_hash = NULL WHERE id = $1', [u.id])
+        const newCode = await storePassword(db, u.id, newPassword)
+        await audit(
+          db,
+          u.id,
+          u.username,
+          'password_recovery',
+          `استعادة كلمة مرور مدير النظام "${u.username}" برمز الاسترداد (تم إصدار رمز جديد)`
+        )
+        const token = await createSession(db, ctx, u.id)
+        return {
+          token,
+          user: await describeUser(db, u.id),
+          openShift: await openShiftOf(db, u.id),
+          recoveryCode: newCode
+        }
       })
     }
   })
@@ -221,67 +298,67 @@ module.exports = function authModule(app) {
 
   app.operation({ name: 'auth.me', handler: async (ctx) => ctx.user })
 
-  // Supervisor approval on a till: another user's PIN, checked here; the approver needs pos.approve.
   app.operation({
-    name: 'auth.verifyApprover',
-    permission: 'pos.sell',
+    name: 'auth.changePassword',
     schema: {
       type: 'object',
-      required: ['pin'],
-      properties: { pin: { type: 'string', maxLength: 16 } }
+      required: ['currentPassword', 'newPassword'],
+      properties: { currentPassword: passwordSchema, newPassword: passwordSchema }
     },
-    handler: async (ctx, { pin }) => {
-      const key = guardKeys(ctx, 'approve|')
-      checkGuard(app.loginGuard, key)
-      const clean = String(pin).trim()
-      const approverId = isValidPin(clean)
-        ? await ctx.tx((db) => findUserByPin(db, ctx.secret, clean))
-        : null
-      const approver = approverId ? await describeUser(ctx.pool, approverId) : null
-      if (!approver || !approver.permissions.includes('pos.approve')) {
-        recordFailure(app.loginGuard, key)
-        return { approved: false }
-      }
-      clearTerminal(app.loginGuard, key)
-      await ctx.audit(
-        ctx.pool,
-        'manager_approval',
-        `اعتماد عملية للكاشير "${ctx.user.username}" بواسطة "${approver.username}"`
-      )
-      return { approved: true, approver: approver.username }
+    handler: async (ctx, { currentPassword, newPassword }) => {
+      const key = guardKeys(ctx, 'change|')
+      checkGuard(ctx.guard, key)
+      return ctx.tx(async (db) => {
+        const { rows } = await db.query(
+          'SELECT password_scrypt FROM users WHERE id = $1 FOR UPDATE',
+          [ctx.user.id]
+        )
+        if (!verifyPassword(currentPassword, rows[0]?.password_scrypt)) {
+          recordFailure(ctx.guard, key)
+          throw badRequest('كلمة المرور الحالية غير صحيحة!')
+        }
+        assertNewPassword(newPassword, ctx.user.username)
+        if (newPassword === currentPassword)
+          throw badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية.')
+        // Other terminals signed in as this user are signed out; this session stays.
+        await storePassword(db, ctx.user.id, newPassword, { keepSessions: true })
+        await db.query(
+          'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL',
+          [ctx.user.id, ctx.sessionId]
+        )
+        await ctx.audit(db, 'user_update', `تغيير كلمة المرور للمستخدم "${ctx.user.username}"`)
+      })
     }
   })
 
+  // A super administrator replaces their recovery code (e.g. the paper copy was lost).
   app.operation({
-    name: 'auth.changePin',
+    name: 'auth.newRecoveryCode',
     schema: {
       type: 'object',
-      required: ['currentPin', 'newPin'],
-      properties: { currentPin: { type: 'string', maxLength: 16 }, newPin: pinSchema }
+      required: ['currentPassword'],
+      properties: { currentPassword: passwordSchema }
     },
-    handler: async (ctx, { currentPin, newPin }) => {
-      if (newPin === currentPin)
-        throw badRequest('رمز المرور الجديد لا يجب أن يكون متطابقاً مع القديم!')
+    handler: async (ctx, { currentPassword }) => {
+      if (ctx.user.roleKey !== 'super_admin')
+        throw badRequest('رمز الاسترداد متاح لمدير النظام فقط.')
+      const key = guardKeys(ctx, 'change|')
+      checkGuard(ctx.guard, key)
       return ctx.tx(async (db) => {
         const { rows } = await db.query(
-          'SELECT pin_hash, password_hash FROM users WHERE id = $1 FOR UPDATE',
+          'SELECT password_scrypt FROM users WHERE id = $1 FOR UPDATE',
           [ctx.user.id]
         )
-        const u = rows[0]
-        const [sha, plain] = legacyCandidates(currentPin)
-        const ok = u.pin_hash
-          ? verifyPin(String(currentPin).trim(), u.pin_hash)
-          : u.password_hash === sha || u.password_hash === plain
-        if (!ok) throw badRequest('رمز المرور الحالي غير صحيح!')
-        await assertPinFree(db, ctx.secret, newPin, ctx.user.id)
-        await db.query(
-          'UPDATE users SET pin_lookup = $1, pin_hash = $2, password_hash = NULL, updated_at = LOCALTIMESTAMP(0) WHERE id = $3',
-          [pinLookup(ctx.secret, newPin), hashPin(newPin), ctx.user.id]
-        )
-        await ctx.audit(db, 'user_update', `تغيير رمز المرور للمستخدم "${ctx.user.username}"`)
+        if (!verifyPassword(currentPassword, rows[0]?.password_scrypt)) {
+          recordFailure(ctx.guard, key)
+          throw badRequest('كلمة المرور الحالية غير صحيحة!')
+        }
+        const recoveryCode = await ensureRecoveryCode(db, ctx.user.id, { replace: true })
+        await ctx.audit(db, 'user_update', `إصدار رمز استرداد جديد للمستخدم "${ctx.user.username}"`)
+        return { recoveryCode }
       })
     }
   })
 }
 
-module.exports.helpers = { assertPinFree, createSession, findUserByPin, pinSchema }
+module.exports.helpers = { createSession, storePassword, assertNewPassword, passwordSchema }

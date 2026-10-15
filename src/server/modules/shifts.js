@@ -6,6 +6,11 @@
 // Returns reduce a sale's total_amount AND add an outflow, so sales are counted as sold (SALE_VALUE)
 // and the refund is counted once, as the outflow – also for sales from earlier shifts.
 const { forbidden, notFound, conflict } = require('../errors')
+const { authorize, approverSchema } = require('../auth/approvals')
+
+// Owner decision 2026-10-14: closing with a cash difference above EGP 50 (over or short) needs a
+// supervisor's acknowledgement. A difference of exactly 50.00 does not.
+const DIFFERENCE_LIMIT = 50
 
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
@@ -219,23 +224,46 @@ module.exports = function shiftsModule(app) {
     schema: {
       type: 'object',
       required: ['shiftId', 'actualCash'],
-      properties: { shiftId: { type: 'integer' }, actualCash: money }
+      properties: {
+        shiftId: { type: 'integer' },
+        actualCash: money,
+        // Explanation of a large difference (optional), and the supervisor acknowledging it.
+        note: { type: 'string', maxLength: 300 },
+        approver: approverSchema
+      }
     },
-    handler: async (ctx, { shiftId, actualCash }) =>
+    handler: async (ctx, { shiftId, actualCash, note, approver }) =>
       ctx.tx(async (db) => {
         const shift = await loadShift(db, ctx, shiftId)
         if (shift.status !== 'open') throw conflict('الوردية مغلقة بالفعل.')
         const f = await closeFigures(db, shift)
         const difference = actualCash - f.expected
+        let approval = { approvalId: null, approver: null }
+        if (Math.abs(round2(difference)) > DIFFERENCE_LIMIT) {
+          // Supervisors acknowledge their own shifts (recorded as such); others need a supervisor.
+          approval = await authorize(ctx, db, {
+            action: 'shift_difference',
+            selfAllowed: ctx.can('pos.approve'),
+            recordSelf: true,
+            approverPermissions: ['pos.approve'],
+            subjectType: 'shift',
+            subjectId: shift.id,
+            amount: round2(difference),
+            reason: note,
+            approver,
+            details: { expected: f.expected, actual: actualCash, difference: round2(difference) }
+          })
+        }
         const { rows } = await db.query(
-          `UPDATE shifts SET end_time = LOCALTIMESTAMP(0), expected_end_cash = $1, actual_end_cash = $2, difference = $3, status = 'closed'
+          `UPDATE shifts SET end_time = LOCALTIMESTAMP(0), expected_end_cash = $1, actual_end_cash = $2, difference = $3, status = 'closed',
+                  difference_approval_id = $5
            WHERE id = $4 RETURNING *`,
-          [f.expected, actualCash, difference, shift.id]
+          [f.expected, actualCash, difference, shift.id, approval.approvalId]
         )
         await ctx.audit(
           db,
           'shift_close',
-          `إغلاق الوردية رقم #${shift.id} (الفعلي: ${actualCash.toFixed(2)} ج.م، المتوقع: ${f.expected.toFixed(2)} ج.م، الفرق: ${difference.toFixed(2)} ج.م)`
+          `إغلاق الوردية رقم #${shift.id} (الفعلي: ${actualCash.toFixed(2)} ج.م، المتوقع: ${f.expected.toFixed(2)} ج.م، الفرق: ${difference.toFixed(2)} ج.م)${approval.approvalId ? ` – اعتمد الفرق: "${approval.approver}"` : ''}`
         )
         const live = await liveDetails(db, shift)
         return {
@@ -243,6 +271,7 @@ module.exports = function shiftsModule(app) {
           expected: f.expected,
           actual: actualCash,
           difference,
+          acknowledgedBy: approval.approvalId ? approval.approver : null,
           figures: f,
           live
         }
@@ -251,6 +280,7 @@ module.exports = function shiftsModule(app) {
 }
 
 module.exports.helpers = {
+  DIFFERENCE_LIMIT,
   loadShift,
   auditFigures,
   closeFigures,

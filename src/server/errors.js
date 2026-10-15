@@ -18,6 +18,10 @@ const forbidden = (msg = 'ليس لديك صلاحية لتنفيذ هذا ال�
 const notFound = (msg = 'العنصر المطلوب غير موجود.') => new ServiceError(404, 'not_found', msg)
 const conflict = (msg, details) => new ServiceError(409, 'conflict', msg, details)
 const tooMany = (msg) => new ServiceError(429, 'too_many_attempts', msg)
+// A supervisor must approve (the terminal asks for their username and password, then retries).
+const approvalRequired = (msg, details) => new ServiceError(403, 'approval_required', msg, details)
+// The supervisor refused, or the approval could not be verified (logged either way).
+const approvalRefused = (msg, details) => new ServiceError(403, 'approval_refused', msg, details)
 
 // PostgreSQL error → message staff can act on. Same wording the renderer used for SQLite errors.
 const UNIQUE_MESSAGES = {
@@ -76,5 +80,7 @@ module.exports = {
   notFound,
   conflict,
   tooMany,
+  approvalRequired,
+  approvalRefused,
   fromDatabaseError
 }

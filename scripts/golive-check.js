@@ -152,15 +152,15 @@ async function service(url, secret) {
 }
 
 /** Session for the backup check: a temporary administrator that exists only in the disposable copy. */
-async function temporaryAdmin(svc, secret) {
-  const { pinLookup, hashPin } = require('../src/server/auth/pin')
-  const pin = String(crypto.randomInt(10_000_000, 99_999_999))
+async function temporaryAdmin(svc) {
+  const { hashPassword } = require('../src/server/auth/password')
+  const password = `check-${crypto.randomBytes(12).toString('hex')}`
   await svc.pool.query(
-    `INSERT INTO users (username, role, role_id, pin_lookup, pin_hash, is_active, created_at)
-     VALUES ('golive-check', 'admin', (SELECT id FROM roles WHERE key = 'super_admin'), $1, $2, true, LOCALTIMESTAMP(0))`,
-    [pinLookup(secret, pin), hashPin(pin)]
+    `INSERT INTO users (username, role, role_id, password_scrypt, is_active, created_at)
+     VALUES ('golive-check', 'admin', (SELECT id FROM roles WHERE key = 'super_admin'), $1, true, LOCALTIMESTAMP(0))`,
+    [hashPassword(password)]
   )
-  const r = await svc.call('auth.login', { pin })
+  const r = await svc.call('auth.login', { username: 'golive-check', password })
   if (r.status !== 200) throw new Error(`temporary admin login failed: ${JSON.stringify(r.body)}`)
   return r.body.token
 }
@@ -232,25 +232,27 @@ async function main() {
       differences: d3.slice(0, 50)
     })
 
-    // A4 – an existing PIN still logs in (optional, PIN from the environment, never printed)
+    // A4 – an existing user's PIN is accepted once, to choose a password (optional; username and
+    // PIN from the environment, never printed). Nothing is changed: only auth.login is called.
     const pin = process.env.HEROMARKET_GOLIVE_PIN
-    if (pin) {
-      const r = await svcA.call('auth.login', { pin })
-      const u = r.body?.user
-      record('A4-existing-pin', r.status === 200, {
-        summary:
-          r.status === 200
-            ? `logged in as ${u?.username} (${u?.roleName || u?.role})`
-            : `refused: ${r.body?.error?.message}`
+    const pinUser = process.env.HEROMARKET_GOLIVE_USER
+    if (pin && pinUser) {
+      const r = await svcA.call('auth.login', { username: pinUser, password: pin })
+      const ok = r.status === 200 && r.body?.passwordChangeRequired === true
+      record('A4-existing-pin', ok, {
+        summary: ok
+          ? `${r.body.username}: PIN accepted, a password must now be chosen`
+          : `refused: ${r.body?.error?.message || JSON.stringify(r.body)}`
       })
     } else {
       record('A4-existing-pin', null, {
-        summary: 'not run: set HEROMARKET_GOLIVE_PIN to an existing administrator PIN'
+        summary:
+          'not run: set HEROMARKET_GOLIVE_USER and HEROMARKET_GOLIVE_PIN to an existing username and PIN'
       })
     }
 
     // A5 – backup through the service, restore into a second empty database, compare
-    const token = await temporaryAdmin(svcA, secret)
+    const token = await temporaryAdmin(svcA)
     const exp = await svcA.call('backup.export', {}, token)
     if (exp.status !== 200) throw new Error(`backup.export: ${JSON.stringify(exp.body)}`)
     const backupFile = path.join(work, 'heromarket-backup.json')
@@ -259,7 +261,7 @@ async function main() {
     dbs.push(b)
     const svcB = await service(b.url, secret)
     services.push(svcB)
-    const tokenB = await temporaryAdmin(svcB, secret)
+    const tokenB = await temporaryAdmin(svcB)
     const backup = JSON.parse(fs.readFileSync(backupFile, 'utf8'))
     const res = await svcB.call('backup.restore', { backup, confirm: 'RESTORE' }, tokenB)
     const d5 =

@@ -199,3 +199,11 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 - K-24: decided (option 1). Expected drawer cash = opening cash + cash sales as sold + cash inflows − every cash outflow; both close dialogs show this service figure.
 - K-10: when a supervisor's approval should be required.
 - Behaviour on the store's physical printer (verified to PDF only).
+
+## Sign-in, returns and shift differences (stage 4 phase 3, D-046)
+
+- **Sign-in:** username + password. Each existing user's PIN works once, to choose a password, and then stops working. The PIN rows in the original legacy table above describe version 1.3.
+- **Returns from the till:** `مرتجع` on the till opens an invoice by number.
+  - A cashier returns one line (any quantity up to what is left) or the whole invoice, with a reason and a supervisor's username and password.
+  - Refund rules are unchanged (D-044 / K-40); the money leaves the drawer of the cashier's open shift, or reduces the customer's credit.
+- **Shift close:** a difference above EGP 50.00 (over or short) needs a supervisor; the optional note is kept with the approval. The expected-cash formula is unchanged (K-24).

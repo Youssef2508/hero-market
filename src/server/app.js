@@ -124,6 +124,7 @@ async function createService(cfg) {
                 details ? JSON.stringify(details) : null
               ]
             ),
+          guard: loginGuard,
           sessionHours: SESSION_HOURS,
           secret: cfg.secret,
           setupCode: cfg.setupCode || null

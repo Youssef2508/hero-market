@@ -18,10 +18,10 @@ export function useShift() {
   const [closeShiftModal, setCloseShiftModal] = useState(false)
   const [actualEndCash, setActualEndCash] = useState('')
 
-  // Manager Approval Modal
-  const [managerApprovalModal, setManagerApprovalModal] = useState(false)
-  const [managerPin, setManagerPin] = useState('')
-  const [pendingAction, setPendingAction] = useState(null) // { type: string, payload: any }
+  // Supervisor approval on this till (SupervisorApprovalModal): null or the request to approve.
+  const [approvalRequest, setApprovalRequest] = useState(null)
+  // Return from the till (ReturnRequestModal).
+  const [returnRequestOpen, setReturnRequestOpen] = useState(false)
 
   const handleLock = () => {
     setIsLocked(true)
@@ -52,12 +52,10 @@ export function useShift() {
     setCloseShiftModal,
     actualEndCash,
     setActualEndCash,
-    managerApprovalModal,
-    setManagerApprovalModal,
-    managerPin,
-    setManagerPin,
-    pendingAction,
-    setPendingAction,
+    approvalRequest,
+    setApprovalRequest,
+    returnRequestOpen,
+    setReturnRequestOpen,
     handleLock
   }
 }

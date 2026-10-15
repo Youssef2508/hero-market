@@ -22,7 +22,8 @@ import {
   MapPin,
   PiggyBank,
   CornerDownLeft,
-  Info
+  Info,
+  Undo2
 } from 'lucide-react'
 import { Kbd } from '../ui'
 import WeightEntryModal from './WeightEntryModal'
@@ -121,6 +122,7 @@ function ShortagesButton({ dbStats, onPrint, onPdf }) {
 function CheckoutTerminal({
   cart,
   triggerClearCart,
+  onReturn,
   qtyInputRefs,
   handleQtyChangeAttempt,
   changeLineUnit,
@@ -419,6 +421,17 @@ function CheckoutTerminal({
                 onPrint={handlePrintShortagesToPaper}
                 onPdf={handlePrintShortages}
               />
+              {onReturn && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={onReturn}
+                  title="إرجاع صنف أو فاتورة برقمها"
+                >
+                  <Undo2 size={15} aria-hidden="true" />
+                  مرتجع
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"

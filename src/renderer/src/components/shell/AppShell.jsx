@@ -35,7 +35,7 @@ export default function AppShell({
   onCloseShift,
   onAudit,
   onLock,
-  onChangePin,
+  onChangePassword,
   version,
   children
 }) {
@@ -76,7 +76,7 @@ export default function AppShell({
           onCloseShift={onCloseShift}
           onAudit={onAudit}
           onLock={onLock}
-          onChangePin={onChangePin}
+          onChangePassword={onChangePassword}
         />
         <main className="app-content" id="main-content">
           {children}

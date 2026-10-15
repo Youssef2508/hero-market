@@ -1,44 +1,177 @@
-import { useRef, useEffect } from 'react'
-import { Delete, LogIn, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { KeyRound, Loader2, LogIn, ShieldCheck } from 'lucide-react'
 import { BrandMark, Wordmark } from '../brand/BrandMark'
 import { ThemeToggle } from '../ui'
+import { api } from '../../lib/api'
+import { passwordHint, passwordReady } from '../../lib/passwordHint'
+import PasswordInput from '../auth/PasswordInput'
+import RecoveryCodeNotice from '../auth/RecoveryCodeNotice'
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+const LAST_USER = 'heromarket.lastUsername'
+const readLastUser = () => {
+  try {
+    return localStorage.getItem(LAST_USER) || ''
+  } catch {
+    return ''
+  }
+}
+const rememberUser = (name) => {
+  try {
+    localStorage.setItem(LAST_USER, name)
+  } catch {
+    /* storage unavailable: nothing to remember */
+  }
+}
 
-export default function LockScreen({ pin, setPin, handlePinSubmit }) {
-  const inputRef = useRef(null)
+/**
+ * Sign-in (stage 4 phase 3): username + password.
+ *   login   – username and password (or, once, the old PIN);
+ *   choose  – first sign-in after the update, or a temporary password: choose a new password;
+ *   recover – super administrator with the recovery code;
+ *   code    – show a newly issued recovery code before continuing.
+ * `onSignedIn(result)` receives the service answer ({ user, openShift }).
+ */
+export default function LockScreen({ onSignedIn }) {
+  const [mode, setMode] = useState('login')
+  const [username, setUsername] = useState(readLastUser)
+  const [password, setPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [recoveryInput, setRecoveryInput] = useState('')
+  const [firstPassword, setFirstPassword] = useState(false)
+  const [pending, setPending] = useState(null) // signed-in result waiting behind the recovery code
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const firstField = useRef(null)
 
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    firstField.current?.focus()
+  }, [mode])
 
-  // After a dialog (e.g. "wrong PIN") closes, focus is left on <body>. Reclaim it on the
-  // next keystroke so typing a PIN always lands in the field (focus moves before the
-  // character is inserted, so no keystroke is lost).
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (document.querySelector('.modal-overlay')) return
-      const el = inputRef.current
-      if (el && document.activeElement !== el && /^[0-9٠-٩۰-۹]$/.test(e.key)) el.focus()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [])
-
-  // Keep keyboard focus on the PIN field wherever the user clicks.
-  const refocus = () => inputRef.current?.focus()
-
-  const pinLength = pin.length
-  const press = (d) => {
-    setPin((prev) => (prev.length < 4 ? prev + d : prev))
-    refocus()
+  const go = (next) => {
+    setError('')
+    setNewPassword('')
+    setConfirm('')
+    setMode(next)
   }
 
+  const finish = (res) => {
+    rememberUser(res.user?.username || username.trim())
+    if (res.recoveryCode) {
+      setPending(res)
+      go('code')
+    } else onSignedIn(res)
+  }
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError('')
+    try {
+      await fn()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitLogin = (e) => {
+    e.preventDefault()
+    if (!username.trim() || !password) return
+    run(async () => {
+      const res = await api('auth.login', { username: username.trim(), password })
+      if (res.passwordChangeRequired) {
+        setUsername(res.username)
+        setFirstPassword(!!res.firstPassword)
+        go('choose')
+      } else {
+        setPassword('')
+        finish(res)
+      }
+    })
+  }
+
+  const submitChoose = (e) => {
+    e.preventDefault()
+    if (!passwordReady(newPassword, confirm)) return
+    run(async () => {
+      const res = await api('auth.setPassword', {
+        username: username.trim(),
+        currentPassword: password,
+        newPassword
+      })
+      setPassword('')
+      finish(res)
+    })
+  }
+
+  const submitRecover = (e) => {
+    e.preventDefault()
+    if (!username.trim() || !recoveryInput.trim() || !passwordReady(newPassword, confirm)) return
+    run(async () => {
+      const res = await api('auth.recover', {
+        username: username.trim(),
+        recoveryCode: recoveryInput,
+        newPassword
+      })
+      setRecoveryInput('')
+      finish(res)
+    })
+  }
+
+  const hint = passwordHint(newPassword, confirm)
+  const errorBox = error && (
+    <p className="field-error" role="alert">
+      {error}
+    </p>
+  )
+  const newPasswordFields = (
+    <>
+      <label className="field">
+        <span className="field-label">كلمة المرور الجديدة</span>
+        <PasswordInput
+          className="input input-lg"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          autoComplete="new-password"
+          maxLength={128}
+          autoFocus={mode === 'choose'}
+          aria-describedby="new-password-hint"
+          required
+        />
+      </label>
+      <label className="field">
+        <span className="field-label">تأكيد كلمة المرور</span>
+        <PasswordInput
+          className="input input-lg"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+          maxLength={128}
+          required
+        />
+      </label>
+      <p id="new-password-hint" className={hint ? 'field-error' : 'field-hint'} aria-live="polite">
+        {hint || '8 أحرف على الأقل، حروف وأرقام معاً، ولا تحتوي على اسم المستخدم.'}
+      </p>
+    </>
+  )
+  const submitButton = (label, Icon, disabled) => (
+    <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy || disabled}>
+      {busy ? (
+        <Loader2 size={18} className="spin" aria-hidden="true" />
+      ) : (
+        <Icon size={18} aria-hidden="true" />
+      )}
+      {label}
+    </button>
+  )
+
   return (
-    <div className="lock" onClick={refocus}>
+    <div className="lock">
       <ThemeToggle compact className="lock-theme" />
 
-      <div className="lock-card" onClick={(e) => e.stopPropagation()}>
+      <div className="lock-card">
         <section className="lock-brand" aria-hidden="true">
           <BrandMark size={72} />
           <Wordmark />
@@ -50,68 +183,123 @@ export default function LockScreen({ pin, setPin, handlePinSubmit }) {
         </section>
 
         <section className="lock-form">
-          <header className="lock-head">
-            <h1>تسجيل الدخول</h1>
-            <p>أدخل رمز المرور المكوّن من 4 أرقام لبدء العمل</p>
-          </header>
+          {mode === 'login' && (
+            <form className="setup-form" onSubmit={submitLogin}>
+              <header className="lock-head">
+                <h1>تسجيل الدخول</h1>
+                <p>أدخل اسم المستخدم وكلمة المرور</p>
+              </header>
+              <label className="field">
+                <span className="field-label">اسم المستخدم</span>
+                <input
+                  autoFocus={!username}
+                  className="input input-lg"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  maxLength={40}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">كلمة المرور</span>
+                <PasswordInput
+                  className="input input-lg"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  maxLength={128}
+                  autoFocus={!!username}
+                  required
+                />
+                <span className="field-hint">
+                  أول دخول بعد التحديث: اكتب رمز PIN القديم مكان كلمة المرور.
+                </span>
+              </label>
+              {errorBox}
+              {submitButton('دخول', LogIn, !username.trim() || !password)}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => go('recover')}>
+                نسيت كلمة المرور؟
+              </button>
+            </form>
+          )}
 
-          <form onSubmit={handlePinSubmit} className="lock-pin-form" onClick={refocus}>
-            <input
-              ref={inputRef}
-              className="lock-pin-input"
-              type="password"
-              pattern="[0-9]*"
-              inputMode="numeric"
-              autoComplete="off"
-              aria-label="رمز المرور"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').substring(0, 4))}
-              autoFocus
-            />
-
-            <div className="pin-dots" aria-hidden="true">
-              {[0, 1, 2, 3].map((i) => (
-                <span key={i} className={`pin-dot ${i < pinLength ? 'is-filled' : ''}`} />
-              ))}
-            </div>
-            <div className="visually-hidden" aria-live="polite">
-              {pinLength} من 4 أرقام
-            </div>
-
-            <div className="keypad">
-              {KEYS.map((num) => (
-                <button key={num} type="button" className="key num" onClick={() => press(num)}>
-                  {num}
-                </button>
-              ))}
+          {mode === 'choose' && (
+            <form className="setup-form" onSubmit={submitChoose}>
+              <header className="lock-head">
+                <h1>اختر كلمة مرور</h1>
+                <p>
+                  {firstPassword
+                    ? `مرحباً ${username}. تسجيل الدخول برمز PIN لم يعد متاحاً؛ اختر كلمة مرور لحسابك. بعدها يتوقف رمز PIN نهائياً.`
+                    : `كلمة المرور الحالية لحساب ${username} مؤقتة. اختر كلمة مرور خاصة بك.`}
+                </p>
+              </header>
+              {newPasswordFields}
+              {errorBox}
+              {submitButton('حفظ ومتابعة', KeyRound, !passwordReady(newPassword, confirm))}
               <button
                 type="button"
-                className="key key-muted"
+                className="btn btn-ghost btn-sm"
                 onClick={() => {
-                  setPin((prev) => prev.slice(0, -1))
-                  refocus()
+                  setPassword('')
+                  go('login')
                 }}
-                aria-label="حذف رقم"
-                title="حذف"
               >
-                <Delete size={22} />
+                رجوع
               </button>
-              <button type="button" className="key num" onClick={() => press('0')}>
-                0
-              </button>
-              <button type="submit" className="key key-submit" aria-label="دخول">
-                <LogIn size={22} />
-              </button>
-            </div>
+            </form>
+          )}
 
-            <button
-              type="submit"
-              className="btn btn-primary btn-lg btn-block lock-submit"
-              disabled={pinLength === 0}
-            >
-              دخول
-            </button>
-          </form>
+          {mode === 'recover' && (
+            <form className="setup-form" onSubmit={submitRecover}>
+              <header className="lock-head">
+                <h1>استعادة كلمة المرور</h1>
+                <p>
+                  لمدير النظام: استخدم رمز الاسترداد الذي حفظته عند الإعداد. باقي الموظفين: اطلب من
+                  المدير إعادة تعيين كلمة المرور من شاشة المستخدمين.
+                </p>
+              </header>
+              <label className="field">
+                <span className="field-label">اسم المستخدم</span>
+                <input
+                  ref={firstField}
+                  className="input"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  maxLength={40}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">رمز الاسترداد</span>
+                <input
+                  className="input recovery-input"
+                  dir="ltr"
+                  value={recoveryInput}
+                  onChange={(e) => setRecoveryInput(e.target.value)}
+                  placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={64}
+                  required
+                />
+              </label>
+              {newPasswordFields}
+              {errorBox}
+              {submitButton(
+                'تعيين كلمة المرور',
+                KeyRound,
+                !recoveryInput.trim() || !passwordReady(newPassword, confirm)
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => go('login')}>
+                رجوع
+              </button>
+            </form>
+          )}
+
+          {mode === 'code' && pending && (
+            <RecoveryCodeNotice code={pending.recoveryCode} onDone={() => onSignedIn(pending)} />
+          )}
         </section>
       </div>
     </div>
