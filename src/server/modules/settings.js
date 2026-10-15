@@ -4,6 +4,7 @@
 const path = require('path')
 const { pathToFileURL } = require('url')
 const { badRequest, conflict, notFound } = require('../errors')
+const { DEFAULT_SCALE, normalizeScaleLabels } = require('../inventory/units')
 
 let receiptLib = null
 async function receipt() {
@@ -28,12 +29,20 @@ const SETTINGS = {
   audit_interval_minutes: { default: '60', type: 'number', min: 10, max: 720, public: true },
   audit_idle_seconds: { default: '20', type: 'number', min: 5, max: 600, public: true },
   print_receipt_default: { default: 'true', type: 'bool', public: true },
-  receipt_paper: { default: '80mm', type: 'enum', values: ['80mm', '58mm'], public: true }
+  receipt_paper: { default: '80mm', type: 'enum', values: ['80mm', '58mm'], public: true },
+  // Scale labels: which prefixes carry a weight or a price, and where the code and value sit.
+  scale_labels: {
+    default: JSON.stringify(DEFAULT_SCALE),
+    type: 'json',
+    validate: normalizeScaleLabels,
+    public: true
+  }
 }
 
 function normalise(key, raw) {
   const def = SETTINGS[key]
   if (!def) throw badRequest(`إعداد غير معروف: ${key}`)
+  if (def.type === 'json') return def.validate(raw)
   const v = raw === null || raw === undefined ? '' : String(raw).trim()
   switch (def.type) {
     case 'text':
@@ -262,3 +271,5 @@ module.exports = function settingsModule(app) {
 }
 
 module.exports.SETTINGS = SETTINGS
+
+module.exports.readAll = readAll

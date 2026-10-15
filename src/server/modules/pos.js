@@ -6,9 +6,19 @@
 //  - a new customer is created inside the same transaction (K-12);
 //  - a client-generated key makes retries return the same sale instead of a second one (G-21).
 const { postMovement } = require('../inventory/stock')
+const {
+  baseUnit,
+  unitPrice,
+  loadUnit,
+  toBaseQty,
+  parseScaleLabel,
+  round3,
+  round4
+} = require('../inventory/units')
 const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
+const { readAll } = require('./settings')
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
@@ -42,6 +52,104 @@ module.exports = function posModule(app) {
         [codes]
       )
       return rows[0] ? maskCost(ctx, rows)[0] : null
+    }
+  })
+
+  // Scan → product AND unit: the product barcode (base unit), an extra barcode (base or packaging
+  // unit), or a scale label per the store's settings (weight or price embedded). Also returns the
+  // product's sellable units so the cart can switch between them.
+  app.operation({
+    name: 'pos.resolve',
+    permission: 'pos.sell',
+    schema: {
+      type: 'object',
+      required: ['code'],
+      properties: { code: { type: 'string', minLength: 1, maxLength: 64 } }
+    },
+    handler: async (ctx, { code }) => {
+      const raw = code.trim()
+      const variants = [...new Set([raw, raw.replace(/^0+/, ''), '0' + raw].filter(Boolean))]
+      const db = ctx.pool
+      let product = (
+        await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1', [variants])
+      ).rows[0]
+      let unit = product ? baseUnit(product) : null
+      let qty = null
+      let scale = null
+      if (!product) {
+        const extra = (
+          await db.query(
+            'SELECT product_barcode, unit_id FROM product_barcodes WHERE barcode = ANY($1::text[]) LIMIT 1',
+            [variants]
+          )
+        ).rows[0]
+        if (extra) {
+          product = (
+            await db.query('SELECT * FROM products WHERE barcode = $1', [extra.product_barcode])
+          ).rows[0]
+          unit = await loadUnit(db, product, extra.unit_id, { purpose: 'sell' })
+        }
+      }
+      if (!product) {
+        const settings = await readAll(db)
+        let cfg = null
+        try {
+          cfg = JSON.parse(settings.scale_labels)
+        } catch {
+          cfg = null
+        }
+        scale = parseScaleLabel(cfg, raw)
+        if (scale) {
+          const c = scale.code
+          product = (
+            await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1', [
+              [...new Set([c, c.replace(/^0+/, '')].filter(Boolean))]
+            ])
+          ).rows[0]
+          if (product) {
+            unit = baseUnit(product)
+            const price = unitPrice(product, unit)
+            qty =
+              scale.kind === 'weight'
+                ? round3(scale.value)
+                : price > 0
+                  ? round3(scale.value / price)
+                  : null
+          }
+        }
+      }
+      if (!product) return null
+      const units = (
+        await db.query(
+          'SELECT id, name, factor, retail_price FROM product_units WHERE product_barcode = $1 AND is_active AND sellable ORDER BY factor, id',
+          [product.barcode]
+        )
+      ).rows.map((u) => ({
+        id: u.id,
+        name: u.name,
+        factor: Number(u.factor),
+        price: unitPrice(product, {
+          ...u,
+          factor: Number(u.factor),
+          retail_price: u.retail_price === null ? null : Number(u.retail_price)
+        })
+      }))
+      const base = baseUnit(product)
+      return {
+        product: maskCost(ctx, [product])[0],
+        unit: {
+          id: unit.id,
+          name: unit.id === null ? product.unit || '' : unit.name,
+          factor: Number(unit.factor),
+          price: unitPrice(product, unit)
+        },
+        units: [
+          { id: null, name: product.unit || '', factor: 1, price: unitPrice(product, base) },
+          ...units
+        ],
+        qty,
+        scale
+      }
     }
   })
 
@@ -149,6 +257,8 @@ module.exports = function posModule(app) {
             required: ['barcode', 'qty'],
             properties: {
               barcode: { type: 'string', maxLength: 64 },
+              // Selling unit (product_units.id); omitted or null = the product's base unit.
+              unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
               unitPrice: { type: 'number' }
             }
@@ -177,8 +287,10 @@ module.exports = function posModule(app) {
       if (CREDIT_TYPES.includes(b.paymentType) && !ctx.can('pos.credit'))
         throw forbidden('البيع الآجل يتطلب صلاحية.')
       if (discount > 0 && !ctx.can('pos.discount')) throw forbidden('منح الخصم يتطلب صلاحية.')
-      const barcodes = b.items.map((i) => i.barcode)
-      if (new Set(barcodes).size !== barcodes.length) throw badRequest('الصنف مكرر في الفاتورة.')
+      // One line per product unit (a carton and loose packets of one product are two lines).
+      const lineKeys = b.items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)
+      if (new Set(lineKeys).size !== lineKeys.length) throw badRequest('الصنف مكرر في الفاتورة.')
+      const barcodes = [...new Set(b.items.map((i) => i.barcode))]
 
       return ctx.tx(async (db) => {
         // Idempotency: a retry of a sale that already committed returns that sale.
@@ -207,28 +319,40 @@ module.exports = function posModule(app) {
           )
         ).rows
         const products = new Map(prodRows.map((p) => [p.barcode, p]))
-        const lines = b.items.map((i) => {
+        const lines = []
+        for (const i of b.items) {
           const p = products.get(i.barcode)
           if (!p) throw notFound(`الصنف (${i.barcode}) غير مسجل في قاعدة البيانات!`)
-          const price = Number(p.retail_price) || 0
+          const unit = await loadUnit(db, p, i.unitId, { purpose: 'sell' })
+          const label = unit.id === null ? p.name : `${p.name} – ${unit.name}`
+          const { qty, baseQty } = toBaseQty(p.unit_kind || 'count', i.qty, unit.factor, label)
+          const price = unitPrice(p, unit)
           if (i.unitPrice !== undefined && Math.abs(Number(i.unitPrice) - price) > 0.0001) {
             throw conflict(
-              `تغيّر سعر الصنف "${p.name}" إلى ${price.toFixed(2)} ج.م أثناء البيع. احذفه وأعد إضافته ثم أكمل.`,
+              `تغيّر سعر الصنف "${label}" إلى ${price.toFixed(2)} ج.م أثناء البيع. احذفه وأعد إضافته ثم أكمل.`,
               {
                 barcode: p.barcode,
+                unitId: unit.id,
                 price
               }
             )
           }
-          return {
+          const avg = Number(p.cost_price) || 0
+          lines.push({
             barcode: p.barcode,
             name: p.name,
-            qty: Number(i.qty),
+            unitId: unit.id,
+            unitName: unit.id === null ? p.unit || null : unit.name,
+            factor: unit.factor,
+            qty,
+            baseQty,
             price,
-            total: round2(Number(i.qty) * price),
-            cost: Number(p.cost_price) || 0
-          }
-        })
+            total: round2(qty * price),
+            // Cost per selling unit (snapshot): the average per base unit × factor.
+            cost: round4(avg * unit.factor),
+            baseCost: avg
+          })
+        }
         const subTotal = round2(lines.reduce((s, l) => s + l.total, 0))
         if (discount > subTotal) throw badRequest('قيمة الخصم أكبر من إجمالي الفاتورة.')
 
@@ -305,15 +429,16 @@ module.exports = function posModule(app) {
         const saleId = sale.id
         for (const l of lines) {
           await db.query(
-            `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price) VALUES ($1, $2, $3, $4, $5, $6)`,
-            [saleId, l.barcode, l.qty, l.price, l.total, l.cost]
+            `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price, unit_id, unit_name, unit_factor)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [saleId, l.barcode, l.qty, l.price, l.total, l.cost, l.unitId, l.unitName, l.factor]
           )
           // Negative stock is allowed (owner decision); the sale leaves at the line's cost.
           await postMovement(db, ctx, {
             barcode: l.barcode,
-            qty: -l.qty,
+            qty: -l.baseQty,
             kind: 'sale',
-            unitCost: l.cost,
+            unitCost: l.baseCost,
             refType: 'sale',
             refId: saleId
           })

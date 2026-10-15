@@ -1,6 +1,7 @@
 'use strict'
 // Products (useProductsManager), reorder data (ReorderingTab), product lookup for damaged goods.
-const { conflict, notFound } = require('../errors')
+const { badRequest, conflict, notFound } = require('../errors')
+const { validateFactor, round3 } = require('../inventory/units')
 const { postMovement, adjustTo, verifyLedger } = require('../inventory/stock')
 
 const PER_PAGE = 12
@@ -30,8 +31,20 @@ const productSchema = {
     stock_qty: { type: 'number' },
     stock_base: { type: ['number', 'null'] },
     reorder_limit: { type: 'number', minimum: 0 },
-    unit: { type: 'string', maxLength: 40 }
+    unit: { type: 'string', maxLength: 40 },
+    // How the base unit is measured: count (whole pieces), weight (kg, 3 decimals), volume (l, 3 decimals)
+    unit_kind: { type: 'string', enum: ['count', 'weight', 'volume'] }
   }
+}
+
+/** A stock value (target or opening) must fit the product kind; negative values are allowed. */
+function checkStockValue(kind, value) {
+  const v = Number(value)
+  if (!Number.isFinite(v)) throw badRequest('كمية غير صالحة.')
+  if (kind === 'count' && Math.abs(v - Math.round(v)) > 1e-9)
+    throw badRequest('صنف يباع بالعدد: الكمية يجب أن تكون عدداً صحيحاً.')
+  if (kind !== 'count' && Math.abs(v - round3(v)) > 1e-9)
+    throw badRequest('الكمية تقبل ثلاث خانات عشرية على الأكثر.')
 }
 
 module.exports = function catalogModule(app) {
@@ -89,9 +102,11 @@ module.exports = function catalogModule(app) {
     handler: async (ctx, p) =>
       ctx.tx(async (db) => {
         const barcode = p.barcode.trim()
+        const kind = p.unit_kind || 'count'
+        if (Number(p.stock_qty)) checkStockValue(kind, p.stock_qty)
         await db.query(
-          `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit)
-           VALUES ($1, $2, $3, $4, $5, 0, $6, $7)`,
+          `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind)
+           VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8)`,
           [
             barcode,
             p.name,
@@ -99,7 +114,8 @@ module.exports = function catalogModule(app) {
             p.retail_price || 0,
             p.wholesale_price || 0,
             p.reorder_limit || 0,
-            p.unit || ''
+            p.unit || '',
+            kind
           ]
         )
         if (Number(p.stock_qty)) {
@@ -125,8 +141,22 @@ module.exports = function catalogModule(app) {
           await db.query('SELECT * FROM products WHERE barcode = $1 FOR UPDATE', [p.barcode])
         ).rows[0]
         if (!before) throw notFound('الصنف غير موجود.')
+        const kind = p.unit_kind || before.unit_kind || 'count'
+        if (kind !== before.unit_kind && kind === 'count') {
+          // Switching to whole pieces: today's stock and every unit factor must be whole numbers.
+          checkStockValue('count', before.stock_qty || 0)
+          const frac = await db.query(
+            'SELECT name FROM product_units WHERE product_barcode = $1 AND is_active AND factor <> trunc(factor) LIMIT 1',
+            [p.barcode]
+          )
+          if (frac.rowCount)
+            throw badRequest(
+              `الوحدة "${frac.rows[0].name}" معاملها كسري؛ عدّلها قبل تحويل الصنف للبيع بالعدد.`
+            )
+        }
+        if (p.stock_qty !== undefined && p.stock_qty !== null) checkStockValue(kind, p.stock_qty)
         await db.query(
-          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7
+          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7, unit_kind = $8
            WHERE barcode = $1`,
           [
             p.barcode,
@@ -135,7 +165,8 @@ module.exports = function catalogModule(app) {
             p.retail_price || 0,
             p.wholesale_price || 0,
             p.reorder_limit || 0,
-            p.unit || ''
+            p.unit || '',
+            kind
           ]
         )
         // K-37: the form's stock is a target relative to what it showed (stock_base), so sales
@@ -163,7 +194,8 @@ module.exports = function catalogModule(app) {
           'retail_price',
           'wholesale_price',
           'reorder_limit',
-          'unit'
+          'unit',
+          'unit_kind'
         ]) {
           const a = before[k] ?? ''
           const b = p[k] ?? (k === 'name' || k === 'unit' ? '' : 0)
@@ -231,7 +263,7 @@ module.exports = function catalogModule(app) {
       ).rows
       const sales = (
         await ctx.pool.query(
-          `SELECT product_barcode, SUM(quantity) AS total_qty FROM sale_items si JOIN sales s ON si.sale_id = s.id
+          `SELECT product_barcode, SUM(quantity * unit_factor) AS total_qty FROM sale_items si JOIN sales s ON si.sale_id = s.id
            WHERE s.shift_id IN (SELECT id FROM shifts WHERE start_time >= (CURRENT_DATE - 30)::timestamp)
            GROUP BY product_barcode`
         )
@@ -243,6 +275,215 @@ module.exports = function catalogModule(app) {
 
 module.exports.maskCost = maskCost
 module.exports.registerInventory = function inventoryOperations(app) {
+  // Units and packaging of one product, with their barcodes (base-unit barcodes have unit_id null).
+  app.operation({
+    name: 'productUnits.get',
+    anyPermission: ['products.view', 'pos.sell'],
+    schema: {
+      type: 'object',
+      required: ['barcode'],
+      properties: { barcode: { type: 'string', minLength: 1, maxLength: 64 } }
+    },
+    handler: async (ctx, { barcode }) => {
+      const product = (
+        await ctx.pool.query(
+          'SELECT barcode, name, unit, unit_kind, retail_price FROM products WHERE barcode = $1',
+          [barcode]
+        )
+      ).rows[0]
+      if (!product) throw notFound('الصنف غير موجود.')
+      const units = (
+        await ctx.pool.query(
+          'SELECT id, name, factor, retail_price, wholesale_price, sellable, purchasable FROM product_units WHERE product_barcode = $1 AND is_active ORDER BY factor, id',
+          [barcode]
+        )
+      ).rows
+      const codes = (
+        await ctx.pool.query(
+          'SELECT barcode, unit_id FROM product_barcodes WHERE product_barcode = $1 ORDER BY barcode',
+          [barcode]
+        )
+      ).rows
+      return {
+        product,
+        baseBarcodes: codes.filter((c) => c.unit_id === null).map((c) => c.barcode),
+        units: units.map((u) => ({
+          ...u,
+          barcodes: codes.filter((c) => c.unit_id === u.id).map((c) => c.barcode)
+        }))
+      }
+    }
+  })
+
+  // Replace a product's units and extra barcodes. Units left out are deactivated (history keeps
+  // pointing at them); factors and prices of existing units may change (lines keep snapshots).
+  app.operation({
+    name: 'productUnits.save',
+    permission: 'products.manage',
+    schema: {
+      type: 'object',
+      required: ['barcode', 'units'],
+      properties: {
+        barcode: { type: 'string', minLength: 1, maxLength: 64 },
+        baseBarcodes: {
+          type: 'array',
+          maxItems: 20,
+          items: { type: 'string', minLength: 1, maxLength: 64 }
+        },
+        units: {
+          type: 'array',
+          maxItems: 20,
+          items: {
+            type: 'object',
+            required: ['name', 'factor'],
+            properties: {
+              id: { type: ['integer', 'null'] },
+              name: { type: 'string', minLength: 1, maxLength: 40 },
+              factor: { type: 'number', exclusiveMinimum: 0 },
+              retail_price: { type: ['number', 'null'], minimum: 0 },
+              wholesale_price: { type: ['number', 'null'], minimum: 0 },
+              sellable: { type: 'boolean' },
+              purchasable: { type: 'boolean' },
+              barcodes: {
+                type: 'array',
+                maxItems: 20,
+                items: { type: 'string', minLength: 1, maxLength: 64 }
+              }
+            }
+          }
+        }
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const product = (
+          await db.query('SELECT * FROM products WHERE barcode = $1 FOR UPDATE', [b.barcode])
+        ).rows[0]
+        if (!product) throw notFound('الصنف غير موجود.')
+        const kind = product.unit_kind || 'count'
+        const names = new Set()
+        const codes = new Set()
+        const addCode = (c) => {
+          const code = c.trim()
+          if (!code) return null
+          if (code === product.barcode)
+            throw badRequest('الباركود الأساسي للصنف لا يُضاف كباركود إضافي.')
+          if (codes.has(code)) throw badRequest(`الباركود (${code}) مكرر.`)
+          codes.add(code)
+          return code
+        }
+        const units = b.units.map((u) => {
+          const name = u.name.trim()
+          if (names.has(name.toLowerCase())) throw badRequest(`اسم الوحدة "${name}" مكرر.`)
+          names.add(name.toLowerCase())
+          if (name === (product.unit || '').trim())
+            throw badRequest(`"${name}" هو اسم الوحدة الأساسية بالفعل.`)
+          const factor = validateFactor(kind, u.factor)
+          if (factor === 1)
+            throw badRequest(
+              `الوحدة "${name}" بمعامل 1 مطابقة للوحدة الأساسية؛ استخدم باركوداً إضافياً بدلاً منها.`
+            )
+          return {
+            ...u,
+            name,
+            factor,
+            sellable: u.sellable !== false,
+            purchasable: u.purchasable !== false,
+            barcodes: (u.barcodes || []).map(addCode).filter(Boolean)
+          }
+        })
+        const baseCodes = (b.baseBarcodes || []).map(addCode).filter(Boolean)
+
+        const existing = (
+          await db.query('SELECT * FROM product_units WHERE product_barcode = $1 AND is_active', [
+            b.barcode
+          ])
+        ).rows
+        const changes = { added: [], updated: [], deactivated: [] }
+        const keep = new Set()
+        await db.query('DELETE FROM product_barcodes WHERE product_barcode = $1', [b.barcode])
+        for (const u of units) {
+          let id = u.id
+          const prev = id ? existing.find((e) => e.id === id) : null
+          if (id && !prev) throw badRequest(`الوحدة رقم ${id} لا تخص هذا الصنف.`)
+          if (prev) {
+            await db.query(
+              `UPDATE product_units SET name = $2, factor = $3, retail_price = $4, wholesale_price = $5, sellable = $6, purchasable = $7, updated_at = LOCALTIMESTAMP(0)
+               WHERE id = $1`,
+              [
+                id,
+                u.name,
+                u.factor,
+                u.retail_price ?? null,
+                u.wholesale_price ?? null,
+                u.sellable,
+                u.purchasable
+              ]
+            )
+            const diff = {}
+            for (const k of [
+              'name',
+              'factor',
+              'retail_price',
+              'wholesale_price',
+              'sellable',
+              'purchasable'
+            ]) {
+              const a = prev[k] === null ? null : String(prev[k])
+              const c = u[k] === null || u[k] === undefined ? null : String(u[k])
+              if (a !== c) diff[k] = { from: prev[k], to: u[k] ?? null }
+            }
+            if (Object.keys(diff).length) changes.updated.push({ id, name: u.name, ...diff })
+          } else {
+            id = (
+              await db.query(
+                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                [
+                  b.barcode,
+                  u.name,
+                  u.factor,
+                  u.retail_price ?? null,
+                  u.wholesale_price ?? null,
+                  u.sellable,
+                  u.purchasable
+                ]
+              )
+            ).rows[0].id
+            changes.added.push({ id, name: u.name, factor: u.factor })
+          }
+          keep.add(id)
+          for (const code of u.barcodes)
+            await db.query(
+              'INSERT INTO product_barcodes (barcode, product_barcode, unit_id) VALUES ($1, $2, $3)',
+              [code, b.barcode, id]
+            )
+        }
+        for (const e of existing.filter((x) => !keep.has(x.id))) {
+          await db.query(
+            'UPDATE product_units SET is_active = false, updated_at = LOCALTIMESTAMP(0) WHERE id = $1',
+            [e.id]
+          )
+          changes.deactivated.push({ id: e.id, name: e.name })
+        }
+        for (const code of baseCodes)
+          await db.query(
+            'INSERT INTO product_barcodes (barcode, product_barcode, unit_id) VALUES ($1, $2, NULL)',
+            [code, b.barcode]
+          )
+        await ctx.audit(
+          db,
+          'product_units',
+          `تعديل وحدات وعبوات الصنف "${product.name}" (${b.barcode})`,
+          {
+            ...changes,
+            barcodes: [...codes]
+          }
+        )
+        return { ok: true }
+      })
+  })
+
   // Movement history of one product, newest first.
   app.operation({
     name: 'inventory.movements',

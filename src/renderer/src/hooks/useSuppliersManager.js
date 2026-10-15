@@ -72,6 +72,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     // With item lines the total is their sum (the service checks it again).
     const items = (newPurchaseForm.items || []).map((l) => ({
       barcode: l.barcode,
+      unitId: l.unitId ?? null,
       qty: parseFloat(l.qty) || 0,
       unitCost: parseFloat(l.unitCost) || 0
     }))

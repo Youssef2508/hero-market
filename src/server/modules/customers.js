@@ -99,7 +99,7 @@ module.exports = function customersModule(app) {
       ).rows
       const saleItems = (
         await db.query(
-          `SELECT si.quantity, si.total_price, si.product_barcode, p.name, s.timestamp, s.id AS sale_id
+          `SELECT si.quantity, si.unit_name, si.unit_factor, si.total_price, si.product_barcode, p.name, s.timestamp, s.id AS sale_id
            FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
            WHERE s.client_id = $1 ORDER BY si.id`,
           [clientId]

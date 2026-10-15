@@ -352,6 +352,23 @@
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
+/* Unit of a cart line when the product has packaging (piece, box, carton…). */
+.line-unit-select {
+  display: block;
+  margin: 3px auto 0;
+  max-width: 120px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+}
+.line-unit-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 .cart-empty {
   display: flex;

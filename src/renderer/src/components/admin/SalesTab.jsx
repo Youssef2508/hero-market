@@ -274,6 +274,15 @@ export default function SalesTab({
                                 {item.quantity}
                               </span>
                             )}
+                            {item.unit_name && (
+                              <span className="cell-muted">
+                                {' '}
+                                {item.unit_name}
+                                {Number(item.unit_factor) !== 1
+                                  ? ` (× ${Number(item.unit_factor)})`
+                                  : ''}
+                              </span>
+                            )}
                           </td>
                           <td className="num">{formatMoney(item.unit_price)}</td>
                           <td

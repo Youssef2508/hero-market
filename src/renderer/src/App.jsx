@@ -36,8 +36,6 @@ function App() {
   const qtyInputRefs = useRef([])
   const adminSearchInputRef = useRef(null)
   const addProductBarcodeRef = useRef(null)
-  // Stable ref so usePOSController can call parseScaleBarcode before useBarcode is declared
-  const parseScaleBarcodeFnRef = useRef((bc) => ({ barcode: bc, isWeighted: false, qty: 1 }))
 
   // useShift hook
   const {
@@ -156,6 +154,9 @@ function App() {
     changeDue,
     addToCart,
     handleQtyChangeAttempt,
+    changeLineUnit,
+    pendingWeight,
+    confirmWeight,
     triggerDeleteItem,
     triggerClearCart,
     updateQty,
@@ -189,6 +190,7 @@ function App() {
     barcodeInput,
     setBarcodeInput,
     handleBarcodeSubmit,
+    addProductByBarcode,
     searchInput,
     setSearchInput,
     handleSearchChange,
@@ -273,13 +275,12 @@ function App() {
     fetchAdminData: () => adminController.fetchAdminData(),
     triggerCustomAlert,
     triggerCustomConfirm,
-    parseScaleBarcode: (bc) => parseScaleBarcodeFnRef.current(bc),
     appSettings,
     onLoggedIn: (user) => onLoggedIn(user)
   })
 
   // useBarcode after usePOSController so setBarcodeInput is available
-  const { parseScaleBarcode } = useBarcode({
+  useBarcode({
     isLocked,
     currentView,
     openShiftModal,
@@ -295,11 +296,6 @@ function App() {
     setBarcodeInput,
     setAdminSearch: adminController.setAdminSearch,
     setNewProduct: adminController.setNewProduct
-  })
-  // Keep the ref up-to-date so usePOSController always calls the real function.
-  // It is only read from event handlers, which run after this effect.
-  useEffect(() => {
-    parseScaleBarcodeFnRef.current = parseScaleBarcode
   })
 
   // --- Periodic Cash Audit System ---
@@ -654,6 +650,9 @@ function App() {
             triggerClearCart={triggerClearCart}
             qtyInputRefs={qtyInputRefs}
             handleQtyChangeAttempt={handleQtyChangeAttempt}
+            changeLineUnit={changeLineUnit}
+            pendingWeight={pendingWeight}
+            confirmWeight={confirmWeight}
             triggerDeleteItem={triggerDeleteItem}
             cartSubtotal={cartSubtotal}
             discount={discount}
@@ -693,7 +692,7 @@ function App() {
             handleSearchKeyDown={handleSearchKeyDown}
             searchResults={searchResults}
             selectedSearchIndex={selectedSearchIndex}
-            addToCart={addToCart}
+            addToCart={(item) => addProductByBarcode(item.barcode)}
             setSearchInput={setSearchInput}
             setSearchResults={setSearchResults}
             setSelectedSearchIndex={setSelectedSearchIndex}

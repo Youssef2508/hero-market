@@ -3,6 +3,7 @@
 // useExpensesManager, useDamagedGoodsManager). Legacy amounts and ledger texts are unchanged.
 const { badRequest, conflict, notFound } = require('../errors')
 const { postMovement, receiveStock } = require('../inventory/stock')
+const { loadUnit, toBaseQty, round4 } = require('../inventory/units')
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
@@ -114,6 +115,9 @@ module.exports = function financeModule(app) {
             required: ['barcode', 'qty', 'unitCost'],
             properties: {
               barcode: { type: 'string', minLength: 1, maxLength: 64 },
+              // Purchase unit (product_units.id); omitted or null = base unit. qty and unitCost
+              // are in that unit (e.g. 3 cartons at 120 each).
+              unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
               unitCost: { type: 'number', minimum: 0 }
             }
@@ -135,6 +139,7 @@ module.exports = function financeModule(app) {
         if (paid > 0 && !shift) throw conflict('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
         const items = (p.items || []).map((i) => ({
           barcode: i.barcode.trim(),
+          unitId: i.unitId ?? null,
           qty: Number(i.qty),
           unitCost: Number(i.unitCost),
           lineTotal: round2(Number(i.qty) * Number(i.unitCost))
@@ -145,7 +150,7 @@ module.exports = function financeModule(app) {
             throw badRequest(
               `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
             )
-          if (new Set(items.map((i) => i.barcode)).size !== items.length)
+          if (new Set(items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)).size !== items.length)
             throw badRequest('الصنف مكرر في فاتورة الشراء.')
           const known = new Set(
             (
@@ -166,14 +171,34 @@ module.exports = function financeModule(app) {
         ).rows[0].id
         // Lock the products in a stable order (concurrent sales lock the same rows).
         for (const i of [...items].sort((a, b) => (a.barcode < b.barcode ? -1 : 1))) {
-          await db.query(
-            'INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total) VALUES ($1, $2, $3, $4, $5)',
-            [purchaseId, i.barcode, i.qty, i.unitCost, i.lineTotal]
+          const product = (await db.query('SELECT * FROM products WHERE barcode = $1', [i.barcode]))
+            .rows[0]
+          const unit = await loadUnit(db, product, i.unitId, { purpose: 'buy' })
+          const { baseQty } = toBaseQty(
+            product.unit_kind || 'count',
+            i.qty,
+            unit.factor,
+            product.name
           )
+          await db.query(
+            `INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total, unit_id, unit_name, unit_factor)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              purchaseId,
+              i.barcode,
+              i.qty,
+              i.unitCost,
+              i.lineTotal,
+              unit.id,
+              unit.id === null ? product.unit || null : unit.name,
+              unit.factor
+            ]
+          )
+          // Stock and the moving average work per base unit.
           await receiveStock(db, ctx, {
             barcode: i.barcode,
-            qty: i.qty,
-            unitCost: i.unitCost,
+            qty: baseQty,
+            unitCost: round4(i.unitCost / unit.factor),
             refType: 'purchase',
             refId: purchaseId,
             reason: `فاتورة شراء #${ref} من ${s.name}`
@@ -469,11 +494,13 @@ module.exports = function financeModule(app) {
         const barcode = d.barcode.trim()
         const p = (
           await db.query(
-            'SELECT name, stock_qty, cost_price FROM products WHERE barcode = $1 FOR UPDATE',
+            'SELECT name, stock_qty, cost_price, unit_kind FROM products WHERE barcode = $1 FOR UPDATE',
             [barcode]
           )
         ).rows[0]
         if (!p) throw notFound('لم يتم العثور على هذا المنتج في المخزن!')
+        // Damaged goods are recorded in the base unit (whole pieces, or kg/l with 3 decimals).
+        toBaseQty(p.unit_kind || 'count', d.quantity, 1, p.name)
         // Negative stock is allowed (owner decision); the negative-stock report shows the result.
         const shift = await ownOpenShift(db, ctx, d.currentShiftId)
         const damagedId = (

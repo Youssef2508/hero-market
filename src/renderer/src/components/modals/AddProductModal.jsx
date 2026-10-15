@@ -158,6 +158,18 @@ const AddProductModal = ({
                 placeholder="مثال: علبة"
               />
             </div>
+            <div className="form-group">
+              <label>طريقة القياس (الوحدة الأساسية للمخزون)</label>
+              <select
+                className="form-input"
+                value={newProduct.unit_kind || 'count'}
+                onChange={(e) => setNewProduct((prev) => ({ ...prev, unit_kind: e.target.value }))}
+              >
+                <option value="count">بالعدد (قطعة، علبة… أعداد صحيحة)</option>
+                <option value="weight">بالوزن (كيلوجرام، 3 خانات عشرية)</option>
+                <option value="volume">بالحجم (لتر، 3 خانات عشرية)</option>
+              </select>
+            </div>
           </div>
 
           <div className="modal-footer">

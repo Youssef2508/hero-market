@@ -26,7 +26,9 @@ const UNIQUE_MESSAGES = {
   users_username_key: 'خطأ: اسم المستخدم هذا مسجل بالفعل.',
   users_pin_lookup_key: 'رمز المرور هذا مستخدم لحساب آخر، اختر رمزاً مختلفاً.',
   roles_name_key: 'يوجد دور بنفس الاسم بالفعل.',
-  receipt_templates_name_key: 'يوجد قالب فاتورة بنفس الاسم بالفعل.'
+  receipt_templates_name_key: 'يوجد قالب فاتورة بنفس الاسم بالفعل.',
+  product_barcodes_pkey: 'خطأ: هذا الباركود مسجل بالفعل لصنف أو وحدة أخرى.',
+  product_units_name_key: 'يوجد وحدة بنفس الاسم لهذا الصنف.'
 }
 
 // Lost or refused connections (server stopped, network reset, pool timeout) are temporary: 503,
