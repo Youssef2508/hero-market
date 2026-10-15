@@ -5,12 +5,14 @@
 //  - the new sale id comes from INSERT … RETURNING, never MAX(id) (G-03);
 //  - a new customer is created inside the same transaction (K-12);
 //  - a client-generated key makes retries return the same sale instead of a second one (G-21).
+const { postMovement } = require('../inventory/stock')
 const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
 
 const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
 const CREDIT_TYPES = ['آجل', 'دفع جزئي']
+const CASH_TENDER_TYPES = ['نقدي', 'دفع جزئي']
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 
@@ -306,11 +308,15 @@ module.exports = function posModule(app) {
             `INSERT INTO sale_items (sale_id, product_barcode, quantity, unit_price, total_price, cost_price) VALUES ($1, $2, $3, $4, $5, $6)`,
             [saleId, l.barcode, l.qty, l.price, l.total, l.cost]
           )
-          // prevent_negative_stock raises an Arabic error if stock would drop below zero.
-          await db.query('UPDATE products SET stock_qty = stock_qty - $1 WHERE barcode = $2', [
-            l.qty,
-            l.barcode
-          ])
+          // Negative stock is allowed (owner decision); the sale leaves at the line's cost.
+          await postMovement(db, ctx, {
+            barcode: l.barcode,
+            qty: -l.qty,
+            kind: 'sale',
+            unitCost: l.cost,
+            refType: 'sale',
+            refId: saleId
+          })
         }
 
         if (clientId) {
@@ -359,6 +365,14 @@ module.exports = function posModule(app) {
               clientId
             ])
             await ledger('payment', deposit, `حفظ الباقي نقدي رصيد في فاتورة رقم #${saleId}`)
+            // K-36: the kept change is cash that stays in the drawer. Wallet payments never
+            // reach the drawer, so only cash tenders record it.
+            if (CASH_TENDER_TYPES.includes(b.paymentType)) {
+              await db.query(
+                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
+                [shift.id, deposit, `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`]
+              )
+            }
           }
         }
         await ctx.audit(

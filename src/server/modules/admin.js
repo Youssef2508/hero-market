@@ -375,6 +375,7 @@ module.exports = function adminModule(app) {
     handler: async (ctx) =>
       ctx.tx(async (db) => {
         const tables = [
+          'supplier_purchase_items',
           'sale_items',
           'sales',
           'safe_ledger',
@@ -395,7 +396,13 @@ module.exports = function adminModule(app) {
         // Same as clearing sqlite_sequence: ids start again at 1.
         for (const t of tables)
           await db.query(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), 1, false)`)
+        // Stock history restarts too: negative stock becomes 0 (legacy behaviour) and the remaining
+        // stock becomes a fresh opening balance.
+        await db.query("SELECT set_config('hm.ledger_rebuild', 'on', true)")
+        await db.query('DELETE FROM stock_movements')
         await db.query('UPDATE products SET stock_qty = 0 WHERE stock_qty < 0')
+        await db.query("SELECT set_config('hm.ledger_rebuild', 'off', true)")
+        await db.query('SELECT hm_post_opening_balances($1)', ['رصيد افتتاحي بعد إعادة التهيئة'])
         await ctx.audit(db, 'system_reset', 'إعادة تهيئة كاملة لبيانات النظام والبدء من الصفر')
       })
   })

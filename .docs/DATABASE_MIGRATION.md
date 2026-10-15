@@ -77,3 +77,18 @@ The old SQLite file is never modified, so going back is always possible:
 - No schema objects are dropped or renamed: the 19 tables keep their names and columns. New features live in new tables and columns.
 - `users.password_hash` is copied as it was. On each user's first login PostgreSQL replaces it with the keyed hash and sets the column to NULL. The SQLite file keeps the original values, so after a rollback the previous version still accepts everyone's old PIN.
 - Data outside the SQLite file (printer driver settings, Windows shortcuts) is unaffected.
+
+## 7. Migration 0004: stock ledger (stage 4)
+
+Applied automatically on the first start of a version that contains it.
+
+- **What it does:**
+  - drops the "no negative stock" trigger;
+  - creates `stock_movements` and `supplier_purchase_items`;
+  - installs the movement and guard triggers;
+  - writes one **opening** movement per product equal to its current stock.
+
+  Stock values themselves do not change: tested on existing data, on a legacy import and on a copy of the installed store with `npm run golive:check`, check A6.
+
+- **Before upgrading a real store:** run `npm run golive:check` on a **copy** of the store's data and keep the pre-upgrade backup. The upgrade never touches the old SQLite file.
+- **Rollback:** the migration is forward-only. An older app version cannot run on the migrated database, because the guard trigger refuses its direct stock writes. To roll back, reinstall the previous version and restore the backup taken before the upgrade. Sales made after the upgrade must be exported first (النسخ الاحتياطي → حفظ نسخة) and re-entered.

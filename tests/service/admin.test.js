@@ -2,7 +2,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
-const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+const {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  seedProducts
+} = require('./helpers')
 
 let db, svc, owner, manager, cashier
 const q = async (sql, params) => (await svc.pool.query(sql, params)).rows
@@ -297,13 +304,15 @@ test('receipt templates: validated, saved, activated per paper size', async (t) 
 
 test('backup → restore round trip restores every row exactly', async (t) => {
   if (!requireDb(t)) return
-  await q(
+  await seedProducts(
+    svc,
     `INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty) VALUES ('R1', 'صنف للنسخ', 1.1, 2.2333, 7.125)`
   )
   const snapshot = async () => {
     const out = {}
     for (const tname of [
       'products',
+      'stock_movements',
       'users',
       'roles',
       'role_permissions',

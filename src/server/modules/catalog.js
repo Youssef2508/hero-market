@@ -1,6 +1,7 @@
 'use strict'
 // Products (useProductsManager), reorder data (ReorderingTab), product lookup for damaged goods.
 const { conflict, notFound } = require('../errors')
+const { postMovement, adjustTo, verifyLedger } = require('../inventory/stock')
 
 const PER_PAGE = 12
 const SORTABLE = ['name', 'barcode', 'stock_qty', 'retail_price', 'cost_price', 'reorder_limit'] // legacy whitelist
@@ -24,7 +25,10 @@ const productSchema = {
     cost_price: { type: 'number', minimum: 0 },
     retail_price: { type: 'number', minimum: 0 },
     wholesale_price: { type: 'number', minimum: 0 },
-    stock_qty: { type: 'number', minimum: 0 },
+    // Negative stock is allowed (owner decision). On update, stock_qty is the target and
+    // stock_base the stock the form showed when it was opened (K-37).
+    stock_qty: { type: 'number' },
+    stock_base: { type: ['number', 'null'] },
     reorder_limit: { type: 'number', minimum: 0 },
     unit: { type: 'string', maxLength: 40 }
   }
@@ -84,20 +88,29 @@ module.exports = function catalogModule(app) {
     schema: productSchema,
     handler: async (ctx, p) =>
       ctx.tx(async (db) => {
+        const barcode = p.barcode.trim()
         await db.query(
           `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           VALUES ($1, $2, $3, $4, $5, 0, $6, $7)`,
           [
-            p.barcode.trim(),
+            barcode,
             p.name,
             p.cost_price || 0,
             p.retail_price || 0,
             p.wholesale_price || 0,
-            p.stock_qty || 0,
             p.reorder_limit || 0,
             p.unit || ''
           ]
         )
+        if (Number(p.stock_qty)) {
+          await postMovement(db, ctx, {
+            barcode,
+            qty: Number(p.stock_qty),
+            kind: 'opening',
+            refType: 'product',
+            reason: 'رصيد أول عند إضافة الصنف'
+          })
+        }
         await ctx.audit(db, 'product_create', `إضافة صنف "${p.name}" (${p.barcode})`)
       })
   })
@@ -113,7 +126,7 @@ module.exports = function catalogModule(app) {
         ).rows[0]
         if (!before) throw notFound('الصنف غير موجود.')
         await db.query(
-          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, stock_qty = $6, reorder_limit = $7, unit = $8
+          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7
            WHERE barcode = $1`,
           [
             p.barcode,
@@ -121,18 +134,34 @@ module.exports = function catalogModule(app) {
             p.cost_price || 0,
             p.retail_price || 0,
             p.wholesale_price || 0,
-            p.stock_qty || 0,
             p.reorder_limit || 0,
             p.unit || ''
           ]
         )
+        // K-37: the form's stock is a target relative to what it showed (stock_base), so sales
+        // recorded while the form was open are kept. Without a base, a changed stock is refused.
+        const wantsStock = p.stock_qty !== undefined && p.stock_qty !== null
+        const hasBase = p.stock_base !== undefined && p.stock_base !== null
+        let adjusted = null
+        if (wantsStock && hasBase) {
+          adjusted = await adjustTo(db, ctx, {
+            barcode: p.barcode,
+            target: p.stock_qty,
+            base: p.stock_base,
+            kind: 'adjustment',
+            reason: 'تعديل الكمية من شاشة الصنف'
+          })
+        } else if (wantsStock && Number(p.stock_qty) !== (Number(before.stock_qty) || 0)) {
+          throw conflict('تغيّر رصيد الصنف. أعد فتح الصنف ثم عدّل الكمية.', {
+            stock: Number(before.stock_qty) || 0
+          })
+        }
         const changes = {}
         for (const k of [
           'name',
           'cost_price',
           'retail_price',
           'wholesale_price',
-          'stock_qty',
           'reorder_limit',
           'unit'
         ]) {
@@ -140,6 +169,12 @@ module.exports = function catalogModule(app) {
           const b = p[k] ?? (k === 'name' || k === 'unit' ? '' : 0)
           if (String(a) !== String(b)) changes[k] = { from: a, to: b }
         }
+        if (adjusted)
+          changes.stock_qty = {
+            from: Number(before.stock_qty) || 0,
+            to: adjusted.balanceAfter,
+            movement: adjusted.id
+          }
         if (Object.keys(changes).length)
           await ctx.audit(db, 'product_update', `تعديل صنف "${p.name}" (${p.barcode})`, changes)
       })
@@ -156,6 +191,18 @@ module.exports = function catalogModule(app) {
     handler: async (ctx, { barcode }) =>
       ctx.tx(async (db) => {
         try {
+          const used = await db.query(
+            "SELECT 1 FROM stock_movements WHERE product_barcode = $1 AND kind <> 'opening' LIMIT 1",
+            [barcode]
+          )
+          if (used.rowCount)
+            throw conflict(
+              'لا يمكن حذف هذا الصنف لأن له حركات مخزون مسجلة (بيع أو استلام أو تسوية). يمكنك جرد كميته إلى صفر بدلاً من حذفه.'
+            )
+          // Only an opening balance: remove it with the product (administrative rebuild).
+          await db.query("SELECT set_config('hm.ledger_rebuild', 'on', true)")
+          await db.query('DELETE FROM stock_movements WHERE product_barcode = $1', [barcode])
+          await db.query("SELECT set_config('hm.ledger_rebuild', 'off', true)")
           const r = await db.query('DELETE FROM products WHERE barcode = $1 RETURNING name', [
             barcode
           ])
@@ -195,3 +242,96 @@ module.exports = function catalogModule(app) {
 }
 
 module.exports.maskCost = maskCost
+module.exports.registerInventory = function inventoryOperations(app) {
+  // Movement history of one product, newest first.
+  app.operation({
+    name: 'inventory.movements',
+    permission: 'products.view',
+    schema: {
+      type: 'object',
+      required: ['barcode'],
+      properties: {
+        barcode: { type: 'string', minLength: 1, maxLength: 64 },
+        limit: { type: 'integer', minimum: 1, maximum: 500 }
+      }
+    },
+    handler: async (ctx, { barcode, limit }) => {
+      const rows = (
+        await ctx.pool.query(
+          `SELECT m.id::int, m.qty, m.kind, m.unit_cost AS cost, m.balance_after, m.ref_type, m.ref_id, m.reason,
+                  m.created_at, u.username
+             FROM stock_movements m LEFT JOIN users u ON u.id = m.user_id
+            WHERE m.product_barcode = $1 ORDER BY m.id DESC LIMIT $2`,
+          [barcode, limit || 100]
+        )
+      ).rows
+      return maskCost(ctx, rows)
+    }
+  })
+
+  // Stock count: counted quantity against the stock shown when counting started (base).
+  app.operation({
+    name: 'inventory.count',
+    permission: 'inventory.adjust',
+    schema: {
+      type: 'object',
+      required: ['barcode', 'counted', 'reason'],
+      properties: {
+        barcode: { type: 'string', minLength: 1, maxLength: 64 },
+        counted: { type: 'number' },
+        base: { type: ['number', 'null'] },
+        reason: { type: 'string', minLength: 2, maxLength: 300 }
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const row = (
+          await db.query('SELECT stock_qty FROM products WHERE barcode = $1 FOR UPDATE', [
+            b.barcode
+          ])
+        ).rows[0]
+        if (!row) throw notFound('الصنف غير موجود.')
+        const before = Number(row.stock_qty) || 0
+        const mv = await adjustTo(db, ctx, {
+          barcode: b.barcode,
+          target: b.counted,
+          base: b.base,
+          kind: 'count',
+          reason: b.reason
+        })
+        const stock = mv ? mv.balanceAfter : before
+        if (mv)
+          await ctx.audit(
+            db,
+            'stock_count',
+            `جرد الصنف ${b.barcode}: المعدود ${b.counted}، الرصيد من ${before} إلى ${stock}`,
+            { movement: mv.id, reason: b.reason, base: b.base ?? null }
+          )
+        return { stock, movementId: mv ? mv.id : null }
+      })
+  })
+
+  // Products with negative stock (sold before their receipt was entered).
+  app.operation({
+    name: 'inventory.negative',
+    permission: 'products.view',
+    handler: async (ctx) =>
+      (
+        await ctx.pool.query(
+          `SELECT barcode, name, unit, stock_qty AS stock,
+                  (SELECT MAX(created_at) FROM stock_movements m WHERE m.product_barcode = p.barcode AND m.balance_after < 0) AS negative_since
+             FROM products p WHERE stock_qty < 0 ORDER BY stock_qty, barcode`
+        )
+      ).rows
+  })
+
+  // Ledger check: every product's stock equals the sum of its movements (empty list = healthy).
+  app.operation({
+    name: 'inventory.verify',
+    permission: 'reports.view',
+    handler: async (ctx) => {
+      const mismatches = await verifyLedger(ctx.pool)
+      return { ok: mismatches.length === 0, mismatches }
+    }
+  })
+}

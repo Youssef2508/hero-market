@@ -13,6 +13,7 @@
 //   A4 if HEROMARKET_GOLIVE_PIN is set: logs in with that existing PIN (legacy hash upgrade path).
 //   A5 exports a backup through the service, restores it into a second new database through the
 //      service, and repeats A3 between the two databases.
+//   A6 checks that every product's stock equals the sum of its stock movements after the import.
 // The admin URL needs CREATEDB; both databases are dropped at the end unless --keep is given.
 // Exit code 0 only when every check that ran passed.
 'use strict'
@@ -23,6 +24,7 @@ const path = require('path')
 const { Client } = require('pg')
 const { createService } = require('../src/server/app')
 const { importLegacy } = require('../src/server/db/legacy-import')
+const { verifyLedger } = require('../src/server/inventory/stock')
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
@@ -207,6 +209,15 @@ async function main() {
         tables.map(([t, e]) => [t, [e.sourceRows, e.targetRows, e.match]])
       ),
       foreignKeyViolations: fkBad
+    })
+
+    // A6 – stock ledger: imported stock is exactly explained by the opening movements
+    const ledger = await verifyLedger(svcA.pool)
+    record('A6-stock-ledger', ledger.length === 0, {
+      summary: ledger.length
+        ? `${ledger.length} products whose stock differs from their movements, first: ${JSON.stringify(ledger[0])}`
+        : `stock of every product = sum of its movements (${imp.openingStockMovements} opening movements)`,
+      mismatches: ledger.slice(0, 50)
     })
 
     // A3 – business comparison legacy → PostgreSQL

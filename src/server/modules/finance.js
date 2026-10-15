@@ -2,6 +2,9 @@
 // Suppliers & purchases, cheques, expenses, damaged goods (useSuppliersManager, useChecksManager,
 // useExpensesManager, useDamagedGoodsManager). Legacy amounts and ledger texts are unchanged.
 const { badRequest, conflict, notFound } = require('../errors')
+const { postMovement, receiveStock } = require('../inventory/stock')
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 const str = (max) => ({ type: ['string', 'null'], maxLength: max })
@@ -101,7 +104,21 @@ module.exports = function financeModule(app) {
         paid_amount: { type: 'number', minimum: 0 },
         payment_type: str(40),
         notes: str(1000),
-        currentShiftId: { type: ['integer', 'null'] }
+        currentShiftId: { type: ['integer', 'null'] },
+        // Lines received into stock (K-38). When present, their total must equal total_amount.
+        items: {
+          type: 'array',
+          maxItems: 500,
+          items: {
+            type: 'object',
+            required: ['barcode', 'qty', 'unitCost'],
+            properties: {
+              barcode: { type: 'string', minLength: 1, maxLength: 64 },
+              qty: { type: 'number', exclusiveMinimum: 0 },
+              unitCost: { type: 'number', minimum: 0 }
+            }
+          }
+        }
       }
     },
     handler: async (ctx, p) =>
@@ -116,11 +133,52 @@ module.exports = function financeModule(app) {
         const ref = p.invoice_ref || ''
         const shift = await ownOpenShift(db, ctx, p.currentShiftId)
         if (paid > 0 && !shift) throw conflict('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
-        await db.query(
-          `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7)`,
-          [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '']
-        )
+        const items = (p.items || []).map((i) => ({
+          barcode: i.barcode.trim(),
+          qty: Number(i.qty),
+          unitCost: Number(i.unitCost),
+          lineTotal: round2(Number(i.qty) * Number(i.unitCost))
+        }))
+        if (items.length) {
+          const sum = round2(items.reduce((a, i) => a + i.lineTotal, 0))
+          if (Math.abs(sum - total) > 0.005)
+            throw badRequest(
+              `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
+            )
+          if (new Set(items.map((i) => i.barcode)).size !== items.length)
+            throw badRequest('الصنف مكرر في فاتورة الشراء.')
+          const known = new Set(
+            (
+              await db.query('SELECT barcode FROM products WHERE barcode = ANY($1::text[])', [
+                items.map((i) => i.barcode)
+              ])
+            ).rows.map((r) => r.barcode)
+          )
+          const missing = items.find((i) => !known.has(i.barcode))
+          if (missing) throw notFound(`الصنف (${missing.barcode}) غير مسجل.`)
+        }
+        const purchaseId = (
+          await db.query(
+            `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7) RETURNING id`,
+            [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '']
+          )
+        ).rows[0].id
+        // Lock the products in a stable order (concurrent sales lock the same rows).
+        for (const i of [...items].sort((a, b) => (a.barcode < b.barcode ? -1 : 1))) {
+          await db.query(
+            'INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total) VALUES ($1, $2, $3, $4, $5)',
+            [purchaseId, i.barcode, i.qty, i.unitCost, i.lineTotal]
+          )
+          await receiveStock(db, ctx, {
+            barcode: i.barcode,
+            qty: i.qty,
+            unitCost: i.unitCost,
+            refType: 'purchase',
+            refId: purchaseId,
+            reason: `فاتورة شراء #${ref} من ${s.name}`
+          })
+        }
         if (remaining > 0) {
           await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
             remaining,
@@ -140,9 +198,10 @@ module.exports = function financeModule(app) {
         await ctx.audit(
           db,
           'supplier_purchase',
-          `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م`
+          `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`
         )
-        return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+        const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+        return { ...supplier, purchaseId, receivedItems: items.length }
       })
   })
 
@@ -197,6 +256,15 @@ module.exports = function financeModule(app) {
         const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [supplierId]))
           .rows[0]
         if (!s) throw notFound('المورد غير موجود.')
+        // Invoices that received goods are part of the stock history and cannot disappear.
+        const received = await db.query(
+          'SELECT 1 FROM supplier_purchase_items i JOIN supplier_purchases p ON p.id = i.purchase_id WHERE p.supplier_id = $1 LIMIT 1',
+          [supplierId]
+        )
+        if (received.rowCount)
+          throw conflict(
+            'لا يمكن حذف هذا المورد لأن فواتيره أضافت أصنافاً إلى المخزون. سجل حركة المخزون يبقى مرتبطاً بها.'
+          )
         // Legacy behaviour: the supplier is removed together with its ledger and purchases.
         const ledger = await db.query('DELETE FROM supplier_ledger WHERE supplier_id = $1', [
           supplierId
@@ -406,20 +474,28 @@ module.exports = function financeModule(app) {
           )
         ).rows[0]
         if (!p) throw notFound('لم يتم العثور على هذا المنتج في المخزن!')
-        if (Number(p.stock_qty) < d.quantity) {
-          throw badRequest(
-            `الكمية التالفة المدخلة (${d.quantity}) أكبر من المخزون المتوفر حالياً (${p.stock_qty})!`
-          )
-        }
+        // Negative stock is allowed (owner decision); the negative-stock report shows the result.
         const shift = await ownOpenShift(db, ctx, d.currentShiftId)
-        await db.query('UPDATE products SET stock_qty = stock_qty - $1 WHERE barcode = $2', [
-          d.quantity,
-          barcode
-        ])
-        await db.query(
-          `INSERT INTO damaged_goods (shift_id, product_barcode, quantity, reason, cost_price, timestamp) VALUES ($1, $2, $3, $4, $5, LOCALTIMESTAMP(0))`,
-          [shift ? shift.id : null, barcode, d.quantity, d.reason || '', Number(p.cost_price) || 0]
-        )
+        const damagedId = (
+          await db.query(
+            `INSERT INTO damaged_goods (shift_id, product_barcode, quantity, reason, cost_price, timestamp) VALUES ($1, $2, $3, $4, $5, LOCALTIMESTAMP(0)) RETURNING id`,
+            [
+              shift ? shift.id : null,
+              barcode,
+              d.quantity,
+              d.reason || '',
+              Number(p.cost_price) || 0
+            ]
+          )
+        ).rows[0].id
+        await postMovement(db, ctx, {
+          barcode,
+          qty: -d.quantity,
+          kind: 'damaged',
+          refType: 'damaged',
+          refId: damagedId,
+          reason: d.reason || ''
+        })
         await ctx.audit(
           db,
           'damaged_create',
@@ -442,10 +518,13 @@ module.exports = function financeModule(app) {
           await db.query('DELETE FROM damaged_goods WHERE id = $1 RETURNING *', [damagedId])
         ).rows[0]
         if (!r) throw notFound()
-        await db.query('UPDATE products SET stock_qty = stock_qty + $1 WHERE barcode = $2', [
-          r.quantity,
-          r.product_barcode
-        ])
+        await postMovement(db, ctx, {
+          barcode: r.product_barcode,
+          qty: Number(r.quantity),
+          kind: 'damaged_reversal',
+          refType: 'damaged',
+          refId: damagedId
+        })
         await ctx.audit(
           db,
           'damaged_delete',

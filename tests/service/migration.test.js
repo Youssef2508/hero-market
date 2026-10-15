@@ -14,6 +14,7 @@ const { buildLegacyFixture } = require('../../scripts/init-dev-db')
 const { createPool } = require('../../src/server/db/pool')
 const { migrate } = require('../../src/server/db/migrate')
 const { importLegacy, rebrandStoreName } = require('../../src/server/db/legacy-import')
+const { verifyLedger } = require('../../src/server/inventory/stock')
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} }
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')
@@ -88,6 +89,15 @@ test('import keeps every row and value; backup verified; source untouched; re-ru
     }
     assert.equal(r.parity.tables.products.sourceRows, 9)
     assert.ok(Object.values(r.foreignKeyViolations).every((n) => n === 0))
+    // Stock ledger (migration 0004): imported stock is explained by one opening movement each.
+    assert.deepEqual(await verifyLedger(target.pool), [], 'stock = sum of movements')
+    const withStock = (
+      await target.pool.query(
+        'SELECT count(*)::int AS n FROM products WHERE COALESCE(stock_qty, 0) <> 0'
+      )
+    ).rows[0].n
+    assert.ok(withStock > 0)
+    assert.equal(r.openingStockMovements, withStock)
     assert.equal(sha(source), before, 'source file not modified')
     assert.ok(r.backups.length >= 1 && r.backups.every((b) => fs.existsSync(b)))
     assert.equal(sha(r.backups[0]), before, 'backup is byte-identical')

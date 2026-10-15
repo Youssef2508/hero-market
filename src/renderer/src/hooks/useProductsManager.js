@@ -135,6 +135,7 @@ export function useProductsManager({
       retail_price,
       wholesale_price,
       stock_qty,
+      stock_base,
       reorder_limit,
       unit
     } = editProduct
@@ -154,6 +155,9 @@ export function useProductsManager({
           retail_price: retail,
           wholesale_price: parseFloat(wholesale_price) || 0,
           stock_qty: parseFloat(stock_qty) || 0,
+          // The stock shown when the form opened: the service applies only the difference, so
+          // sales made meanwhile are kept (K-37).
+          stock_base: stock_base === undefined || stock_base === null ? null : Number(stock_base),
           reorder_limit: parseFloat(reorder_limit) || 0,
           unit: unit || ''
         })

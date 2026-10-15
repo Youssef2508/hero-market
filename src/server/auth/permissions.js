@@ -104,6 +104,12 @@ const PERMISSIONS = [
     description: 'تسجيل وحذف التوالف'
   },
   {
+    key: 'inventory.adjust',
+    module: 'inventory',
+    label: 'جرد وتسوية المخزون',
+    description: 'تسجيل الجرد الفعلي وتسويات الكميات مع سبب إلزامي'
+  },
+  {
     key: 'inventory.reorder',
     module: 'inventory',
     label: 'مساعد الطلبيات',
@@ -240,6 +246,7 @@ const SYSTEM_ROLES = [
       'products.manage',
       'products.view_cost',
       'inventory.damaged',
+      'inventory.adjust',
       'inventory.reorder',
       'suppliers.view',
       'suppliers.manage'

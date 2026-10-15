@@ -4,7 +4,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
-const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
+const {
+  requireDb,
+  freshDatabase,
+  startService,
+  createUser,
+  login,
+  seedProducts
+} = require('./helpers')
 
 let db, svc, admin
 const q = async (sql, p) => (await svc.pool.query(sql, p)).rows
@@ -31,12 +38,15 @@ before(async () => {
   db = await freshDatabase()
   svc = await startService(db.url)
   await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
-  await q(`INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
+  await seedProducts(
+    svc,
+    `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
     ('P80', 'منتج 80', 60, 80, 75, 100, 0, 'قطعة', 'عام'),
     ('P40', 'منتج 40', 30, 40, 38, 100, 0, 'قطعة', 'عام'),
     ('P20', 'منتج 20', 15, 20, 18, 100, 0, 'قطعة', 'عام'),
     ('P50', 'منتج 50', 35, 50, 45, 100, 0, 'قطعة', 'عام'),
-    ('P30', 'منتج 30', 20, 30, 28, 100, 0, 'قطعة', 'عام')`)
+    ('P30', 'منتج 30', 20, 30, 28, 100, 0, 'قطعة', 'عام')`
+  )
   admin = await login(svc, '8642')
 })
 after(async () => {
@@ -183,4 +193,33 @@ test('K-24: partial payment counts only the upfront cash; discounts count as sol
   const closed = ok(await svc.call('shifts.close', { shiftId: shift.id, actualCash: 190 }, admin))
   assert.equal(closed.expected, 190)
   assert.equal(closed.difference, 0)
+})
+
+test('K-36: change kept as customer credit is counted as drawer cash; wallet deposits are not', async (t) => {
+  if (!requireDb(t)) return
+  const shift = ok(await svc.call('shifts.open', { startingCash: 0 }, admin))
+  // Cash sale of 80, customer pays 100 and keeps 20 as credit: the drawer holds 100.
+  const sale = ok(
+    await sell(shift.id, [{ barcode: 'P80', qty: 1, unitPrice: 80 }], 'نقدي', {
+      paidAmount: 100,
+      depositChange: 20,
+      client: { id: null, name: 'عميل رصيد', phone: '01000000003', address: '' }
+    })
+  )
+  assert.equal(sale.deposit, 20)
+  const client = (await q('SELECT debt_balance FROM clients WHERE id = $1', [sale.clientId]))[0]
+  assert.equal(client.debt_balance, -20, 'customer holds 20 credit')
+  // Wallet sale with an over-payment kept as credit: no drawer cash.
+  ok(
+    await sell(shift.id, [{ barcode: 'P30', qty: 1, unitPrice: 30 }], 'فودافون كاش', {
+      paidAmount: 40,
+      depositChange: 10,
+      client: { id: sale.clientId, name: 'عميل رصيد', phone: '01000000003', address: '' }
+    })
+  )
+  const live = ok(await svc.call('shifts.liveSummary', { shiftId: shift.id }, admin))
+  assert.equal(live.drawer.expected, 100)
+  const audit = ok(await svc.call('shifts.auditPreview', { shiftId: shift.id }, admin))
+  const closed = ok(await svc.call('shifts.close', { shiftId: shift.id, actualCash: 100 }, admin))
+  assert.deepEqual([audit.expected, closed.expected, closed.difference], [100, 100, 0])
 })

@@ -13,6 +13,7 @@ const TABLES = [
   'permission_catalog',
   'users',
   'products',
+  'stock_movements',
   'clients',
   'client_ledger',
   'shifts',
@@ -21,6 +22,7 @@ const TABLES = [
   'suppliers',
   'supplier_ledger',
   'supplier_purchases',
+  'supplier_purchase_items',
   'checks_register',
   'expenses',
   'damaged_goods',
@@ -32,7 +34,9 @@ const TABLES = [
   'safe_ledger',
   'receipt_templates'
 ]
-const TRIGGER_TABLES = ['products', 'sales', 'shifts']
+// User triggers are off while rows are restored: restored movements must not be applied to stock
+// a second time, and restored stock is not a direct write (stock_movements, products guard).
+const TRIGGER_TABLES = ['products', 'stock_movements', 'sales', 'shifts']
 const FORMAT = 'heromarket-backup'
 
 async function columnsOf(db, table) {

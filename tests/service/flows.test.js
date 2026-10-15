@@ -264,6 +264,10 @@ test('FLOWS 18–20: price change keeps historical sale lines; damaged goods mov
   const before = await q(
     "SELECT unit_price, cost_price FROM sale_items WHERE product_barcode = 'P28' ORDER BY id"
   )
+  // The form sends the stock it showed (stock_base); the change becomes an adjustment movement.
+  const shown = Number(
+    (await one("SELECT stock_qty FROM products WHERE barcode = 'P28'")).stock_qty
+  )
   ok(
     await svc.call(
       'products.update',
@@ -273,6 +277,7 @@ test('FLOWS 18–20: price change keeps historical sale lines; damaged goods mov
         cost_price: 12,
         retail_price: 16,
         stock_qty: 80,
+        stock_base: shown,
         reorder_limit: 5
       },
       admin
@@ -293,18 +298,32 @@ test('FLOWS 18–20: price change keeps historical sale lines; damaged goods mov
     Number((await one("SELECT stock_qty FROM products WHERE barcode = 'P28'")).stock_qty),
     78
   )
-  assert.equal(
-    (await svc.call('damaged.create', { barcode: 'P28', quantity: 1000 }, admin)).status,
-    400,
-    'more than stock refused'
-  )
   const dmg = await one('SELECT id, cost_price FROM damaged_goods ORDER BY id DESC LIMIT 1')
   assert.equal(Number(dmg.cost_price), 12, 'damage valued at the current cost')
+  // Negative stock is allowed (owner decision): more damaged than recorded stock goes negative.
+  ok(await svc.call('damaged.create', { barcode: 'P28', quantity: 1000 }, admin))
+  assert.equal(
+    Number((await one("SELECT stock_qty FROM products WHERE barcode = 'P28'")).stock_qty),
+    -922
+  )
+  const big = await one('SELECT id FROM damaged_goods ORDER BY id DESC LIMIT 1')
+  ok(await svc.call('damaged.delete', { damagedId: big.id }, admin))
   ok(await svc.call('damaged.delete', { damagedId: dmg.id }, admin))
   assert.equal(
     Number((await one("SELECT stock_qty FROM products WHERE barcode = 'P28'")).stock_qty),
     80
   )
+  const kinds = (
+    await q(
+      "SELECT kind, qty FROM stock_movements WHERE product_barcode = 'P28' AND kind LIKE 'damaged%' ORDER BY id"
+    )
+  ).map((m) => `${m.kind}:${Number(m.qty)}`)
+  assert.deepEqual(kinds, [
+    'damaged:-2',
+    'damaged:-1000',
+    'damaged_reversal:1000',
+    'damaged_reversal:2'
+  ])
   assert.equal(
     (await svc.call('products.delete', { barcode: 'P28' }, admin)).status,
     409,

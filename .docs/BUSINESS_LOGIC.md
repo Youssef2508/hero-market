@@ -160,6 +160,17 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 - Shift-close, Momkn and wallets reports: `src/shared/reportLines.mjs` (K-32).
 - Shortages: PDF via Typst or direct thermal print.
 
+## 11b. Stock and cost (stage 4)
+
+- **Ledger:** stock = sum of immutable movements (sale, return, purchase, adjustment, count, damaged, damaged reversal, opening). It is never written directly.
+- **Negative stock:** allowed (owner decision); listed on the inventory screen and by `inventory.negative`.
+- **Moving-average cost:**
+  - Receipts average in when stock is positive. When stock is zero or negative, the receipt cost becomes the average.
+  - Sales record the average at the time of sale and are not revalued later.
+  - Returns, damaged goods, counts and adjustments use the current average.
+- **Product form:** a changed stock posts the difference against the value the form showed. A count posts counted − the stock shown when counting started, with a mandatory reason.
+- **Purchase invoices:** item lines are received into stock; their total must equal the invoice total.
+
 ## 12. Unknowns and open decisions
 
 - K-24: decided (option 1). Expected drawer cash = opening cash + cash sales as sold + cash inflows − every cash outflow; both close dialogs show this service figure.
