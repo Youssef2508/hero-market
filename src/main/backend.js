@@ -123,7 +123,10 @@ async function startStandalone(cfg) {
   const svc = await createService({
     databaseUrl: cfg.databaseUrl,
     secret: cfg.secret,
-    logger: { level: isDev ? 'info' : 'warn' }
+    logger: { level: isDev ? 'info' : 'warn' },
+    // Cloud synchronisation runs in the background once an administrator links the store
+    // (المزامنة السحابية). Selling never waits for it.
+    syncAgent: true
   })
   await svc.prepare()
   await svc.app.ready()

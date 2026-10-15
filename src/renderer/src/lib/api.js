@@ -22,6 +22,10 @@ export async function api(op, body = {}) {
       // Session expired, revoked (user disabled) or cleared by a restore: back to the lock screen.
       window.dispatchEvent(new CustomEvent('heromarket:session-expired'))
     }
+    if (res.status === 423 && res.error.code === 'recovery_pending') {
+      // A restored backup waits for recovery from the cloud: the app shows what to do.
+      window.dispatchEvent(new CustomEvent('heromarket:recovery-pending'))
+    }
     throw new ApiError(res.error.message || 'حدث خطأ غير متوقع.', {
       code: res.error.code,
       status: res.status,

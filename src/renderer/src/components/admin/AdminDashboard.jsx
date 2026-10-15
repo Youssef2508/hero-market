@@ -38,6 +38,7 @@ const SettingsTab = lazy(() => import('./SettingsTab'))
 const ReceiptDesignerTab = lazy(() => import('./ReceiptDesignerTab'))
 const TillsManagerTab = lazy(() => import('./TillsManagerTab'))
 const DiscountsTab = lazy(() => import('./DiscountsTab'))
+const SyncTab = lazy(() => import('./SyncTab'))
 
 function Overview({
   currentUser,
@@ -240,6 +241,12 @@ export default function AdminDashboard(props) {
         {adminTab === 'discounts' && <DiscountsTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'clients' && <ClientsTab {...props} />}
         {adminTab === 'backup' && <BackupTab />}
+        {adminTab === 'sync' && (
+          <SyncTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
         {adminTab === 'reordering' && <ReorderingTab />}
         {adminTab === 'advanced-stats' && <AdvancedStatsTab />}
         {adminTab === 'cashier-performance' && <CashierPerformanceTab />}

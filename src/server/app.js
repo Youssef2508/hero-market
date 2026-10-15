@@ -12,6 +12,10 @@ const { KEYS } = require('./auth/permissions')
 
 const SESSION_HOURS = 12
 
+// While a restored database waits for recovery from the cloud (stage 4 phase 4), only these
+// operations run: signing in, the recovery itself, store settings, and backups.
+const DURING_RECOVERY = /^(auth\.|sync\.|backup\.|settings\.public$)/
+
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex')
 }
@@ -32,7 +36,19 @@ async function createService(cfg) {
   const app = Fastify({
     logger: cfg.logger ?? {
       level: process.env.HEROMARKET_LOG_LEVEL || 'info',
-      redact: ['req.headers.authorization', 'body.pin']
+      // Never write credentials to the log (request bodies are not logged by default; this also
+      // covers any future debug logging).
+      redact: [
+        'req.headers.authorization',
+        'body.pin',
+        'body.password',
+        'body.currentPassword',
+        'body.newPassword',
+        'body.recoveryCode',
+        'body.deviceToken',
+        'body.approver.password',
+        'body.setupCode'
+      ]
     },
     bodyLimit: 2 * 1024 * 1024
   })
@@ -84,22 +100,32 @@ async function createService(cfg) {
     const perms = def.permission ? [].concat(def.permission) : []
     for (const p of perms) if (!KEYS.has(p)) throw new Error(`${def.name}: unknown permission ${p}`)
     operations.set(def.name, def)
+    // Sign-in and permissions are checked before the request body is validated (preValidation):
+    // a caller without access learns nothing about an operation's fields (audit 1.4.0).
+    const authorize = async (req) => {
+      if (def.public) return
+      const auth = await authenticate(req)
+      // `permission` = all required; `anyPermission` = at least one.
+      if (perms.length && !perms.every((p) => auth.user.permissions.includes(p))) throw forbidden()
+      if (def.anyPermission && !def.anyPermission.some((p) => auth.user.permissions.includes(p)))
+        throw forbidden()
+      if (app.syncFlags?.recoveryPending && !DURING_RECOVERY.test(def.name))
+        throw new ServiceError(
+          423,
+          'recovery_pending',
+          'تمت استعادة نسخة احتياطية: يجب استرجاع البيانات من السحابة (أو تخطي ذلك) من شاشة المزامنة قبل متابعة العمل.'
+        )
+      req.hmAuth = auth
+    }
     app.post(
       `/api/${def.name}`,
-      { schema: def.schema ? { body: def.schema } : undefined, bodyLimit: def.bodyLimit },
+      {
+        schema: def.schema ? { body: def.schema } : undefined,
+        bodyLimit: def.bodyLimit,
+        preValidation: authorize
+      },
       async (req) => {
-        let auth = null
-        if (!def.public) {
-          auth = await authenticate(req)
-          // `permission` = all required; `anyPermission` = at least one.
-          if (perms.length && !perms.every((p) => auth.user.permissions.includes(p)))
-            throw forbidden()
-          if (
-            def.anyPermission &&
-            !def.anyPermission.some((p) => auth.user.permissions.includes(p))
-          )
-            throw forbidden()
-        }
+        const auth = req.hmAuth || null
         const ctx = {
           pool,
           user: auth?.user || null,

@@ -41,7 +41,11 @@ async function saleItems(db, saleId) {
   ).rows
 }
 
-/** Shift that receives a cash refund: the actor's own open shift if given, else the sale's shift (legacy rule). */
+/**
+ * Shift whose drawer pays a cash refund: the actor's own open shift, else the sale's shift while it
+ * is still open. A closed shift is final (migration 0011), so without an open drawer a cash refund
+ * is refused with a clear message.
+ */
 async function refundShift(db, ctx, currentShiftId, sale) {
   if (currentShiftId) {
     const s = (
@@ -52,7 +56,67 @@ async function refundShift(db, ctx, currentShiftId, sale) {
     ).rows[0]
     if (s) return s.id
   }
-  return sale.shift_id
+  const own = (
+    await db.query("SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' LIMIT 1", [
+      ctx.user.id
+    ])
+  ).rows[0]
+  if (own) return own.id
+  const original = (
+    await db.query("SELECT id FROM shifts WHERE id = $1 AND status = 'open'", [sale.shift_id])
+  ).rows[0]
+  if (original) return original.id
+  throw conflict('يُصرف المرتجع نقداً من درج وردية مفتوحة: افتح وردية أولاً ثم أعد المحاولة.')
+}
+
+/**
+ * Pay a refund through the right channel (audit 1.4.0, migration 0011): first what the customer
+ * still owes for this invoice, then store balance the customer spent on it, and only the rest in
+ * cash from an open drawer. A plain cash sale is refunded in cash as before; a credit (آجل) sale
+ * entirely on account, as before.
+ */
+async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
+  const refund = round2(amount)
+  let toDebt = 0
+  let toCredit = 0
+  if (sale.client_id) {
+    toDebt = round2(Math.min(refund, Math.max(0, Number(sale.on_account_open) || 0)))
+    toCredit = round2(Math.min(refund - toDebt, Math.max(0, Number(sale.credit_open) || 0)))
+  }
+  const cash = round2(refund - toDebt - toCredit)
+  const ledger = (amt, text) =>
+    db.query(
+      `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
+      [sale.client_id, amt, text]
+    )
+  if (toDebt > 0 || toCredit > 0) {
+    await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
+      round2(toDebt + toCredit),
+      sale.client_id
+    ])
+    await db.query(
+      'UPDATE sales SET on_account_open = on_account_open - $1, credit_open = credit_open - $2 WHERE id = $3',
+      [toDebt, toCredit, sale.id]
+    )
+    if (toDebt > 0)
+      await ledger(
+        toDebt,
+        sale.payment_type === 'آجل'
+          ? `${label.debtLegacy} #${sale.id}`
+          : `${label.debt} #${sale.id}`
+      )
+    if (toCredit > 0)
+      await ledger(toCredit, `إعادة رصيد مستخدم في الفاتورة #${sale.id} (${label.what})`)
+  }
+  let shiftId = null
+  if (cash > 0) {
+    shiftId = await refundShift(db, ctx, currentShiftId, sale)
+    await db.query(
+      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
+      [shiftId, cash, label.cash]
+    )
+  }
+  return { refund, cash, toDebt, toCredit, shiftId }
 }
 
 /**
@@ -255,27 +319,13 @@ module.exports = function salesModule(app) {
           'UPDATE sales SET total_amount = GREATEST(0, total_amount - $1) WHERE id = $2',
           [netRefund, sale.id]
         )
-        if (sale.payment_type === 'آجل' && sale.client_id) {
-          await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
-            netRefund,
-            sale.client_id
-          ])
-          await db.query(
-            `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
-            [sale.client_id, netRefund, `إرجاع صنف من فاتورة آجل #${sale.id}`]
-          )
-        }
-        const shiftId = await refundShift(db, ctx, currentShiftId, sale)
-        if (!(sale.payment_type === 'آجل' && sale.client_id)) {
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-            [
-              shiftId,
-              netRefund,
-              `مرتجع صنف ${item.name || item.product_barcode} (${quantity}) للفاتورة #${sale.id}`
-            ]
-          )
-        }
+        const paid = await settleRefund(db, ctx, sale, netRefund, currentShiftId, {
+          what: `مرتجع صنف ${item.name || item.product_barcode}`,
+          debtLegacy: 'إرجاع صنف من فاتورة آجل',
+          debt: 'إرجاع صنف يخصم من المتبقي على العميل في الفاتورة',
+          cash: `مرتجع صنف ${item.name || item.product_barcode} (${quantity}) للفاتورة #${sale.id}`
+        })
+        const shiftId = paid.shiftId
         await recordReturn(db, ctx, {
           saleId: sale.id,
           saleItemId: item.id,
@@ -292,6 +342,8 @@ module.exports = function salesModule(app) {
         )
         return {
           netRefund,
+          cashRefund: paid.cash,
+          toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, sale.id),
           items: await saleItems(db, sale.id)
         }
@@ -322,7 +374,23 @@ module.exports = function salesModule(app) {
         ) {
           throw conflict('تم إرجاع هذه الفاتورة بالكامل من قبل.')
         }
-        const refund = Number(sale.total_amount) || 0
+        // Rule-priced invoices: what is left of the lines' net value. This equals the remaining
+        // total, plus any store balance the customer spent on the invoice – which the total does
+        // not include, and which goes back to the customer's balance (audit 1.4.0). Legacy
+        // invoices keep their remaining total.
+        const refund =
+          Number(sale.pricing_version) === 2
+            ? round2(
+                items.reduce(
+                  (a, i) =>
+                    a +
+                    (Number(i.total_price) || 0) -
+                    (Number(i.line_discount) || 0) -
+                    (Number(i.cart_discount) || 0),
+                  0
+                )
+              )
+            : Number(sale.total_amount) || 0
         const approval = await returnApproval(ctx, db, {
           subjectType: 'sale',
           subjectId: sale.id,
@@ -348,23 +416,13 @@ module.exports = function salesModule(app) {
         )
         // K-40: discount stays as sold; the whole remaining total is refunded.
         await db.query('UPDATE sales SET total_amount = 0 WHERE id = $1', [saleId])
-        if (sale.payment_type === 'آجل' && sale.client_id) {
-          await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
-            refund,
-            sale.client_id
-          ])
-          await db.query(
-            `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
-            [sale.client_id, refund, `إرجاع كامل فاتورة آجل #${saleId}`]
-          )
-        }
-        const shiftId = await refundShift(db, ctx, currentShiftId, sale)
-        if (!(sale.payment_type === 'آجل' && sale.client_id)) {
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-            [shiftId, refund, `مرتجع كامل الفاتورة #${saleId}`]
-          )
-        }
+        const paid = await settleRefund(db, ctx, sale, refund, currentShiftId, {
+          what: 'إرجاع كامل الفاتورة',
+          debtLegacy: 'إرجاع كامل فاتورة آجل',
+          debt: 'إرجاع كامل الفاتورة يخصم من المتبقي على العميل',
+          cash: `مرتجع كامل الفاتورة #${saleId}`
+        })
+        const shiftId = paid.shiftId
         await recordReturn(db, ctx, {
           saleId,
           refund,
@@ -379,6 +437,8 @@ module.exports = function salesModule(app) {
         )
         return {
           refund,
+          cashRefund: paid.cash,
+          toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, saleId),
           items: await saleItems(db, saleId)
         }

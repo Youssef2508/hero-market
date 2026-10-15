@@ -23,7 +23,15 @@ const SETTINGS = {
   store_address: { default: '', type: 'text', max: 120, public: true, optional: true },
   store_phone: { default: '', type: 'text', max: 30, public: true, optional: true },
   store_logo: { default: '', type: 'image', public: true, optional: true },
-  printer_name: { default: 'CITIZEN CT-S300', type: 'text', max: 80, public: true },
+  // A Windows printer name: no quotes, slashes or control characters (it is passed to the
+  // printing script; audit 1.4.0).
+  printer_name: {
+    default: 'CITIZEN CT-S300',
+    type: 'text',
+    max: 80,
+    public: true,
+    pattern: /^[^"'`$;&|<>\p{Cc}]+$/u
+  },
   default_opening_cash: { default: '200', type: 'number', min: 0, max: 1000000, public: true },
   audit_enabled: { default: 'true', type: 'bool', public: true },
   audit_interval_minutes: { default: '60', type: 'number', min: 10, max: 720, public: true },
@@ -49,6 +57,8 @@ function normalise(key, raw) {
       if (!v && !def.optional) throw badRequest('هذا الحقل مطلوب.')
       if (v.length > def.max) throw badRequest(`الحد الأقصى ${def.max} حرفاً.`)
       if (/[|~<>]/.test(v)) throw badRequest('لا يُسمح بالرموز | ~ < > في هذا الحقل.')
+      if (def.pattern && v && !def.pattern.test(v))
+        throw badRequest('الاسم يحتوي على رموز غير مسموح بها (علامات التنصيص أو $ ; &).')
       return v
     case 'number': {
       const n = Number(v)

@@ -271,13 +271,21 @@ test('partially applied batches: a cloud failure mid-batch rolls the batch back;
     failOn = 3 // batches 1 and 2 commit, batch 3 fails inside the cloud transaction
     await assert.rejects(site.agent.runOnce(), /500|crashed|internal/)
     const left = await pendingOutbox(site)
-    assert.equal(left, waiting - 100, 'exactly the two committed batches were acknowledged')
+    assert.ok(left > 0 && left < waiting, 'two batches acknowledged, the rest still waiting')
     const cloudRowsAfter = await count(
       site.cloud.pool,
       'SELECT count(*) AS n FROM cloud_rows WHERE store_id = $1',
       [site.storeId]
     )
-    assert.ok(cloudRowsAfter > cloudRowsBefore && cloudRowsAfter - cloudRowsBefore <= 100)
+    assert.ok(cloudRowsAfter > cloudRowsBefore)
+    assert.ok(cloudRowsAfter - cloudRowsBefore <= waiting - left, 'nothing from the failed batch')
+    // Every local transaction (a sale, a return, a receipt…) is in the cloud entirely or not at all.
+    const split = await q(
+      site.pc.pool,
+      `SELECT tx_id::text FROM sync_outbox GROUP BY tx_id
+        HAVING bool_or(acked_at IS NULL) AND bool_or(acked_at IS NOT NULL)`
+    )
+    assert.deepEqual(split, [], 'no transaction was split between batches')
     failOn = 0
     await syncUntilConverged(site)
     assert.deepEqual(await differences(site), [])
@@ -621,13 +629,17 @@ test('refused commands are recorded once and never retried; unknown types are re
         { barcode: 'SUGAR', qty: -3, unitCost: 25 }
       ]
     })
+    // Half a bag of a product sold by the piece: refused like at the shop.
+    const fractional = await site.command('stock_receipt', {
+      items: [{ barcode: 'RICE', qty: 2.5, unitCost: 20 }]
+    })
     const riceBefore = await stockOf(site, 'RICE')
     await syncUntilConverged(site)
     const rows = await q(
       site.cloud.pool,
       'SELECT id::text, status, result FROM cloud_commands ORDER BY seq'
     )
-    for (const id of [unknownProduct, badType, negative]) {
+    for (const id of [unknownProduct, badType, negative, fractional]) {
       const c = rows.find((r) => r.id === id)
       assert.equal(c.status, 'rejected', id)
       assert.ok(c.result.reason)

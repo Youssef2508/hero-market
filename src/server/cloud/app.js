@@ -207,6 +207,38 @@ async function createCloudService(cfg) {
     return { commands: rows }
   })
 
+  // After a restore on the PC: every row (and deletion) newer than the backup's sync point, oldest
+  // first, so the PC can write back what it lost. Paged by (epoch, version), which is unique.
+  app.post(
+    '/api/sync.recover',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['afterEpoch', 'afterVersion'],
+          properties: {
+            afterEpoch: { type: 'integer', minimum: 0 },
+            afterVersion: { type: 'integer', minimum: 0 },
+            limit: { type: 'integer', minimum: 1, maximum: 5000 }
+          }
+        }
+      }
+    },
+    async (req) => {
+      const s = await store(req)
+      const { afterEpoch, afterVersion, limit = 2000 } = req.body
+      const { rows } = await pool.query(
+        `SELECT table_name AS t, pk AS k, epoch, version, deleted, row_data::text AS r
+           FROM cloud_rows WHERE store_id = $1 AND (epoch, version) > ($2, $3)
+          ORDER BY epoch, version LIMIT $4`,
+        [s.store_id, afterEpoch, afterVersion, limit]
+      )
+      return {
+        rows: rows.map((x) => ({ ...x, version: Number(x.version) }))
+      }
+    }
+  )
+
   app.post('/api/sync.checksums', async (req) => {
     const s = await store(req)
     return {

@@ -28,6 +28,7 @@ import {
   UserCog,
   ScrollText,
   DatabaseBackup,
+  Cloud,
   ShieldCheck,
   BadgePercent,
   Settings
@@ -295,6 +296,15 @@ export const NAV_GROUPS = [
         view: 'admin',
         tab: 'backup',
         description: 'حفظ واستعادة قاعدة البيانات بأمان.'
+      },
+      {
+        id: 'sync',
+        permission: ['sync.manage'],
+        label: 'المزامنة السحابية',
+        icon: Cloud,
+        view: 'admin',
+        tab: 'sync',
+        description: 'ربط المتجر بحساب المالك في السحابة، حالة المزامنة، والاسترجاع.'
       }
     ]
   }

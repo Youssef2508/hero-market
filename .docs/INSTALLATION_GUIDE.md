@@ -52,6 +52,17 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 - **Returns by cashiers:** the cashier presses **مرتجع** on the till, types the invoice number, chooses the item or the whole invoice and writes the reason. A supervisor types their own username and password to approve (or refuse). Everything is recorded.
 - **Closing a shift with a difference above EGP 50** (over or short) also needs a supervisor's username and password.
 
+## 3b. Cloud link (later)
+
+The owner's cloud is not set up yet (it needs your approval of the hosting). When it is:
+
+1. Your cloud account gives you an address, a store number and a device code.
+2. Enter them on **الإدارة → المزامنة السحابية**.
+
+Until then the shop works fully without it.
+
+**If you ever restore a backup on a linked shop**, work pauses on every screen. On the sync screen, press **استرجاع من السحابة**: whatever reached the cloud after that backup comes back, then work continues. If there is no internet, you can choose **تخطي الاسترجاع**, but those later sales then stay only in the cloud.
+
 ## 4. Where the data is
 
 | What                                         | Where                                                                               |

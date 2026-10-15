@@ -15,8 +15,11 @@ const DIFFERENCE_LIMIT = 50
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
-async function loadShift(db, ctx, shiftId, { own = true } = {}) {
-  const { rows } = await db.query('SELECT * FROM shifts WHERE id = $1', [shiftId])
+async function loadShift(db, ctx, shiftId, { own = true, lock = false } = {}) {
+  const { rows } = await db.query(
+    `SELECT * FROM shifts WHERE id = $1${lock ? ' FOR UPDATE' : ''}`,
+    [shiftId]
+  )
   const shift = rows[0]
   if (!shift) throw notFound('الوردية غير موجودة.')
   if (own && shift.user_id !== ctx.user.id && !ctx.can('shifts.view_all')) throw forbidden()
@@ -234,7 +237,8 @@ module.exports = function shiftsModule(app) {
     },
     handler: async (ctx, { shiftId, actualCash, note, approver }) =>
       ctx.tx(async (db) => {
-        const shift = await loadShift(db, ctx, shiftId)
+        // Lock first: money movements wait for the close, then find the shift closed (0011).
+        const shift = await loadShift(db, ctx, shiftId, { lock: true })
         if (shift.status !== 'open') throw conflict('الوردية مغلقة بالفعل.')
         const f = await closeFigures(db, shift)
         const difference = actualCash - f.expected

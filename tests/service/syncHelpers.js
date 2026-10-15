@@ -44,6 +44,10 @@ class FaultyTransport {
     this.guard()
     return this.inner.checksums()
   }
+  async recoverRows(...args) {
+    this.guard()
+    return this.inner.recoverRows(...args)
+  }
   async push(batch) {
     this.guard()
     this.pushes += 1
@@ -84,7 +88,9 @@ const ok = (r) => {
 async function makeSite({ cloudHooks } = {}) {
   const pcDb = await freshDatabase()
   const cloudDb = await freshDatabase()
-  const pc = await startService(pcDb.url)
+  // The service's own agent (sync.* operations) reaches the test cloud through the same transport.
+  const holder = {}
+  const pc = await startService(pcDb.url, { syncTransport: () => holder.transport })
   const cloud = await createCloudService({
     databaseUrl: cloudDb.url,
     logger: false,
@@ -111,6 +117,7 @@ async function makeSite({ cloudHooks } = {}) {
   const storeId = (await pc.pool.query('SELECT store_id FROM sync_state')).rows[0].store_id
   const { token } = await registerStore(cloud.pool, { storeId, name: 'هيرو ماركت' })
   const transport = new FaultyTransport(new InProcessTransport({ app: cloud.app, storeId, token }))
+  holder.transport = transport
   const agent = new SyncAgent({ pool: pc.pool, transport, batchSize: 50 })
 
   const site = {
@@ -127,6 +134,25 @@ async function makeSite({ cloudHooks } = {}) {
     transport,
     agent,
     newAgent: (opts = {}) => new SyncAgent({ pool: pc.pool, transport, batchSize: 50, ...opts }),
+    /** Link the PC to the test cloud through sync.configure (as an administrator would). */
+    link: () =>
+      pc.call(
+        'sync.configure',
+        { cloudUrl: 'http://127.0.0.1:9', storeId, deviceToken: token, enabled: true },
+        owner
+      ),
+    /** Another PC for the same store (a replacement after a disk failure), not yet set up. */
+    async replacementPc() {
+      const db = await freshDatabase()
+      const svc = await startService(db.url, { syncTransport: () => holder.transport })
+      return {
+        pc: svc,
+        async close() {
+          await svc.close()
+          await db.dispose()
+        }
+      }
+    },
     command: (type, payload, id) => createCommand(cloud.pool, storeId, { id, type, payload }),
     sell: (items, paymentType = 'نقدي', extra = {}) =>
       pc.call(

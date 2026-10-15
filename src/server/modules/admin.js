@@ -427,6 +427,8 @@ module.exports = function adminModule(app) {
           'mobile_money_transactions',
           'shifts'
         ]
+        // Clears closed shifts with their money movements on purpose (migration 0011).
+        await db.query("SELECT set_config('hm.bulk_load', 'on', true)")
         for (const t of tables) await db.query(`DELETE FROM ${t}`)
         // Same as clearing sqlite_sequence: ids start again at 1.
         for (const t of tables)

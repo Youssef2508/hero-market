@@ -318,6 +318,7 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Fall back to the cheapest paid VPS, about 4–6 EUR/month.
   - The cloud must be rebuildable from the PC.
 - **Status**:
+  - Official-source cost estimate in [HOSTING_COST_ESTIMATE.md](HOSTING_COST_ESTIMATE.md) (2026-10-15): about $4.2–4.5/month including 14 % VAT (IPv4 $0.005/h is the main cost); Hetzner CX23 €5.99–7.09/month excl. VAT.
   - Nothing created.
   - The owner must approve, and must create the billing account with their own card.
 
@@ -458,3 +459,46 @@ Format: context → decision → reason → consequences (→ alternatives).
   - copying the store tables one-to-one into the cloud (out-of-order rows break foreign keys);
   - a high-water-mark cursor (it skips late commits);
   - sending parsed JSON (it loses numeric precision).
+
+## D-048 Recovery after a restore pauses work; batches never split a local transaction (stage 4 phase 4)
+
+- **Context:** a restored backup lacks what happened after it. Part of that already reached the cloud and can come back. If the shop sells before it comes back, new sales reuse invoice numbers that the cloud already holds for the lost sales.
+- **Decision:**
+  - A backup records its sync point (store, epoch, version).
+  - Restoring a backup on a **linked** store sets `recovery_pending`. The service then refuses every operation except sign-in, `sync.*`, `backup.*` and `settings.public`, with 423 "recovery_pending", and the screens explain why.
+  - The administrator recovers or skips:
+    - **Recover** (`sync.recover`) writes back every row and deletion newer than the point, in one transaction, in foreign-key order, with triggers paused. Users and roles use the allow-list (no password data). Sequences continue after the recovered ids, and stock is re-checked against movements. The next cycle then takes a new epoch.
+    - **Skip** (`sync.skipRecovery`, confirm "SKIP") is logged and deletes nothing in the cloud.
+  - A backup of another store is refused.
+  - An unlinked store never pauses.
+  - Outbox rows record their transaction (`tx_id`), and batches are cut only at transaction boundaries. Only a bulk transaction larger than 4,000 rows is split.
+- **Link settings:**
+  - Stored in `sync_state` (URL, store id, device token, enabled), which is not in backups and never synchronised.
+  - Administrators only (`sync.manage`); HTTPS only, except for localhost.
+  - The token is never returned or logged.
+  - Changing the store after synchronising needs an explicit relink.
+- **Rejected:**
+  - selling during recovery with large id gaps (invoice numbers would jump by millions);
+  - merging both sides after the fact (ambiguous and error-prone).
+
+## D-049 Integrity and security fixes from the 1.4.0 audit (before merging PRs #1–#15)
+
+- **A closed shift is final** (migration 0011).
+  - Sales, drawer rows, expenses and till movements lock their shift and require it open, for every insert, update and delete.
+  - Closing locks the shift before computing its figures.
+  - Before, a sale committing during a close could land on the closed shift, and deleting an expense of a closed shift changed its totals.
+  - Bulk administrative work (restore, legacy import, cloud recovery, system reset) is exempt through `hm.bulk_load` / `hm.ledger_rebuild`.
+- **One open shift per user**, also for simultaneous requests (advisory lock in the trigger).
+- **Refunds go through the customer's account first.** Each invoice keeps what it left on the customer's account (`on_account_open`) and the store balance it consumed (`credit_open`). A return reduces those first; only the rest is cash from an open drawer.
+  - Before, a part-paid invoice was refunded entirely in cash, including the unpaid part.
+  - Before, balance spent on an invoice came back as cash.
+  - Before, a whole-invoice return of a balance-paid invoice returned nothing.
+  - Cash and credit (آجل) invoices refund exactly as before.
+  - A cash refund now needs an open shift (the actor's, or the invoice's own while still open), instead of posting into a closed shift.
+- **The till matches a typed customer by phone** (either number). Without a phone, it matches by name only when the name is unique; otherwise it asks the cashier to choose. Before, "name OR phone" could put a credit sale on another person with the same name.
+- **A supplier with a balance cannot be deleted** (as for customers).
+- **Printing never goes through a command shell:** PowerShell and Typst are started with argument lists. Printer names reject quotes and shell characters, and product names enter Typst as string literals.
+- **Electron:** the renderer is sandboxed, and only the named `window.api` bridge is exposed (the generic `ipcRenderer` bridge of @electron-toolkit is removed).
+- **Access before validation:** sign-in and permissions are checked before the request body is validated, so a caller without access receives 401/403 and no schema details. Credentials are redacted from logs.
+- **Remote stock receipts** follow the shop's quantity rules (whole pieces for count products).
+- **Tests:** `tests/service/integrity.test.js` (10), including real concurrency (a sale and a drawer row waiting on a close; four simultaneous shift openings).

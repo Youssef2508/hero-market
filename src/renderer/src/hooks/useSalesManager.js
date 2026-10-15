@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
+import { refundText } from '../lib/refundText'
 
 export function useSalesManager({
   currentShift,
@@ -69,7 +70,7 @@ export function useSalesManager({
             quantity: qtyToReturn,
             currentShiftId: currentShift && currentShift.id ? currentShift.id : null
           })
-          triggerCustomAlert('تم إرجاع الصنف وتحديث المخزن بنجاح!')
+          triggerCustomAlert(`${refundText(res)} تم تحديث المخزن.`)
           if (fetchAdminData) await fetchAdminData()
           // Reload details to show updated item returned status
           if (res.sale) {
@@ -92,7 +93,7 @@ export function useSalesManager({
             saleId,
             currentShiftId: currentShift && currentShift.id ? currentShift.id : null
           })
-          triggerCustomAlert('تم إلغاء الفاتورة بالكامل وإرجاع كافة الأصناف للمخزن!')
+          triggerCustomAlert(`${refundText(res)} أُعيدت كل الأصناف للمخزن.`)
           if (fetchAdminData) await fetchAdminData()
           if (res.sale) {
             setSelectedSale(res.sale)
