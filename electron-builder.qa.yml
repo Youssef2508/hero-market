@@ -1,0 +1,19 @@
+# QA edition of the installer: identical program, separate identity and folders, so it can be
+# installed and tested on a PC that also runs the store's real HeroMarket without upgrading,
+# opening or importing the real installation or data.
+#   npx electron-builder --win --config electron-builder.qa.yml
+extends: ./electron-builder.yml
+appId: com.heromarket.pos.qa
+productName: HeroMarket POS QA
+extraMetadata:
+  # Own package name → own program folder (%LOCALAPPDATA%Programsheromarket-pos-qa).
+  name: heromarket-pos-qa
+  heromarket:
+    dataDir: HeroMarket-QA
+    legacyDir: HeroMarket-QA-legacy
+nsis:
+  artifactName: HeroMarket-QA-Setup-${version}.${ext}
+  shortcutName: "HeroMarket POS QA"
+  uninstallDisplayName: "HeroMarket POS QA"
+win:
+  executableName: HeroMarket-POS-QA
