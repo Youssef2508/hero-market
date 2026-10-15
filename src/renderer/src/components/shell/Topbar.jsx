@@ -129,7 +129,10 @@ export default function Topbar({
           title={now.toLocaleDateString('ar-EG', { dateStyle: 'full' })}
         >
           <span>{now.toLocaleDateString('en-GB')}</span>
-          <strong>{formatClock(now)}</strong>
+          <strong>
+            {/* Left-to-right, or the RTL layout shows "AM 04:52" */}
+            <bdi dir="ltr">{formatClock(now)}</bdi>
+          </strong>
         </div>
 
         {!canShift ? null : hasShift ? (

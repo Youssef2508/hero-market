@@ -35,6 +35,15 @@ export function splitStamp(value, { seconds = false } = {}) {
   return { date: m[1], time: to12h(m[2], m[3], seconds ? (m[4] ?? '00') : undefined) }
 }
 
+/**
+ * For plain-text output that may be laid out right-to-left (receipts, printed reports): a leading
+ * LEFT-TO-RIGHT MARK keeps "03:45 PM" in order instead of "PM 03:45".
+ */
+export const LRM = '\u200E'
+export function ltrText(text) {
+  return text ? `${LRM}${text}` : text
+}
+
 /** A stored local date-time as one string: "2026-10-15 03:45 PM". */
 export function formatStamp(value, opts) {
   const { date, time } = splitStamp(value, opts)

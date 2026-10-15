@@ -3,7 +3,7 @@ import { normalizeDigits, playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 import { receiptQty } from '../lib/weight'
-import { formatClock } from '../lib/time'
+import { formatClock, ltrText } from '../lib/time'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
@@ -509,7 +509,7 @@ export function usePOSController({
       playSound('chime')
 
       const datePart = new Date().toLocaleDateString('ar-EG')
-      const timePart = formatClock(new Date())
+      const timePart = ltrText(formatClock(new Date()))
       const paidShown = paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal
 
       if (!noPrint && window.api && window.api.printer && window.api.printer.printSale) {
@@ -639,7 +639,7 @@ export function usePOSController({
         saleId: displaySaleId,
         banner: total === 0 ? '*** فاتورة مرتجعة بالكامل ***' : '*** نسخة معاد طباعتها ***',
         date: when ? when.toLocaleDateString('ar-EG') : '',
-        time: when ? formatClock(when) : '',
+        time: when ? ltrText(formatClock(when)) : '',
         cashier: s.username,
         paymentType: s.payment_type || 'نقدي',
         client: { name: s.client_name || '' },

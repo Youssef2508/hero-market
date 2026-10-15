@@ -5,7 +5,8 @@ import {
   formatClock,
   formatHour,
   splitStamp,
-  formatStamp
+  formatStamp,
+  ltrText
 } from '../../src/renderer/src/lib/time.js'
 
 test('12-hour clock: midnight, morning, noon, afternoon, last minute of the day', () => {
@@ -50,4 +51,9 @@ test('stored timestamps keep their date; only the display of the time changes', 
   // Dates without a time and unknown text are shown as they are.
   assert.equal(formatStamp('2026-11-01'), '2026-11-01')
   assert.equal(formatStamp(''), '')
+})
+
+test('plain-text times carry a left-to-right mark so RTL receipts keep "03:45 PM" in order', () => {
+  assert.equal(ltrText('03:45 PM'), '‎03:45 PM')
+  assert.equal(ltrText(''), '')
 })

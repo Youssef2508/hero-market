@@ -12,7 +12,11 @@ function Stamp({ value }) {
   return (
     <>
       <span className="nowrap">{date}</span>
-      {time && <span className="cell-sub">{time}</span>}
+      {time && (
+        <span className="cell-sub">
+          <bdi dir="ltr">{time}</bdi>
+        </span>
+      )}
     </>
   )
 }
