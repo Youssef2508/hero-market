@@ -14,7 +14,8 @@ import { join } from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import os from 'os'
-import { ensureLocalDatabase, stopLocalDatabase, localUrl } from './localDatabase'
+import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
+import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
 import { legacyDatabaseFile } from './userDataPath'
 import { verifyPinnedChain } from './tlsPin'
 
@@ -236,6 +237,53 @@ async function importLegacyIfPresent(databaseUrl) {
   }
 }
 
+/**
+ * Before a new version migrates the store's database: stop PostgreSQL, copy and verify the whole
+ * data folder (upgradeSnapshot.js), start it again. Any failure stops the start-up before a single
+ * migration runs. A brand-new database (nothing applied yet) needs no snapshot.
+ */
+async function snapshotBeforeUpgrade(local, persist) {
+  const { listMigrations } = nodeRequire(join(serverDir(), 'db', 'migrate.js'))
+  const all = listMigrations().map((m) => m.version)
+  const pg = nodeRequire('pg')
+  const client = new pg.Client({ connectionString: localUrl(local) })
+  let applied = []
+  await client.connect()
+  try {
+    const has = await client.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS ok")
+    if (has.rows[0].ok)
+      applied = (
+        await client.query('SELECT version FROM schema_migrations ORDER BY version')
+      ).rows.map((r) => r.version)
+  } finally {
+    await client.end()
+  }
+  if (!needsSnapshot(applied, all)) return null
+  stage = 'backup'
+  const dir = join(app.getPath('userData'), 'backups', 'pre-upgrade')
+  let target = null
+  let failure = null
+  await stopLocalDatabase(local)
+  try {
+    target = snapshotDataDir(
+      localDataDir(local),
+      dir,
+      `app-${app.getVersion()}-db-${applied[applied.length - 1]}-to-${all[all.length - 1]}`
+    )
+    pruneSnapshots(dir)
+    console.log('[backend] pre-upgrade snapshot verified:', target)
+  } catch (e) {
+    failure = e
+  }
+  // Start the database again either way; on failure the start-up stops before migrating.
+  await ensureLocalDatabase(local, persist)
+  if (failure)
+    throw new Error(
+      `تعذر أخذ نسخة احتياطية من قاعدة البيانات قبل تحديثها، لذلك لم يتم التحديث ولم تتغير بياناتك. حرّر مساحة على القرص ثم أعد تشغيل البرنامج. (${failure.message})`
+    )
+  return target
+}
+
 async function doStart() {
   lastError = null
   let cfg = readConfig()
@@ -264,6 +312,9 @@ async function doStart() {
       if (!fs.existsSync(configFile())) cfg = writeConfig({ ...cfg, local })
       localStarted = local
       const databaseUrl = localUrl(local)
+      await snapshotBeforeUpgrade(local, (value) => {
+        cfg = writeConfig({ ...cfg, local: value })
+      })
       await importLegacyIfPresent(databaseUrl)
       stage = 'service'
       backend = await startStandalone({ ...cfg, databaseUrl })

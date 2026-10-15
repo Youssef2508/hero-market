@@ -217,6 +217,11 @@ export async function ensureLocalDatabase(local, persist) {
   return cfg
 }
 
+/** The data folder of the cluster described by `local`. */
+export function localDataDir(local) {
+  return paths(local.dir || chooseBaseDir()).data
+}
+
 /** Stop the cluster described by `local` (the value ensureLocalDatabase returned). */
 export async function stopLocalDatabase(local) {
   if (!local) return
