@@ -24,6 +24,14 @@ function createPool(connectionString, opts = {}) {
   pool.on('error', (err) => {
     if (opts.logger) opts.logger.error({ err }, 'idle PostgreSQL client error')
   })
+  // A connection dropped while checked out (PostgreSQL restarted, connection killed) reports the
+  // error on the client itself. Without a listener Node treats it as an uncaught exception and the
+  // whole app would stop; the running query fails on its own and its transaction rolls back.
+  pool.on('connect', (client) => {
+    client.on('error', (err) => {
+      if (opts.logger) opts.logger.warn({ err }, 'PostgreSQL connection lost')
+    })
+  })
   return pool
 }
 
