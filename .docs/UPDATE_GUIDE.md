@@ -145,4 +145,5 @@ Previous version can open the database after this update: yes (A) / no (B: resto
   | `--restore-pre-install` with the 1.4.0 program  | The right copy (1.4.0 data) put back; every record; the program opens                                                                                    |
   | Case B with a failing migration (1.4.1-test.2)  | Exit 3; the data identical to before; history "restored" with the reason; the program refuses until fixed; the previous installer brings everything back |
 
-- **Not tested:** an update on the supermarket's real PC (that happens with the first real release).
+- **Tested on the owner's laptop (2026-10-16):** a Case A update of 1.4.0 over an earlier 1.4.0 build. A verified copy was taken first; every record was identical before and after; the history said "ok".
+- **Not tested:** an update on the supermarket's real PC (that happens with the first real release), and a Case B update on a real PC.
