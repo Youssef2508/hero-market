@@ -6,7 +6,7 @@
 // and stopped. Starting tools by name from the elevated setup would also let any program placed
 // earlier on PATH run with administrator rights. Every Windows tool is therefore started from
 // %SystemRoot%\System32, never by name. (No Electron imports: tests use this module directly.)
-import { join } from 'path'
+import { win32 } from 'path'
 
 function systemRoot() {
   return process.env.SystemRoot || process.env.windir || 'C:\\Windows'
@@ -15,10 +15,10 @@ function systemRoot() {
 /** Full path of a tool in %SystemRoot%\System32, e.g. systemTool('sc.exe'). */
 export function systemTool(name) {
   if (!/^[\w.-]+\.exe$/i.test(name)) throw new Error(`Invalid tool name: ${name}`)
-  return join(systemRoot(), 'System32', name)
+  return win32.join(systemRoot(), 'System32', name)
 }
 
 /** Windows PowerShell 5.1, the one every Windows 10/11 has. */
 export function powershellExe() {
-  return join(systemRoot(), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  return win32.join(systemRoot(), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 }

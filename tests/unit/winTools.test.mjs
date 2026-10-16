@@ -13,8 +13,8 @@ const onWindows = process.platform === 'win32'
 
 test('Windows tools are always taken from System32, never looked up on PATH', () => {
   const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows'
-  assert.equal(systemTool('whoami.exe'), path.join(root, 'System32', 'whoami.exe'))
-  assert.equal(systemTool('sc.exe'), path.join(root, 'System32', 'sc.exe'))
+  assert.equal(systemTool('whoami.exe'), path.win32.join(root, 'System32', 'whoami.exe'))
+  assert.equal(systemTool('sc.exe'), path.win32.join(root, 'System32', 'sc.exe'))
   assert.match(powershellExe(), /WindowsPowerShell\\v1\.0\\powershell\.exe$/)
   assert.throws(() => systemTool('..\\evil.exe'))
   assert.throws(() => systemTool('whoami'), 'a bare name without .exe is refused')
