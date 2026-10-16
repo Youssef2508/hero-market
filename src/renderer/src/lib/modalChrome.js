@@ -18,7 +18,10 @@ let asking = false
 function closerOf(overlay) {
   const content = overlay.querySelector(':scope > .modal-content')
   if (!content) return null
-  const button = content.querySelector('[data-modal-close]')
+  // The window's own button, not one of a window opened inside it.
+  const button = [...content.querySelectorAll('[data-modal-close]')].find(
+    (b) => b.closest('.modal-overlay') === overlay
+  )
   return button ? { content, button } : null
 }
 

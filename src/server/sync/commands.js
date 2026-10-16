@@ -17,7 +17,7 @@
 // stays pending.
 const { ServiceError } = require('../errors')
 const { receiveStock } = require('../inventory/stock')
-const { round4, toBaseQty } = require('../inventory/units')
+const { round4, toBaseQty, kindRule } = require('../inventory/units')
 const { helpers: finance } = require('../modules/finance')
 
 const OWNER = 'المالك (عن بعد)'
@@ -153,7 +153,7 @@ const HANDLERS = {
         ])
       ).rows[0]
       if (!product) throw new Rejected(`الصنف (${i.barcode}) غير مسجل على جهاز المتجر.`)
-      const { baseQty } = toBaseQty(product.unit_kind || 'count', qty, 1, product.name)
+      const { baseQty } = toBaseQty(await kindRule(db, product.unit_kind), qty, 1, product.name)
       const mv = await receiveStock(db, ctx, {
         barcode: String(i.barcode),
         qty: baseQty,

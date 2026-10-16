@@ -1,5 +1,6 @@
 import { PackagePlus } from 'lucide-react'
 import CategorySelect from './CategorySelect'
+import KindSelect from './KindSelect'
 
 const AddProductModal = ({
   showAddModal,
@@ -161,15 +162,10 @@ const AddProductModal = ({
             </div>
             <div className="form-group">
               <label>طريقة القياس (الوحدة الأساسية للمخزون)</label>
-              <select
-                className="form-input"
+              <KindSelect
                 value={newProduct.unit_kind || 'count'}
-                onChange={(e) => setNewProduct((prev) => ({ ...prev, unit_kind: e.target.value }))}
-              >
-                <option value="count">بالعدد (قطعة، علبة… أعداد صحيحة)</option>
-                <option value="weight">بالوزن (كيلوجرام، 3 خانات عشرية)</option>
-                <option value="volume">بالحجم (لتر، 3 خانات عشرية)</option>
-              </select>
+                onChange={(kind) => setNewProduct((prev) => ({ ...prev, unit_kind: kind }))}
+              />
             </div>
             <div className="form-group">
               <label htmlFor="add-product-category">التصنيف</label>

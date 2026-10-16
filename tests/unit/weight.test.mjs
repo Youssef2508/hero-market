@@ -55,3 +55,23 @@ test('a printed receipt shows 0.250 كجم of bramili cheese at 240 = 60.00', ()
   assert.match(row, /0\.250 كجم/)
   assert.match(row, /60\.00/)
 })
+
+test('receipt quantity for kinds the owner adds: their decimals and unit (migration 0014)', () => {
+  assert.equal(
+    receiptQty(1.5, {
+      kind: 'custom_1',
+      unitId: null,
+      unitName: 'متر',
+      decimals: 2,
+      kindUnit: 'متر'
+    }),
+    '1.50 متر'
+  )
+  assert.equal(
+    receiptQty(2, { kind: 'custom_1', unitId: null, decimals: 1, kindUnit: 'م' }),
+    '2.0 م'
+  )
+  // Whole-number kinds and packaging lines print the plain quantity, as before.
+  assert.equal(receiptQty(3, { kind: 'custom_2', unitId: null, decimals: 0, kindUnit: 'دستة' }), 3)
+  assert.equal(receiptQty(2, { kind: 'custom_1', unitId: 7, decimals: 2, kindUnit: 'متر' }), 2)
+})

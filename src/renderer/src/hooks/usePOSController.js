@@ -3,6 +3,7 @@ import { playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 import { receiptQty } from '../lib/weight'
+import { kindInfo } from '../lib/measureKinds'
 import { formatClock, ltrText } from '../lib/time'
 
 /**
@@ -558,7 +559,11 @@ export function usePOSController({
                 name: item.unitId ? `${item.name || 'صنف'} (${item.unitName})` : item.name || 'صنف',
                 barcode: item.barcode,
                 // Weighed lines print their weight with the unit (e.g. 0.250 كجم).
-                qty: receiptQty(item.qty, item),
+                qty: receiptQty(item.qty, {
+                  ...item,
+                  decimals: kindInfo(item.kind).decimals,
+                  kindUnit: kindInfo(item.kind).unit
+                }),
                 price: item.price,
                 total: item.total
               })),
@@ -680,7 +685,9 @@ export function usePOSController({
           qty: receiptQty(isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty, {
             kind: item.unit_kind,
             unitId: item.unit_id,
-            unitName: item.unit_name
+            unitName: item.unit_name,
+            decimals: kindInfo(item.unit_kind).decimals,
+            kindUnit: kindInfo(item.unit_kind).unit
           }),
           price: Number(item.unit_price) || 0,
           total: Number(item.total_price) || 0

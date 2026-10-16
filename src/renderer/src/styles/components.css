@@ -1569,3 +1569,19 @@ input[data-computed='true'] {
 .shift-roles .check-row.is-disabled {
   color: var(--text-3);
 }
+
+/* Measurement kinds (1.4.0) */
+.kind-select {
+  align-items: stretch;
+}
+.kind-select select {
+  flex: 1;
+  min-width: 0;
+}
+.measure-kinds-table tr.is-muted td {
+  color: var(--text-3);
+}
+.measure-kinds-table .row-actions {
+  white-space: nowrap;
+  text-align: end;
+}

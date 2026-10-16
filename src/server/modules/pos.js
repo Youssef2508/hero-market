@@ -13,6 +13,7 @@ const {
   unitPrice,
   loadUnit,
   toBaseQty,
+  kindRule,
   parseScaleLabel,
   round3,
   round4
@@ -54,7 +55,7 @@ async function buildLines(db, items, products) {
       })
     const unit = await loadUnit(db, p, i.unitId, { purpose: 'sell' })
     const label = unit.id === null ? p.name : `${p.name} – ${unit.name}`
-    const { qty, baseQty } = toBaseQty(p.unit_kind || 'count', i.qty, unit.factor, label)
+    const { qty, baseQty } = toBaseQty(await kindRule(db, p.unit_kind), i.qty, unit.factor, label)
     const price = unitPrice(p, unit)
     if (i.unitPrice !== undefined && Math.abs(Number(i.unitPrice) - price) > 0.0001) {
       throw conflict(

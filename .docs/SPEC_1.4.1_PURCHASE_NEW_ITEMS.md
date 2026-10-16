@@ -16,14 +16,14 @@ A barcode that is not registered is refused ("الصنف غير مسجل").
 
 ## Owner decisions
 
-| Question | Decision |
-| --- | --- |
-| Selling price of an item created from a purchase | **Required** in the quick panel. A warning appears if it is below the purchase cost. The item can be sold right away. |
-| Item without a barcode | **An internal code is generated** (unique). It is found by name (F2) or category (F6), and a barcode can be added later. |
-| Who may create items from a purchase | **Only users who may add items.** Recording purchases alone does not show the option, and the server refuses it. |
-| Category | **Optional**, chosen in the same panel. Without one, the item is under "بدون تصنيف". |
-| Invoice photo | **The supplier's invoice can be attached** as a photo or scan (JPEG, PNG or PDF) and viewed later from the purchase. |
-| Version | **1.4.1** |
+| Question                                         | Decision                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Selling price of an item created from a purchase | **Required** in the quick panel. A warning appears if it is below the purchase cost. The item can be sold right away.    |
+| Item without a barcode                           | **An internal code is generated** (unique). It is found by name (F2) or category (F6), and a barcode can be added later. |
+| Who may create items from a purchase             | **Only users who may add items.** Recording purchases alone does not show the option, and the server refuses it.         |
+| Category                                         | **Optional**, chosen in the same panel. Without one, the item is under "بدون تصنيف".                                     |
+| Invoice photo                                    | **The supplier's invoice can be attached** as a photo or scan (JPEG, PNG or PDF) and viewed later from the purchase.     |
+| Version                                          | **1.4.1**                                                                                                                |
 
 ## Behaviour to build
 

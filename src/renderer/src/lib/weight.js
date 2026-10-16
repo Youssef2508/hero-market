@@ -24,10 +24,15 @@ export function parseWeight(text, unit = 'g') {
   return { kg, error: '' }
 }
 
-/** Quantity text for receipts: weighed base-unit lines print as "0.250 كجم". */
-export function receiptQty(qty, { kind, unitId, unitName } = {}) {
+/**
+ * Quantity text for receipts: weighed base-unit lines print as "0.250 كجم". A kind the owner added
+ * with decimals (`decimals`, `kindUnit`; migration 0014) prints the same way, e.g. "1.50 متر".
+ */
+export function receiptQty(qty, { kind, unitId, unitName, decimals, kindUnit } = {}) {
   const q = Number(qty)
   if (kind === 'weight' && !unitId) return `${q.toFixed(3)} ${unitName || 'كجم'}`
   if (kind === 'volume' && !unitId) return `${q.toFixed(3)} ${unitName || 'لتر'}`
+  if (!unitId && kind && kind !== 'count' && decimals > 0)
+    return `${q.toFixed(decimals)} ${unitName || kindUnit || ''}`.trim()
   return q
 }

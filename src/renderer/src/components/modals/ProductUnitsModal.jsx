@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Boxes, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import { kindInfo } from '../../lib/measureKinds'
 
 const splitCodes = (text) =>
   String(text || '')
@@ -24,6 +25,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const kind = product?.unit_kind || 'count'
+  const decimals = kindInfo(kind).decimals
 
   useEffect(() => {
     if (!product) return
@@ -111,7 +113,9 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
           </label>
 
           <p className="cell-muted">
-            {KIND_HINT[kind]} السعر الفارغ = سعر الوحدة الأساسية × المعامل.
+            {KIND_HINT[kind] ||
+              `المعامل بال${kindInfo(kind).unit || 'وحدة الأساسية'} (${decimals === 0 ? 'عدد صحيح' : `حتى ${decimals} خانات عشرية`}).`}{' '}
+            السعر الفارغ = سعر الوحدة الأساسية × المعامل.
           </p>
 
           {units === null ? (
@@ -153,8 +157,8 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           type="number"
                           className="input num"
                           required
-                          min={kind === 'count' ? 2 : 0.001}
-                          step={kind === 'count' ? 1 : 0.001}
+                          min={decimals === 0 ? 2 : 10 ** -decimals}
+                          step={decimals === 0 ? 1 : 10 ** -decimals}
                           value={u.factor}
                           onChange={(e) => update(i, { factor: e.target.value })}
                           aria-label={`معامل ${u.name}`}

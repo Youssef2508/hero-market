@@ -4,6 +4,7 @@ import packageInfo from '../../../package.json'
 
 import { playSound } from './lib/utils'
 import { api, can } from './lib/api'
+import { loadMeasureKinds } from './lib/measureKinds'
 import { canAccessAdmin } from './components/shell/navigation'
 import StartupGate from './components/setup/StartupGate'
 
@@ -518,6 +519,7 @@ function App() {
   // Data the shell needs right after a login (previously loaded at mount, before login).
   const onLoggedIn = (user) => {
     loadAppSettings()
+    loadMeasureKinds()
     api('sync.state')
       .then((r) => setRecoveryPending(!!r.recoveryPending))
       .catch(() => {})

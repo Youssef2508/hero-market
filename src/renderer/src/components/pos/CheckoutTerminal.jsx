@@ -33,6 +33,7 @@ import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
+import { kindInfo } from '../../lib/measureKinds'
 
 // Payment types are business values written to sales.payment_type – do not rename.
 const PAYMENT_METHODS = [
@@ -335,8 +336,8 @@ function CheckoutTerminal({
     barcodeInputRef.current?.focus()
   }
 
-  // Weighed lines step by 100 g; pieces and packages by one.
-  const stepOf = (item) => (item.kind !== 'count' && !item.unitId ? 0.1 : 1)
+  // Weighed lines step by 100 g (kinds with decimals by 0.1); pieces and packages by one.
+  const stepOf = (item) => (kindInfo(item.kind).decimals > 0 && !item.unitId ? 0.1 : 1)
   const stepQty = (item, delta) => {
     const next = Math.round((item.qty + delta * stepOf(item)) * 1000) / 1000
     if (next > 0) handleQtyChangeAttempt(item.key, String(next))
@@ -373,11 +374,20 @@ function CheckoutTerminal({
     .reduce((s, i) => s + baseOf(i), 0)
   const kgCount = cart.filter((i) => i.kind === 'weight').reduce((s, i) => s + baseOf(i), 0)
   const literCount = cart.filter((i) => i.kind === 'volume').reduce((s, i) => s + baseOf(i), 0)
+  // Kinds the owner added (metres…): one total per kind, in its own unit.
+  const otherKinds = [...new Set(cart.map((i) => i.kind || 'count'))].filter(
+    (k) => !['count', 'weight', 'volume'].includes(k)
+  )
   const cartSummary = [
     `${itemCount} صنف`,
     pieceCount ? `${Math.round(pieceCount)} قطعة` : null,
     kgCount ? `${(Math.round(kgCount * 1000) / 1000).toFixed(3)} كجم` : null,
-    literCount ? `${(Math.round(literCount * 1000) / 1000).toFixed(3)} لتر` : null
+    literCount ? `${(Math.round(literCount * 1000) / 1000).toFixed(3)} لتر` : null,
+    ...otherKinds.map((k) => {
+      const info = kindInfo(k)
+      const sum = cart.filter((i) => i.kind === k).reduce((s, i) => s + baseOf(i), 0)
+      return sum ? `${sum.toFixed(info.decimals)} ${info.unit}` : null
+    })
   ]
     .filter(Boolean)
     .join(' · ')

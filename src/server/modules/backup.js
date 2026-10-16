@@ -13,6 +13,7 @@ const TABLES = [
   'permission_catalog',
   'users',
   'categories',
+  'measure_kinds',
   'products',
   'product_units',
   'product_barcodes',

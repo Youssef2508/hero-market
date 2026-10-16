@@ -585,3 +585,21 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Those refusals now carry the code `shift_required`. The till then offers the open-shift window, with the reason and a "لاحقاً" button. A sale is completed automatically once the shift is open.
 - **Limit:** the "must open a shift" rule is enforced by the till, as before 1.4.0. The service does not refuse other work from a required user without a shift. Making it refuse would need a list of every operation that counts as "using the system", and was not asked for.
 - **Rejected:** a single on/off switch for everyone. The owner asked to choose per role.
+
+## D-055 Measurement kinds the owner adds (1.4.0, migration 0014)
+
+- **Why:** the owner wants more than بالعدد, بالوزن and بالحجم, for example بالمتر.
+- **Model:**
+  - Table `measure_kinds` holds a key, name, unit, decimals (0–3), whether it is built-in, whether it is active, and the order.
+  - `products.unit_kind` references it. It replaces the fixed list (0005's CHECK).
+  - The table is synced and backed up like the catalogue.
+- **Rules:**
+  - A product's base quantities follow its kind's decimals in every place stock is counted: sales, purchases, returns, damaged goods, receipts from the cloud, opening and adjusted stock, and packaging factors (`kindRule`, `src/server/inventory/units.js`).
+  - The built-in kinds keep their rules and messages.
+  - Weighing (scale labels, the grams window) stays specific to `weight`. Other kinds with decimals get a plain quantity window in their unit.
+- **Protection:**
+  - Built-in kinds cannot be changed.
+  - A kind's decimals can only be raised while products use it.
+  - A kind in use is stopped, not deleted. A stopped kind is not offered for new products; products that have it keep it.
+  - Switching a product to fewer decimals needs its stock and factors to fit.
+- **Version:** in 1.4.0 at the owner's request. It makes the 1.4.0 update from earlier 1.4.0 builds Case B; the installer's checks apply.

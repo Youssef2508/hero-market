@@ -31,6 +31,14 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 - **التصنيفات** screen (stock section): create, rename, reorder, stop and delete (empty only) categories, and move products between them.
 - **Product form:** choose the category, and stop a product from being sold (it disappears from the till without deleting its history).
 - **Customer form:** up to three addresses (home, work, other), one of them the default.
+- **Measurement kinds (طرق القياس):**
+  - Besides بالعدد, بالوزن and بالحجم, the owner can add his own, for example **بالمتر**. He chooses its name, the unit shown with quantities and on receipts (متر), and how many decimals a quantity may have: whole numbers only, 1, 2 or 3.
+  - Products of that kind follow its decimals everywhere: the till, stock, purchases, returns, damaged goods and packaging units.
+  - At the till it asks for the quantity in that unit, and the receipt prints it, e.g. "1.25 متر".
+  - Open it from الأصناف والمخزن → **طرق القياس**, or from the product form, next to طريقة القياس.
+  - The three built-in kinds cannot be changed.
+  - A kind in use can gain decimals but not lose them, and is stopped rather than deleted.
+  - Products sold by the litre now get a quantity window in litres; before, it asked for grams.
 - **Purchase invoice:** the item field is a **search list of every product**. Type part of a name or barcode to filter; scroll for more; click a product (or ↑/↓ and Enter) to add its line. A scanner still works: barcode, then Enter.
   - Products already on the invoice are marked "مضاف".
   - Creating a new product from the invoice is planned for 1.4.1 (SPEC_1.4.1_PURCHASE_NEW_ITEMS.md).
@@ -60,7 +68,7 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 
 ## Update case of this release
 
-**Case B (database change).** It applies migrations 0011–0013 over a 1.3.x installation; the 1.3 data is imported from its own file, which is never changed. The 1.3 program cannot use the new database, and does not need to: its own SQLite file is left as it was. To go back to 1.3, reinstall 1.3; it still finds its own data, **without** anything recorded in 1.4.0 since the upgrade.
+**Case B (database change).** Migration 0014 (measurement kinds) is new since the earlier 1.4.0 builds. Installed over one of them, for example on the owner's laptop, the installer applies 0014 and checks every record. Over a 1.3.x installation it applies migrations 0011–0014; the 1.3 data is imported from its own file, which is never changed. The 1.3 program cannot use the new database, and does not need to: its own SQLite file is left as it was. To go back to 1.3, reinstall 1.3; it still finds its own data, **without** anything recorded in 1.4.0 since the upgrade.
 
 ## Printing
 

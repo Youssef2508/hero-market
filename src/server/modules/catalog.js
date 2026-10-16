@@ -1,7 +1,7 @@
 'use strict'
 // Products (useProductsManager), reorder data (ReorderingTab), product lookup for damaged goods.
 const { badRequest, conflict, notFound } = require('../errors')
-const { validateFactor, round3 } = require('../inventory/units')
+const { validateFactor, kindRule, checkStockValue } = require('../inventory/units')
 const { postMovement, adjustTo, verifyLedger } = require('../inventory/stock')
 
 const PER_PAGE = 12
@@ -32,8 +32,9 @@ const productSchema = {
     stock_base: { type: ['number', 'null'] },
     reorder_limit: { type: 'number', minimum: 0 },
     unit: { type: 'string', maxLength: 40 },
-    // How the base unit is measured: count (whole pieces), weight (kg, 3 decimals), volume (l, 3 decimals)
-    unit_kind: { type: 'string', enum: ['count', 'weight', 'volume'] },
+    // How the base unit is measured: count (whole pieces), weight (kg, 3 decimals), volume (l, 3
+    // decimals), or a kind the owner added (measure_kinds, migration 0014).
+    unit_kind: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,39}$' },
     // Primary category (categories.id); null = uncategorised. Omitted on update = unchanged.
     category_id: { type: ['integer', 'null'] },
     // false = stopped from sale (hidden from search and browsing, refused at checkout).
@@ -54,14 +55,14 @@ async function categoryRef(db, id) {
   return { id: c.id, name: c.name }
 }
 
-/** A stock value (target or opening) must fit the product kind; negative values are allowed. */
-function checkStockValue(kind, value) {
-  const v = Number(value)
-  if (!Number.isFinite(v)) throw badRequest('كمية غير صالحة.')
-  if (kind === 'count' && Math.abs(v - Math.round(v)) > 1e-9)
-    throw badRequest('صنف يباع بالعدد: الكمية يجب أن تكون عدداً صحيحاً.')
-  if (kind !== 'count' && Math.abs(v - round3(v)) > 1e-9)
-    throw badRequest('الكمية تقبل ثلاث خانات عشرية على الأكثر.')
+/** A kind a product may be given now: it must exist and not be stopped. */
+async function assignableKind(db, key) {
+  const k = (
+    await db.query('SELECT key, name, decimals, is_active FROM measure_kinds WHERE key = $1', [key])
+  ).rows[0]
+  if (!k) throw badRequest('طريقة القياس غير معروفة.')
+  if (!k.is_active) throw badRequest(`طريقة القياس "${k.name}" موقوفة؛ فعّلها أولاً أو اختر غيرها.`)
+  return { key: k.key, decimals: Number(k.decimals) }
 }
 
 module.exports = function catalogModule(app) {
@@ -133,8 +134,9 @@ module.exports = function catalogModule(app) {
     handler: async (ctx, p) =>
       ctx.tx(async (db) => {
         const barcode = p.barcode.trim()
-        const kind = p.unit_kind || 'count'
-        if (Number(p.stock_qty)) checkStockValue(kind, p.stock_qty)
+        const rule = await assignableKind(db, p.unit_kind || 'count')
+        const kind = rule.key
+        if (Number(p.stock_qty)) checkStockValue(rule, p.stock_qty)
         const category = await categoryRef(db, p.category_id)
         await db.query(
           `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
@@ -177,19 +179,24 @@ module.exports = function catalogModule(app) {
         ).rows[0]
         if (!before) throw notFound('الصنف غير موجود.')
         const kind = p.unit_kind || before.unit_kind || 'count'
-        if (kind !== before.unit_kind && kind === 'count') {
-          // Switching to whole pieces: today's stock and every unit factor must be whole numbers.
-          checkStockValue('count', before.stock_qty || 0)
+        const rule =
+          kind === before.unit_kind ? await kindRule(db, kind) : await assignableKind(db, kind)
+        const was = await kindRule(db, before.unit_kind)
+        if (kind !== before.unit_kind && rule.decimals < was.decimals) {
+          // Fewer decimals (e.g. to whole pieces): today's stock and every unit factor must fit.
+          checkStockValue(rule, before.stock_qty || 0)
           const frac = await db.query(
-            'SELECT name FROM product_units WHERE product_barcode = $1 AND is_active AND factor <> trunc(factor) LIMIT 1',
-            [p.barcode]
+            'SELECT name FROM product_units WHERE product_barcode = $1 AND is_active AND factor <> round(factor, $2) LIMIT 1',
+            [p.barcode, rule.decimals]
           )
           if (frac.rowCount)
             throw badRequest(
-              `الوحدة "${frac.rows[0].name}" معاملها كسري؛ عدّلها قبل تحويل الصنف للبيع بالعدد.`
+              rule.decimals === 0
+                ? `الوحدة "${frac.rows[0].name}" معاملها كسري؛ عدّلها قبل تحويل الصنف للبيع بالعدد.`
+                : `معامل الوحدة "${frac.rows[0].name}" به كسور أكثر مما تسمح به طريقة القياس الجديدة؛ عدّله أولاً.`
             )
         }
-        if (p.stock_qty !== undefined && p.stock_qty !== null) checkStockValue(kind, p.stock_qty)
+        if (p.stock_qty !== undefined && p.stock_qty !== null) checkStockValue(rule, p.stock_qty)
         // Category and active status change only when the form sends them (older forms do not).
         const category =
           p.category_id === undefined
@@ -410,7 +417,7 @@ module.exports.registerInventory = function inventoryOperations(app) {
           await db.query('SELECT * FROM products WHERE barcode = $1 FOR UPDATE', [b.barcode])
         ).rows[0]
         if (!product) throw notFound('الصنف غير موجود.')
-        const kind = product.unit_kind || 'count'
+        const kind = await kindRule(db, product.unit_kind)
         const names = new Set()
         const codes = new Set()
         const addCode = (c) => {
