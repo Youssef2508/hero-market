@@ -12,6 +12,7 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 - **"بدون تصنيف"** is always the last entry: every product without a category is there automatically.
 - **Saved phones and addresses.** Choose a customer and their saved numbers (up to two) and addresses (up to three) appear in lists. Pick one instead of typing it again, or choose "رقم آخر…" / "عنوان آخر…" to type a new one.
   - A new number or address typed for a known customer is saved for next time, when there is room.
+  - When it cannot be saved (the number belongs to another customer, or two numbers or three addresses are already saved), it is used for this order only, and the cashier is told so before and after paying.
 - **Delivery invoices keep the address used**, even if the customer's addresses change later.
 
 ## New in the back office
@@ -24,8 +25,11 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 
 - **Installed for all Windows users of the PC** (`C:\Program Files\HeroMarket-POS`). Windows asks for administrator approval once during installation.
 - **Store data in `C:\ProgramData\HeroMarket`**, shared by every Windows account on the PC.
-  - Data from an earlier version is moved in automatically on the first start, and every file is checked.
-  - The old folder is kept.
+  - Data from version 1.3 is imported automatically on the first start; the old file is only read.
+- **The database runs as a Windows service with its own account** (HeroMarketDB).
+  - Windows users of the PC cannot open its files, read its administrator password or use it to run programs.
+  - It keeps running when someone signs out of Windows.
+  - Before every installation or update, the installer makes a verified copy of the database.
 - **The program can no longer be misused as a general script runner**, and it refuses to start if the index of its program package was modified.
   - Changes deeper inside the program files are **not** detected when it starts. They are kept out because only an administrator can change `C:\Program Files`.
   - Code signing would add detection; it is not bought yet.
