@@ -257,20 +257,29 @@ Commits on `release/1.4.0` (PR #26), after the audit fixes of PR #15 (8b08ee9):
 | 15  | The supermarket's PC with its full data, and a first real update there                 | **Not done**                         | Go-live checklist                                                                                                                                                                                                                    |
 | 16  | Code signing                                                                           | **Not done, by decision**            | CODE_SIGNING_OPTIONS.md                                                                                                                                                                                                              |
 
-### Go-live checklist at the supermarket (after the merge)
+### Go-live checklist at the supermarket (revised 2026-10-16: the shop runs another company's POS)
 
-The full printable procedure, with what to do when something fails, is [GO_LIVE_AT_THE_SUPERMARKET.md](GO_LIVE_AT_THE_SUPERMARKET.md).
+**Visit 1, installing nothing** ([SUPERMARKET_VISIT_1.md](SUPERMARKET_VISIT_1.md)):
 
-- [ ] Backup of the 1.3 data folder to a USB stick; fingerprint recorded.
-- [ ] Install the final candidate (fingerprint checked against §9); the 1.3 data is imported, parity in `logs\app.log`.
-- [ ] In إعدادات المتجر, choose which roles must open a shift (all are ticked by default).
-- [ ] Sign in with old PINs and choose passwords; recovery code on paper.
-- [ ] **Receipt printer:** set its Windows name in إعدادات المتجر; print a sale, a reprint and a shift report.
-- [ ] **Barcode scanner:** scan 10 different products, including a long barcode and a weighed-item label.
-- [ ] A full day: open shift, sales of each payment type, a return, an expense, close shift; the drawer matches.
-- [ ] **Restart Windows**; HeroMarket opens and the day's data is there.
-- [ ] Backup to USB; restore tested on a separate PC (not the till).
-- [ ] `logs\update-history.jsonl` shows the 1.4.0 installation, "ok".
+- [ ] PC information: Windows and 64-bit, users, printers and drivers, USB devices, installed programs, database services, likely POS database files.
+- [ ] The current POS: name and version, screens; an export (products, customers, suppliers) or its own backup, with the owner's permission.
+- [ ] Printer model, a receipt and the paper width; scanner model and `scans.txt`; scale labels if used.
+- [ ] The owner's answers: tills, Windows user, staff and roles, weighing, cartons, credit.
+
+**At home, before the installation day:**
+
+- [ ] An importer for the shop's data, tested on its copy: counts and totals checked.
+- [ ] Printer layout and paper set; PDF previews of real receipts approved.
+- [ ] Scanner codes and scale labels checked against the products.
+- [ ] A new installation guide and USB folder for a fresh install with the import.
+
+**Installation day** (the guide will list the exact steps):
+
+- [ ] Fresh install of the final candidate (fingerprint checked); first-setup screen creates the owner; recovery code on paper.
+- [ ] The shop's data imported; counts and balances compared with the old program.
+- [ ] Shift roles and printer name set; receipt printed (sale, reprint, shift report); 10 products scanned.
+- [ ] A full day; **Windows restarted**; backup to USB; restore tested on another PC.
+- [ ] The old program stays installed and untouched until the owner decides, so the shop can go back to it.
 
 ### Unresolved security risks
 
@@ -284,7 +293,7 @@ The full printable procedure, with what to do when something fails, is [GO_LIVE_
 ### Merge and publication plan (owner decision 2026-10-16: merge first, hardware and the shop PC last)
 
 1. **Merge (approved):** PR #26 ready for review, CI re-checked, merged into `main` with a merge commit (no squash, no force-push); `main` CI must pass.
-2. **At the supermarket, with the final candidate (§9):** follow the go-live checklist above. It is the real installation: back up first; the 1.3 data is only read, never changed (§10), and rollback is INSTALLATION_GUIDE §7.
+2. **Supermarket:** visit 1 (collect information), then the importer and setup at home, then the installation day (checklist above). The shop's current program and data are never changed; the shop can go back to it at any time.
 3. **If a problem appears there:** fix it on a branch from `main`, with a test; build a new candidate; repeat the clean-Windows checks; install it at the shop as an update (Case A or B, UPDATE_GUIDE).
 4. **Tag only after the shop test passes** (needs your approval): `git tag -a v1.4.0 <commit> -m "HeroMarket 1.4.0"`, then `git push origin v1.4.0`. The tag then marks the version proven at the shop. The release workflow builds the unsigned installer and `SHA256SUMS.txt` as a **draft** release.
 5. **Verify the draft:** check its installer against `SHA256SUMS.txt`; repeat the clean-Windows update check on **that exact file**. Its SHA-256 differs from the local candidate (separate build of the same code).

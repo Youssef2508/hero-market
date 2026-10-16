@@ -1,5 +1,7 @@
 # HeroMarket 1.4.0 at the supermarket: step by step
 
+> **Not for the supermarket as written (2026-10-16).** This guide assumes the shop PC runs HeroMarket 1.3. The owner has since said the shop uses another company's POS program. Go-live there is a fresh install plus an import of that program's data. The first step is **[SUPERMARKET_VISIT_1.md](SUPERMARKET_VISIT_1.md)**, which only collects information. The installation guide for the shop will be rewritten once its data and hardware are known. This version still applies to any PC that runs HeroMarket 1.3.
+
 Written for you, the person who installs it at the shop. Print it, or open START-HERE.html from the USB folder, and tick each box. The whole visit takes about two hours plus a normal day of selling.
 
 The supermarket PC today runs **HeroMarket 1.3**. Installing 1.4.0 is the real change-over: it brings the 1.3 data into the new database. The installer **removes the 1.3 program**, but not its data. The 1.3 data is only read, never changed, so you can always go back to 1.3 with its installer (step 1).

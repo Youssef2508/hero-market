@@ -1,4 +1,18 @@
-# Go-live USB folder
+# Go-live USB folders
+
+## Visit 1 (collect information; `.docs/SUPERMARKET_VISIT_1.md`)
+
+```
+HeroMarket-visit-1-collect-info/
+  START-HERE.html, SUPERMARKET_VISIT_1.md   the guide
+  1-Collect-PC-info.cmd                     runs tools/collect-info.ps1
+  tools/collect-info.ps1                    Windows, printers, USB devices, programs, database services and
+                                            likely POS database files (names only); writes shop-info-<date>/
+```
+
+`collect-info.ps1` only reads; it copies no shop data. Its file search stops after 2 minutes and 5 levels.
+
+## Installation at a PC that runs HeroMarket 1.3 (`.docs/GO_LIVE_AT_THE_SUPERMARKET.md`)
 
 What goes on the USB stick for the installation at the supermarket (`.docs/GO_LIVE_AT_THE_SUPERMARKET.md`):
 
