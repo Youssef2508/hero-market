@@ -5,7 +5,7 @@ Written for the shop owner. The trial changes nothing at the shop.
 ## What you receive
 
 - The file **`HeroMarket-Setup-1.4.0.exe`** (about 175 MB), by USB stick or a private link.
-- Its fingerprint (SHA-256): `d31e37f1a40e5700924533d7f0070b89f671e6721ec8d586992030f14a8168f2`.
+- Its fingerprint (SHA-256): `6bc3de17c85630740f65eb6deadaaa94ec4c7007a230eac5f27d2b9201b86cb0`. This is trial build 1 of 1.4.0, commit 4fbed9f, tested on a laptop on 2026-10-16.
 
   To check that the file arrived intact: right-click the Start button → **Windows PowerShell**, then type:
 
@@ -37,7 +37,8 @@ Written for the shop owner. The trial changes nothing at the shop.
 
 ## Good to know
 
-- Printing fails if the laptop has no receipt printer; the sale is still saved.
+- **Printing:** without a receipt printer, each sale shows "تعذرت طباعة الفاتورة رقم …: الطابعة "CITIZEN CT-S300" غير موجودة… الفاتورة محفوظة". This is expected. The sale is saved once and can be reprinted later. If the laptop has a receipt printer, type its Windows name in **إعدادات المتجر → اسم الطابعة الافتراضية**.
+- **Later versions** (for example the final 1.4.0 or 1.4.1) are installed the same way over this one. Your trial data is kept; the installer makes a checked copy of it first.
 - The database runs in the background as a Windows service (**HeroMarketDB**). It uses little memory and starts with Windows.
 - **To remove the trial:** Settings → Apps → HeroMarket POS → Uninstall. Your trial data stays in `C:\ProgramData\HeroMarket`; delete that folder too if you want nothing left.
 - Do not install this on the shop computer yet. That comes after your trial and your approval, with the steps in the installation guide.

@@ -136,7 +136,9 @@ async function startStandalone(cfg) {
     logger: { level: isDev ? 'info' : 'warn' },
     // Cloud synchronisation runs in the background once an administrator links the store
     // (المزامنة السحابية). Selling never waits for it.
-    syncAgent: true
+    syncAgent: true,
+    // Installed store: the installer applies migrations after its verified copy (serviceSetup.js).
+    migrationPolicy: cfg.local && cfg.local.service ? 'refuse' : 'auto'
   })
   await svc.prepare()
   await svc.app.ready()
@@ -211,7 +213,7 @@ function startClient(cfg) {
  * Skipped when an import already completed or the new database is already in use. Any problem stops
  * the start-up with the reason; the SQLite file is only read (after a verified backup copy).
  */
-async function importLegacyIfPresent(databaseUrl) {
+async function importLegacyIfPresent(databaseUrl, { installed = false } = {}) {
   const legacy = legacyDatabaseFile()
   if (!fs.existsSync(legacy)) return null
   const { createPool } = nodeRequire(join(serverDir(), 'db', 'pool.js'))
@@ -222,7 +224,8 @@ async function importLegacyIfPresent(databaseUrl) {
   const quiet = { info: (m) => console.log(m), warn: console.warn, error: console.error }
   const pool = createPool(databaseUrl, { max: 2 })
   try {
-    await migrate(pool, { logger: quiet })
+    // Installed store: the installer already migrated (after its verified copy); never here.
+    if (!installed) await migrate(pool, { logger: quiet })
     const done = await pool.query(
       "SELECT to_regclass('legacy_import_runs') IS NOT NULL AS has_runs, (SELECT count(*)::int FROM users) AS users"
     )
@@ -398,7 +401,7 @@ async function doStart() {
         await snapshotBeforeUpgrade(local, (value) => {
           cfg = writeConfig({ ...cfg, local: value })
         })
-      await importLegacyIfPresent(databaseUrl)
+      await importLegacyIfPresent(databaseUrl, { installed: !!local.service })
       stage = 'service'
       backend = await startStandalone({ ...cfg, databaseUrl })
     } else {

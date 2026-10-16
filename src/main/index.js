@@ -1,5 +1,5 @@
 import { ensureStoreDir } from './userDataPath'
-import { setupService, stopServiceOnly, removeService } from './serviceSetup'
+import { setupService, stopServiceOnly, removeService, restorePreInstall } from './serviceSetup'
 import { openLogFile } from './logFile'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
@@ -21,10 +21,17 @@ import { registerDataIpc } from './dataIpc'
 
 // Production: warnings and errors go to a log file (started afresh after a day). The installer's
 // steps log to logs/setup.log only, so the administrator never creates the program's app.log.
-const SERVICE_STEP_ARGS = ['--setup-service', '--stop-service', '--remove-service']
+const SERVICE_STEP_ARGS = [
+  '--setup-service',
+  '--stop-service',
+  '--remove-service',
+  '--restore-pre-install'
+]
 if (app.isPackaged) {
   const logs = join(ensureStoreDir(), 'logs')
-  const installerStep = SERVICE_STEP_ARGS.some((a) => process.argv.includes(a))
+  const installerStep = SERVICE_STEP_ARGS.some((a) =>
+    process.argv.some((x) => x === a || x.startsWith(`${a}=`))
+  )
   const log = openLogFile(
     installerStep
       ? [join(logs, 'setup.log')]
@@ -60,12 +67,20 @@ const resetUser = process.argv.find((a) => a.startsWith(RESET_ARG))?.slice(RESET
 
 // Installer steps (run elevated by the per-machine installer, no window): set up, stop or remove the
 // store's database service (serviceSetup.js). Exit code 0 = done; the reason is in logs/setup.log.
+// Support (elevated): --restore-pre-install[=<copy>] puts back a verified copy taken before an
+// installation or update (.docs/UPDATE_GUIDE.md, recovery).
+const RESTORE_ARG = process.argv.find(
+  (a) => a === '--restore-pre-install' || a.startsWith('--restore-pre-install=')
+)
 const SERVICE_STEPS = {
   '--setup-service': setupService,
   '--stop-service': stopServiceOnly,
-  '--remove-service': removeService
+  '--remove-service': removeService,
+  '--restore-pre-install': () => restorePreInstall(RESTORE_ARG && RESTORE_ARG.split('=')[1])
 }
-const serviceStep = Object.keys(SERVICE_STEPS).find((a) => process.argv.includes(a))
+const serviceStep = RESTORE_ARG
+  ? '--restore-pre-install'
+  : Object.keys(SERVICE_STEPS).find((a) => process.argv.includes(a))
 if (serviceStep) {
   app.whenReady().then(async () => {
     try {

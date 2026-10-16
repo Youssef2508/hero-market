@@ -24,7 +24,7 @@ import crypto from 'crypto'
 import pg from 'pg'
 import { storeDir, serviceName, perUserConfigFile } from './userDataPath'
 import { runPgTool, choosePort, toolError, DB_NAME } from './localDatabase'
-import { copyAndVerify, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
+import { copyAndVerify, snapshotDataDir, pruneSnapshots, verifySnapshot } from './upgradeSnapshot'
 import { systemTool } from './winTools'
 
 const APP_ROLE = 'hm_app'
@@ -242,9 +242,20 @@ export async function setupService() {
   }
 
   // 1. A verified copy of an existing database before anything changes (the newest 3 are kept).
+  //    It records which version the data belongs to, for a later rollback (--restore-pre-install).
+  const fromVersion = cfg?.local?.setupVersion || (hasCluster ? 'before-1.4.0-service' : null)
+  let snap = null
   if (hasCluster) {
     const dir = join(p.backups, 'pre-install')
-    const snap = await snapshotDataDir(p.data, dir, `app-${app.getVersion()}`)
+    snap = await snapshotDataDir(p.data, dir, `app-${app.getVersion()}`)
+    fs.writeFileSync(
+      join(snap, 'update.json'),
+      JSON.stringify(
+        { fromVersion, toVersion: app.getVersion(), at: new Date().toISOString() },
+        null,
+        2
+      )
+    )
     pruneSnapshots(dir)
     log('verified copy of the database:', snap)
   }
@@ -394,22 +405,194 @@ export async function setupService() {
   }
   writeJson(p.superuser, superuser)
 
-  // 6. The app's configuration (readable by Windows users: no superuser credentials in it).
-  writeJson(p.config, {
-    mode: 'local',
-    terminalName: cfg?.terminalName || os.hostname(),
-    secret: cfg?.secret || crypto.randomBytes(32).toString('base64url'),
-    local: {
-      dir: p.base,
-      port,
-      user: APP_ROLE,
-      password: appPassword,
-      service: name,
-      initialised: true,
-      setupVersion: app.getVersion()
-    }
+  const writeConfig = (setupVersion) =>
+    writeJson(p.config, {
+      mode: 'local',
+      terminalName: cfg?.terminalName || os.hostname(),
+      secret: cfg?.secret || crypto.randomBytes(32).toString('base64url'),
+      local: {
+        dir: p.base,
+        port,
+        user: APP_ROLE,
+        password: appPassword,
+        service: name,
+        initialised: true,
+        setupVersion
+      }
+    })
+
+  // 6. The database itself: Case A (nothing to migrate) or Case B (migrations, checked; any loss
+  //    or damage puts the verified copy back). Done here, right after the copy, never by the
+  //    program on start (.docs/UPDATE_GUIDE.md).
+  const result = await updateDatabase({ p, port, appPassword, snap, account, name })
+  history(p, {
+    fromVersion,
+    toVersion: app.getVersion(),
+    case: result.case,
+    pending: result.pending,
+    snapshot: snap,
+    result: result.ok ? 'ok' : 'restored',
+    problems: result.problems
   })
+  if (!result.ok) {
+    // The data is back as it was; the new program refuses to open it until the setup succeeds.
+    writeConfig(fromVersion && fromVersion !== 'before-1.4.0-service' ? fromVersion : '0')
+    const e = new Error(
+      `update of the database failed and the verified copy was put back: ${result.problems.join('; ')}`
+    )
+    e.code = 'migration_failed'
+    throw e
+  }
+
+  // 7. The app's configuration (readable by Windows users: no superuser credentials in it).
+  writeConfig(app.getVersion())
   log('setup complete')
+}
+
+/** Case A/B of an update, in the installer (elevated), right after the verified copy. */
+async function updateDatabase({ p, port, appPassword, snap, account, name }) {
+  const { schemaState, dataFingerprint, compareFingerprints, integrityProblems, assertNotNewer } =
+    server(join('db', 'upgrade.js'))
+  const { migrate } = server(join('db', 'migrate.js'))
+  const pool = new pg.Pool({
+    host: '127.0.0.1',
+    port,
+    user: APP_ROLE,
+    password: appPassword,
+    database: DB_NAME,
+    max: 2,
+    application_name: 'heromarket-setup'
+  })
+  pool.on('error', () => {})
+  let state
+  let failure = null
+  let problems = []
+  try {
+    const c = await pool.connect()
+    try {
+      state = await schemaState(c)
+      assertNotNewer(state) // a newer version's database: refuse, change nothing
+    } finally {
+      c.release()
+    }
+    if (state.case === 'A') {
+      log(`Case A: no database change (schema ${state.applied.at(-1) || 'none'})`)
+      return { ok: true, case: 'A', pending: [], problems: [] }
+    }
+    log(`Case B: migrations to apply: ${state.pending.join(', ')}`)
+    const c1 = await pool.connect()
+    let before
+    let damagedBefore
+    try {
+      before = await dataFingerprint(c1)
+      damagedBefore = new Set(await integrityProblems(c1))
+    } finally {
+      c1.release()
+    }
+    try {
+      await migrate(pool, { logger: { info: (m) => log(m) } })
+      const c2 = await pool.connect()
+      try {
+        const after = await dataFingerprint(c2)
+        // Records kept, and no NEW inconsistency (an old one must not block every update).
+        problems = [
+          ...compareFingerprints(before, after),
+          ...(await integrityProblems(c2)).filter((x) => !damagedBefore.has(x))
+        ]
+      } finally {
+        c2.release()
+      }
+    } catch (e) {
+      failure = e
+    }
+  } catch (e) {
+    await pool.end().catch(() => {})
+    throw e // refused before any change (e.g. database_newer)
+  }
+  await pool.end().catch(() => {})
+  if (!failure && !problems.length) {
+    log(`Case B done: ${state.pending.length} migration(s) applied; records and stock checked`)
+    return { ok: true, case: 'B', pending: state.pending, problems: [] }
+  }
+  if (failure) problems.unshift(`migration failed: ${failure.message}`)
+  log('Case B FAILED:', problems.join('; '))
+  if (!snap) {
+    // A new database (nothing to restore): the error stands, nothing of the shop's data existed.
+    return { ok: false, case: 'B', pending: state.pending, problems }
+  }
+  await putBack(p, snap, account, name, 'failed')
+  log('verified copy put back:', snap)
+  return { ok: false, case: 'B', pending: state.pending, problems }
+}
+
+/** Replace pgdata by a verified copy; the replaced folder is kept beside it as evidence. */
+async function putBack(p, snap, account, name, why) {
+  const check = verifySnapshot(snap)
+  if (!check.ok) throw new Error(`the copy ${snap} does not match its manifest (${check.file})`)
+  await stopService(name)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  fs.renameSync(p.data, `${p.data}.${why}-${stamp}`)
+  const partial = `${p.data}.partial`
+  fs.rmSync(partial, { recursive: true, force: true })
+  await copyAndVerify(join(snap, 'pgdata'), partial)
+  fs.renameSync(partial, p.data)
+  await secureFolders(p, account)
+  await exec(systemTool('sc.exe'), ['start', name])
+  if (!(await waitState(name, 'RUNNING', 90))) throw new Error(`service ${name} did not start`)
+}
+
+function history(p, entry) {
+  try {
+    fs.appendFileSync(
+      join(p.logs, 'update-history.jsonl'),
+      JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n'
+    )
+  } catch {
+    /* the history must never stop the setup */
+  }
+}
+
+/**
+ * Support command (elevated): HeroMarket-POS.exe --restore-pre-install[=<folder name>]
+ * Puts back the newest (or the named) verified copy taken before an installation or update, e.g.
+ * when a problem is found after an update. Sales made after that copy are NOT in it: export a
+ * backup first. Then install the version the copy belongs to (update.json: fromVersion).
+ */
+export async function restorePreInstall(which) {
+  const p = paths()
+  const name = serviceName()
+  fs.mkdirSync(p.logs, { recursive: true })
+  logFile = join(p.logs, 'setup.log')
+  const dir = join(p.backups, 'pre-install')
+  const all = fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir)
+        .filter((n) => fs.existsSync(join(dir, n, 'manifest.json')))
+        .sort()
+    : []
+  const versionOf = (n) => (readJson(join(dir, n, 'update.json')) || {}).fromVersion || null
+  // Default: the newest copy whose data belongs to the version installed now (an attempt to install
+  // an older version over newer data also takes a copy, of that newer data, which is not wanted).
+  const pick = which
+    ? all.find((n) => n === which)
+    : [...all].reverse().find((n) => versionOf(n) === app.getVersion())
+  if (!pick) {
+    const list = all.map((n) => `${n} (data of ${versionOf(n) || 'unknown'})`).join(', ')
+    throw new Error(
+      `no verified copy ${which || `with data of version ${app.getVersion()}`} in ${dir}. Copies: ${list || 'none'}. Name one with --restore-pre-install=<name>.`
+    )
+  }
+  const snap = join(dir, pick)
+  const info = readJson(join(snap, 'update.json')) || {}
+  log(`restore-pre-install ${pick} (data of version ${info.fromVersion || 'unknown'})`)
+  await putBack(p, snap, `NT SERVICE\\${name}`, name, 'replaced')
+  const cfg = readJson(p.config)
+  if (cfg?.local) {
+    cfg.local.setupVersion = info.fromVersion || '0'
+    writeJson(p.config, cfg)
+  }
+  history(p, { restoreOf: pick, dataVersion: info.fromVersion || null, result: 'restored' })
+  log('restore complete: install version', info.fromVersion || '(the version of that copy)', 'next')
 }
 
 export async function stopServiceOnly() {

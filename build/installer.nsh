@@ -14,9 +14,20 @@
   !define HM_SERVICE "HeroMarketDB"
 !endif
 
-; Before files are replaced: the service runs postgres.exe from the program folder.
+; Before anything changes. Full paths: a tool found first on PATH must never run with the
+; installer's administrator rights.
 !macro customInit
-  ; Full path: a tool found first on PATH must never run with the installer's administrator rights.
+  ; HeroMarket open on ANY Windows account (switch user included): stop here, nothing changed. An
+  ; update while someone sells would cut their database connection mid-sale.
+  nsExec::ExecToStack '"$SYSDIR\cmd.exe" /c ""$SYSDIR\tasklist.exe" /NH /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" | "$SYSDIR\findstr.exe" /I /C:"${APP_EXECUTABLE_FILENAME}""'
+  Pop $0
+  Pop $1
+  ${If} $0 == 0
+    MessageBox MB_ICONEXCLAMATION|MB_OK "برنامج HeroMarket مفتوح الآن على هذا الجهاز (ربما على حساب Windows آخر).$\r$\nأغلقه على كل الحسابات، ثم شغّل برنامج التثبيت مرة أخرى. لم يتم تغيير أي شيء." /SD IDOK
+    SetErrorLevel 4
+    Quit
+  ${EndIf}
+  ; The service runs postgres.exe from the program folder: stop it before files are replaced.
   nsExec::Exec '"$SYSDIR\net.exe" stop "${HM_SERVICE}"'
   Pop $0
 !macroend
