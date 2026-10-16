@@ -46,7 +46,7 @@ Status: **ready for your testing, not released.** Nothing has been published or 
 
 ## Update case of this release
 
-**Case B (database change).** It applies migrations 0011–0013 over a 1.3.x installation; the 1.3 data is imported from its own file, which is never changed. The 1.3 program cannot use the new database, and does not need to: its own SQLite file is left as it was. To go back to 1.3, reinstall 1.3; it still finds its own data.
+**Case B (database change).** It applies migrations 0011–0013 over a 1.3.x installation; the 1.3 data is imported from its own file, which is never changed. The 1.3 program cannot use the new database, and does not need to: its own SQLite file is left as it was. To go back to 1.3, reinstall 1.3; it still finds its own data, **without** anything recorded in 1.4.0 since the upgrade.
 
 ## Printing
 
