@@ -51,6 +51,8 @@
     "prettier": "^3.7.4",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "vite": "^7.2.6"
+    "read-excel-file": "9.3.10",
+    "vite": "^7.2.6",
+    "write-excel-file": "4.1.1"
   }
 }

@@ -39,6 +39,12 @@ Status: **ready for your testing, not released.** Nothing has been published or 
   - The three built-in kinds cannot be changed.
   - A kind in use can gain decimals but not lose them, and is stopped rather than deleted.
   - Products sold by the litre now get a quantity window in litres; before, it asked for grams.
+- **Store data import from Excel (الإدارة → استيراد البيانات):**
+  - **تنزيل القالب** gives a workbook with three sheets: الأصناف, العملاء, الموردون. Barcode and phone columns are text, so leading zeros stay.
+  - The owner fills it, or pastes from his old program, and you choose the file. Every row is checked first: required fields, numbers, the measurement kind and its decimals, duplicates in the file, barcodes and phones already in HeroMarket.
+  - Nothing is imported if any row has a problem. The list shows each problem with its sheet and row.
+  - Then products are added with their stock (as opening stock movements), and categories are created by name. Customers and suppliers get their balance and a "رصيد افتتاحي" line.
+  - A product without a barcode gets an internal code (HM000001…). Existing products and customers are never changed.
 - **Purchase invoice:** the item field is a **search list of every product**. Type part of a name or barcode to filter; scroll for more; click a product (or ↑/↓ and Enter) to add its line. A scanner still works: barcode, then Enter.
   - Products already on the invoice are marked "مضاف".
   - Creating a new product from the invoice is planned for 1.4.1 (SPEC_1.4.1_PURCHASE_NEW_ITEMS.md).
