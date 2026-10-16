@@ -603,3 +603,23 @@ Format: context → decision → reason → consequences (→ alternatives).
   - A kind in use is stopped, not deleted. A stopped kind is not offered for new products; products that have it keep it.
   - Switching a product to fewer decimals needs its stock and factors to fit.
 - **Version:** in 1.4.0 at the owner's request. It makes the 1.4.0 update from earlier 1.4.0 builds Case B; the installer's checks apply.
+
+## D-056 Store data import from an Excel template (1.4.0)
+
+- **Why:** the supermarket runs another company's POS. The owner will fill a template with his products, customers and suppliers, and HeroMarket must import it ready to sell.
+- **Template:** `templateSheets()` (`src/shared/storeImport.mjs`), also downloadable from the import screen.
+  - An instructions sheet, then الأصناف, العملاء and الموردون, laid out right to left.
+  - Barcode and phone columns are text.
+  - Headers are matched loosely, so a sheet pasted from another program works if its header names match.
+- **Checks:** `storeImport.apply` checks every row again and writes nothing if any row fails.
+  - It needs `products.manage`, `customers.manage` and `suppliers.manage`.
+  - It checks required fields, numbers, the measurement kind (by name, unit or common words, or from the unit) and its decimals, phone rules, duplicates in the file, and barcodes and phones already in the store.
+  - `dryRun` checks only.
+- **Writing:** one transaction.
+  - Products are written with stock 0, then an `opening` movement (`ref_type` import), so stock equals its movements.
+  - Categories are matched by name or created.
+  - Customers get `debt_balance` plus a ledger line `opening` "رصيد افتتاحي (استيراد)"; suppliers the same.
+  - A product without a barcode gets `HM` + 6 digits.
+  - One audit entry records the counts.
+- **Not done, on purpose:** updating existing products or customers from a file. Prices change through the product screens. A barcode or phone already in the store is reported instead.
+- **Libraries:** `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (MIT). They are pinned dev dependencies, bundled into the screens, and add no audit findings.

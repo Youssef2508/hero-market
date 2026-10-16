@@ -425,9 +425,13 @@ export default function ClientsTab({
                             <tr key={`led-${l.id}`}>
                               <td>
                                 <span
-                                  className={`badge ${l.type === 'payment' ? 'badge-success' : 'badge-danger'}`}
+                                  className={`badge ${l.type === 'payment' ? 'badge-success' : l.type === 'opening' ? 'badge-info' : 'badge-danger'}`}
                                 >
-                                  {l.type === 'payment' ? 'سداد / رصيد' : 'مشتريات آجل'}
+                                  {l.type === 'payment'
+                                    ? 'سداد / رصيد'
+                                    : l.type === 'opening'
+                                      ? 'رصيد افتتاحي'
+                                      : 'مشتريات آجل'}
                                 </span>
                               </td>
                               <td className="num money-strong">{formatMoney(l.amount)}</td>

@@ -28,6 +28,7 @@ const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
 const BestSellersTab = lazy(() => import('./BestSellersTab'))
 const BackupTab = lazy(() => import('./BackupTab'))
+const ImportTab = lazy(() => import('./ImportTab'))
 const ReorderingTab = lazy(() => import('./ReorderingTab'))
 const DamagedGoodsTab = lazy(() => import('./DamagedGoodsTab'))
 const AdvancedStatsTab = lazy(() => import('./AdvancedStatsTab'))
@@ -242,6 +243,7 @@ export default function AdminDashboard(props) {
         {adminTab === 'discounts' && <DiscountsTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'clients' && <ClientsTab {...props} />}
         {adminTab === 'backup' && <BackupTab />}
+        {adminTab === 'import' && <ImportTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'categories' && (
           <CategoriesTab
             triggerCustomAlert={props.triggerCustomAlert}

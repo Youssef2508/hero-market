@@ -1585,3 +1585,18 @@ input[data-computed='true'] {
   white-space: nowrap;
   text-align: end;
 }
+
+/* Store data import (1.4.0) */
+.import-steps {
+  margin: 0;
+  padding-inline-start: 20px;
+  line-height: 1.9;
+}
+.import-errors {
+  max-height: 360px;
+  overflow-y: auto;
+}
+label.btn.is-disabled {
+  pointer-events: none;
+  opacity: 0.6;
+}

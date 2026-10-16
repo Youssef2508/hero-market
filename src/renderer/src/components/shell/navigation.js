@@ -28,6 +28,7 @@ import {
   UserCog,
   ScrollText,
   DatabaseBackup,
+  FileSpreadsheet,
   FolderTree,
   Cloud,
   ShieldCheck,
@@ -306,6 +307,16 @@ export const NAV_GROUPS = [
         view: 'admin',
         tab: 'backup',
         description: 'حفظ واستعادة قاعدة البيانات بأمان.'
+      },
+      {
+        id: 'import',
+        // The service requires products, customers and suppliers management together.
+        permission: ['products.manage'],
+        label: 'استيراد البيانات',
+        icon: FileSpreadsheet,
+        view: 'admin',
+        tab: 'import',
+        description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket).'
       },
       {
         id: 'sync',

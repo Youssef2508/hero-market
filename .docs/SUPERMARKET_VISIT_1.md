@@ -30,7 +30,8 @@ With that, at home, HeroMarket can import the shop's products, customers and bal
   - the main sales screen;
   - the product list screen, with a few products visible;
   - the customers screen, if it has one.
-- [ ] **6. Ask the program for its data.** With the owner, look for an **Export / تصدير** to Excel or CSV, or a **Backup / نسخة احتياطية** function, and save the result to the USB stick. Best, in this order:
+- [ ] **6. The shop's data.** The simplest way is the **HeroMarket data template** (`HeroMarket-data-template.xlsx` in this folder; the same file comes from HeroMarket → الإدارة → استيراد البيانات → تنزيل القالب). The owner fills its sheets الأصناف, العملاء, الموردون, or copies them from his program's export, and sends it back. HeroMarket imports it after checking every row.
+      If he prefers, look with him for an **Export / تصدير** to Excel or CSV, or a **Backup / نسخة احتياطية** function, and save the result to the USB stick. Best, in this order:
   1. **Products:** barcode, name, purchase price, selling price, wholesale price, stock, unit, category.
   2. **Customers:** name, phone, address, balance owed.
   3. **Suppliers:** name, phone, balance.

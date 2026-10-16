@@ -311,9 +311,13 @@ export default function SuppliersTab({
                           </td>
                           <td>
                             <span
-                              className={`badge ${l.type === 'payment' ? 'badge-success' : 'badge-danger'}`}
+                              className={`badge ${l.type === 'payment' ? 'badge-success' : l.type === 'opening' ? 'badge-info' : 'badge-danger'}`}
                             >
-                              {l.type === 'payment' ? 'سداد' : 'شراء'}
+                              {l.type === 'payment'
+                                ? 'سداد'
+                                : l.type === 'opening'
+                                  ? 'رصيد افتتاحي'
+                                  : 'شراء'}
                             </span>
                           </td>
                           <td className="num money-strong">{formatMoney(l.amount)}</td>
