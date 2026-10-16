@@ -249,6 +249,8 @@ Commits on `release/1.4.0` (PR #26), after the audit fixes of PR #15 (8b08ee9):
 
 ### Go-live checklist at the supermarket (after the merge)
 
+The full printable procedure, with what to do when something fails, is [GO_LIVE_AT_THE_SUPERMARKET.md](GO_LIVE_AT_THE_SUPERMARKET.md).
+
 - [ ] Backup of the 1.3 data folder to a USB stick; fingerprint recorded.
 - [ ] Install the final candidate (fingerprint checked against §9); the 1.3 data is imported, parity in `logs\app.log`.
 - [ ] In إعدادات المتجر, choose which roles must open a shift (all are ticked by default).
