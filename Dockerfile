@@ -11,7 +11,7 @@
 #
 # The multi-till server image is Dockerfile.server. See .docs/DOCKER.md.
 # ─────────────────────────────────────────────────────────────
-FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370
 
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
     npm_config_fund=false \
