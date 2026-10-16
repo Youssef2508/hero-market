@@ -22,6 +22,10 @@ export async function api(op, body = {}) {
       // Session expired, revoked (user disabled) or cleared by a restore: back to the lock screen.
       window.dispatchEvent(new CustomEvent('heromarket:session-expired'))
     }
+    if (res.error.code === 'shift_required') {
+      // Drawer cash needs an open shift; a user allowed to work without one is offered to open it.
+      window.dispatchEvent(new CustomEvent('heromarket:shift-required'))
+    }
     if (res.status === 423 && res.error.code === 'recovery_pending') {
       // A restored backup waits for recovery from the cloud: the app shows what to do.
       window.dispatchEvent(new CustomEvent('heromarket:recovery-pending'))

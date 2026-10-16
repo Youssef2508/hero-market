@@ -34,8 +34,13 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
   const [saved, setSaved] = useState(null)
   const [device, setDevice] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [roles, setRoles] = useState(null)
 
   useEffect(() => {
+    // Roles for "who must open a shift" (needs roles.manage or users.manage; hidden otherwise).
+    api('roles.list')
+      .then(setRoles)
+      .catch(() => setRoles(null))
     api('settings.get')
       .then((r) => {
         setValues(r.settings)
@@ -51,6 +56,24 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
   if (!values) return <div className="loading-block">جاري تحميل الإعدادات…</div>
 
   const set = (k, v) => setValues((s) => ({ ...s, [k]: v }))
+
+  // Roles that open shifts, except the owner (never required). Stored: null = all of them.
+  const shiftRoles = (roles || []).filter(
+    (r) => r.key !== 'super_admin' && (r.permissions || []).includes('shifts.operate')
+  )
+  const storedRequired = (() => {
+    try {
+      const v = JSON.parse(values.shift_required_roles ?? 'null')
+      return Array.isArray(v) ? v : null
+    } catch {
+      return null
+    }
+  })()
+  const mustOpen = (role) => storedRequired === null || storedRequired.includes(role.id)
+  const toggleMustOpen = (role, on) => {
+    const now = shiftRoles.filter((r) => (r.id === role.id ? on : mustOpen(r))).map((r) => r.id)
+    set('shift_required_roles', JSON.stringify(now))
+  }
   const changed = Object.keys(values).filter((k) => values[k] !== saved[k])
 
   const onLogo = (e) => {
@@ -246,6 +269,32 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
             />
             <span className="field-hint">لا يظهر التذكير أثناء وجود أصناف في الفاتورة.</span>
           </label>
+          {roles && (
+            <fieldset className="field span-2 shift-roles">
+              <legend className="field-label">من يجب عليه فتح وردية قبل استخدام النظام؟</legend>
+              <label className="check-row is-disabled">
+                <input type="checkbox" checked={false} disabled />
+                <span>
+                  مدير النظام (المالك): يعمل بدون وردية، ويُطلب منه فتحها عند البيع أو صرف نقدية فقط
+                </span>
+              </label>
+              {shiftRoles.map((r) => (
+                <label key={r.id} className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={mustOpen(r)}
+                    onChange={(e) => toggleMustOpen(r, e.target.checked)}
+                  />
+                  <span>{r.name}</span>
+                </label>
+              ))}
+              <span className="field-hint">
+                الأدوار المحددة لا تستطيع استخدام النظام قبل فتح وردية. غير المحددة تعمل بدونها
+                ويُطلب منها فتح وردية عند البيع أو صرف نقدية من الدرج. الأدوار التي لا تملك صلاحية
+                تشغيل الوردية لا تظهر هنا.
+              </span>
+            </fieldset>
+          )}
         </div>
       </section>
 

@@ -14,12 +14,26 @@ Status: **ready for your testing, not released.** Nothing has been published or 
   - A new number or address typed for a known customer is saved for next time, when there is room.
   - When it cannot be saved (the number belongs to another customer, or two numbers or three addresses are already saved), it is used for this order only, and the cashier is told so before and after paying.
 - **Delivery invoices keep the address used**, even if the customer's addresses change later.
+- **Shifts: the owner works without one.**
+  - The owner (مدير النظام) signs in and uses everything without opening a shift.
+  - When he sells, or moves cash from the drawer (a cash expense, paying a supplier or a customer refund in cash, a customer paying a debt in cash), the open-shift window appears. It explains why and has a "لاحقاً" button.
+  - When a sale was the reason, it completes by itself once the shift is open.
+  - In إعدادات المتجر → الوردية والجرد الدوري, the owner ticks **which roles must open a shift**. Those users cannot use the system until they open one; that window cannot be closed. By default every role that works shifts is ticked, as before 1.4.0.
+- **Every small window:**
+  - has an **X** in its corner;
+  - closes with a click outside it, on the dimmed background;
+  - asks **"إغلاق بدون حفظ؟"** first if something was typed in it. The window's own cancel button closes it directly, as before.
+  - Windows that must be completed, such as a required shift or the recovery notice, are left as they were.
+- **Windows scroll** when they are taller than the screen; the purchase invoice was cut off at the bottom on a laptop screen.
 
 ## New in the back office
 
 - **التصنيفات** screen (stock section): create, rename, reorder, stop and delete (empty only) categories, and move products between them.
 - **Product form:** choose the category, and stop a product from being sold (it disappears from the till without deleting its history).
 - **Customer form:** up to three addresses (home, work, other), one of them the default.
+- **Purchase invoice:** the item field is a **search list of every product**. Type part of a name or barcode to filter; scroll for more; click a product (or ↑/↓ and Enter) to add its line. A scanner still works: barcode, then Enter.
+  - Products already on the invoice are marked "مضاف".
+  - Creating a new product from the invoice is planned for 1.4.1 (SPEC_1.4.1_PURCHASE_NEW_ITEMS.md).
 
 ## Installation changes
 

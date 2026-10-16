@@ -1,7 +1,7 @@
 'use strict'
 // Suppliers & purchases, cheques, expenses, damaged goods (useSuppliersManager, useChecksManager,
 // useExpensesManager, useDamagedGoodsManager). Legacy amounts and ledger texts are unchanged.
-const { badRequest, conflict, notFound } = require('../errors')
+const { badRequest, conflict, notFound, shiftRequired } = require('../errors')
 const { postMovement, receiveStock } = require('../inventory/stock')
 const { loadUnit, toBaseQty, round4 } = require('../inventory/units')
 
@@ -39,7 +39,7 @@ async function recordPurchase(db, ctx, p, { drawer = true } = {}) {
   // A remote invoice (owner command) never touches the drawer: the owner paid outside it.
   const shift = drawer ? await ownOpenShift(db, ctx, p.currentShiftId) : null
   if (drawer && paid > 0 && !shift)
-    throw conflict('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
+    throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
   const items = (p.items || []).map((i) => ({
     barcode: i.barcode.trim(),
     unitId: i.unitId ?? null,
@@ -423,7 +423,7 @@ module.exports = function financeModule(app) {
     handler: async (ctx, e) =>
       ctx.tx(async (db) => {
         const shift = await ownOpenShift(db, ctx, e.currentShiftId)
-        if (!shift) throw conflict('يجب فتح وردية لتسجيل المصروف وخصمه من الخزنة.')
+        if (!shift) throw shiftRequired('يجب فتح وردية لتسجيل المصروف وخصمه من الخزنة.')
         const category = e.category || 'عام'
         await db.query(
           `INSERT INTO expenses (shift_id, amount, category, description, timestamp) VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0))`,

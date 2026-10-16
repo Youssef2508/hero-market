@@ -573,3 +573,15 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Rejected:**
   - restricting file permissions without a service (impossible while PostgreSQL runs as whichever user opens HeroMarket);
   - going back to per-user installs (breaks the all-users requirement).
+
+## D-054 Who must open a shift (1.4.0, owner decision)
+
+- **Rule:**
+  - The owner (super administrator) is never required to open a shift. He signs in and uses everything without one.
+  - Setting `shift_required_roles` lists the ids of the roles that must open one. Roles created in the roles screen have no key, so ids are used. `null`, the default, means every role with `shifts.operate`: the behaviour before 1.4.0.
+  - Sign-in replies carry `shiftRequired` (`src/server/auth/shiftRule.js`). The till then shows the open-shift window, and it cannot be closed.
+- **Cash without a shift:**
+  - Unchanged on the service: a sale, cash expense, cash supplier payment, cash customer payment or cash refund needs the user's own open shift (the drawer ledger needs one).
+  - Those refusals now carry the code `shift_required`. The till then offers the open-shift window, with the reason and a "لاحقاً" button. A sale is completed automatically once the shift is open.
+- **Limit:** the "must open a shift" rule is enforced by the till, as before 1.4.0. The service does not refuse other work from a required user without a shift. Making it refuse would need a list of every operation that counts as "using the system", and was not asked for.
+- **Rejected:** a single on/off switch for everyone. The owner asked to choose per role.

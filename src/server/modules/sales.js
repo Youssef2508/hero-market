@@ -1,7 +1,7 @@
 'use strict'
 // Invoices back office (useSalesManager): history, details, returns, reprint data.
 // Returns use the legacy refund formulas, now inside one locked transaction each.
-const { badRequest, notFound, conflict } = require('../errors')
+const { badRequest, notFound, conflict, shiftRequired } = require('../errors')
 const { postMovement } = require('../inventory/stock')
 const { toBaseQty } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
@@ -66,7 +66,7 @@ async function refundShift(db, ctx, currentShiftId, sale) {
     await db.query("SELECT id FROM shifts WHERE id = $1 AND status = 'open'", [sale.shift_id])
   ).rows[0]
   if (original) return original.id
-  throw conflict('يُصرف المرتجع نقداً من درج وردية مفتوحة: افتح وردية أولاً ثم أعد المحاولة.')
+  throw shiftRequired('يُصرف المرتجع نقداً من درج وردية مفتوحة: افتح وردية أولاً ثم أعد المحاولة.')
 }
 
 /**

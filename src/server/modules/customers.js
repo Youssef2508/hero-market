@@ -1,6 +1,6 @@
 'use strict'
 // Customers (useClientsManager): directory, monthly report, profile, add/edit/delete, repayments.
-const { badRequest, conflict, notFound } = require('../errors')
+const { badRequest, conflict, notFound, shiftRequired } = require('../errors')
 
 const path = require('path')
 const { pathToFileURL } = require('url')
@@ -341,7 +341,7 @@ module.exports = function customersModule(app) {
             ).rows[0]
           : null
         // Cash goes into the drawer of an open shift (safe_ledger.shift_id is required).
-        if (!shift) throw conflict('يجب فتح وردية لتسجيل السداد النقدي في الخزينة.')
+        if (!shift) throw shiftRequired('يجب فتح وردية لتسجيل السداد النقدي في الخزينة.')
         await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
           amount,
           clientId

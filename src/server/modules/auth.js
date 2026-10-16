@@ -3,6 +3,7 @@
 // user to a password (see src/server/auth/credentials.js); choosing the password erases the PIN.
 const crypto = require('crypto')
 const { describeUser } = require('../auth/access')
+const { shiftRequiredFor } = require('../auth/shiftRule')
 const { checkCredentials } = require('../auth/credentials')
 const {
   passwordProblem,
@@ -143,7 +144,7 @@ module.exports = function authModule(app) {
         const recoveryCode = await storePassword(db, id, password)
         await audit(db, id, name, 'user_create', 'إعداد النظام: إنشاء أول مدير للنظام')
         const token = await createSession(db, ctx, id)
-        return { token, user: await describeUser(db, id), recoveryCode }
+        return { token, user: await describeUser(db, id), recoveryCode, shiftRequired: false }
       })
     }
   })
@@ -176,10 +177,12 @@ module.exports = function authModule(app) {
         }
       return ctx.tx(async (db) => {
         const token = await createSession(db, ctx, account.id)
+        const user = await describeUser(db, account.id)
         return {
           token,
-          user: await describeUser(db, account.id),
-          openShift: await openShiftOf(db, account.id)
+          user,
+          openShift: await openShiftOf(db, account.id),
+          shiftRequired: await shiftRequiredFor(db, user)
         }
       })
     }
@@ -224,10 +227,12 @@ module.exports = function authModule(app) {
             : `تفعيل كلمة المرور للمستخدم "${account.username}" وإلغاء رمز PIN`
         )
         const token = await createSession(db, ctx, account.id)
+        const user = await describeUser(db, account.id)
         return {
           token,
-          user: await describeUser(db, account.id),
+          user,
           openShift: await openShiftOf(db, account.id),
+          shiftRequired: await shiftRequiredFor(db, user),
           recoveryCode
         }
       })
@@ -277,10 +282,12 @@ module.exports = function authModule(app) {
           `استعادة كلمة مرور مدير النظام "${u.username}" برمز الاسترداد (تم إصدار رمز جديد)`
         )
         const token = await createSession(db, ctx, u.id)
+        const user = await describeUser(db, u.id)
         return {
           token,
-          user: await describeUser(db, u.id),
+          user,
           openShift: await openShiftOf(db, u.id),
+          shiftRequired: await shiftRequiredFor(db, user),
           recoveryCode: newCode
         }
       })

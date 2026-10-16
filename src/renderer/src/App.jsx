@@ -497,6 +497,19 @@ function App() {
     }
   }, [])
 
+  // A cash operation was refused for lack of a shift: offer to open one (1.4.0). The refusal
+  // message is shown by the screen that asked; the window opens behind it.
+  useEffect(() => {
+    const onShiftRequired = () => {
+      if (can(currentUser, 'shifts.operate') && !(currentShift && currentShift.status === 'open')) {
+        setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+        setOpenShiftModal('cash')
+      }
+    }
+    window.addEventListener('heromarket:shift-required', onShiftRequired)
+    return () => window.removeEventListener('heromarket:shift-required', onShiftRequired)
+  }, [currentUser, currentShift, appSettings, setOpenShiftModal, setStartingCash])
+
   // Store default for automatic receipt printing (the cashier can still toggle it per sale).
   useEffect(() => {
     if (appSettings) setNoPrint(appSettings.print_receipt_default === 'false')
@@ -588,7 +601,8 @@ function App() {
           setIsLocked(false)
           onLoggedIn(user)
           setStartingCash('200')
-          setOpenShiftModal(true)
+          // The owner works without a shift; he may open one now or later (1.4.0).
+          setOpenShiftModal('optional')
         }}
       />
     )
@@ -631,7 +645,7 @@ function App() {
         adminTab={adminTab}
         onNavigate={handleNavigate}
         currentShift={currentShift}
-        onOpenShift={() => setOpenShiftModal(true)}
+        onOpenShift={() => setOpenShiftModal('optional')}
         onCloseShift={() => setCloseShiftModal(true)}
         onAudit={triggerAuditCheck}
         onLock={handleLock}
@@ -730,6 +744,7 @@ function App() {
 
       <AppModals
         openShiftModal={openShiftModal}
+        setOpenShiftModal={setOpenShiftModal}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}
@@ -857,7 +872,7 @@ function App() {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitAudit}>
                 تأكيد وحفظ الجرد
               </button>
-              <button className="btn btn-secondary" onClick={snoozeAudit}>
+              <button data-modal-close className="btn btn-secondary" onClick={snoozeAudit}>
                 تأجيل 5 دقائق
               </button>
               <button className="btn btn-ghost" onClick={skipAudit}>
@@ -918,7 +933,11 @@ function App() {
               >
                 حفظ التوضيح
               </button>
-              <button className="btn btn-secondary" onClick={() => setShowReasonModal(false)}>
+              <button
+                data-modal-close
+                className="btn btn-secondary"
+                onClick={() => setShowReasonModal(false)}
+              >
                 إلغاء
               </button>
             </div>

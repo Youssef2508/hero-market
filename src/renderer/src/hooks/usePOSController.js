@@ -17,6 +17,7 @@ export function usePOSController({
   currentShift,
   setCurrentShift,
   setIsLocked,
+  openShiftModal,
   setOpenShiftModal,
   startingCash,
   setStartingCash,
@@ -150,7 +151,10 @@ export function usePOSController({
       } catch {
         /* setter unavailable */
       }
-      setOpenShiftModal(true)
+      // Roles chosen in the settings must open a shift before working (the window cannot be
+      // closed). Others, and always the owner, work without one and are asked when they sell or
+      // move drawer cash (1.4.0).
+      setOpenShiftModal(res.shiftRequired ? 'required' : false)
     } else {
       setCurrentShift(null)
     }
@@ -184,10 +188,13 @@ export function usePOSController({
         vfcashStartBalance: vfcashStartNum,
         vfcashStartCash: vfcashCashNum
       })
+      const reason = openShiftModal
       setCurrentShift(shift)
       setOpenShiftModal(false)
       setIsLocked(false)
       playSound('chime')
+      // Opened to complete a sale: finish it on the new shift.
+      if (reason === 'sale') handleCheckout(shift)
     } catch (e) {
       console.error('Failed to open shift:', e)
       playSound('error')
@@ -452,14 +459,22 @@ export function usePOSController({
   // An attempt whose outcome is unknown (reply lost) is retried under the same key (lib/checkoutRetry).
   const checkoutPendingRef = useRef(null)
   const unresolvedCheckoutRef = useRef(null)
-  const handleCheckout = async () => {
+  const handleCheckout = async (openedShift = null) => {
+    // The button passes its click event; only a shift object from handleStartShift counts.
+    const shiftNow = openedShift?.status === 'open' ? openedShift : currentShift
     if (cart.length === 0) {
       playSound('error')
       triggerCustomAlert('السلة فارغة! يرجى إضافة سلع أولاً.', 'تنبيه الفاتورة')
       return
     }
 
-    if (!currentShift || !currentShift.id || currentShift.status !== 'open') {
+    if (!shiftNow || !shiftNow.id || shiftNow.status !== 'open') {
+      // A user allowed to work without a shift (the owner) is asked to open one now.
+      if (currentUser?.permissions?.includes('shifts.operate')) {
+        setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+        setOpenShiftModal('sale')
+        return
+      }
       playSound('error')
       triggerCustomAlert(
         'فشل البيع: لا توجد وردية كاشير مفتوحة حالياً!\nيرجى فتح وردية جديدة أولاً لبدء عمليات البيع.',
@@ -473,7 +488,7 @@ export function usePOSController({
 
     try {
       const payload = {
-        shiftId: currentShift.id,
+        shiftId: shiftNow.id,
         items: cart.map((item) => ({
           barcode: item.barcode,
           unitId: item.unitId ?? null,
