@@ -35,6 +35,24 @@ Status: **ready for your testing, not released.** Nothing has been published or 
   - Code signing would add detection; it is not bought yet.
 - **The Microsoft Visual C++ runtime is installed when missing.** The database needs it; without it, a clean Windows could not create the shop's database.
 
+## Safe updates from now on
+
+- **Updates stay manual:** you run the next version's installer.
+- **It refuses** while HeroMarket is open on any Windows account.
+- **It makes a verified copy of the database first.**
+- **Database changes** are applied by the installer and checked. If anything fails, it puts the copy back by itself.
+- **A program can never open data already updated by a newer version.**
+- Every update is recorded in `logs\update-history.jsonl`. See UPDATE_GUIDE.md.
+
+## Update case of this release
+
+**Case B (database change).** It applies migrations 0011–0013 over a 1.3.x installation; the 1.3 data is imported from its own file, which is never changed. The 1.3 program cannot use the new database, and does not need to: its own SQLite file is left as it was. To go back to 1.3, reinstall 1.3; it still finds its own data.
+
+## Printing
+
+- **When a receipt cannot be printed** (no printer, a wrong printer name, or a PDF printer that asks for a file name), the cashier is told why. The invoice is saved once and can be reprinted.
+- Before, a missing printer was silently reported as printed.
+
 ## Fixes from the 1.4.0 audit
 
 - A closed shift can no longer be changed by a sale or an expense arriving at the same moment.

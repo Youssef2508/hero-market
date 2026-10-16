@@ -92,15 +92,21 @@ Written for you, the developer, and for whoever installs updates at the shop. It
 - **Case A release:** reinstall the previous version's installer. The database fits both versions.
 - **Case B release:** the previous program will **not** open the updated database. That is deliberate, so it cannot damage it. Either:
   - **(preferred)** wait for a fixed new version; or
-  - **go back to the copy taken just before the update.** This loses everything recorded since the update, so first save a backup (النسخ الاحتياطي) and write down the sales made since then. Then, as administrator (right-click Command Prompt → Run as administrator):
+  - **go back to the copy taken just before the update.** This loses everything recorded since the update, so first save a backup (النسخ الاحتياطي) and write down the sales made since then. Then:
+    1. Run the **previous version's** installer. It installs the previous program, then reports that the data belongs to a newer version and stops (exit code 3). That is expected: the data is untouched.
+    2. As administrator (right-click Command Prompt → Run as administrator), run the previous program's restore command:
 
-    ```
-    "C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --restore-pre-install
-    ```
+       ```
+       "C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --restore-pre-install
+       ```
 
-    This checks the newest copy against its manifest, sets the current database aside (`pgdata.replaced-<time>`), puts the copy back and restarts the service. Then run the **previous version's** installer.
+       It picks the newest copy whose data **belongs to the installed (previous) version**, checks it against its manifest, sets the current database aside (`pgdata.replaced-<time>`), puts the copy back and restarts the service.
 
-  - A specific copy can be named: `--restore-pre-install=<folder name in backups\pre-install>`.
+    3. Open HeroMarket. It opens on the data as it was before the update.
+
+    Tested in Windows Sandbox: 1.4.0 → test version with a migration → 1.4.0 installer refused → restore → 1.4.0 opens with every record.
+
+  - A specific copy can be named: `--restore-pre-install=<folder name in backups\pre-install>`. If no copy matches, the command lists the copies with the version of their data.
 
 **Never** delete `pgdata`, a copy in `backups\pre-install`, or a `pgdata.failed-…` / `pgdata.replaced-…` folder before the developer has confirmed the shop works.
 
@@ -128,5 +134,15 @@ Previous version can open the database after this update: yes (A) / no (B: resto
   - a newer database refused by an older program;
   - lost rows and changed totals caught;
   - a failing migration leaving data and schema unchanged.
-- **Tested in Windows Sandbox:** see `.docs/AUDIT_1.4.0.md` §10. This covers updates over 1.4.0, a Case B update with a test migration, a failing migration put back by itself, and `--restore-pre-install`. Each item is marked there.
+- **Tested in Windows Sandbox (2026-10-16)**, with the 1.4.0 candidate from commit f351e4f and two test-only builds (`1.4.1-test.1` with a harmless migration, `1.4.1-test.2` with a migration that fails); never released:
+
+  | Scenario                                        | Result                                                                                                                                                   |
+  | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Installer started while HeroMarket is open      | Refused after 3 s, exit 4, nothing changed                                                                                                               |
+  | Case A: new 1.4.0 over the previous 1.4.0 build | Every record kept; history "case A, ok"; program opens                                                                                                   |
+  | Case B: 1.4.0 → 1.4.1-test.1                    | Migration 0014 applied; every record kept; history "case B, ok"                                                                                          |
+  | Older 1.4.0 over the updated data               | Refused (exit 3), data untouched; history "refused: database_newer"; the program explains it                                                             |
+  | `--restore-pre-install` with the 1.4.0 program  | The right copy (1.4.0 data) put back; every record; the program opens                                                                                    |
+  | Case B with a failing migration (1.4.1-test.2)  | Exit 3; the data identical to before; history "restored" with the reason; the program refuses until fixed; the previous installer brings everything back |
+
 - **Not tested:** an update on the supermarket's real PC (that happens with the first real release).

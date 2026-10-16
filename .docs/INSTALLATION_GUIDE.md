@@ -104,9 +104,13 @@ So give Windows accounts on the cashier PC only to people you trust with the sho
 1. Take a backup (§5).
 2. Close HeroMarket on **every** Windows account that has it open.
 3. Double-click the new `HeroMarket-Setup-<newer version>.exe` and click **Yes**. It replaces the program and keeps the data. You do not need to uninstall first.
-   - Before anything changes, the installer stops the database, makes a complete copy of it and checks every file (`backups\pre-install`). Only then does it update.
-   - If the copy fails (for example, a full disk), the update stops, nothing changes, and the reason is in `logs\setup.log`.
-4. Open HeroMarket.
+   - If HeroMarket is still open on some account, the installer says so and stops. Nothing is changed.
+   - Before anything changes, the installer stops the database, makes a complete copy of it and checks every file (`backups\pre-install`).
+   - If the new version changes the database, the installer applies the change and checks that every record is still there. If anything is wrong, it puts the copy back by itself and says the update did not complete.
+   - The result is written to `logs\update-history.jsonl`.
+4. Open HeroMarket and check a few known records (yesterday's sales, some stock, a customer balance).
+
+**Updates are manual:** HeroMarket never downloads anything by itself. The full procedure for every future release, what to check before and after, and how to go back are in [UPDATE_GUIDE.md](UPDATE_GUIDE.md).
 
 ## 7. If something goes wrong
 
