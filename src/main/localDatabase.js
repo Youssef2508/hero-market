@@ -6,7 +6,7 @@
 // app starts the server with pg_ctl when it opens and stops it when it quits. Nothing here ever deletes
 // or re-initialises an existing cluster, and a cluster that existed once is never silently recreated.
 import { app } from 'electron'
-import { spawn } from 'child_process'
+import { spawn, execFile } from 'child_process'
 import { join } from 'path'
 import fs from 'fs'
 import net from 'net'
@@ -127,7 +127,30 @@ async function choosePort(preferred) {
 }
 
 export function localUrl(local, db = DB_NAME) {
-  return `postgres://${DB_USER}:${encodeURIComponent(local.password)}@127.0.0.1:${local.port}/${db}`
+  // An installed store connects as its ordinary app role (local.user, set by the installer); older
+  // and development clusters use the role that created them.
+  const user = local.user || DB_USER
+  return `postgres://${user}:${encodeURIComponent(local.password)}@127.0.0.1:${local.port}/${db}`
+}
+
+/**
+ * Installed store (1.4.0): PostgreSQL runs as the Windows service the installer registered, under
+ * its own account. The app never creates, starts as itself, stops or changes that database: it
+ * connects, and if the service is stopped asks Windows to start it (users may start it, nothing
+ * more).
+ */
+async function ensureServiceRunning(local) {
+  if (await reachable(local)) return local
+  await new Promise((resolve) =>
+    execFile('sc.exe', ['start', local.service], { windowsHide: true }, () => resolve())
+  )
+  for (let i = 0; i < 60; i++) {
+    if (await reachable(local)) return local
+    await new Promise((r) => setTimeout(r, 1000))
+  }
+  throw new Error(
+    `خدمة قاعدة بيانات المتجر (${local.service}) لا تعمل. أعد تشغيل الجهاز، وإذا تكرر ذلك شغّل برنامج تثبيت HeroMarket مرة أخرى.`
+  )
 }
 
 async function isRunning(data) {
@@ -142,6 +165,7 @@ async function isRunning(data) {
  * @returns the current value (also persisted)
  */
 export async function ensureLocalDatabase(local, persist) {
+  if (local && local.service) return ensureServiceRunning(local)
   if (!fs.existsSync(exe('pg_ctl'))) {
     throw new Error(`PostgreSQL binaries not found in ${binDir()}`)
   }
@@ -267,7 +291,7 @@ export function localDataDir(local) {
  * Windows user of the same PC). `force` stops it regardless (pre-upgrade snapshot).
  */
 export async function stopLocalDatabase(local, { force = false } = {}) {
-  if (!local) return
+  if (!local || local.service) return // the service runs independently of who is signed in
   const { data } = paths(local.dir || chooseBaseDir())
   if (!fs.existsSync(join(data, 'PG_VERSION'))) return
   if (!force) {
@@ -302,3 +326,6 @@ async function otherSessions(local) {
     await client.end().catch(() => {})
   }
 }
+
+// For the installer's elevated setup (serviceSetup.js).
+export { exe as pgTool, run as runPgTool, choosePort, toolError, DB_NAME }

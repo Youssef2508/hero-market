@@ -1,7 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
-import { execFileSync } from 'child_process'
 
 // Imported first by src/main/index.js so it runs before any module reads app.getPath('userData').
 //
@@ -46,29 +45,29 @@ export function storeDir() {
 }
 
 /**
- * Create the store folder once and let every local user of this PC work in it. The first account
- * to start HeroMarket owns the new folder and grants the Users group (S-1-5-32-545) modify rights,
- * inherited by the database files created inside. Without this, a second Windows account could
- * read but not write the database. Failure to set the rights is reported, not fatal: the account
- * that created the folder can always work in it.
+ * Is the store's database run by the Windows service the installer set up (1.4.0, security review
+ * option C)? True for an installed app; development, tests and HEROMARKET_USER_DATA sessions keep an
+ * app-managed database in their own folder.
+ */
+export function usesDatabaseService() {
+  return process.platform === 'win32' && app.isPackaged && !process.env.HEROMARKET_USER_DATA
+}
+
+/** Name of the store's database service (also its virtual account NT SERVICE<name>). */
+export function serviceName() {
+  return folders.serviceName || 'HeroMarketDB'
+}
+
+/**
+ * The store folder. For an installed app it is created and secured by the installer
+ * (--setup-service, serviceSetup.js): Windows users may read it and write only its logs and
+ * backups; the database files belong to the service account. Nothing here changes permissions.
+ * (Until 1.4.0's security review, the first account to start HeroMarket granted every user modify
+ * rights on the whole folder, database files included. That is removed.)
  */
 export function ensureStoreDir() {
   const dir = storeDir()
-  fs.mkdirSync(dir, { recursive: true })
-  if (process.platform !== 'win32' || !app.isPackaged || process.env.HEROMARKET_USER_DATA)
-    return dir
-  const marker = join(dir, '.shared-v1')
-  if (!fs.existsSync(marker)) {
-    try {
-      execFileSync('icacls', [dir, '/grant', '*S-1-5-32-545:(OI)(CI)M', '/T', '/C', '/Q'], {
-        windowsHide: true,
-        stdio: 'ignore'
-      })
-      fs.writeFileSync(marker, new Date().toISOString())
-    } catch (e) {
-      console.error('[store] could not share the store folder with all users:', e.message)
-    }
-  }
+  if (!usesDatabaseService()) fs.mkdirSync(dir, { recursive: true })
   return dir
 }
 

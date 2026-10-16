@@ -533,6 +533,8 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 ## D-052 Per-machine installation, shared store folder and program hardening (1.4.0)
 
+> **Partly superseded by D-053:** the database now runs as a Windows service with its own account. The shared-folder permissions, the "accepted risk" and the two-account database lifetime below no longer apply.
+
 - **Install for all users:** the installer is per-machine (`C:\Program Files\HeroMarket-POS`, one administrator prompt). The store's data moved to `%ProgramData%\HeroMarket`.
   - On first creation, the local Users group is given modify rights, inherited by the database files.
   - Every Windows account on the cashier PC therefore opens the same shop.
@@ -546,3 +548,28 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Verified on the QA build: `ELECTRON_RUN_AS_NODE=1` has no effect, and a modified header is refused before the database starts.
   - Changes inside file contents are not caught at start. The protection for those is the administrator-only Program Files folder (and, later, code signing).
 - **Rejected:** keeping per-user installs (a second Windows account would see an empty shop); a Windows service for PostgreSQL (needs an administrator for every change and survives uninstall).
+
+## D-053 The store's database runs as a Windows service with its own account (1.4.0, security review option C)
+
+- **Why:** with D-052's shared folder, any standard Windows user of the till PC could read the database superuser password and write the database files. Through the database, they could run Windows commands as the account that had started HeroMarket. This was verified in Windows Sandbox. See [SECURITY_REVIEW_LOCAL_DATABASE.md](SECURITY_REVIEW_LOCAL_DATABASE.md). The owner chose option C before release.
+- **Service:** the installer, which runs as administrator, calls `HeroMarket-POS.exe --setup-service` (`src/main/serviceSetup.js`). That step registers **HeroMarketDB** (QA edition: HeroMarketDB-QA):
+  - PostgreSQL runs under the virtual account `NT SERVICE\HeroMarketDB`, starts automatically, and listens on 127.0.0.1 only;
+  - it restarts on failure;
+  - Windows users may start the service but not stop, change or delete it.
+- **Folders:**
+  - `pgdata`: SYSTEM, Administrators and the service account only.
+  - `admin\superuser.json`: Administrators only.
+  - `heromarket.json`: users may read it, only administrators may change it.
+  - `logs` and `backups`: users may write.
+  - The 1.4.0 rule that gave every user modify rights on the whole folder is removed.
+- **Roles:**
+  - The app connects as `hm_app`. It owns the shop's objects but has no superuser, create-role, create-database or replication rights (`src/server/db/appRole.js`).
+  - Proven by `tests/service/appRole.test.js`: migrations from scratch, sales, backup and restore, the 1.3 import; Windows commands, server files, server settings and role creation are refused.
+  - New databases get the bootstrap superuser `hm_admin`.
+  - An older database, created by the app as superuser `heromarket`, is handed over to `hm_app` object by object. `heromarket` then gets a new password that only administrators can read.
+- **Lifetime:** the database no longer depends on who is signed in to Windows. This fixes three D-052 problems: signing out ended the database for other accounts, it ran on after everyone closed HeroMarket, and the upgrade copy stopped it for everyone.
+- **Upgrades:** the installer takes the verified copy of the database (`backups\pre-install`) before re-registering the service. The app refuses to migrate when the setup did not complete for its version (`local.setupVersion`).
+- **Residual risk (accepted for 1.4.0):** a Windows user with technical skill can change shop data with SQL as `hm_app`. Running the HeroMarket service itself as a Windows service (option D) would close this.
+- **Rejected:**
+  - restricting file permissions without a service (impossible while PostgreSQL runs as whichever user opens HeroMarket);
+  - going back to per-user installs (breaks the all-users requirement).

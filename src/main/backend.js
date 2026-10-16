@@ -16,7 +16,13 @@ import crypto from 'crypto'
 import os from 'os'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
 import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
-import { legacyDatabaseFile, storeDir, ensureStoreDir, perUserConfigFile } from './userDataPath'
+import {
+  legacyDatabaseFile,
+  storeDir,
+  ensureStoreDir,
+  perUserConfigFile,
+  usesDatabaseService
+} from './userDataPath'
 import { copyAndVerify } from './upgradeSnapshot'
 import { verifyPinnedChain } from './tlsPin'
 
@@ -332,7 +338,8 @@ async function doStart() {
   lastError = null
   try {
     ensureStoreDir()
-    await adoptPerUserStore()
+    // An installed app's store is set up by the installer (serviceSetup.js), never by the app.
+    if (!usesDatabaseService()) await adoptPerUserStore()
   } catch (e) {
     backend = null
     lastError = e.message
@@ -357,6 +364,20 @@ async function doStart() {
       await stopLocalDatabase(localStarted).catch(() => {})
       localStarted = null
     }
+    if (cfg.mode === 'local' && usesDatabaseService()) {
+      // Installed: the database runs as the installer's Windows service, and that setup must be the
+      // one of this version (it took the verified copy before this version's migrations).
+      if (!cfg.local || !cfg.local.service) {
+        throw new Error(
+          'لم يتم تجهيز قاعدة بيانات المتجر على هذا الجهاز. شغّل برنامج تثبيت HeroMarket مرة أخرى (يحتاج موافقة المسؤول).'
+        )
+      }
+      if (cfg.local.setupVersion !== app.getVersion()) {
+        throw new Error(
+          'لم يكتمل تجهيز قاعدة البيانات لهذه النسخة، فلم يتم تحديث البيانات. شغّل برنامج تثبيت HeroMarket مرة أخرى.'
+        )
+      }
+    }
     if (cfg.mode === 'local') {
       stage = 'database'
       const local = await ensureLocalDatabase(cfg.local, (value) => {
@@ -365,9 +386,11 @@ async function doStart() {
       if (!fs.existsSync(configFile())) cfg = writeConfig({ ...cfg, local })
       localStarted = local
       const databaseUrl = localUrl(local)
-      await snapshotBeforeUpgrade(local, (value) => {
-        cfg = writeConfig({ ...cfg, local: value })
-      })
+      // The service setup copies the database before an upgrade; an app-managed one is copied here.
+      if (!local.service)
+        await snapshotBeforeUpgrade(local, (value) => {
+          cfg = writeConfig({ ...cfg, local: value })
+        })
       await importLegacyIfPresent(databaseUrl)
       stage = 'service'
       backend = await startStandalone({ ...cfg, databaseUrl })

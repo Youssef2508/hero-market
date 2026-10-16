@@ -11,6 +11,8 @@ extraMetadata:
   heromarket:
     dataDir: HeroMarket-QA
     storeDir: HeroMarket-QA
+    # Own database service, so a QA installation never stops or changes the store's HeroMarketDB.
+    serviceName: HeroMarketDB-QA
     legacyDir: HeroMarket-QA-legacy
 nsis:
   artifactName: HeroMarket-QA-Setup-${version}.${ext}

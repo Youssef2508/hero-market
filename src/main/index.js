@@ -1,4 +1,5 @@
 import { ensureStoreDir } from './userDataPath'
+import { setupService, stopServiceOnly, removeService } from './serviceSetup'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -19,7 +20,14 @@ import { registerDataIpc } from './dataIpc'
 
 // Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
 if (app.isPackaged) {
-  const logPath = join(ensureStoreDir(), 'app.log')
+  // logs is the part of the store folder Windows users may write (serviceSetup.js).
+  const logDir = join(ensureStoreDir(), 'logs')
+  try {
+    fs.mkdirSync(logDir, { recursive: true })
+  } catch {
+    /* created by the installer */
+  }
+  const logPath = join(logDir, 'app.log')
 
   if (fs.existsSync(logPath)) {
     try {
@@ -64,8 +72,37 @@ if (app.isPackaged) {
 const RESET_ARG = '--reset-password='
 const resetUser = process.argv.find((a) => a.startsWith(RESET_ARG))?.slice(RESET_ARG.length)
 
+// Installer steps (run elevated by the per-machine installer, no window): set up, stop or remove the
+// store's database service (serviceSetup.js). Exit code 0 = done; the reason is in logssetup.log.
+const SERVICE_STEPS = {
+  '--setup-service': setupService,
+  '--stop-service': stopServiceOnly,
+  '--remove-service': removeService
+}
+const serviceStep = Object.keys(SERVICE_STEPS).find((a) => process.argv.includes(a))
+if (serviceStep) {
+  app.whenReady().then(async () => {
+    try {
+      await SERVICE_STEPS[serviceStep]()
+      app.exit(0)
+    } catch (e) {
+      console.error(`[setup] ${serviceStep} failed:`, e.message)
+      try {
+        fs.appendFileSync(
+          join(ensureStoreDir(), 'logs', 'setup.log'),
+          `[${new Date().toISOString()}] FAILED ${serviceStep}: ${e.stack || e.message}
+`
+        )
+      } catch {
+        /* nothing more to do */
+      }
+      app.exit(1)
+    }
+  })
+}
+
 // One instance per PC: a second copy would share – and on quit stop – the local database.
-if (!app.requestSingleInstanceLock()) {
+if (!serviceStep && !app.requestSingleInstanceLock()) {
   if (resetUser)
     app.whenReady().then(() => {
       dialog.showErrorBox(
@@ -165,6 +202,7 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  if (serviceStep) return // installer step: no window, no backend
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.heromarket.pos')
 

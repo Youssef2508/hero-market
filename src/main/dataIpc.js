@@ -43,13 +43,24 @@ export function registerDataIpc({
         return { ready: false, error: e.message }
       }
     }
-    writeConfig({
-      mode,
-      databaseUrl: cfg.databaseUrl,
-      serverUrl: cfg.serverUrl,
-      serverCaPem,
-      terminalName: cfg.terminalName
-    })
+    try {
+      writeConfig({
+        mode,
+        databaseUrl: cfg.databaseUrl,
+        serverUrl: cfg.serverUrl,
+        serverCaPem,
+        terminalName: cfg.terminalName
+      })
+    } catch (e) {
+      // Installed: the connection settings belong to administrators (serviceSetup.js).
+      if (e.code === 'EPERM' || e.code === 'EACCES')
+        return {
+          ready: false,
+          error:
+            'تغيير إعدادات الاتصال يحتاج صلاحيات المسؤول. أغلق HeroMarket ثم افتحه بزر الفأرة الأيمن ← "تشغيل كمسؤول".'
+        }
+      throw e
+    }
     clearSession()
     return startBackend()
   })
