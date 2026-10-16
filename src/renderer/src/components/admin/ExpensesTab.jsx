@@ -202,6 +202,7 @@ export default function ExpensesTab({
                 حفظ المصروف
               </button>
               <button
+                data-modal-close
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => setShowAddExpenseModal(false)}

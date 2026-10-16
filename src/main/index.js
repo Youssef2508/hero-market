@@ -1,4 +1,6 @@
-import './userDataPath'
+import { ensureStoreDir } from './userDataPath'
+import { setupService, stopServiceOnly, removeService, restorePreInstall } from './serviceSetup'
+import { openLogFile } from './logFile'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -17,55 +19,91 @@ import fs from 'fs'
 import { initializePrinter, registerSalePrinting, runPrintScript } from './printer'
 import { registerDataIpc } from './dataIpc'
 
-// Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
+// Production: warnings and errors go to a log file (started afresh after a day). The installer's
+// steps log to logs/setup.log only, so the administrator never creates the program's app.log.
+const SERVICE_STEP_ARGS = [
+  '--setup-service',
+  '--stop-service',
+  '--remove-service',
+  '--restore-pre-install'
+]
 if (app.isPackaged) {
-  const logPath = join(app.getPath('userData'), 'app.log')
-
-  if (fs.existsSync(logPath)) {
-    try {
-      const stats = fs.statSync(logPath)
-      const now = new Date()
-      const timeDiff = now.getTime() - stats.mtime.getTime()
-      if (timeDiff > 24 * 60 * 60 * 1000) {
-        fs.writeFileSync(
-          logPath,
-          `[LOG ENGINE] [${new Date().toISOString()}] Log file reset (exceeded 24 hours).\n`,
-          'utf8'
-        )
+  const logs = join(ensureStoreDir(), 'logs')
+  const installerStep = SERVICE_STEP_ARGS.some((a) =>
+    process.argv.some((x) => x === a || x.startsWith(`${a}=`))
+  )
+  const log = openLogFile(
+    installerStep
+      ? [join(logs, 'setup.log')]
+      : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
+  )
+  // Errors keep their message and stack (JSON.stringify(new Error()) is "{}", which hid the reason
+  // of a failed print in the 1.4.0 release checks).
+  const logText = (a) => {
+    if (a instanceof Error) return a.stack || `${a.name}: ${a.message}`
+    if (a && typeof a === 'object') {
+      try {
+        return JSON.stringify(a)
+      } catch {
+        return String(a)
       }
-    } catch (_) {}
+    }
+    return a
   }
-
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' })
-
-  console.log = (...args) => {
-    logStream.write(
-      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
-  }
-  console.info = (...args) => {
-    logStream.write(
-      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
-  }
-  console.warn = (...args) => {
-    logStream.write(
-      `[WARN] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
-  }
-  console.error = (...args) => {
-    logStream.write(
-      `[ERROR] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
-  }
+  const writer =
+    (level) =>
+    (...args) =>
+      log.write(`[${level}] [${new Date().toISOString()}] ${args.map(logText).join(' ')}
+`)
+  console.log = writer('INFO')
+  console.info = writer('INFO')
+  console.warn = writer('WARN')
+  console.error = writer('ERROR')
 }
 
 // Local password reset: "HeroMarket-POS.exe" --reset-password=<username> (see src/server/auth/reset.js).
 const RESET_ARG = '--reset-password='
 const resetUser = process.argv.find((a) => a.startsWith(RESET_ARG))?.slice(RESET_ARG.length)
 
+// Installer steps (run elevated by the per-machine installer, no window): set up, stop or remove the
+// store's database service (serviceSetup.js). Exit code 0 = done; the reason is in logs/setup.log.
+// Support (elevated): --restore-pre-install[=<copy>] puts back a verified copy taken before an
+// installation or update (.docs/UPDATE_GUIDE.md, recovery).
+const RESTORE_ARG = process.argv.find(
+  (a) => a === '--restore-pre-install' || a.startsWith('--restore-pre-install=')
+)
+const SERVICE_STEPS = {
+  '--setup-service': setupService,
+  '--stop-service': stopServiceOnly,
+  '--remove-service': removeService,
+  '--restore-pre-install': () => restorePreInstall(RESTORE_ARG && RESTORE_ARG.split('=')[1])
+}
+const serviceStep = RESTORE_ARG
+  ? '--restore-pre-install'
+  : Object.keys(SERVICE_STEPS).find((a) => process.argv.includes(a))
+if (serviceStep) {
+  app.whenReady().then(async () => {
+    try {
+      await SERVICE_STEPS[serviceStep]()
+      app.exit(0)
+    } catch (e) {
+      console.error(`[setup] ${serviceStep} failed:`, e.message)
+      try {
+        fs.appendFileSync(
+          join(ensureStoreDir(), 'logs', 'setup.log'),
+          `[${new Date().toISOString()}] FAILED ${serviceStep}: ${e.stack || e.message}
+`
+        )
+      } catch {
+        /* nothing more to do */
+      }
+      app.exit(1)
+    }
+  })
+}
+
 // One instance per PC: a second copy would share – and on quit stop – the local database.
-if (!app.requestSingleInstanceLock()) {
+if (!serviceStep && !app.requestSingleInstanceLock()) {
   if (resetUser)
     app.whenReady().then(() => {
       dialog.showErrorBox(
@@ -165,6 +203,7 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  if (serviceStep) return // installer step: no window, no backend
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.heromarket.pos')
 

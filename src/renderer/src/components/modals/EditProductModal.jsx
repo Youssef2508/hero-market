@@ -1,4 +1,6 @@
 import { PackageOpen } from 'lucide-react'
+import CategorySelect from './CategorySelect'
+import KindSelect from './KindSelect'
 
 const EditProductModal = ({
   showEditModal,
@@ -129,20 +131,34 @@ const EditProductModal = ({
             </div>
             <div className="form-group">
               <label>طريقة القياس (الوحدة الأساسية للمخزون)</label>
-              <select
-                className="form-input"
+              <KindSelect
                 value={editProduct.unit_kind || 'count'}
-                onChange={(e) => setEditProduct((prev) => ({ ...prev, unit_kind: e.target.value }))}
-              >
-                <option value="count">بالعدد (قطعة، علبة… أعداد صحيحة)</option>
-                <option value="weight">بالوزن (كيلوجرام، 3 خانات عشرية)</option>
-                <option value="volume">بالحجم (لتر، 3 خانات عشرية)</option>
-              </select>
+                onChange={(kind) => setEditProduct((prev) => ({ ...prev, unit_kind: kind }))}
+              />
             </div>
+            <div className="form-group">
+              <label htmlFor="edit-product-category">التصنيف</label>
+              <CategorySelect
+                id="edit-product-category"
+                value={editProduct.category_id ?? null}
+                onChange={(id) => setEditProduct((prev) => ({ ...prev, category_id: id }))}
+              />
+            </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={editProduct.is_active !== false}
+                onChange={(e) =>
+                  setEditProduct((prev) => ({ ...prev, is_active: e.target.checked }))
+                }
+              />
+              <span>متاح للبيع (إلغاء التحديد يوقف بيعه ويخفيه من البحث والتصفح، ويبقى سجله)</span>
+            </label>
           </div>
 
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowEditModal(false)}

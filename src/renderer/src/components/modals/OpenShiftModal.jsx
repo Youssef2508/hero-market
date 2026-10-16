@@ -1,8 +1,16 @@
 import { PlayCircle, Store, Smartphone, Wallet } from 'lucide-react'
 import { can } from '../../lib/api'
 
+// Why the window is open (1.4.0). 'required' (or true): the user's role must open a shift before
+// working, so it cannot be closed. Otherwise the user may close it and work without a shift.
+const REASONS = {
+  sale: 'لإتمام البيع افتح وردية أولاً؛ يكتمل البيع تلقائياً بعد فتحها.',
+  cash: 'هذه العملية تحرك نقدية الدرج وتحتاج وردية مفتوحة. افتح وردية ثم أعد المحاولة.'
+}
+
 const OpenShiftModal = ({
   openShiftModal,
+  setOpenShiftModal,
   currentUser,
   startingCash,
   setStartingCash,
@@ -19,6 +27,8 @@ const OpenShiftModal = ({
   if (!openShiftModal) return null
   // Opening floats for Momkn and wallets: the service accepts them only with shifts.multi_till.
   const isAdmin = can(currentUser, 'shifts.multi_till')
+  const required = openShiftModal === true || openShiftModal === 'required'
+  const reason = REASONS[openShiftModal]
 
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
@@ -42,6 +52,11 @@ const OpenShiftModal = ({
             الكاشير الحالي: <strong>{currentUser?.username}</strong>
           </p>
         </div>
+        {reason && (
+          <p className="field-hint is-warning" role="status">
+            {reason}
+          </p>
+        )}
 
         <div className="modal-body">
           <section className="till-section">
@@ -127,6 +142,16 @@ const OpenShiftModal = ({
         </div>
 
         <div className="modal-footer">
+          {!required && (
+            <button
+              data-modal-close
+              type="button"
+              className="btn btn-secondary btn-lg"
+              onClick={() => setOpenShiftModal(false)}
+            >
+              لاحقاً
+            </button>
+          )}
           <button type="submit" className="btn btn-primary btn-lg btn-block">
             تأكيد فتح الوردية وبدء العمل
           </button>

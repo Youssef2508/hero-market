@@ -10,7 +10,25 @@ $script:lineIdx = 0
 $script:logoPrinted = $false
 
 $doc = New-Object System.Drawing.Printing.PrintDocument
-$doc.PrinterSettings.PrinterName = $PrinterName
+# No name: Windows' default printer.
+if ($PrinterName) { $doc.PrinterSettings.PrinterName = $PrinterName }
+$target = $doc.PrinterSettings.PrinterName
+# Every failure ends with PRINT_FAILED and a non-zero exit code; PRINT_DONE only after a real print
+# (1.4.0: a missing printer used to end with PRINT_DONE, so the cashier was never told).
+if (-not $doc.PrinterSettings.IsValid) {
+    Write-Host "PRINT_FAILED: INVALID_PRINTER $target"
+    exit 2
+}
+# A printer that asks for a file name (Microsoft Print to PDF, XPS…) would wait for a dialog nobody
+# sees during silent printing: refuse it, unless printing to a file on purpose (-OutFile).
+if (-not $OutFile) {
+    $wql = "Name='" + $target.Replace('\', '\\').Replace("'", "\'") + "'"
+    $printer = Get-CimInstance Win32_Printer -Filter $wql -ErrorAction SilentlyContinue
+    if ($printer -and $printer.PortName -eq 'PORTPROMPT:') {
+        Write-Host "PRINT_FAILED: NEEDS_FILE_NAME $target"
+        exit 3
+    }
+}
 # Verification aid: print silently to a file (e.g. with "Microsoft Print to PDF").
 if ($OutFile) {
     $doc.PrinterSettings.PrintToFile = $true
@@ -187,7 +205,12 @@ $doc.add_PrintPage({
     $e.HasMorePages = $false
 })
 
-$doc.Print()
+try {
+    $doc.Print()
+} catch {
+    Write-Host "PRINT_FAILED: $($_.Exception.Message)"
+    exit 1
+}
 $doc.Dispose()
 $font.Dispose()
 $fontBold.Dispose()

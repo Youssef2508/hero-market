@@ -36,6 +36,7 @@ const CustomAlertModal = ({ customAlert, closeCustomAlert }) => {
         </p>
         <div className="modal-footer">
           <button
+            data-modal-close
             type="button"
             className="btn btn-primary btn-lg btn-block"
             onClick={closeCustomAlert}

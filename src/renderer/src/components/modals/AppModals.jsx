@@ -16,6 +16,7 @@ import CustomConfirmModal from './CustomConfirmModal'
 
 export default function AppModals({
   openShiftModal,
+  setOpenShiftModal,
   currentUser,
   startingCash,
   setStartingCash,
@@ -108,6 +109,7 @@ export default function AppModals({
     <>
       <OpenShiftModal
         openShiftModal={openShiftModal}
+        setOpenShiftModal={setOpenShiftModal}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}

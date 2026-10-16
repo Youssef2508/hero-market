@@ -17,6 +17,8 @@ const forbidden = (msg = 'ليس لديك صلاحية لتنفيذ هذا ال�
   new ServiceError(403, 'forbidden', msg)
 const notFound = (msg = 'العنصر المطلوب غير موجود.') => new ServiceError(404, 'not_found', msg)
 const conflict = (msg, details) => new ServiceError(409, 'conflict', msg, details)
+// The operation moves drawer cash and the user has no open shift (the terminal offers to open one).
+const shiftRequired = (msg) => new ServiceError(409, 'shift_required', msg)
 const tooMany = (msg) => new ServiceError(429, 'too_many_attempts', msg)
 // A supervisor must approve (the terminal asks for their username and password, then retries).
 const approvalRequired = (msg, details) => new ServiceError(403, 'approval_required', msg, details)
@@ -79,6 +81,7 @@ module.exports = {
   forbidden,
   notFound,
   conflict,
+  shiftRequired,
   tooMany,
   approvalRequired,
   approvalRefused,

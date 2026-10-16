@@ -32,3 +32,9 @@ test-results/
 # Local development PostgreSQL (scripts/pg-dev.js)
 .pgdata/
 .migration-backups/
+
+# Microsoft VC++ redistributable, downloaded and signature-checked at build time (scripts/fetch-vcredist.js)
+build/vcredist/
+
+# Temporary config files left by interrupted electron-vite builds
+electron.vite.config.*.mjs

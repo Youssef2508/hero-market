@@ -5,7 +5,7 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 ## 1. What you need
 
 - One Windows 10 or Windows 11 computer (64-bit), with at least 4 GB of memory and 2 GB of free disk space.
-- The installer file `HeroMarket-Setup-<version>.exe`, about 155 MB. It contains everything: the program and its own database (PostgreSQL). Nothing else has to be installed first.
+- The installer file `HeroMarket-Setup-<version>.exe`, about 175 MB. It contains everything: the program, its own database (PostgreSQL) and the Microsoft Visual C++ runtime that database needs. Nothing else has to be installed first.
 - No internet connection. The program never needs it to sell.
 
 ## 2. Install (once)
@@ -13,22 +13,26 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 1. Copy `HeroMarket-Setup-<version>.exe` to the cashier PC, for example from a USB stick.
 2. Double-click it.
    - The installer is **not code-signed yet**, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. This message disappears once a code-signing certificate is bought (see [DEPLOYMENT_RECOMMENDATION.md](DEPLOYMENT_RECOMMENDATION.md) §5).
-3. There are no questions to answer. The installer:
-   - puts the program in `C:\Users\<you>\AppData\Local\Programs\heromarket-pos`;
-   - creates a **HeroMarket POS** shortcut on the Desktop and in the Start Menu;
-   - opens the program.
+3. Windows asks **"Do you want to allow this app to make changes to your device?"**. Click **Yes** (an administrator's password may be asked once). There are no other questions. The installer, in about two to five minutes:
+   - puts the program in `C:\Program Files\HeroMarket-POS`, for **every Windows user of this PC**;
+   - installs the Microsoft Visual C++ runtime if the PC does not have it;
+   - sets up the shop's database as a Windows service, **HeroMarketDB**. It starts with Windows and runs under its own account, so Windows users cannot open its files (see §4);
+   - creates a **HeroMarket POS** shortcut on the Desktop and in the Start Menu of every user.
 
-   No administrator rights are needed.
+   If this Windows user had an older HeroMarket installed only for themselves, that copy is removed automatically. Its data is kept and moved in.
 
-4. On the first start the program prepares its database on this computer. This takes up to a minute.
-   - If the PC still has the old version's data (`%APPDATA%\elnagdi-pos`), it is copied in automatically. The old file is only read, never changed.
-   - Then the **إعداد المتجر لأول مرة** screen asks you to create the first administrator. There is no default password.
+4. Open **HeroMarket POS**.
+   - The store's data is kept in `C:\ProgramData\HeroMarket`, shared by all Windows users of the PC: whoever signs in to Windows opens the same shop, with the same products, invoices and shifts.
+   - If the PC has the data of HeroMarket 1.3 (`%APPDATA%\elnagdi-pos` of the Windows user who used it), it is imported on the first start by that user. The old file is only read, never changed, and a copy is kept in `backups\legacy-sqlite`.
+   - If the installing Windows user has data from a pre-1.4.0 PostgreSQL version (`%APPDATA%\HeroMarket`), the installer copies it in and checks every file. The old database folder is left as it was; only its settings file is renamed (`heromarket.json.moved-to-…`) so the data is never moved twice.
+   - Without old data, the **إعداد المتجر لأول مرة** screen asks you to create the first administrator. There is no default password.
    - Next, the **recovery code** is shown once. Write it on paper and keep it away from the till (§3a).
 
 ## 3. Daily use
 
-- **Open:** double-click **HeroMarket POS** on the Desktop, wait for the login screen, and sign in. The database starts by itself.
-- **Close:** close the window. The program stops its database cleanly. If Windows is shut down with the program open, the database recovers by itself on the next start.
+- **Open:** double-click **HeroMarket POS** on the Desktop, wait for the login screen, and sign in.
+- **Close:** close the window. The database keeps running in the background as a Windows service (it uses little memory) and stops cleanly when Windows shuts down. After a power cut it recovers by itself.
+- **Several Windows users on one PC:** each can open HeroMarket under their own Windows account, at the same time if needed (switch user), and all of them work in the same shop. Signing out of one account does not affect the others. In every case, sign in to HeroMarket itself with your own HeroMarket username.
 - Without internet everything works: sales, invoices, stock and shifts are saved on this computer immediately.
 
 ## 3a. Sign-in and passwords
@@ -44,7 +48,7 @@ Everything here is done with the mouse. Nobody in the shop needs a terminal, Nod
 - **Recovery code lost as well:**
   1. Close HeroMarket.
   2. Press **Win + R** and type:
-     `"%LOCALAPPDATA%\Programs\heromarket-pos\HeroMarket-POS.exe" --reset-password=<your username>`
+     `"C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --reset-password=<your username>`
   3. A window shows a temporary password; sign in with it and choose a new one.
 
   This works only on the store PC itself and is written to the event log. Anyone who can use that PC's Windows account can do it, so protect the Windows account with its own password.
@@ -65,56 +69,80 @@ Until then the shop works fully without it.
 
 ## 4. Where the data is
 
-| What                                         | Where                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| The store's database and settings            | `%APPDATA%\HeroMarket` (`pgdata`, `heromarket.json`)                                |
-| Automatic copies taken before every upgrade  | `%APPDATA%\HeroMarket\backups\pre-upgrade` (the newest 3 are kept)                  |
-| Copy of the old version's data (first start) | `%APPDATA%\HeroMarket\backups\legacy-sqlite`                                        |
-| The program files                            | `%LOCALAPPDATA%\Programs\heromarket-pos` (replaced by every upgrade, holds no data) |
+| What                                                                              | Where                                                                             | Who can open it                                                   |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| The store's database                                                              | `C:\ProgramData\HeroMarket\pgdata`                                                | Only the database service and administrators                      |
+| The superuser password of the database (support only)                             | `C:\ProgramData\HeroMarket\admin`                                                 | Administrators only                                               |
+| Connection settings of the program                                                | `C:\ProgramData\HeroMarket\heromarket.json`                                       | Every Windows user may read it; only administrators may change it |
+| Program log and installer log                                                     | `C:\ProgramData\HeroMarket\logs` (`app.log`, `setup.log`)                         | Every Windows user                                                |
+| Copies taken before each installation or update (verified, the newest 3 are kept) | `C:\ProgramData\HeroMarket\backups\pre-install`                                   | Every Windows user may read them                                  |
+| Copy of the old version's data (first start), copies before a restore             | `C:\ProgramData\HeroMarket\backups`                                               | Every Windows user may read them                                  |
+| Data of version 1.3 or earlier (left as it was)                                   | `%APPDATA%\elnagdi-pos` or `%APPDATA%\HeroMarket` of the Windows user who used it | That user                                                         |
+| Window preferences (theme, last username) of one Windows user                     | `%APPDATA%\HeroMarket`                                                            | That user                                                         |
+| The program files                                                                 | `C:\Program Files\HeroMarket-POS` (replaced by every update, holds no data)       | Every user may run it; only administrators may change it          |
 
-`heromarket.json` holds the database password and the server secret. Keep it together with the backups and never share it.
+**What a Windows user of this PC can and cannot do** (security review, [SECURITY_REVIEW_LOCAL_DATABASE.md](SECURITY_REVIEW_LOCAL_DATABASE.md)):
+
+- **Cannot:**
+  - open the database files;
+  - read the superuser password;
+  - change the database server;
+  - use the database to run programs on Windows.
+- **Can:** someone with technical skill could read the program's connection settings and change shop data directly, outside HeroMarket's permissions and audit.
+
+So give Windows accounts on the cashier PC only to people you trust with the shop's data, and protect each account with its own Windows password.
+
+**Changing the connection settings** (for example, turning this PC into a till of another server) needs an administrator: close HeroMarket, then right-click it → **Run as administrator**.
 
 ## 5. Back up
 
 - **Every day:** open **النسخ الاحتياطي → حفظ نسخة** and save the file to a USB stick, not the same computer.
-- **Once a week:** with the program **closed**, copy the whole `%APPDATA%\HeroMarket` folder to a USB stick. This copy can rebuild the shop on a new PC.
+- **Once a week:** with the program **closed**, copy the whole `C:\ProgramData\HeroMarket` folder to a USB stick. This copy can rebuild the shop on a new PC.
 
 ## 6. Update to a new version
 
 1. Take a backup (§5).
-2. Close HeroMarket.
-3. Double-click the new `HeroMarket-Setup-<newer version>.exe`. It replaces the program and keeps the data. You do not need to uninstall first.
-4. Open HeroMarket. If the new version changes the database:
-   - it first closes the database;
-   - it makes a complete copy of it and checks every file;
-   - only then does it update.
+2. Close HeroMarket on **every** Windows account that has it open.
+3. Double-click the new `HeroMarket-Setup-<newer version>.exe` and click **Yes**. It replaces the program and keeps the data. You do not need to uninstall first.
+   - If HeroMarket is still open on some account, the installer says so and stops. Nothing is changed.
+   - Before anything changes, the installer stops the database, makes a complete copy of it and checks every file (`backups\pre-install`).
+   - If the new version changes the database, the installer applies the change and checks that every record is still there. If anything is wrong, it puts the copy back by itself and says the update did not complete.
+   - The result is written to `logs\update-history.jsonl`.
+4. Open HeroMarket and check a few known records (yesterday's sales, some stock, a customer balance).
 
-   If the copy fails (for example, a full disk), the update stops, nothing changes, and the screen says why.
+**Updates are manual:** HeroMarket never downloads anything by itself. The full procedure for every future release, what to check before and after, and how to go back are in [UPDATE_GUIDE.md](UPDATE_GUIDE.md).
 
 ## 7. If something goes wrong
 
-| Problem                                                     | What to do                                                                                                                                                                                                 |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The program says the database could not start               | Restart the computer and open the program again. If it repeats, send the file `%APPDATA%\HeroMarket\logs\postgres.log` to support. Do **not** delete any folder.                                           |
-| An update went wrong and you want the previous version back | Close the program. Reinstall the previous installer. Ask support to put the newest folder from `backups\pre-upgrade\…\pgdata` back as `%APPDATA%\HeroMarket\pgdata` (a guided button for this is planned). |
-| The PC broke                                                | Install HeroMarket on the new PC, close it, put the weekly copy of the `HeroMarket` folder back in `%APPDATA%`, and open it.                                                                               |
+| Problem                                                      | What to do                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The program says the database service does not run           | Restart the computer. If it repeats, run the installer again (it repairs the service and keeps the data). Send `C:\ProgramData\HeroMarket\logs\setup.log` and `app.log` to support. Do **not** delete any folder.                                         |
+| The program says "لم يكتمل تجهيز قاعدة البيانات لهذه النسخة" | The installer did not finish. Run it again. Nothing was changed in your data.                                                                                                                                                                             |
+| The installer says the database could not be set up          | Nothing was deleted. Send `logs\setup.log` to support. The database server's own log is in `pgdata\log`; an administrator can open it.                                                                                                                    |
+| An update went wrong and you want the previous version back  | Ask support: reinstall the previous installer, then put the newest folder from `backups\pre-install\…\pgdata` back as `C:\ProgramData\HeroMarket\pgdata` (with the database service stopped). A guided button for this is planned.                        |
+| The PC broke                                                 | Install HeroMarket on the new PC. Then, as an administrator, stop the **HeroMarketDB** service, put the weekly copy of the `HeroMarket` folder back in `C:\ProgramData`, and run the installer once more so it secures the folder and starts the service. |
 
 ## 8. Uninstall
 
-Windows **Settings → Apps → HeroMarket POS → Uninstall**. The program and its shortcuts are removed. **The store's data stays** in `%APPDATA%\HeroMarket`; reinstalling picks it up again. To erase the data as well, delete that folder after uninstalling, and only once you are sure you have a backup.
+Windows **Settings → Apps → HeroMarket POS → Uninstall**. The program, its shortcuts and the **HeroMarketDB** service are removed. **The store's data stays** in `C:\ProgramData\HeroMarket`; reinstalling finds it again (tested). To erase the data as well, delete that folder after uninstalling, and only once you are sure you have a backup.
 
 ## 9. What has been tested, and what you still need to test
 
-| Check                                                                                                             | Where it was tested                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Silent install; program folder; Desktop and Start Menu shortcuts; uninstall entry                                 | This development PC, QA edition of the real installer (2026-10-15)                                                             |
-| First start: database created automatically, first administrator, login, a sale, stock deducted                   | Same                                                                                                                           |
-| Closing stops the database; reopening shows the same sale and stock                                               | Same                                                                                                                           |
-| Database only on `127.0.0.1`; no connection leaves the computer                                                   | Same                                                                                                                           |
-| Upgrade over the previous version: data kept, verified snapshot before migrating (1,447 files), migration applied | Same (versions 2.0.0-qa.1 → qa.2)                                                                                              |
-| Uninstall keeps data; reinstall finds it                                                                          | Same                                                                                                                           |
-| Snapshot of a real database starts and contains the data                                                          | Automated test (`upgradeSnapshot.test.mjs`)                                                                                    |
-| **A clean Windows PC with no development tools**                                                                  | **Not yet**: Windows Sandbox is not enabled on the development PC. Your step: [GO_LIVE_TEST_PLAN.md](GO_LIVE_TEST_PLAN.md) T1. |
-| **Windows restart (reboot)** with the program installed                                                           | **Not yet**                                                                                                                    |
-| **Upgrade from your real version 1.3**                                                                            | **Not yet**: test on a separate PC with a copy of your data (T1)                                                               |
-| **Power cut while selling**                                                                                       | **Not yet** (T8)                                                                                                               |
+Tested on 2026-10-16 in **Windows Sandbox**: a clean, disposable Windows 10 with nothing else installed, no network, and a copy of the shop's 1.3 data. Each test used the real 1.4.0 installer.
+
+| Check                                                                                                                                                                               | Result                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Install for all users (silent), program in `C:\Program Files\HeroMarket-POS`, shortcuts for all users                                                                               | ✅                                                                                    |
+| On a clean Windows, the Microsoft Visual C++ runtime is installed by the installer and the database tools run                                                                       | ✅ (before the fix: the database could not be created at all)                         |
+| The old per-user 1.3 is removed (program, uninstall entry, shortcuts); its data is kept                                                                                             | ✅                                                                                    |
+| First start: window after 2–4 s, database ready, 1.3 data imported with parity (every table identical)                                                                              | ✅                                                                                    |
+| Database service: own account `NT SERVICE\HeroMarketDB`, starts with Windows, only on `127.0.0.1`                                                                                   | ✅                                                                                    |
+| A standard Windows user cannot open the database files, the superuser password or the server settings, cannot stop the service and cannot run Windows commands through the database | ✅ (before: all possible)                                                             |
+| Two Windows accounts with HeroMarket open at the same time; either can close it                                                                                                     | ✅                                                                                    |
+| Sign-in with an old PIN, then a new password; a sale; backup; restore removes the later sale                                                                                        | ✅ (by hand)                                                                          |
+| Update over the installed version: verified copy first, data kept                                                                                                                   | ✅                                                                                    |
+| Uninstall removes the program and the service and keeps the data; reinstalling reuses it                                                                                            | ✅                                                                                    |
+| **Windows restart (reboot)** with the program installed                                                                                                                             | **Not yet** (Windows Sandbox cannot restart)                                          |
+| **Your real cashier PC**, with **your real 1.3 installation and data** (the copy used here has 9 products and no sales)                                                             | **Not yet**: on a separate PC first ([GO_LIVE_TEST_PLAN.md](GO_LIVE_TEST_PLAN.md) T1) |
+| **Receipt printer and barcode scanner**                                                                                                                                             | **Not yet**: none was connected to the test PC                                        |
+| **Power cut while selling**                                                                                                                                                         | **Not yet** (T8)                                                                      |

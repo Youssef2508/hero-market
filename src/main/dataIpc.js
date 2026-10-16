@@ -1,9 +1,10 @@
 // IPC surface between the renderer and the HeroMarket service. The renderer can only name an
 // operation and pass data; there is no SQL channel anymore.
-import { app, ipcMain, dialog } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import { describeRoot } from './tlsPin'
+import { storeDir } from './userDataPath'
 
 const OP_RE = /^[a-zA-Z]+\.[a-zA-Z]+$/
 
@@ -22,6 +23,9 @@ export function registerDataIpc({
   })
 
   ipcMain.handle('backend:status', async () => backendStatus())
+  // "Try again" on the store-problem screen: start the backend once more (e.g. after the installer
+  // was run again or the database service came back).
+  ipcMain.handle('backend:retry', async () => startBackend())
 
   // First-run / connection settings screen. Only the mode, addresses and terminal name come from the UI.
   ipcMain.handle('backend:configure', async (_event, cfg) => {
@@ -42,13 +46,24 @@ export function registerDataIpc({
         return { ready: false, error: e.message }
       }
     }
-    writeConfig({
-      mode,
-      databaseUrl: cfg.databaseUrl,
-      serverUrl: cfg.serverUrl,
-      serverCaPem,
-      terminalName: cfg.terminalName
-    })
+    try {
+      writeConfig({
+        mode,
+        databaseUrl: cfg.databaseUrl,
+        serverUrl: cfg.serverUrl,
+        serverCaPem,
+        terminalName: cfg.terminalName
+      })
+    } catch (e) {
+      // Installed: the connection settings belong to administrators (serviceSetup.js).
+      if (e.code === 'EPERM' || e.code === 'EACCES')
+        return {
+          ready: false,
+          error:
+            'تغيير إعدادات الاتصال يحتاج صلاحيات المسؤول. أغلق HeroMarket ثم افتحه بزر الفأرة الأيمن ← "تشغيل كمسؤول".'
+        }
+      throw e
+    }
     clearSession()
     return startBackend()
   })
@@ -99,7 +114,7 @@ export function registerDataIpc({
     // Safety copy of the current data before anything is replaced (G-14).
     const safety = await callOperation('backup.export', {})
     if (safety.error) return { success: false, error: safety.error.message }
-    const dir = join(app.getPath('userData'), 'backups')
+    const dir = join(storeDir(), 'backups')
     fs.mkdirSync(dir, { recursive: true })
     const safetyPath = join(
       dir,

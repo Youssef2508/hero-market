@@ -195,6 +195,7 @@ export default function DamagedGoodsTab({
               <p>تُخصم الكمية فوراً من المخزون.</p>
             </div>
             <button
+              data-modal-close
               type="button"
               className="icon-btn modal-close"
               aria-label="إغلاق"
@@ -271,7 +272,12 @@ export default function DamagedGoodsTab({
               <button type="submit" className="btn btn-danger" style={{ flex: 1 }}>
                 تأكيد وتسجيل الهالك
               </button>
-              <button type="button" className="btn btn-secondary" onClick={closeModal}>
+              <button
+                data-modal-close
+                type="button"
+                className="btn btn-secondary"
+                onClick={closeModal}
+              >
                 إلغاء
               </button>
             </div>

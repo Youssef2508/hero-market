@@ -5,6 +5,7 @@ const path = require('path')
 const { pathToFileURL } = require('url')
 const { badRequest, conflict, notFound } = require('../errors')
 const { DEFAULT_SCALE, normalizeScaleLabels } = require('../inventory/units')
+const { normaliseRequiredRoles } = require('../auth/shiftRule')
 
 let receiptLib = null
 async function receipt() {
@@ -44,7 +45,10 @@ const SETTINGS = {
     type: 'json',
     validate: normalizeScaleLabels,
     public: true
-  }
+  },
+  // Ids of the roles that must open a shift before using the system (null: every role that operates a
+  // shift). The owner is never required (src/server/auth/shiftRule.js).
+  shift_required_roles: { default: 'null', type: 'json', validate: normaliseRequiredRoles }
 }
 
 function normalise(key, raw) {

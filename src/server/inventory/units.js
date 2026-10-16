@@ -3,12 +3,17 @@
 //
 // A product's base unit is what stock is counted in. Its kind decides valid quantities:
 //   count  – whole base units (pieces, packets); a carton of 24 may be sold as 0.5 carton = 12;
-//   weight – kilograms with 3 decimals (owner decision); volume – litres with 3 decimals.
+//   weight – kilograms with 3 decimals (owner decision); volume – litres with 3 decimals;
+//   kinds the owner adds (migration 0014) – their own number of decimals, 0 to 3.
+// A kind is passed either as its key (the three built-in kinds) or as a rule { key, decimals }
+// read with kindRule().
 // Extra units convert with a factor (base units per unit). A line's price is the unit's own price,
 // or the base price × factor. Line totals are rounded to 0.01 per line; there is no cash rounding.
 const { badRequest } = require('../errors')
 
 const KINDS = ['count', 'weight', 'volume']
+// Decimals of the built-in kinds (fixed; the owner cannot change them).
+const BUILTIN_DECIMALS = { count: 0, weight: 3, volume: 3 }
 const EPS = 1e-9
 
 const round = (n, d) => {
@@ -25,18 +30,51 @@ function isWhole(n) {
 function hasAtMost3Decimals(n) {
   return Math.abs(n - round3(n)) < EPS
 }
+function hasAtMostDecimals(n, d) {
+  return Math.abs(n - round(n, d)) < EPS
+}
+const DECIMALS_TEXT = { 1: 'خانة عشرية واحدة', 2: 'خانتين عشريتين', 3: 'ثلاث خانات عشرية' }
 
-/** Validate a unit factor for a product kind (count: whole numbers; weight/volume: 3 decimals). */
+/** { key, decimals } for a kind given as a rule or as a built-in key. */
+function ruleOf(kind) {
+  if (kind && typeof kind === 'object') return { key: kind.key, decimals: Number(kind.decimals) }
+  const key = kind || 'count'
+  if (!(key in BUILTIN_DECIMALS)) throw new Error(`measure kind "${key}" needs its rule (kindRule)`)
+  return { key, decimals: BUILTIN_DECIMALS[key] }
+}
+
+/** The rule of a product's kind: built-in kinds directly, others from measure_kinds. */
+async function kindRule(db, key) {
+  const k = key || 'count'
+  if (k in BUILTIN_DECIMALS) return { key: k, decimals: BUILTIN_DECIMALS[k] }
+  const r = (await db.query('SELECT key, decimals FROM measure_kinds WHERE key = $1', [k])).rows[0]
+  if (!r) throw badRequest('طريقة القياس غير معروفة.')
+  return { key: r.key, decimals: Number(r.decimals) }
+}
+
+/** A stock value (target or opening) must fit the kind; negative values are allowed. */
+function checkStockValue(kind, value) {
+  const { decimals } = ruleOf(kind)
+  const v = Number(value)
+  if (!Number.isFinite(v)) throw badRequest('كمية غير صالحة.')
+  if (decimals === 0 && !isWhole(v))
+    throw badRequest('صنف يباع بالعدد: الكمية يجب أن تكون عدداً صحيحاً.')
+  if (decimals > 0 && !hasAtMostDecimals(v, decimals))
+    throw badRequest(`الكمية تقبل ${DECIMALS_TEXT[decimals]} على الأكثر.`)
+}
+
+/** Validate a unit factor for a product kind (count: whole numbers; others: their decimals). */
 function validateFactor(kind, factor) {
+  const { decimals } = ruleOf(kind)
   const f = Number(factor)
   if (!(f > 0)) throw badRequest('معامل التحويل يجب أن يكون أكبر من صفر.')
-  if (kind === 'count' && !isWhole(f))
+  if (decimals === 0 && !isWhole(f))
     throw badRequest(
       'معامل التحويل لصنف يباع بالعدد يجب أن يكون عدداً صحيحاً (مثلاً الكرتونة = 24).'
     )
-  if (kind !== 'count' && !hasAtMost3Decimals(f))
-    throw badRequest('معامل التحويل يقبل ثلاث خانات عشرية على الأكثر.')
-  return kind === 'count' ? Math.round(f) : round3(f)
+  if (decimals > 0 && !hasAtMostDecimals(f, decimals))
+    throw badRequest(`معامل التحويل يقبل ${DECIMALS_TEXT[decimals]} على الأكثر.`)
+  return round(f, decimals)
 }
 
 /**
@@ -48,16 +86,19 @@ function toBaseQty(kind, qty, factor, label = '') {
   if (!(q > 0)) throw badRequest(`الكمية يجب أن تكون أكبر من صفر${label ? ` (${label})` : ''}.`)
   if (!hasAtMost3Decimals(q))
     throw badRequest(`الكمية تقبل ثلاث خانات عشرية على الأكثر${label ? ` (${label})` : ''}.`)
+  const { key, decimals } = ruleOf(kind)
   const base = q * Number(factor)
-  if (kind === 'count' && !isWhole(base))
+  if (decimals === 0 && !isWhole(base))
     throw badRequest(
       `الكمية يجب أن تعادل عدداً صحيحاً من الوحدة الأساسية${label ? ` (${label})` : ''}.`
     )
-  if (kind !== 'count' && !hasAtMost3Decimals(base))
+  if (decimals > 0 && !hasAtMostDecimals(base, decimals))
     throw badRequest(
-      `الوزن أو الحجم يقبل ثلاث خانات عشرية على الأكثر${label ? ` (${label})` : ''}.`
+      key === 'weight' || key === 'volume'
+        ? `الوزن أو الحجم يقبل ثلاث خانات عشرية على الأكثر${label ? ` (${label})` : ''}.`
+        : `الكمية بالوحدة الأساسية تقبل ${DECIMALS_TEXT[decimals]} على الأكثر${label ? ` (${label})` : ''}.`
     )
-  return { qty: round3(q), baseQty: kind === 'count' ? Math.round(base) : round3(base) }
+  return { qty: round3(q), baseQty: round(base, decimals) }
 }
 
 /** The base unit of a product, in the same shape as a product_units row. */
@@ -172,6 +213,9 @@ function parseScaleLabel(settings, raw) {
 
 module.exports = {
   KINDS,
+  BUILTIN_DECIMALS,
+  kindRule,
+  checkStockValue,
   round2,
   round3,
   round4,

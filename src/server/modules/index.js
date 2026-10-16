@@ -15,5 +15,7 @@ module.exports = [
   require('./settings'),
   require('./backup'),
   require('./discounts'),
-  require('./sync')
+  require('./sync'),
+  require('./categories'),
+  require('./measureKinds')
 ]

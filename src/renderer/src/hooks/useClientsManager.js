@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
 import { formPhones, phoneFormError } from '../lib/phoneForm'
+import { formAddresses, addressFormError } from '../lib/addressForm'
 import { parseLocaleDateString } from '../lib/utils'
 
 export function useClientsManager({
@@ -17,7 +18,9 @@ export function useClientsManager({
   const [repaymentAmount, setRepaymentAmount] = useState('')
   const [showAddClientModal, setShowAddClientModal] = useState(false)
   const [showEditClientModal, setShowEditClientModal] = useState(false)
-  const EMPTY_CLIENT = { name: '', phone: '', phone2: '', hasPhone2: false, address: '' }
+  const EMPTY_CLIENT = { name: '', phone: '', phone2: '', hasPhone2: false, addresses: [] }
+  // A save in progress: a second click (or Enter) does not create the customer twice.
+  const [savingClient, setSavingClient] = useState(false)
   const [newClientForm, setNewClientForm] = useState(EMPTY_CLIENT)
   const [editClientForm, setEditClientForm] = useState({ id: '', ...EMPTY_CLIENT })
   const [bestCustomerOfMonth, setBestCustomerOfMonth] = useState(null)
@@ -144,21 +147,23 @@ export function useClientsManager({
 
   const handleAddClient = async (e) => {
     if (e) e.preventDefault()
-    const { name, address } = newClientForm
-    if (!name) {
+    if (savingClient) return
+    const { name } = newClientForm
+    if (!name || !name.trim()) {
       triggerCustomAlert('يرجى إدخال اسم العميل!')
       return
     }
-    const phoneError = phoneFormError(newClientForm)
-    if (phoneError) {
-      triggerCustomAlert(phoneError)
+    const formError = phoneFormError(newClientForm) || addressFormError(newClientForm)
+    if (formError) {
+      triggerCustomAlert(formError)
       return
     }
+    setSavingClient(true)
     try {
       await api('clients.create', {
-        name,
+        name: name.trim(),
         phones: formPhones(newClientForm),
-        address: address || ''
+        addresses: formAddresses(newClientForm)
       })
       triggerCustomAlert('تمت إضافة العميل بنجاح!')
       setNewClientForm(EMPTY_CLIENT)
@@ -167,27 +172,31 @@ export function useClientsManager({
       await fetchClientStats()
     } catch (err) {
       triggerCustomAlert(err.status === 409 ? err.message : 'فشل إضافة العميل: ' + err.message)
+    } finally {
+      setSavingClient(false)
     }
   }
 
   const handleEditClient = async (e) => {
     if (e) e.preventDefault()
-    const { id, name, address } = editClientForm
-    if (!name) {
+    if (savingClient) return
+    const { id, name } = editClientForm
+    if (!name || !name.trim()) {
       triggerCustomAlert('يرجى إدخال اسم العميل!')
       return
     }
-    const phoneError = phoneFormError(editClientForm)
-    if (phoneError) {
-      triggerCustomAlert(phoneError)
+    const formError = phoneFormError(editClientForm) || addressFormError(editClientForm)
+    if (formError) {
+      triggerCustomAlert(formError)
       return
     }
+    setSavingClient(true)
     try {
       const updated = await api('clients.update', {
         id,
-        name,
+        name: name.trim(),
         phones: formPhones(editClientForm),
-        address: address || ''
+        addresses: formAddresses(editClientForm)
       })
       triggerCustomAlert('تم تحديث بيانات العميل!')
       setShowEditClientModal(false)
@@ -196,6 +205,8 @@ export function useClientsManager({
       if (selectedAdminClient && selectedAdminClient.id === id) setSelectedAdminClient(updated)
     } catch (err) {
       triggerCustomAlert(err.status === 409 ? err.message : 'فشل تحديث العميل: ' + err.message)
+    } finally {
+      setSavingClient(false)
     }
   }
 

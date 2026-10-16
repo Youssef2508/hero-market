@@ -99,7 +99,8 @@ export function useProductsManager({
           stock_qty: parseFloat(stock_qty) || 0,
           reorder_limit: parseFloat(reorder_limit) || 0,
           unit: unit || '',
-          unit_kind: unit_kind || 'count'
+          unit_kind: unit_kind || 'count',
+          category_id: newProduct.category_id ?? null
         })
         triggerCustomAlert('تمت إضافة المنتج بنجاح!')
         setShowAddModal(false)
@@ -112,7 +113,8 @@ export function useProductsManager({
           stock_qty: '',
           reorder_limit: '',
           unit: '',
-          unit_kind: 'count'
+          unit_kind: 'count',
+          category_id: newProduct.category_id ?? null
         })
         if (fetchAdminData) await fetchAdminData()
       } catch (err) {
@@ -165,7 +167,13 @@ export function useProductsManager({
           stock_base: stock_base === undefined || stock_base === null ? null : Number(stock_base),
           reorder_limit: parseFloat(reorder_limit) || 0,
           unit: unit || '',
-          unit_kind: unit_kind || 'count'
+          unit_kind: unit_kind || 'count',
+          ...(editProduct.category_id !== undefined
+            ? { category_id: editProduct.category_id }
+            : {}),
+          ...(editProduct.is_active !== undefined
+            ? { is_active: editProduct.is_active !== false }
+            : {})
         })
         if (setToastMessage) {
           setToastMessage('تم تحديث بيانات المنتج بنجاح!')

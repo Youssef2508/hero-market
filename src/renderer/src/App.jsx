@@ -4,6 +4,7 @@ import packageInfo from '../../../package.json'
 
 import { playSound } from './lib/utils'
 import { api, can } from './lib/api'
+import { loadMeasureKinds } from './lib/measureKinds'
 import { canAccessAdmin } from './components/shell/navigation'
 import StartupGate from './components/setup/StartupGate'
 
@@ -205,6 +206,8 @@ function App() {
     setSelectedSearchIndex,
     clientAddress,
     setClientAddress,
+    clientAddressId,
+    setClientAddressId,
     selectedClient,
     clientSearchResults,
     handleClientNameChange,
@@ -458,7 +461,9 @@ function App() {
       const st = window.api?.backend ? await window.api.backend.status() : { ready: false }
       setBackendInfo(st)
       if (!st.ready) {
-        setStartupPhase('connect')
+        // An installed shop whose own database cannot open gets an explanation and a retry, never
+        // the connection settings (choosing another mode would not repair it).
+        setStartupPhase(st.installedStore && st.errorCode ? 'store_problem' : 'connect')
         return
       }
       const auth = await api('auth.status')
@@ -493,6 +498,19 @@ function App() {
     }
   }, [])
 
+  // A cash operation was refused for lack of a shift: offer to open one (1.4.0). The refusal
+  // message is shown by the screen that asked; the window opens behind it.
+  useEffect(() => {
+    const onShiftRequired = () => {
+      if (can(currentUser, 'shifts.operate') && !(currentShift && currentShift.status === 'open')) {
+        setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+        setOpenShiftModal('cash')
+      }
+    }
+    window.addEventListener('heromarket:shift-required', onShiftRequired)
+    return () => window.removeEventListener('heromarket:shift-required', onShiftRequired)
+  }, [currentUser, currentShift, appSettings, setOpenShiftModal, setStartingCash])
+
   // Store default for automatic receipt printing (the cashier can still toggle it per sale).
   useEffect(() => {
     if (appSettings) setNoPrint(appSettings.print_receipt_default === 'false')
@@ -501,6 +519,7 @@ function App() {
   // Data the shell needs right after a login (previously loaded at mount, before login).
   const onLoggedIn = (user) => {
     loadAppSettings()
+    loadMeasureKinds()
     api('sync.state')
       .then((r) => setRecoveryPending(!!r.recoveryPending))
       .catch(() => {})
@@ -542,6 +561,7 @@ function App() {
   }
 
   const toastIsError = typeof toastMessage === 'object' && toastMessage?.type === 'error'
+  const toastIsWarning = typeof toastMessage === 'object' && toastMessage?.type === 'warning'
   const auditRows = [
     { label: 'إجمالي مبيعات الفواتير', value: auditBreakdown?.grossSales || 0, sign: '' },
     {
@@ -583,7 +603,8 @@ function App() {
           setIsLocked(false)
           onLoggedIn(user)
           setStartingCash('200')
-          setOpenShiftModal(true)
+          // The owner works without a shift; he may open one now or later (1.4.0).
+          setOpenShiftModal('optional')
         }}
       />
     )
@@ -603,14 +624,20 @@ function App() {
     <>
       {toastMessage && (
         <div
-          className={`toast ${toastIsError ? 'toast-error' : ''}`}
+          className={`toast ${toastIsError ? 'toast-error' : toastIsWarning ? 'toast-warning' : ''}`}
           role="status"
           aria-live="polite"
         >
           <span className="toast-icon" aria-hidden="true">
-            {toastIsError ? <TriangleAlert size={18} /> : <CircleCheck size={18} />}
+            {toastIsError || toastIsWarning ? (
+              <TriangleAlert size={18} />
+            ) : (
+              <CircleCheck size={18} />
+            )}
           </span>
-          {typeof toastMessage === 'object' ? toastMessage.text : toastMessage}
+          <span className="toast-text">
+            {typeof toastMessage === 'object' ? toastMessage.text : toastMessage}
+          </span>
         </div>
       )}
 
@@ -620,7 +647,7 @@ function App() {
         adminTab={adminTab}
         onNavigate={handleNavigate}
         currentShift={currentShift}
-        onOpenShift={() => setOpenShiftModal(true)}
+        onOpenShift={() => setOpenShiftModal('optional')}
         onCloseShift={() => setCloseShiftModal(true)}
         onAudit={triggerAuditCheck}
         onLock={handleLock}
@@ -654,6 +681,7 @@ function App() {
           <CheckoutTerminal
             cart={cart}
             triggerClearCart={triggerClearCart}
+            addByBarcode={addProductByBarcode}
             onReturn={
               can(currentUser, 'sales.return_request') || can(currentUser, 'sales.return')
                 ? () => setReturnRequestOpen(true)
@@ -677,9 +705,12 @@ function App() {
             clientName={clientName}
             handleClientNameChange={handleClientNameChange}
             clientPhone={clientPhone}
+            setClientPhone={setClientPhone}
             handleClientPhoneChange={handleClientPhoneChange}
             clientAddress={clientAddress}
             setClientAddress={setClientAddress}
+            clientAddressId={clientAddressId}
+            setClientAddressId={setClientAddressId}
             clientSearchResults={clientSearchResults}
             selectClient={selectClient}
             paymentType={paymentType}
@@ -715,6 +746,7 @@ function App() {
 
       <AppModals
         openShiftModal={openShiftModal}
+        setOpenShiftModal={setOpenShiftModal}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}
@@ -842,7 +874,7 @@ function App() {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitAudit}>
                 تأكيد وحفظ الجرد
               </button>
-              <button className="btn btn-secondary" onClick={snoozeAudit}>
+              <button data-modal-close className="btn btn-secondary" onClick={snoozeAudit}>
                 تأجيل 5 دقائق
               </button>
               <button className="btn btn-ghost" onClick={skipAudit}>
@@ -903,7 +935,11 @@ function App() {
               >
                 حفظ التوضيح
               </button>
-              <button className="btn btn-secondary" onClick={() => setShowReasonModal(false)}>
+              <button
+                data-modal-close
+                className="btn btn-secondary"
+                onClick={() => setShowReasonModal(false)}
+              >
                 إلغاء
               </button>
             </div>

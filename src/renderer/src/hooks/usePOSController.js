@@ -3,6 +3,7 @@ import { playSound } from '../lib/utils'
 import { api, newClientRef } from '../lib/api'
 import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checkoutRetry'
 import { receiptQty } from '../lib/weight'
+import { kindInfo } from '../lib/measureKinds'
 import { formatClock, ltrText } from '../lib/time'
 
 /**
@@ -17,6 +18,7 @@ export function usePOSController({
   currentShift,
   setCurrentShift,
   setIsLocked,
+  openShiftModal,
   setOpenShiftModal,
   startingCash,
   setStartingCash,
@@ -76,6 +78,8 @@ export function usePOSController({
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
 
   const [clientAddress, setClientAddress] = useState('')
+  // A saved address of the selected customer chosen for delivery (null = typed address).
+  const [clientAddressId, setClientAddressId] = useState(null)
   const [selectedClient, setSelectedClient] = useState(null)
   // Automatic discounts (administrator rules) priced by the service for the current cart.
   const [appliedDiscounts, setAppliedDiscounts] = useState([])
@@ -121,6 +125,7 @@ export function usePOSController({
     setClientPhone('')
     setIsDelivery(false)
     setClientAddress('')
+    setClientAddressId(null)
     setSelectedClient(null)
     setClientSearchResults([])
     setCurrentView('pos')
@@ -147,7 +152,10 @@ export function usePOSController({
       } catch {
         /* setter unavailable */
       }
-      setOpenShiftModal(true)
+      // Roles chosen in the settings must open a shift before working (the window cannot be
+      // closed). Others, and always the owner, work without one and are asked when they sell or
+      // move drawer cash (1.4.0).
+      setOpenShiftModal(res.shiftRequired ? 'required' : false)
     } else {
       setCurrentShift(null)
     }
@@ -181,10 +189,13 @@ export function usePOSController({
         vfcashStartBalance: vfcashStartNum,
         vfcashStartCash: vfcashCashNum
       })
+      const reason = openShiftModal
       setCurrentShift(shift)
       setOpenShiftModal(false)
       setIsLocked(false)
       playSound('chime')
+      // Opened to complete a sale: finish it on the new shift.
+      if (reason === 'sale') handleCheckout(shift)
     } catch (e) {
       console.error('Failed to open shift:', e)
       playSound('error')
@@ -334,8 +345,10 @@ export function usePOSController({
     try {
       const resolved = await api('pos.resolve', { code: barcode })
       if (resolved) addToCart(resolved)
+      return !!resolved
     } catch (err) {
       triggerCustomAlert(err.message)
+      return false
     }
   }
 
@@ -447,14 +460,22 @@ export function usePOSController({
   // An attempt whose outcome is unknown (reply lost) is retried under the same key (lib/checkoutRetry).
   const checkoutPendingRef = useRef(null)
   const unresolvedCheckoutRef = useRef(null)
-  const handleCheckout = async () => {
+  const handleCheckout = async (openedShift = null) => {
+    // The button passes its click event; only a shift object from handleStartShift counts.
+    const shiftNow = openedShift?.status === 'open' ? openedShift : currentShift
     if (cart.length === 0) {
       playSound('error')
       triggerCustomAlert('السلة فارغة! يرجى إضافة سلع أولاً.', 'تنبيه الفاتورة')
       return
     }
 
-    if (!currentShift || !currentShift.id || currentShift.status !== 'open') {
+    if (!shiftNow || !shiftNow.id || shiftNow.status !== 'open') {
+      // A user allowed to work without a shift (the owner) is asked to open one now.
+      if (currentUser?.permissions?.includes('shifts.operate')) {
+        setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
+        setOpenShiftModal('sale')
+        return
+      }
       playSound('error')
       triggerCustomAlert(
         'فشل البيع: لا توجد وردية كاشير مفتوحة حالياً!\nيرجى فتح وردية جديدة أولاً لبدء عمليات البيع.',
@@ -468,7 +489,7 @@ export function usePOSController({
 
     try {
       const payload = {
-        shiftId: currentShift.id,
+        shiftId: shiftNow.id,
         items: cart.map((item) => ({
           barcode: item.barcode,
           unitId: item.unitId ?? null,
@@ -487,7 +508,9 @@ export function usePOSController({
               id: selectedClient ? selectedClient.id : null,
               name: clientName,
               phone: clientPhone || '',
-              address: clientAddress || ''
+              // A saved address goes by id (checked on the server); otherwise the typed text.
+              address: isDelivery && selectedClient && clientAddressId ? '' : clientAddress || '',
+              addressId: isDelivery && selectedClient && clientAddressId ? clientAddressId : null
             }
           : null
       }
@@ -526,13 +549,21 @@ export function usePOSController({
               time: timePart,
               cashier: currentUser?.username,
               paymentType: paymentType || 'نقدي',
-              client: { name: clientName, phone: clientPhone, address: clientAddress },
+              client: {
+                name: clientName,
+                phone: clientPhone,
+                address: result.deliveryAddress || clientAddress
+              },
               items: cart.map((item) => ({
                 // Packaging lines name their unit on the receipt (e.g. "كيك (كرتونة)").
                 name: item.unitId ? `${item.name || 'صنف'} (${item.unitName})` : item.name || 'صنف',
                 barcode: item.barcode,
                 // Weighed lines print their weight with the unit (e.g. 0.250 كجم).
-                qty: receiptQty(item.qty, item),
+                qty: receiptQty(item.qty, {
+                  ...item,
+                  decimals: kindInfo(item.kind).decimals,
+                  kindUnit: kindInfo(item.kind).unit
+                }),
                 price: item.price,
                 total: item.total
               })),
@@ -546,18 +577,34 @@ export function usePOSController({
           )
           .catch((e) => {
             console.error('[PRINT FLOW] Printing failed:', e)
+            // The sale is saved before printing: say so, so nobody records or pays it twice.
+            const reason = String(e.message || '').replace(
+              /^Error invoking remote method '[^']+': (Error: )?/,
+              ''
+            )
             triggerCustomAlert(
-              `تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${e.message}\nيرجى التحقق من اتصال الطابعة والتعريف.`
+              `تعذرت طباعة الفاتورة رقم ${displaySaleId}: ${reason}\nالفاتورة محفوظة ولم تُسجَّل مرة ثانية. يمكن إعادة طباعتها من سجل الفواتير بعد توصيل الطابعة.`
             )
           })
       }
 
+      // Owner rule: what was used for this order but not kept on the customer is said plainly.
+      const notSaved = [
+        result.notSaved?.phone === 'other_customer' &&
+          'رقم الهاتف مسجَّل لعميل آخر، فاستُخدم لهذا الطلب فقط ولم يُحفظ لهذا العميل.',
+        result.notSaved?.phone === 'no_free_slot' &&
+          'للعميل رقمان محفوظان، فاستُخدم الرقم لهذا الطلب فقط ولم يُحفظ.',
+        result.notSaved?.address === 'limit' &&
+          'للعميل 3 عناوين محفوظة، فاستُخدم العنوان لهذا الطلب فقط ولم يُحفظ.'
+      ].filter(Boolean)
       setToastMessage(
         result.duplicate
           ? `الفاتورة رقم ${displaySaleId} كانت قد سُجِّلت بالفعل، ولم تُسجَّل مرة ثانية.`
-          : 'تم إنهاء الفاتورة بنجاح!'
+          : notSaved.length
+            ? { type: 'warning', text: ['تم إنهاء الفاتورة بنجاح.', ...notSaved].join('\n') }
+            : 'تم إنهاء الفاتورة بنجاح!'
       )
-      setTimeout(() => setToastMessage(null), 3000)
+      setTimeout(() => setToastMessage(null), notSaved.length ? 7000 : 3000)
       setCart([])
       setDiscount(0)
       setAppliedCredit(0)
@@ -566,6 +613,7 @@ export function usePOSController({
       setClientName('')
       setClientPhone('')
       setClientAddress('')
+      setClientAddressId(null)
       setIsDelivery(false)
       setSelectedClient(null)
       setClientSearchResults([])
@@ -637,7 +685,9 @@ export function usePOSController({
           qty: receiptQty(isItemReturned ? 0 : isItemPartReturned ? qty - retQty : qty, {
             kind: item.unit_kind,
             unitId: item.unit_id,
-            unitName: item.unit_name
+            unitName: item.unit_name,
+            decimals: kindInfo(item.unit_kind).decimals,
+            kindUnit: kindInfo(item.unit_kind).unit
           }),
           price: Number(item.unit_price) || 0,
           total: Number(item.total_price) || 0
@@ -676,6 +726,7 @@ export function usePOSController({
   const handleClientNameChange = async (val) => {
     setClientName(val)
     setSelectedClient(null)
+    setClientAddressId(null)
     if (!val.trim()) {
       setClientSearchResults([])
       return
@@ -691,6 +742,7 @@ export function usePOSController({
   const handleClientPhoneChange = async (val) => {
     setClientPhone(val)
     setSelectedClient(null)
+    setClientAddressId(null)
     if (!val.trim()) {
       setClientSearchResults([])
       return
@@ -707,7 +759,11 @@ export function usePOSController({
     setSelectedClient(client)
     setClientName(client.name)
     setClientPhone(client.phone || '')
-    setClientAddress(client.address || '')
+    // Saved addresses: the default is preselected for a delivery; the cashier may pick another.
+    const saved = Array.isArray(client.addresses) ? client.addresses : []
+    const def = saved.find((a) => a.isDefault) || saved[0]
+    setClientAddressId(def ? def.id : null)
+    setClientAddress(def ? '' : client.address || '')
     setClientSearchResults([])
   }
 
@@ -731,6 +787,8 @@ export function usePOSController({
     setSelectedSearchIndex,
     clientAddress,
     setClientAddress,
+    clientAddressId,
+    setClientAddressId,
     selectedClient,
     setSelectedClient,
     clientSearchResults,

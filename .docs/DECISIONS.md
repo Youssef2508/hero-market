@@ -502,3 +502,104 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Access before validation:** sign-in and permissions are checked before the request body is validated, so a caller without access receives 401/403 and no schema details. Credentials are redacted from logs.
 - **Remote stock receipts** follow the shop's quantity rules (whole pieces for count products).
 - **Tests:** `tests/service/integrity.test.js` (10), including real concurrency (a sale and a drawer row waiting on a close; four simultaneous shift openings).
+
+## D-050 Customer addresses: up to three, reused at the till (1.4.0, migration 0012)
+
+- **Model:** a customer has zero to three addresses in `client_addresses` (label home/work/other, address 1–300 characters, details up to 200, exactly one default when any exist).
+  - The limit is enforced in the service and by a database trigger that locks the customer row, so two simultaneous saves cannot create a fourth.
+  - The old single `clients.address` becomes the default address; nothing is invented or dropped.
+  - Older screens that still send `address` replace only the default address.
+- **At the till (owner's request):** for a known customer, the cashier picks one of the saved phones and one of the saved addresses from lists instead of typing them again ("رقم آخر…" / "عنوان آخر…" for a new one).
+  - A new phone typed for a known customer is saved in a free slot (at most two phones, D-045) when no other customer has it.
+  - A new address is saved when the customer has fewer than three and it is not a duplicate.
+  - When there is no room, the order still uses what was typed; nothing is overwritten.
+- **Invoice:** a delivery invoice keeps a snapshot of the address used (`sales.delivery_address`), so later edits of the customer do not change old invoices.
+- **Rejected:** unlimited addresses (the owner asked for three); free-text "other" labels (they make the till list harder to read).
+
+## D-051 Product categories and browsing at the till (1.4.0, migration 0013)
+
+- **Model:** `categories` (unique name ignoring case and spaces, sort order, active flag). Each product has at most one category (`products.category_id`, deletion restricted) and its own active flag.
+  - The existing free-text categories were converted; nothing was invented.
+  - Only an empty category can be deleted. Otherwise it is stopped, and its products then appear under "بدون تصنيف" at the till, so nothing becomes impossible to sell.
+  - A stopped product is refused by search, browsing, `pos.resolve` and checkout.
+- **Products without a category** are always listed at the till as "بدون تصنيف" (last in the list). A product saved without a category belongs there automatically; nothing has to be assigned.
+- **Browsing (F6 or "تصفح"):** a vertical list of categories beside the products, over the scan and cart column.
+  - The cart, the totals and the pay button stay as they are, and the scanner keeps working.
+  - Escape returns to the invoice and never clears the cart while the panel is open.
+  - ↑/↓ move between categories.
+  - A browsed product is added through the same path as a scan, so current prices, units, weighing and automatic discounts apply. Cashiers still cannot change discounts.
+- **Cache:** the till keeps categories and the first pages it has opened (at most 40 categories). Freshness comes from `catalog_state.version`, bumped by triggers on names, prices, units, categories and active flags (not stock); it is checked at most every 30 seconds. Correctness never depends on the cache, because the server re-prices at checkout.
+- **Permissions:** `categories.manage` (inventory and management roles) to edit; cashiers only read through `pos.*`.
+
+## D-052 Per-machine installation, shared store folder and program hardening (1.4.0)
+
+> **Partly superseded by D-053:** the database now runs as a Windows service with its own account. The shared-folder permissions, the "accepted risk" and the two-account database lifetime below no longer apply.
+
+- **Install for all users:** the installer is per-machine (`C:\Program Files\HeroMarket-POS`, one administrator prompt). The store's data moved to `%ProgramData%\HeroMarket`.
+  - On first creation, the local Users group is given modify rights, inherited by the database files.
+  - Every Windows account on the cashier PC therefore opens the same shop.
+  - Each person still signs in to HeroMarket with their own account.
+- **Upgrade from a per-user installation:** the installer removes the installing user's old per-user copy (keeping its data). On first start, 1.4.0 copies that user's store into the shared folder and checks every file (`copyAndVerify`, the same check as the pre-upgrade snapshot).
+  - The old database folder is left as it was; its settings file is renamed so the move happens once.
+  - If the shared folder already holds a database, nothing is moved and the screen says so.
+- **Two Windows accounts signed in together:** the second session finds the database already running (same folder, same port) and uses it. Only the session that started it stops it.
+- **Accepted risk:** every Windows user of the PC can read `heromarket.json` (database password, server secret), because every one of them must be able to start the database. The guide tells the owner to give Windows accounts on the till only to trusted people.
+- **Hardening (Electron fuses):** the packaged program cannot be used as a Node.js runtime and ignores `NODE_OPTIONS` and debugging switches. It loads only its own `app.asar` and checks that file's header at start.
+  - Verified on the QA build: `ELECTRON_RUN_AS_NODE=1` has no effect, and a modified header is refused before the database starts.
+  - Changes inside file contents are not caught at start. The protection for those is the administrator-only Program Files folder (and, later, code signing).
+- **Rejected:** keeping per-user installs (a second Windows account would see an empty shop); a Windows service for PostgreSQL (needs an administrator for every change and survives uninstall).
+
+## D-053 The store's database runs as a Windows service with its own account (1.4.0, security review option C)
+
+- **Why:** with D-052's shared folder, any standard Windows user of the till PC could read the database superuser password and write the database files. Through the database, they could run Windows commands as the account that had started HeroMarket. This was verified in Windows Sandbox. See [SECURITY_REVIEW_LOCAL_DATABASE.md](SECURITY_REVIEW_LOCAL_DATABASE.md). The owner chose option C before release.
+- **Service:** the installer, which runs as administrator, calls `HeroMarket-POS.exe --setup-service` (`src/main/serviceSetup.js`). That step registers **HeroMarketDB** (QA edition: HeroMarketDB-QA):
+  - PostgreSQL runs under the virtual account `NT SERVICE\HeroMarketDB`, starts automatically, and listens on 127.0.0.1 only;
+  - it restarts on failure;
+  - Windows users may start the service but not stop, change or delete it.
+- **Folders:**
+  - `pgdata`: SYSTEM, Administrators and the service account only.
+  - `admin\superuser.json`: Administrators only.
+  - `heromarket.json`: users may read it, only administrators may change it.
+  - `logs` and `backups`: users may write.
+  - The 1.4.0 rule that gave every user modify rights on the whole folder is removed.
+- **Roles:**
+  - The app connects as `hm_app`. It owns the shop's objects but has no superuser, create-role, create-database or replication rights (`src/server/db/appRole.js`).
+  - Proven by `tests/service/appRole.test.js`: migrations from scratch, sales, backup and restore, the 1.3 import; Windows commands, server files, server settings and role creation are refused.
+  - New databases get the bootstrap superuser `hm_admin`.
+  - An older database, created by the app as superuser `heromarket`, is handed over to `hm_app` object by object. `heromarket` then gets a new password that only administrators can read.
+- **Lifetime:** the database no longer depends on who is signed in to Windows. This fixes three D-052 problems: signing out ended the database for other accounts, it ran on after everyone closed HeroMarket, and the upgrade copy stopped it for everyone.
+- **Upgrades:** the installer takes the verified copy of the database (`backups\pre-install`) before re-registering the service. The app refuses to migrate when the setup did not complete for its version (`local.setupVersion`).
+- **Residual risk (accepted for 1.4.0):** a Windows user with technical skill can change shop data with SQL as `hm_app`. Running the HeroMarket service itself as a Windows service (option D) would close this.
+- **Rejected:**
+  - restricting file permissions without a service (impossible while PostgreSQL runs as whichever user opens HeroMarket);
+  - going back to per-user installs (breaks the all-users requirement).
+
+## D-054 Who must open a shift (1.4.0, owner decision)
+
+- **Rule:**
+  - The owner (super administrator) is never required to open a shift. He signs in and uses everything without one.
+  - Setting `shift_required_roles` lists the ids of the roles that must open one. Roles created in the roles screen have no key, so ids are used. `null`, the default, means every role with `shifts.operate`: the behaviour before 1.4.0.
+  - Sign-in replies carry `shiftRequired` (`src/server/auth/shiftRule.js`). The till then shows the open-shift window, and it cannot be closed.
+- **Cash without a shift:**
+  - Unchanged on the service: a sale, cash expense, cash supplier payment, cash customer payment or cash refund needs the user's own open shift (the drawer ledger needs one).
+  - Those refusals now carry the code `shift_required`. The till then offers the open-shift window, with the reason and a "لاحقاً" button. A sale is completed automatically once the shift is open.
+- **Limit:** the "must open a shift" rule is enforced by the till, as before 1.4.0. The service does not refuse other work from a required user without a shift. Making it refuse would need a list of every operation that counts as "using the system", and was not asked for.
+- **Rejected:** a single on/off switch for everyone. The owner asked to choose per role.
+
+## D-055 Measurement kinds the owner adds (1.4.0, migration 0014)
+
+- **Why:** the owner wants more than بالعدد, بالوزن and بالحجم, for example بالمتر.
+- **Model:**
+  - Table `measure_kinds` holds a key, name, unit, decimals (0–3), whether it is built-in, whether it is active, and the order.
+  - `products.unit_kind` references it. It replaces the fixed list (0005's CHECK).
+  - The table is synced and backed up like the catalogue.
+- **Rules:**
+  - A product's base quantities follow its kind's decimals in every place stock is counted: sales, purchases, returns, damaged goods, receipts from the cloud, opening and adjusted stock, and packaging factors (`kindRule`, `src/server/inventory/units.js`).
+  - The built-in kinds keep their rules and messages.
+  - Weighing (scale labels, the grams window) stays specific to `weight`. Other kinds with decimals get a plain quantity window in their unit.
+- **Protection:**
+  - Built-in kinds cannot be changed.
+  - A kind's decimals can only be raised while products use it.
+  - A kind in use is stopped, not deleted. A stopped kind is not offered for new products; products that have it keep it.
+  - Switching a product to fewer decimals needs its stock and factors to fit.
+- **Version:** in 1.4.0 at the owner's request. It makes the 1.4.0 update from earlier 1.4.0 builds Case B; the installer's checks apply.

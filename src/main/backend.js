@@ -14,18 +14,30 @@ import { join } from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import os from 'os'
+import { newerVersion } from './versions'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
 import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
-import { legacyDatabaseFile } from './userDataPath'
+import {
+  legacyDatabaseFile,
+  storeDir,
+  ensureStoreDir,
+  perUserConfigFile,
+  usesDatabaseService
+} from './userDataPath'
+import { copyAndVerify } from './upgradeSnapshot'
 import { verifyPinnedChain } from './tlsPin'
 
 const nodeRequire = createRequire(import.meta.url)
 const isDev = !app.isPackaged
-const configFile = () => join(app.getPath('userData'), 'heromarket.json')
+const configFile = () => join(storeDir(), 'heromarket.json')
 
 let backend = null // { mode, call(op, body, headers) }
 let token = null
 let lastError = null
+let lastErrorCode = null // why the store cannot open: shown on its own screen, never as a mode choice
+/** An error the start-up screen explains (code) rather than offering connection settings. */
+const storeError = (code, message) => Object.assign(new Error(message), { code })
+
 let starting = null // in-flight startBackend() promise
 let stage = null // what the startup is doing, for the waiting screen
 // Client mode: the store server's certificate was refused (Chromium caches the verdict, so this
@@ -126,7 +138,9 @@ async function startStandalone(cfg) {
     logger: { level: isDev ? 'info' : 'warn' },
     // Cloud synchronisation runs in the background once an administrator links the store
     // (المزامنة السحابية). Selling never waits for it.
-    syncAgent: true
+    syncAgent: true,
+    // Installed store: the installer applies migrations after its verified copy (serviceSetup.js).
+    migrationPolicy: cfg.local && cfg.local.service ? 'refuse' : 'auto'
   })
   await svc.prepare()
   await svc.app.ready()
@@ -201,7 +215,7 @@ function startClient(cfg) {
  * Skipped when an import already completed or the new database is already in use. Any problem stops
  * the start-up with the reason; the SQLite file is only read (after a verified backup copy).
  */
-async function importLegacyIfPresent(databaseUrl) {
+async function importLegacyIfPresent(databaseUrl, { installed = false } = {}) {
   const legacy = legacyDatabaseFile()
   if (!fs.existsSync(legacy)) return null
   const { createPool } = nodeRequire(join(serverDir(), 'db', 'pool.js'))
@@ -212,7 +226,8 @@ async function importLegacyIfPresent(databaseUrl) {
   const quiet = { info: (m) => console.log(m), warn: console.warn, error: console.error }
   const pool = createPool(databaseUrl, { max: 2 })
   try {
-    await migrate(pool, { logger: quiet })
+    // Installed store: the installer already migrated (after its verified copy); never here.
+    if (!installed) await migrate(pool, { logger: quiet })
     const done = await pool.query(
       "SELECT to_regclass('legacy_import_runs') IS NOT NULL AS has_runs, (SELECT count(*)::int FROM users) AS users"
     )
@@ -223,7 +238,7 @@ async function importLegacyIfPresent(databaseUrl) {
     if (imported) await rebrandStoreName(pool)
     if (imported || done.rows[0].users > 0) return null
     stage = 'importing'
-    const backups = join(app.getPath('userData'), 'backups')
+    const backups = join(storeDir(), 'backups')
     const report = await importLegacy(pool, legacy, {
       backupDir: join(backups, 'legacy-sqlite'),
       logger: quiet
@@ -267,12 +282,12 @@ async function snapshotBeforeUpgrade(local, persist) {
   }
   if (!needsSnapshot(applied, all)) return null
   stage = 'backup'
-  const dir = join(app.getPath('userData'), 'backups', 'pre-upgrade')
+  const dir = join(storeDir(), 'backups', 'pre-upgrade')
   let target = null
   let failure = null
-  await stopLocalDatabase(local)
+  await stopLocalDatabase(local, { force: true })
   try {
-    target = snapshotDataDir(
+    target = await snapshotDataDir(
       localDataDir(local),
       dir,
       `app-${app.getVersion()}-db-${applied[applied.length - 1]}-to-${all[all.length - 1]}`
@@ -291,8 +306,56 @@ async function snapshotBeforeUpgrade(local, persist) {
   return target
 }
 
+/**
+ * 1.4.0 moved the store's data from one Windows user's profile to the shared store folder. A store
+ * that was set up per user before is adopted once: its database folder is copied and verified file
+ * by file (upgradeSnapshot.js), the configuration is written to the shared folder, and the old
+ * files are kept untouched as a fallback (heromarket.json is renamed so it is not adopted twice).
+ */
+async function adoptPerUserStore() {
+  const old = perUserConfigFile()
+  if (!old || fs.existsSync(configFile()) || !fs.existsSync(old)) return null
+  const cfg = JSON.parse(fs.readFileSync(old, 'utf8'))
+  stage = 'moving'
+  if (cfg.local && cfg.local.dir) {
+    const from = join(cfg.local.dir, 'pgdata')
+    const to = join(storeDir(), 'pgdata')
+    if (fs.existsSync(join(from, 'PG_VERSION'))) {
+      if (fs.existsSync(to) && fs.readdirSync(to).length)
+        throw new Error(
+          `يوجد بالفعل مجلد قاعدة بيانات في ${to}. لم يتم نقل بيانات المستخدم الحالي؛ راجع الدعم الفني.`
+        )
+      // Copied beside the target and renamed only once every file is verified, so a move
+      // interrupted by closing the app (or a power cut) leaves no half database: the partial copy
+      // is ours and is started over; the original folder is never touched.
+      const partial = `${to}.partial`
+      fs.rmSync(partial, { recursive: true, force: true })
+      await copyAndVerify(from, partial)
+      if (fs.existsSync(to)) fs.rmdirSync(to) // empty (checked above)
+      fs.renameSync(partial, to)
+    }
+    cfg.local = { ...cfg.local, dir: storeDir() }
+  }
+  writeConfig(cfg)
+  fs.renameSync(old, `${old}.moved-to-${storeDir().replace(/[\\/:]/g, '_')}`)
+  console.log('[backend] per-user store adopted into', storeDir())
+  return cfg
+}
+
 async function doStart() {
   lastError = null
+  lastErrorCode = null
+  try {
+    ensureStoreDir()
+    // An installed app's store is set up by the installer (serviceSetup.js), never by the app.
+    if (!usesDatabaseService()) await adoptPerUserStore()
+  } catch (e) {
+    backend = null
+    lastError = e.message
+    lastErrorCode = e.code || 'store_failed'
+    stage = null
+    return
+  }
   let cfg = readConfig()
   if (
     !cfg ||
@@ -311,6 +374,28 @@ async function doStart() {
       await stopLocalDatabase(localStarted).catch(() => {})
       localStarted = null
     }
+    if (cfg.mode === 'local' && usesDatabaseService()) {
+      // Installed: the database runs as the installer's Windows service, and that setup must be the
+      // one of this version (it took the verified copy before this version's migrations).
+      if (!cfg.local || !cfg.local.service) {
+        throw storeError(
+          'store_not_prepared',
+          'لم يتم تجهيز قاعدة بيانات المتجر على هذا الجهاز. شغّل برنامج تثبيت HeroMarket مرة أخرى (يحتاج موافقة المسؤول).'
+        )
+      }
+      if (newerVersion(cfg.local.setupVersion, app.getVersion())) {
+        throw storeError(
+          'database_newer',
+          `بيانات هذا الجهاز حُدِّثت بالنسخة ${cfg.local.setupVersion}، وهي أحدث من هذا البرنامج (${app.getVersion()}). ثبّت النسخة الأحدث مرة أخرى، أو استعد النسخة الاحتياطية المأخوذة قبل التحديث (دليل التحديث).`
+        )
+      }
+      if (cfg.local.setupVersion !== app.getVersion()) {
+        throw storeError(
+          'setup_incomplete',
+          'لم يكتمل تجهيز قاعدة البيانات لهذه النسخة، فلم يتم تحديث البيانات. شغّل برنامج تثبيت HeroMarket مرة أخرى.'
+        )
+      }
+    }
     if (cfg.mode === 'local') {
       stage = 'database'
       const local = await ensureLocalDatabase(cfg.local, (value) => {
@@ -319,10 +404,12 @@ async function doStart() {
       if (!fs.existsSync(configFile())) cfg = writeConfig({ ...cfg, local })
       localStarted = local
       const databaseUrl = localUrl(local)
-      await snapshotBeforeUpgrade(local, (value) => {
-        cfg = writeConfig({ ...cfg, local: value })
-      })
-      await importLegacyIfPresent(databaseUrl)
+      // The service setup copies the database before an upgrade; an app-managed one is copied here.
+      if (!local.service)
+        await snapshotBeforeUpgrade(local, (value) => {
+          cfg = writeConfig({ ...cfg, local: value })
+        })
+      await importLegacyIfPresent(databaseUrl, { installed: !!local.service })
       stage = 'service'
       backend = await startStandalone({ ...cfg, databaseUrl })
     } else {
@@ -331,6 +418,9 @@ async function doStart() {
   } catch (e) {
     backend = null
     lastError = e.message
+    // An installed shop's own database failing is a store problem, never a reason to offer modes.
+    lastErrorCode =
+      e.code || (cfg && cfg.mode === 'local' && usesDatabaseService() ? 'store_failed' : null)
     console.error('[backend] failed to start:', e.message)
   } finally {
     stage = null
@@ -360,6 +450,9 @@ export function status() {
     mode: cfg?.mode || null,
     ready: !!backend,
     error: lastError,
+    errorCode: lastErrorCode,
+    // Installed store (database service): the connection screen is not for the cashier.
+    installedStore: usesDatabaseService() && (cfg?.mode || 'local') === 'local',
     terminalName: terminalName()
   }
 }
@@ -379,6 +472,7 @@ export async function stopBackend() {
   if (starting) await starting.catch(() => {})
   if (backend) await backend.close().catch(() => {})
   backend = null
+  // Stopped only if this session started it and no other session is still using it.
   if (localStarted) await stopLocalDatabase(localStarted).catch(() => {})
   localStarted = null
 }

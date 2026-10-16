@@ -105,6 +105,12 @@ const PERMISSIONS = [
     description: 'تسجيل وحذف التوالف'
   },
   {
+    key: 'categories.manage',
+    module: 'products',
+    label: 'إدارة تصنيفات الأصناف',
+    description: 'إنشاء وتعديل وترتيب وإيقاف التصنيفات وتوزيع الأصناف عليها'
+  },
+  {
     key: 'discounts.manage',
     module: 'products',
     label: 'إدارة الخصومات',
@@ -271,6 +277,7 @@ const SYSTEM_ROLES = [
     permissions: [
       'products.view',
       'products.manage',
+      'categories.manage',
       'products.view_cost',
       'inventory.damaged',
       'inventory.adjust',

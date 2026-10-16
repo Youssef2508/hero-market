@@ -9,6 +9,7 @@ const api = {
   call: (op, body) => ipcRenderer.invoke('api:call', op, body),
   backend: {
     status: () => ipcRenderer.invoke('backend:status'),
+    retry: () => ipcRenderer.invoke('backend:retry'),
     configure: (cfg) => ipcRenderer.invoke('backend:configure', cfg),
     pickServerCa: () => ipcRenderer.invoke('backend:pickServerCa')
   },

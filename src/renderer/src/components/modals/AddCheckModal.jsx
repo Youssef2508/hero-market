@@ -108,6 +108,7 @@ const AddCheckModal = ({
           </div>
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowAddCheckModal(false)}

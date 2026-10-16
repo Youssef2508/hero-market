@@ -5,7 +5,8 @@
 const crypto = require('crypto')
 const Fastify = require('fastify')
 const { createPool, withTransaction } = require('./db/pool')
-const { migrate, DEFAULT_DIR } = require('./db/migrate')
+const { migrate, listMigrations, DEFAULT_DIR } = require('./db/migrate')
+const { schemaState, assertNotNewer } = require('./db/upgrade')
 const { ensureAccessControl, describeUser } = require('./auth/access')
 const { ServiceError, unauthorized, forbidden, fromDatabaseError } = require('./errors')
 const { KEYS } = require('./auth/permissions')
@@ -26,6 +27,8 @@ function sha256(s) {
  * @param {string} cfg.secret       server secret (≥ 32 chars) for PIN lookup keys
  * @param {string} [cfg.timeZone]   store time zone for LOCALTIMESTAMP (default: this machine's)
  * @param {string} [cfg.migrationsDir]
+ * @param {'auto'|'refuse'} [cfg.migrationPolicy] 'refuse' (installed store): pending migrations are
+ *        applied by the installer after its verified copy, never by the program (code setup_incomplete)
  * @param {object|boolean} [cfg.logger] fastify/pino logger options
  * @param {string} [cfg.setupCode] one-time code required by auth.setup (networked servers)
  */
@@ -179,10 +182,27 @@ async function createService(cfg) {
   for (const mod of require('./modules')) mod(app)
 
   async function prepare() {
-    await migrate(pool, {
-      dir: cfg.migrationsDir || DEFAULT_DIR,
-      logger: { info: (m) => app.log.info(m) }
-    })
+    const dir = cfg.migrationsDir || DEFAULT_DIR
+    const client = await pool.connect()
+    let state
+    try {
+      state = await schemaState(
+        client,
+        listMigrations(dir).map((m) => m.version)
+      )
+    } finally {
+      client.release()
+    }
+    // Never open a database migrated by a newer version (safe updates and rollbacks).
+    assertNotNewer(state)
+    if (cfg.migrationPolicy === 'refuse' && state.pending.length) {
+      const e = new Error(
+        `قاعدة البيانات تحتاج تحديثاً (${state.pending.join(', ')}) يقوم به برنامج التثبيت بعد نسخة احتياطية موثقة. شغّل برنامج تثبيت HeroMarket مرة أخرى.`
+      )
+      e.code = 'setup_incomplete'
+      throw e
+    }
+    await migrate(pool, { dir, logger: { info: (m) => app.log.info(m) } })
     await withTransaction(pool, (c) => ensureAccessControl(c))
   }
 

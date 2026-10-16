@@ -1,5 +1,6 @@
 import { UserPlus } from 'lucide-react'
 import PhoneFields from './PhoneFields'
+import AddressFields from './AddressFields'
 
 const AddClientModal = ({
   showAddClientModal,
@@ -36,18 +37,10 @@ const AddClientModal = ({
             />
           </div>
           <PhoneFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
-          <div className="form-group">
-            <label>عنوان التوصيل</label>
-            <input
-              type="text"
-              className="form-input"
-              value={newClientForm.address}
-              onChange={(e) => setNewClientForm((prev) => ({ ...prev, address: e.target.value }))}
-              placeholder="مثال: مدينة نصر، شارع عباس العقاد"
-            />
-          </div>
+          <AddressFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowAddClientModal(false)}

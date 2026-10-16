@@ -72,3 +72,24 @@ test('scale labels: off by default; when enabled, default layout, unknown prefix
     prefixes: { 20: 'weight', 21: 'weight', 22: 'price', 25: 'weight' }
   })
 })
+
+test('kinds the owner adds: their own decimals for quantities, factors and stock (migration 0014)', () => {
+  const { checkStockValue } = createRequire(import.meta.url)('../../src/server/inventory/units.js')
+  const metre = { key: 'custom_1', decimals: 2 }
+  assert.deepEqual(toBaseQty(metre, 1.25, 1), { qty: 1.25, baseQty: 1.25 })
+  assert.deepEqual(toBaseQty(metre, 2, 25.5), { qty: 2, baseQty: 51 })
+  assert.throws(() => toBaseQty(metre, 1.255, 1), /خانتين عشريتين/)
+  assert.equal(validateFactor(metre, 25.5), 25.5)
+  assert.throws(() => validateFactor(metre, 25.555), /خانتين عشريتين/)
+  assert.doesNotThrow(() => checkStockValue(metre, -3.75))
+  assert.throws(() => checkStockValue(metre, 3.755), /خانتين عشريتين/)
+  // Whole numbers only, like count.
+  const dozen = { key: 'custom_2', decimals: 0 }
+  assert.deepEqual(toBaseQty(dozen, 3, 1), { qty: 3, baseQty: 3 })
+  assert.throws(() => toBaseQty(dozen, 1.5, 1), /عدداً صحيحاً/)
+  assert.throws(() => checkStockValue(dozen, 2.5), /عدداً صحيحاً/)
+  // One decimal.
+  assert.throws(() => toBaseQty({ key: 'custom_3', decimals: 1 }, 1.25, 1), /خانة عشرية واحدة/)
+  // A key without its rule is a programming error, never a silent default.
+  assert.throws(() => toBaseQty('custom_9', 1, 1), /needs its rule/)
+})

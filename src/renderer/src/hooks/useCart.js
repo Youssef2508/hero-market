@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { round2 } from '../lib/utils'
+import { kindInfo } from '../lib/measureKinds'
 
 /** Cart line key: one line per product unit (a carton and loose pieces are two lines). */
 export const lineKey = (barcode, unitId) => `${barcode}|${unitId ?? ''}`
@@ -54,8 +55,12 @@ export function useCart({ playSound }) {
     const units = resolved.units || [unit]
     const kind = product.unit_kind || 'count'
     const given = customQty ?? resolved.qty ?? null
-    if (kind !== 'count' && unit.id === null && (given === null || given === undefined)) {
-      // Weighed by the kilogram: ask for the weight instead of assuming 1 kg.
+    if (
+      kindInfo(kind).decimals > 0 &&
+      unit.id === null &&
+      (given === null || given === undefined)
+    ) {
+      // Sold by the kilogram (or litre, metre…): ask for the quantity instead of assuming 1.
       setPendingWeight({ product, unit, units })
       return
     }

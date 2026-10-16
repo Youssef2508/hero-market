@@ -1,5 +1,6 @@
 import { UserPen } from 'lucide-react'
 import PhoneFields from './PhoneFields'
+import AddressFields from './AddressFields'
 
 const EditClientModal = ({
   showEditClientModal,
@@ -35,17 +36,10 @@ const EditClientModal = ({
             />
           </div>
           <PhoneFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
-          <div className="form-group">
-            <label>عنوان التوصيل</label>
-            <input
-              type="text"
-              className="form-input"
-              value={editClientForm.address}
-              onChange={(e) => setEditClientForm((prev) => ({ ...prev, address: e.target.value }))}
-            />
-          </div>
+          <AddressFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowEditClientModal(false)}

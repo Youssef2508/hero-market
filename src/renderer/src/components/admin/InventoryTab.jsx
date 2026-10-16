@@ -7,13 +7,15 @@ import {
   PackageSearch,
   History,
   AlertTriangle,
-  Boxes
+  Boxes,
+  Ruler
 } from 'lucide-react'
 import { EmptyState, Pagination, SortableTh } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
 import StockHistoryModal from '../modals/StockHistoryModal'
 import ProductUnitsModal from '../modals/ProductUnitsModal'
+import MeasureKindsModal from '../modals/MeasureKindsModal'
 
 /**
  * Products & stock screen. Data and mutations come from useProductsManager
@@ -38,6 +40,7 @@ export default function InventoryTab({
   const debounceRef = useRef(null)
   const [historyFor, setHistoryFor] = useState(null)
   const [unitsFor, setUnitsFor] = useState(null)
+  const [showKinds, setShowKinds] = useState(false)
   const [negative, setNegative] = useState([])
 
   // Negative stock is allowed (sold before the receipt was entered); list it so it gets fixed.
@@ -109,6 +112,10 @@ export default function InventoryTab({
           بحث
         </button>
         <div className="spacer" />
+        <button type="button" className="btn btn-secondary" onClick={() => setShowKinds(true)}>
+          <Ruler size={17} aria-hidden="true" />
+          طرق القياس
+        </button>
         <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>
           <Plus size={17} aria-hidden="true" />
           إضافة صنف جديد
@@ -228,6 +235,7 @@ export default function InventoryTab({
           onNext={() => fetchInventoryPage(adminPage + 1, adminSearch)}
         />
       </div>
+      {showKinds && <MeasureKindsModal onClose={() => setShowKinds(false)} />}
       {unitsFor && (
         <ProductUnitsModal
           product={unitsFor}
