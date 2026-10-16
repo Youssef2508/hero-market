@@ -14,6 +14,7 @@ import { join } from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import os from 'os'
+import { newerVersion } from './versions'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
 import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
 import {
@@ -36,6 +37,7 @@ let lastError = null
 let lastErrorCode = null // why the store cannot open: shown on its own screen, never as a mode choice
 /** An error the start-up screen explains (code) rather than offering connection settings. */
 const storeError = (code, message) => Object.assign(new Error(message), { code })
+
 let starting = null // in-flight startBackend() promise
 let stage = null // what the startup is doing, for the waiting screen
 // Client mode: the store server's certificate was refused (Chromium caches the verdict, so this
@@ -379,6 +381,12 @@ async function doStart() {
         throw storeError(
           'store_not_prepared',
           'لم يتم تجهيز قاعدة بيانات المتجر على هذا الجهاز. شغّل برنامج تثبيت HeroMarket مرة أخرى (يحتاج موافقة المسؤول).'
+        )
+      }
+      if (newerVersion(cfg.local.setupVersion, app.getVersion())) {
+        throw storeError(
+          'database_newer',
+          `بيانات هذا الجهاز حُدِّثت بالنسخة ${cfg.local.setupVersion}، وهي أحدث من هذا البرنامج (${app.getVersion()}). ثبّت النسخة الأحدث مرة أخرى، أو استعد النسخة الاحتياطية المأخوذة قبل التحديث (دليل التحديث).`
         )
       }
       if (cfg.local.setupVersion !== app.getVersion()) {

@@ -424,7 +424,20 @@ export async function setupService() {
   // 6. The database itself: Case A (nothing to migrate) or Case B (migrations, checked; any loss
   //    or damage puts the verified copy back). Done here, right after the copy, never by the
   //    program on start (.docs/UPDATE_GUIDE.md).
-  const result = await updateDatabase({ p, port, appPassword, snap, account, name })
+  let result
+  try {
+    result = await updateDatabase({ p, port, appPassword, snap, account, name })
+  } catch (e) {
+    // Refused before any change (e.g. a database from a newer version): recorded too.
+    history(p, {
+      fromVersion,
+      toVersion: app.getVersion(),
+      snapshot: snap,
+      result: 'refused',
+      reason: e.code || e.message
+    })
+    throw e
+  }
   history(p, {
     fromVersion,
     toVersion: app.getVersion(),
