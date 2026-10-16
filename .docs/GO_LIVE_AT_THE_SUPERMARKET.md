@@ -1,6 +1,6 @@
 # HeroMarket 1.4.0 at the supermarket: step by step
 
-Written for you, the person who installs it at the shop. Print it and tick each box. The whole visit takes about two hours plus a normal day of selling.
+Written for you, the person who installs it at the shop. Print it, or open START-HERE.html from the USB folder, and tick each box. The whole visit takes about two hours plus a normal day of selling.
 
 The supermarket PC today runs **HeroMarket 1.3**. Installing 1.4.0 is the real change-over: it brings the 1.3 data into the new database. The installer **removes the 1.3 program**, but not its data. The 1.3 data is only read, never changed, so you can always go back to 1.3 with its installer (step 1).
 
@@ -8,53 +8,53 @@ The supermarket PC today runs **HeroMarket 1.3**. Installing 1.4.0 is the real c
 
 ## A. At home, before you go
 
-- [ ] **1. Copy the installer to a USB stick:**
-      `D:\Youssef\Brands\HeroMarket-trial\1.4.0-candidate-9d3d816\HeroMarket-Setup-1.4.0.exe`
-      (about 173 MB). Also copy `SHA256SUMS.txt` from the same folder.
-      **Also the 1.3 installer, to go back if needed:**
-      `D:\Youssef\Brands\HeroMarket-trial\1.3.0-to-go-back\elnagdi-pos-1.3.0-setup.exe`.
-- [ ] **2. Take a second, empty USB stick** (or free space of at least 2 GB on the first) for the backups.
-- [ ] **3. Bring:** the receipt printer's cable if it is not connected, a few paper rolls, and 10 products of different kinds. Include one with a long barcode and, if the shop sells weighed items, one with a scale label.
-- [ ] **4. Ask the owner** to be there at a quiet time (no customers), and to know each staff member's **username and old PIN** (or have each person come and type their own).
+- [ ] **1. Copy one folder to a USB stick:** `D:\Youssef\Brands\HeroMarket-USB\HeroMarket-1.4.0-for-the-supermarket` (about 280 MB). Copy the whole folder, not single files. It contains:
+  - **`START-HERE.html`**: this guide. Double-click it to open it in the browser.
+  - **`HeroMarket-Setup-1.4.0.exe`**: the new program.
+  - **`1-Check-installers-and-backup-1.3.cmd`**: checks the installers and backs up the 1.3 data (step 8).
+  - **`go-back-to-1.3\elnagdi-pos-1.3.0-setup.exe`**: the old program, only to go back if needed.
+  - `SHA256SUMS.txt`, `tools\` and `GO_LIVE_AT_THE_SUPERMARKET.md`: used by the check, or the same guide as text.
+- [ ] **2. Use a USB stick with at least 2 GB free.** The backup of the 1.3 data goes on it, next to the folder.
+- [ ] **3. Bring:**
+  - the receipt printer's cable, if it is not connected;
+  - a few paper rolls;
+  - 10 products of different kinds, including one with a long barcode and, if the shop sells weighed items, one with a scale label.
+- [ ] **4. Ask the owner** to be there at a quiet time (no customers). He should know each staff member's **username and old PIN**, or have each person come and type their own.
 
 ## B. At the shop: before installing (15 minutes)
 
-- [ ] **5. Close the shift** in 1.3 if one is open, and close HeroMarket 1.3.
-- [ ] **6. Sign in to Windows as the same user that uses HeroMarket 1.3 every day.** The import reads that user's data. If you use another Windows user, the data is not found.
-- [ ] **7. Back up the 1.3 data to USB:**
-  1. Press **Windows + R**, type `%APPDATA%`, press Enter.
-  2. Copy the whole **`elnagdi-pos`** folder to the USB stick, into a folder named `1.3-backup-<today's date>`.
-  3. Do not delete or change anything in the original folder.
-- [ ] **8. Write down from 1.3** (photo with the phone is fine):
+- [ ] **5. Write down from 1.3, while it is still open** (a photo with the phone is fine). You will compare these after the installation:
   - the number of products;
   - the last invoice number;
   - three customers' balances;
   - the stock of three products you know.
-    You will compare them after the installation.
-- [ ] **9. Check the installer is the right file.** Open PowerShell (Windows key, type `powershell`, Enter), then:
+- [ ] **6. Close the shift** in 1.3 if one is open, then **close HeroMarket 1.3**.
+- [ ] **7. Stay signed in to Windows as the user who uses HeroMarket 1.3 every day.** The 1.3 data belongs to that Windows user; with another user it is not found.
+- [ ] **8. Plug in the USB stick, open the folder and double-click `1-Check-installers-and-backup-1.3.cmd`.** A black window opens, and it changes nothing on the PC. It:
+  - checks that both installers are the right, undamaged files;
+  - checks that 1.3 is closed;
+  - copies the 1.3 data to the USB stick (`backup-1.3-<date and time>`) and checks that every copied file is identical to the original.
 
-  ```
-  Get-FileHash E:\HeroMarket-Setup-1.4.0.exe
-  ```
+  Wait for the green **ALL OK** (a minute or two), then press any key. If it shows a red **STOP**, do what it says and run it again. **Do not install before you see ALL OK.**
 
-  Use your USB stick's letter instead of `E:`. The long number must be
-  `097E0C285B9A1FB69A90A1D0FD3F56A73C5031284A9D2F8332EED2F4D4BE63BB`.
-  If it is different, **stop**: the file is damaged or wrong.
+- [ ] **9. Only if the check cannot run:** do the same by hand.
+  1. Press **Windows + R**, type `%APPDATA%`, press Enter, and copy the whole **`elnagdi-pos`** folder to the USB stick.
+  2. In PowerShell, run `Get-FileHash E:\HeroMarket-1.4.0-for-the-supermarket\HeroMarket-Setup-1.4.0.exe`, with your USB stick's letter instead of `E:`. It must show `097E0C285B9A1FB69A90A1D0FD3F56A73C5031284A9D2F8332EED2F4D4BE63BB`.
 
 ## C. Install (5–10 minutes)
 
-- [ ] **10.** Copy the installer from the USB stick to the Desktop and double-click it.
+- [ ] **10.** Copy **`HeroMarket-Setup-1.4.0.exe`** from the USB folder to the Desktop and double-click it.
 - [ ] **11.** If Windows says **"Windows protected your PC"**, click **More info** and then **Run anyway**. The installer is not signed, so this warning is expected.
 - [ ] **12.** Click **Yes** at the administrator question. If Windows asks for an administrator's password instead, the shop's Windows user is not an administrator: type the password of an administrator account of that PC. Then wait; there is no window for a few minutes. Do not turn the PC off.
 - [ ] **13.** When it finishes, HeroMarket opens. With the shop's full data, the first start may take a minute or two while the 1.3 data is brought in.
   - **"HeroMarket مفتوح الآن…":** HeroMarket 1.3 is still open somewhere. Close it on every Windows account and run the installer again. Nothing was changed.
-  - **"لم يكتمل تثبيت HeroMarket…":** stop and send me the photo and the file `C:\ProgramData\HeroMarket\logs\setup.log`. The shop can keep selling with 1.3 meanwhile; its data is untouched.
+  - **"لم يكتمل تثبيت HeroMarket…":** stop and send me the photo and the file `C:\ProgramData\HeroMarket\logs\setup.log`. To keep selling meanwhile, go back to 1.3 (last row of the table below): its data is untouched.
 
 ## D. First start and sign-in (10 minutes)
 
 - [ ] **14.** Sign in with the **owner's username and his old PIN**. The program asks him to choose a new **password**. It must have at least 8 characters with letters and digits; he chooses it, you do not write it here.
 - [ ] **15.** The **recovery code** appears once. Write it on paper and give it to the owner, to keep at home, not at the till. With it he can get in if he forgets his password.
-- [ ] **16. Compare with step 8:**
+- [ ] **16. Compare with step 5:**
   - **الأصناف والمخزن:** number of products, stock of the three products;
   - **الفواتير والمرتجعات:** last invoice number;
   - **العملاء والحسابات:** the three balances.
@@ -103,13 +103,13 @@ The supermarket PC today runs **HeroMarket 1.3**. Installing 1.4.0 is the real c
 
 ## If something goes wrong
 
-| What you see                             | What to do                                                                                                                                                                                                                                                            |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The installer stops with a message       | Photo of the message + `C:\ProgramData\HeroMarket\logs\setup.log` to me. Keep selling with 1.3: its data is untouched.                                                                                                                                                |
-| Numbers differ from step 8               | Do not sell with 1.4.0. Photo of both + `C:\ProgramData\HeroMarket\logs\app.log` to me. Keep selling with 1.3.                                                                                                                                                        |
-| A product does not scan, or prints wrong | Write down which product and what happened. It is usually a setting; send it to me, the shop can keep selling.                                                                                                                                                        |
-| The printer does not print               | Check the name (step 19), the cable and paper. The sale is saved. Send me a photo of the message.                                                                                                                                                                     |
-| You must go back to 1.3 today            | Close HeroMarket 1.4.0. As the same Windows user, run `elnagdi-pos-1.3.0-setup.exe` from the USB stick: 1.3 opens with its data exactly as you left it at step 5. Sales made in 1.4.0 that day are not in 1.3, so write them down. Tell me before trying 1.4.0 again. |
+| What you see                             | What to do                                                                                                                                                                                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The installer stops with a message       | Photo of the message + `C:\ProgramData\HeroMarket\logs\setup.log` to me. To keep selling, go back to 1.3 (last row): its data is untouched.                                                                                                                                           |
+| Numbers differ from step 5               | Do not sell with 1.4.0. Photo of both + `C:\ProgramData\HeroMarket\logs\app.log` to me. To keep selling, go back to 1.3 (last row).                                                                                                                                                   |
+| A product does not scan, or prints wrong | Write down which product and what happened. It is usually a setting; send it to me, the shop can keep selling.                                                                                                                                                                        |
+| The printer does not print               | Check the name (step 19), the cable and paper. The sale is saved. Send me a photo of the message.                                                                                                                                                                                     |
+| You must go back to 1.3 today            | Close HeroMarket 1.4.0. As the same Windows user, run `go-back-to-1.3\elnagdi-pos-1.3.0-setup.exe` from the USB folder: 1.3 opens with its data exactly as you left it at step 6. Sales made in 1.4.0 that day are not in 1.3, so write them down. Tell me before trying 1.4.0 again. |
 
 **Files to send me when something fails:** everything in `C:\ProgramData\HeroMarket\logs`, plus photos. Never delete any folder in `C:\ProgramData\HeroMarket` or `%APPDATA%\elnagdi-pos`.
 
