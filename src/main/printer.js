@@ -3,6 +3,7 @@ import { execFile } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { powershellExe } from './winTools'
 import { getPrintSettings } from './printSettings'
 import { buildReceiptText } from '../shared/legacyReceiptText.mjs'
 import { REPORTS } from '../shared/reportLines.mjs'
@@ -87,7 +88,7 @@ export function runPrintScript(
         String(logoFile || ''),
         ...(templateLayout ? ['-TemplateLayout'] : [])
       ]
-      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true }, (err, stdout) => {
+      execFile(powershellExe(), args, { timeout: 20000, windowsHide: true }, (err, stdout) => {
         try {
           if (existsSync(txt)) unlinkSync(txt)
         } catch (_) {}

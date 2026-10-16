@@ -33,6 +33,9 @@ const configFile = () => join(storeDir(), 'heromarket.json')
 let backend = null // { mode, call(op, body, headers) }
 let token = null
 let lastError = null
+let lastErrorCode = null // why the store cannot open: shown on its own screen, never as a mode choice
+/** An error the start-up screen explains (code) rather than offering connection settings. */
+const storeError = (code, message) => Object.assign(new Error(message), { code })
 let starting = null // in-flight startBackend() promise
 let stage = null // what the startup is doing, for the waiting screen
 // Client mode: the store server's certificate was refused (Chromium caches the verdict, so this
@@ -336,6 +339,7 @@ async function adoptPerUserStore() {
 
 async function doStart() {
   lastError = null
+  lastErrorCode = null
   try {
     ensureStoreDir()
     // An installed app's store is set up by the installer (serviceSetup.js), never by the app.
@@ -343,6 +347,7 @@ async function doStart() {
   } catch (e) {
     backend = null
     lastError = e.message
+    lastErrorCode = e.code || 'store_failed'
     stage = null
     return
   }
@@ -368,12 +373,14 @@ async function doStart() {
       // Installed: the database runs as the installer's Windows service, and that setup must be the
       // one of this version (it took the verified copy before this version's migrations).
       if (!cfg.local || !cfg.local.service) {
-        throw new Error(
+        throw storeError(
+          'store_not_prepared',
           'لم يتم تجهيز قاعدة بيانات المتجر على هذا الجهاز. شغّل برنامج تثبيت HeroMarket مرة أخرى (يحتاج موافقة المسؤول).'
         )
       }
       if (cfg.local.setupVersion !== app.getVersion()) {
-        throw new Error(
+        throw storeError(
+          'setup_incomplete',
           'لم يكتمل تجهيز قاعدة البيانات لهذه النسخة، فلم يتم تحديث البيانات. شغّل برنامج تثبيت HeroMarket مرة أخرى.'
         )
       }
@@ -400,6 +407,9 @@ async function doStart() {
   } catch (e) {
     backend = null
     lastError = e.message
+    // An installed shop's own database failing is a store problem, never a reason to offer modes.
+    lastErrorCode =
+      e.code || (cfg && cfg.mode === 'local' && usesDatabaseService() ? 'store_failed' : null)
     console.error('[backend] failed to start:', e.message)
   } finally {
     stage = null
@@ -429,6 +439,9 @@ export function status() {
     mode: cfg?.mode || null,
     ready: !!backend,
     error: lastError,
+    errorCode: lastErrorCode,
+    // Installed store (database service): the connection screen is not for the cashier.
+    installedStore: usesDatabaseService() && (cfg?.mode || 'local') === 'local',
     terminalName: terminalName()
   }
 }

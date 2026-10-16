@@ -1,5 +1,6 @@
 import { ensureStoreDir } from './userDataPath'
 import { setupService, stopServiceOnly, removeService } from './serviceSetup'
+import { openLogFile } from './logFile'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -18,33 +19,17 @@ import fs from 'fs'
 import { initializePrinter, registerSalePrinting, runPrintScript } from './printer'
 import { registerDataIpc } from './dataIpc'
 
-// Silence logs and redirect warnings/errors to log file in production with 24-hour cleanup
+// Production: warnings and errors go to a log file (started afresh after a day). The installer's
+// steps log to logs/setup.log only, so the administrator never creates the program's app.log.
+const SERVICE_STEP_ARGS = ['--setup-service', '--stop-service', '--remove-service']
 if (app.isPackaged) {
-  // logs is the part of the store folder Windows users may write (serviceSetup.js).
-  const logDir = join(ensureStoreDir(), 'logs')
-  try {
-    fs.mkdirSync(logDir, { recursive: true })
-  } catch {
-    /* created by the installer */
-  }
-  const logPath = join(logDir, 'app.log')
-
-  if (fs.existsSync(logPath)) {
-    try {
-      const stats = fs.statSync(logPath)
-      const now = new Date()
-      const timeDiff = now.getTime() - stats.mtime.getTime()
-      if (timeDiff > 24 * 60 * 60 * 1000) {
-        fs.writeFileSync(
-          logPath,
-          `[LOG ENGINE] [${new Date().toISOString()}] Log file reset (exceeded 24 hours).\n`,
-          'utf8'
-        )
-      }
-    } catch (_) {}
-  }
-
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' })
+  const logs = join(ensureStoreDir(), 'logs')
+  const installerStep = SERVICE_STEP_ARGS.some((a) => process.argv.includes(a))
+  const log = openLogFile(
+    installerStep
+      ? [join(logs, 'setup.log')]
+      : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
+  )
   // Errors keep their message and stack (JSON.stringify(new Error()) is "{}", which hid the reason
   // of a failed print in the 1.4.0 release checks).
   const logText = (a) => {
@@ -58,19 +43,15 @@ if (app.isPackaged) {
     }
     return a
   }
-
-  console.log = (...args) => {
-    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
-  }
-  console.info = (...args) => {
-    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
-  }
-  console.warn = (...args) => {
-    logStream.write(`[WARN] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
-  }
-  console.error = (...args) => {
-    logStream.write(`[ERROR] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
-  }
+  const writer =
+    (level) =>
+    (...args) =>
+      log.write(`[${level}] [${new Date().toISOString()}] ${args.map(logText).join(' ')}
+`)
+  console.log = writer('INFO')
+  console.info = writer('INFO')
+  console.warn = writer('WARN')
+  console.error = writer('ERROR')
 }
 
 // Local password reset: "HeroMarket-POS.exe" --reset-password=<username> (see src/server/auth/reset.js).
@@ -78,7 +59,7 @@ const RESET_ARG = '--reset-password='
 const resetUser = process.argv.find((a) => a.startsWith(RESET_ARG))?.slice(RESET_ARG.length)
 
 // Installer steps (run elevated by the per-machine installer, no window): set up, stop or remove the
-// store's database service (serviceSetup.js). Exit code 0 = done; the reason is in logssetup.log.
+// store's database service (serviceSetup.js). Exit code 0 = done; the reason is in logs/setup.log.
 const SERVICE_STEPS = {
   '--setup-service': setupService,
   '--stop-service': stopServiceOnly,

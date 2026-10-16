@@ -65,6 +65,19 @@ function openSqlite(file) {
   return new DatabaseSync(file, { readOnly: true })
 }
 
+/**
+ * A private working copy of the SQLite file (+ -wal/-shm) in a temporary folder. The import reads
+ * only this copy: even a read-only SQLite connection may update the -shm index of a WAL database,
+ * and the original folder of the previous version must stay exactly as it was (1.4.0 checks).
+ */
+function workingCopy(file) {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hm-legacy-'))
+  const copy = path.join(dir, path.basename(file))
+  for (const suffix of ['', '-wal', '-shm'])
+    if (fs.existsSync(file + suffix)) fs.copyFileSync(file + suffix, copy + suffix)
+  return { file: copy, dispose: () => fs.rmSync(dir, { recursive: true, force: true }) }
+}
+
 /** Copy the SQLite file (+ -wal/-shm) to backupDir and verify the copy byte for byte. */
 function backupSource(file, backupDir) {
   fs.mkdirSync(backupDir, { recursive: true })
@@ -353,11 +366,21 @@ async function importLegacy(
   const sourceSha256 = sha256File(sourcePath)
   const report = { sourcePath, sourceSha256, startedAt: new Date().toISOString(), dryRun }
   report.backups = backupDir ? backupSource(sourcePath, backupDir) : []
-  const db = openSqlite(sourcePath)
+  const work = workingCopy(sourcePath)
+  let db
+  try {
+    db = openSqlite(work.file)
+  } catch (e) {
+    work.dispose()
+    throw e
+  }
   const integrity = db.prepare('PRAGMA integrity_check').all()
   report.sourceIntegrity = integrity.map((r) => Object.values(r)[0])
-  if (report.sourceIntegrity.join() !== 'ok')
+  if (report.sourceIntegrity.join() !== 'ok') {
+    db.close()
+    work.dispose()
     throw new Error(`Source integrity_check failed: ${report.sourceIntegrity.join('; ')}`)
+  }
 
   const client = await pool.connect()
   try {
@@ -445,6 +468,7 @@ async function importLegacy(
   } finally {
     client.release()
     db.close()
+    work.dispose()
   }
 }
 

@@ -14,6 +14,7 @@ import crypto from 'crypto'
 import pg from 'pg'
 import { isToolSafePath, asciiMachineDir, runnablePgsqlRoot, pgsqlStamp } from './pgPaths'
 import { storeDir } from './userDataPath'
+import { systemTool } from './winTools'
 
 const DB_NAME = 'heromarket'
 const DB_USER = 'heromarket'
@@ -142,14 +143,17 @@ export function localUrl(local, db = DB_NAME) {
 async function ensureServiceRunning(local) {
   if (await reachable(local)) return local
   await new Promise((resolve) =>
-    execFile('sc.exe', ['start', local.service], { windowsHide: true }, () => resolve())
+    execFile(systemTool('sc.exe'), ['start', local.service], { windowsHide: true }, () => resolve())
   )
   for (let i = 0; i < 60; i++) {
     if (await reachable(local)) return local
     await new Promise((r) => setTimeout(r, 1000))
   }
-  throw new Error(
-    `خدمة قاعدة بيانات المتجر (${local.service}) لا تعمل. أعد تشغيل الجهاز، وإذا تكرر ذلك شغّل برنامج تثبيت HeroMarket مرة أخرى.`
+  throw Object.assign(
+    new Error(
+      `خدمة قاعدة بيانات المتجر (${local.service}) لا تعمل. أعد تشغيل الجهاز، وإذا تكرر ذلك شغّل برنامج تثبيت HeroMarket مرة أخرى.`
+    ),
+    { code: 'service_not_running' }
   )
 }
 

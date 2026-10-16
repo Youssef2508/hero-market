@@ -1456,3 +1456,28 @@ input[data-computed='true'] {
 .category-actions .form-input {
   width: auto;
 }
+
+/* Installed shop whose database cannot open (StartupGate, 1.4.0): reason, steps, retry. */
+.store-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.store-problem .lock-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--warning-text);
+}
+.store-problem-steps {
+  margin: 0;
+  padding-inline-start: var(--sp-5);
+  display: grid;
+  gap: var(--sp-2);
+  line-height: 1.6;
+}
+.store-problem-path {
+  text-align: left;
+  font-family: var(--font-mono, monospace);
+  margin-top: calc(-1 * var(--sp-2));
+}

@@ -23,6 +23,9 @@ export function registerDataIpc({
   })
 
   ipcMain.handle('backend:status', async () => backendStatus())
+  // "Try again" on the store-problem screen: start the backend once more (e.g. after the installer
+  // was run again or the database service came back).
+  ipcMain.handle('backend:retry', async () => startBackend())
 
   // First-run / connection settings screen. Only the mode, addresses and terminal name come from the UI.
   ipcMain.handle('backend:configure', async (_event, cfg) => {

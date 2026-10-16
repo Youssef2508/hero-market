@@ -25,6 +25,7 @@ import pg from 'pg'
 import { storeDir, serviceName, perUserConfigFile } from './userDataPath'
 import { runPgTool, choosePort, toolError, DB_NAME } from './localDatabase'
 import { copyAndVerify, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
+import { systemTool } from './winTools'
 
 const APP_ROLE = 'hm_app'
 const NEW_SUPERUSER = 'hm_admin'
@@ -65,20 +66,20 @@ function exec(cmd, args) {
 }
 
 async function icacls(target, ...args) {
-  const r = await exec('icacls', [target, ...args, '/C', '/Q'])
+  const r = await exec(systemTool('icacls.exe'), [target, ...args, '/C', '/Q'])
   if (r.code !== 0) throw new Error(`icacls ${target} ${args.join(' ')}: ${r.out.trim()}`)
 }
 
 /** SID of the account running the setup (icacls accepts *SID, never a misread name). */
 async function currentUserSid() {
-  const r = await exec('whoami', ['/user', '/fo', 'csv', '/nh'])
+  const r = await exec(systemTool('whoami.exe'), ['/user', '/fo', 'csv', '/nh'])
   const m = /"(S-1-[0-9-]+)"/.exec(r.out)
   if (!m) throw new Error(`could not read the current user's SID: ${r.out.trim()}`)
   return m[1]
 }
 
 async function serviceState(name) {
-  const r = await exec('sc.exe', ['query', name])
+  const r = await exec(systemTool('sc.exe'), ['query', name])
   if (/1060/.test(r.out) || r.code === 1060) return 'missing'
   const m = /STATE\s*:\s*\d+\s+(\w+)/.exec(r.out)
   return m ? m[1] : 'unknown'
@@ -95,7 +96,7 @@ async function waitState(name, wanted, seconds = 60) {
 async function stopService(name) {
   const state = await serviceState(name)
   if (state === 'missing' || state === 'STOPPED') return
-  await exec('sc.exe', ['stop', name])
+  await exec(systemTool('sc.exe'), ['stop', name])
   if (!(await waitState(name, 'STOPPED', 90))) throw new Error(`service ${name} did not stop`)
 }
 
@@ -326,14 +327,14 @@ export async function setupService() {
   ])
   if (reg.code !== 0) throw toolError('pg_ctl register failed', reg)
   // Its own virtual account (no password; created by Windows with the service).
-  const acct = await exec('sc.exe', ['config', name, 'obj=', account])
+  const acct = await exec(systemTool('sc.exe'), ['config', name, 'obj=', account])
   if (acct.code !== 0) throw new Error(`could not set the service account: ${acct.out.trim()}`)
   // Windows users may start the service (the app does when it is stopped); only administrators may
   // stop, change or delete it.
   const sddl =
     'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPLOCRRC;;;BU)(A;;CCLCSWLOCRRC;;;IU)'
-  log('service permissions:', (await exec('sc.exe', ['sdset', name, sddl])).out.trim())
-  await exec('sc.exe', [
+  log('service permissions:', (await exec(systemTool('sc.exe'), ['sdset', name, sddl])).out.trim())
+  await exec(systemTool('sc.exe'), [
     'failure',
     name,
     'reset=',
@@ -341,7 +342,7 @@ export async function setupService() {
     'actions=',
     'restart/5000/restart/10000/restart/60000'
   ])
-  await exec('sc.exe', [
+  await exec(systemTool('sc.exe'), [
     'description',
     name,
     'HeroMarket POS – قاعدة بيانات المتجر (127.0.0.1 فقط)'
@@ -349,7 +350,7 @@ export async function setupService() {
 
   // 4. Folder permissions, then start.
   await secureFolders(p, account)
-  const started = await exec('sc.exe', ['start', name])
+  const started = await exec(systemTool('sc.exe'), ['start', name])
   if (!(await waitState(name, 'RUNNING', 90)))
     throw new Error(`service ${name} did not start: ${started.out.trim()}`)
   await waitReachable(port, superuser.user, superuser.password)

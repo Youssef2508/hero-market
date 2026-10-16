@@ -247,3 +247,42 @@ test('after import, the earlier default store name becomes HeroMarket (logged); 
     await target.close()
   }
 })
+
+// 1.4.0 release checks: the previous version's folder must stay exactly as it was. Like a real 1.3
+// store, this source keeps recent changes in its write-ahead log (-wal) with a -shm index; even a
+// read-only SQLite connection may touch those, so the import reads a private working copy.
+test('import never touches the 1.3 files: .db, -wal and -shm keep their bytes and times', async (t) => {
+  if (!requireDb(t)) return
+  const file = path.join(dir, 'wal-store.db')
+  buildLegacyFixture(file, { reset: true })
+  const writer = new DatabaseSync(file)
+  writer.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0')
+  writer.exec("INSERT INTO clients (name, phone) VALUES ('عميل في سجل WAL', '01000000999')")
+  // Copy the three files while the writer still holds them (as the shop PC leaves them).
+  const frozen = path.join(dir, 'wal-frozen.db')
+  for (const s of ['', '-wal', '-shm']) fs.copyFileSync(file + s, frozen + s)
+  writer.close()
+  const state = () =>
+    ['', '-wal', '-shm'].map((s) =>
+      fs.existsSync(frozen + s)
+        ? `${s}:${sha(frozen + s)}:${fs.statSync(frozen + s).mtimeMs}`
+        : `${s}:absent`
+    )
+  const before = state()
+  assert.ok(fs.statSync(frozen + '-wal').size > 0, 'the source has un-checkpointed changes')
+  const target = await migratedDatabase()
+  try {
+    const r = await importLegacy(target.pool, frozen, {
+      backupDir: path.join(dir, 'wal-backups'),
+      logger: quiet
+    })
+    assert.ok(r.parity.ok)
+    const walClient = (
+      await target.pool.query("SELECT count(*)::int AS n FROM clients WHERE phone = '01000000999'")
+    ).rows[0].n
+    assert.equal(walClient, 1, 'changes still in the -wal file are imported')
+    assert.deepEqual(state(), before, 'the .db, -wal and -shm files are byte- and time-identical')
+  } finally {
+    await target.close()
+  }
+})

@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Database, Server, ShieldCheck, Loader2, UserPlus, Monitor, HardDrive } from 'lucide-react'
+import {
+  Database,
+  Server,
+  ShieldCheck,
+  Loader2,
+  UserPlus,
+  Monitor,
+  HardDrive,
+  TriangleAlert,
+  RotateCcw
+} from 'lucide-react'
 import { BrandMark, Wordmark } from '../brand/BrandMark'
 import { ThemeToggle } from '../ui'
 import { api } from '../../lib/api'
@@ -301,6 +311,75 @@ function SetupForm({ onSetupDone }) {
   )
 }
 
+// What to do for each reason an installed shop's database cannot open (backend.js errorCode).
+const STORE_ADVICE = {
+  store_not_prepared: [
+    'شغّل برنامج تثبيت HeroMarket مرة أخرى، ووافق على طلب صلاحيات المسؤول.',
+    'لا يتم حذف أو تغيير أي بيانات أثناء ذلك.'
+  ],
+  setup_incomplete: [
+    'شغّل برنامج تثبيت هذه النسخة مرة أخرى، ووافق على طلب صلاحيات المسؤول.',
+    'لم يتم تحديث بياناتك؛ ستُحدَّث بعد اكتمال التثبيت.'
+  ],
+  service_not_running: [
+    'أعد تشغيل الجهاز ثم افتح البرنامج.',
+    'إذا تكرر ذلك، شغّل برنامج تثبيت HeroMarket مرة أخرى (يصلح الخدمة ويحتفظ بالبيانات).'
+  ]
+}
+
+/**
+ * The shop's own database cannot open on an installed PC (1.4.0 release checks): say why and what
+ * to do, and offer to try again. Connection modes are not offered: another mode would not repair it.
+ */
+function StoreProblem({ backendInfo, onRetry }) {
+  const [busy, setBusy] = useState(false)
+  const advice = STORE_ADVICE[backendInfo?.errorCode] || [
+    'أعد تشغيل الجهاز ثم افتح البرنامج.',
+    'إذا تكرر ذلك، شغّل برنامج تثبيت HeroMarket مرة أخرى، ولا تحذف أي مجلد.'
+  ]
+  const retry = async () => {
+    setBusy(true)
+    try {
+      if (window.api?.backend?.retry) await window.api.backend.retry()
+    } finally {
+      setBusy(false)
+      onRetry()
+    }
+  }
+  return (
+    <div className="store-problem" role="alert">
+      <h2 className="lock-title">
+        <TriangleAlert size={22} aria-hidden="true" /> قاعدة بيانات المتجر غير جاهزة
+      </h2>
+      {backendInfo?.error && <p className="field-error">{backendInfo.error}</p>}
+      <ol className="store-problem-steps">
+        {advice.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ol>
+      <p className="field-hint">للدعم الفني، ملفات السجل:</p>
+      <p className="field-hint store-problem-path" dir="ltr">
+        {'C:\\ProgramData\\HeroMarket\\logs\\setup.log'}
+        <br />
+        {'C:\\ProgramData\\HeroMarket\\logs\\app.log'}
+      </p>
+      <button
+        type="button"
+        className="btn btn-primary btn-lg btn-block"
+        onClick={retry}
+        disabled={busy}
+      >
+        {busy ? (
+          <Loader2 size={18} className="spin" aria-hidden="true" />
+        ) : (
+          <RotateCcw size={18} aria-hidden="true" />
+        )}
+        إعادة المحاولة
+      </button>
+    </div>
+  )
+}
+
 export default function StartupGate({ phase, backendInfo, onRetry, onSetupDone }) {
   return (
     <div className="lock">
@@ -326,6 +405,9 @@ export default function StartupGate({ phase, backendInfo, onRetry, onSetupDone }
             </div>
           )}
           {phase === 'connect' && <ConnectForm backendInfo={backendInfo} onRetry={onRetry} />}
+          {phase === 'store_problem' && (
+            <StoreProblem backendInfo={backendInfo} onRetry={onRetry} />
+          )}
           {phase === 'setup' && <SetupForm onSetupDone={onSetupDone} />}
         </section>
       </div>

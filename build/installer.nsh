@@ -16,7 +16,8 @@
 
 ; Before files are replaced: the service runs postgres.exe from the program folder.
 !macro customInit
-  nsExec::Exec 'net stop "${HM_SERVICE}"'
+  ; Full path: a tool found first on PATH must never run with the installer's administrator rights.
+  nsExec::Exec '"$SYSDIR\net.exe" stop "${HM_SERVICE}"'
   Pop $0
 !macroend
 
@@ -46,7 +47,11 @@
   DetailPrint "Setting up the store database service..."
   ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --setup-service' $3
   ${If} $3 != 0
-    MessageBox MB_ICONEXCLAMATION|MB_OK "تعذر تجهيز قاعدة بيانات المتجر (رمز $3). لم يتم حذف أي بيانات. التفاصيل في الملف:$\r$\n%ProgramData%\HeroMarket\logs\setup.log" /SD IDOK
+    ; Setup failed: say so, end the installer with an error and do NOT start the program (it would
+    ; only show that the store is not prepared). Running the installer again repairs it.
+    MessageBox MB_ICONSTOP|MB_OK "لم يكتمل تثبيت HeroMarket: تعذر تجهيز قاعدة بيانات المتجر (رمز $3).$\r$\nلم يتم حذف أو تغيير أي بيانات.$\r$\nشغّل برنامج التثبيت مرة أخرى، وإذا تكرر الخطأ أرسل للدعم الفني الملف:$\r$\n%ProgramData%\HeroMarket\logs\setup.log" /SD IDOK
+    SetErrorLevel 3
+    Quit
   ${EndIf}
 !macroend
 
