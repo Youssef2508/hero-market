@@ -275,7 +275,13 @@ function ReturnDialog({ onClose, currentUser, currentShift }) {
         )}
 
         <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
+          <button
+            data-modal-close
+            type="button"
+            className="btn btn-secondary"
+            onClick={onClose}
+            disabled={busy}
+          >
             إغلاق
           </button>
           {sale && !nothingLeft && !direct && (

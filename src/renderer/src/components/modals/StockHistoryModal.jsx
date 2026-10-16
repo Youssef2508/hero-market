@@ -186,7 +186,7 @@ export default function StockHistoryModal({ product, onClose, onChanged }) {
         </div>
 
         <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <button data-modal-close type="button" className="btn btn-secondary" onClick={onClose}>
             إغلاق
           </button>
         </div>

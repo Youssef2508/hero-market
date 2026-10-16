@@ -111,7 +111,12 @@ export default function WeightEntryModal({ pending, onDone }) {
           </dl>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={() => onDone(null)}>
+          <button
+            data-modal-close
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => onDone(null)}
+          >
             إلغاء
           </button>
           <button

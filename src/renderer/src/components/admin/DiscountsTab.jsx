@@ -320,7 +320,12 @@ export default function DiscountsTab({ triggerCustomAlert }) {
               </label>
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>
+              <button
+                data-modal-close
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setForm(null)}
+              >
                 إلغاء
               </button>
               <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={busy}>

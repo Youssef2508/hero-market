@@ -106,7 +106,13 @@ function ApprovalDialog({ request, onCancel }) {
           </div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+          <button
+            data-modal-close
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={busy}
+          >
             إلغاء
           </button>
           <button

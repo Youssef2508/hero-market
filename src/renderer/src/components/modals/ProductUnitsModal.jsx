@@ -246,7 +246,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
         </div>
 
         <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <button data-modal-close type="button" className="btn btn-secondary" onClick={onClose}>
             إلغاء
           </button>
           <button

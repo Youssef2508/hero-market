@@ -1139,9 +1139,21 @@ td.mono {
   margin-inline-end: 8px;
 }
 
-/* Long dialogs: header/footer fixed, body scrolls */
-.modal-content.modal-scroll {
-  max-height: calc(100vh - 48px);
+/* Every window fits the screen and scrolls inside it (1.4.0: the purchase invoice was cut off at the
+   bottom on a 706 px high window, with no way to reach its buttons). */
+.modal-overlay {
+  align-items: center;
+  padding: var(--sp-4);
+}
+.modal-content {
+  max-height: calc(100vh - 2 * var(--sp-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Long dialogs WITH a .modal-body: header/footer stay, the body scrolls. Without one (e.g. the
+   purchase invoice) the whole window scrolls, never hides its bottom. */
+.modal-content.modal-scroll:has(> .modal-body),
+.modal-content.modal-scroll:has(> form > .modal-body) {
   overflow: hidden;
 }
 .modal-content.modal-scroll .modal-body {
@@ -1480,4 +1492,80 @@ input[data-computed='true'] {
   text-align: left;
   font-family: var(--font-mono, monospace);
   margin-top: calc(-1 * var(--sp-2));
+}
+
+/* Purchase invoice: search field with the list of every product (1.4.0) */
+.product-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.product-picker-field {
+  position: relative;
+}
+.product-picker-field svg {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: var(--sp-3);
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+}
+.product-picker-field .form-input {
+  padding-inline-start: calc(var(--sp-3) + 24px);
+}
+.product-picker-list {
+  max-height: 232px;
+  margin: 0;
+  padding: var(--sp-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.product-picker-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.product-picker-item.is-active {
+  background: var(--surface-hover);
+}
+.product-picker-item.is-added {
+  cursor: default;
+  opacity: 0.55;
+}
+.product-picker-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-picker-empty {
+  padding: var(--sp-3);
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* Settings: roles that must open a shift (1.4.0) */
+.shift-roles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.shift-roles legend {
+  padding-inline: var(--sp-1);
+}
+.shift-roles .check-row.is-disabled {
+  color: var(--text-3);
 }

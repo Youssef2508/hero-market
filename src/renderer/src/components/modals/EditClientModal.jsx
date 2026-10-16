@@ -39,6 +39,7 @@ const EditClientModal = ({
           <AddressFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowEditClientModal(false)}

@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ReceiptText, Plus, Trash2 } from 'lucide-react'
+import { ReceiptText, Trash2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import ProductPicker from './ProductPicker'
 
 const lineTotal = (l) => Math.round((Number(l.qty) || 0) * (Number(l.unitCost) || 0) * 100) / 100
 
@@ -15,7 +16,6 @@ const AddPurchaseModal = ({
   setNewPurchaseForm,
   handleAddPurchase
 }) => {
-  const [code, setCode] = useState('')
   const [lookupError, setLookupError] = useState('')
   if (!showAddPurchaseModal || !selectedSupplier) return null
 
@@ -23,19 +23,19 @@ const AddPurchaseModal = ({
   const setItems = (fn) => setNewPurchaseForm((p) => ({ ...p, items: fn(p.items || []) }))
   const itemsTotal = Math.round(items.reduce((a, l) => a + lineTotal(l), 0) * 100) / 100
 
-  const addLine = async () => {
-    const barcode = code.trim()
-    if (!barcode) return
+  // `picked` is a product row from the list; a scanned or typed barcode is looked up.
+  const addLine = async (barcode, picked = null) => {
+    if (!barcode) return false
     setLookupError('')
     if (items.some((l) => l.barcode === barcode)) {
       setLookupError('الصنف مضاف بالفعل؛ عدّل الكمية في سطره.')
-      return
+      return false
     }
     try {
-      const p = await api('products.get', { barcode })
+      const p = picked || (await api('products.get', { barcode }))
       if (!p) {
         setLookupError(`الصنف (${barcode}) غير مسجل.`)
-        return
+        return false
       }
       // Purchasable packaging (carton, box…): quantity and cost are entered in the chosen unit.
       const extra = await api('productUnits.get', { barcode: p.barcode })
@@ -58,9 +58,10 @@ const AddPurchaseModal = ({
           unitCost: baseCost !== null ? String(baseCost) : ''
         }
       ])
-      setCode('')
+      return true
     } catch (err) {
       setLookupError(err.message)
+      return false
     }
   }
 
@@ -99,26 +100,11 @@ const AddPurchaseModal = ({
 
           <section className="till-section">
             <h3 className="till-section-title">الأصناف المستلمة (تُضاف إلى المخزون)</h3>
-            <div className="row">
-              <input
-                className="form-input ltr"
-                dir="ltr"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addLine()
-                  }
-                }}
-                placeholder="باركود الصنف"
-                aria-label="باركود الصنف المستلم"
-              />
-              <button type="button" className="btn btn-secondary" onClick={addLine}>
-                <Plus size={16} aria-hidden="true" />
-                إضافة
-              </button>
-            </div>
+            <ProductPicker
+              added={items.map((l) => l.barcode)}
+              onPick={addLine}
+              onType={() => setLookupError('')}
+            />
             {lookupError && (
               <p className="text-danger" role="alert">
                 {lookupError}
@@ -270,6 +256,7 @@ const AddPurchaseModal = ({
           </div>
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowAddPurchaseModal(false)}

@@ -584,6 +584,7 @@ export default function ClientsTab({
               </h2>
             </div>
             <button
+              data-modal-close
               type="button"
               className="icon-btn modal-close"
               aria-label="إغلاق"
@@ -648,6 +649,7 @@ export default function ClientsTab({
             </dl>
             <div className="modal-footer">
               <button
+                data-modal-close
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => setActiveInvoice(null)}

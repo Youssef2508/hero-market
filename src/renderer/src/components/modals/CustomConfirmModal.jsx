@@ -29,6 +29,7 @@ const CustomConfirmModal = ({ customConfirm, closeCustomConfirm }) => {
         </p>
         <div className="modal-footer">
           <button
+            data-modal-close
             type="button"
             className="btn btn-secondary btn-lg"
             onClick={() => closeCustomConfirm(false)}

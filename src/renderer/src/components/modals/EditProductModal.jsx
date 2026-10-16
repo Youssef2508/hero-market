@@ -162,6 +162,7 @@ const EditProductModal = ({
 
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowEditModal(false)}

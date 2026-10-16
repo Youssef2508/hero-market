@@ -40,6 +40,7 @@ const AddClientModal = ({
           <AddressFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
           <div className="modal-footer">
             <button
+              data-modal-close
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowAddClientModal(false)}

@@ -152,6 +152,7 @@ const SimpleCloseShiftModal = ({
 
         <div className="modal-footer">
           <button
+            data-modal-close
             type="button"
             className="btn btn-secondary"
             onClick={() => setCloseShiftModal(false)}
@@ -435,6 +436,7 @@ const AdvancedCloseShiftModal = ({
 
         <div className="modal-footer">
           <button
+            data-modal-close
             type="button"
             className="btn btn-secondary"
             onClick={() => setCloseShiftModal(false)}

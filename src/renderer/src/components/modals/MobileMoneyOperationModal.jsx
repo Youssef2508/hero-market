@@ -260,7 +260,7 @@ const MobileMoneyOperationModal = ({ isOpen, onClose, onSubmit }) => {
           )}
 
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button data-modal-close type="button" className="btn btn-secondary" onClick={onClose}>
               إلغاء
             </button>
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>

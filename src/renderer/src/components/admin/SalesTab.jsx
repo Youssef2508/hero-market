@@ -383,7 +383,12 @@ export default function SalesTab({
               <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
                 تأكيد المرتجع
               </button>
-              <button type="button" className="btn btn-secondary" onClick={closeReturn}>
+              <button
+                data-modal-close
+                type="button"
+                className="btn btn-secondary"
+                onClick={closeReturn}
+              >
                 إلغاء
               </button>
             </div>
