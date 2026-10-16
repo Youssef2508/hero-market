@@ -45,26 +45,31 @@ if (app.isPackaged) {
   }
 
   const logStream = fs.createWriteStream(logPath, { flags: 'a' })
+  // Errors keep their message and stack (JSON.stringify(new Error()) is "{}", which hid the reason
+  // of a failed print in the 1.4.0 release checks).
+  const logText = (a) => {
+    if (a instanceof Error) return a.stack || `${a.name}: ${a.message}`
+    if (a && typeof a === 'object') {
+      try {
+        return JSON.stringify(a)
+      } catch {
+        return String(a)
+      }
+    }
+    return a
+  }
 
   console.log = (...args) => {
-    logStream.write(
-      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
+    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
   }
   console.info = (...args) => {
-    logStream.write(
-      `[INFO] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
+    logStream.write(`[INFO] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
   }
   console.warn = (...args) => {
-    logStream.write(
-      `[WARN] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
+    logStream.write(`[WARN] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
   }
   console.error = (...args) => {
-    logStream.write(
-      `[ERROR] [${new Date().toISOString()}] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`
-    )
+    logStream.write(`[ERROR] [${new Date().toISOString()}] ${args.map(logText).join(' ')}\n`)
   }
 }
 
