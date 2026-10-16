@@ -557,8 +557,13 @@ export function usePOSController({
           )
           .catch((e) => {
             console.error('[PRINT FLOW] Printing failed:', e)
+            // The sale is saved before printing: say so, so nobody records or pays it twice.
+            const reason = String(e.message || '').replace(
+              /^Error invoking remote method '[^']+': (Error: )?/,
+              ''
+            )
             triggerCustomAlert(
-              `تنبيه: فشلت عملية الطباعة المباشرة!\nالسبب: ${e.message}\nيرجى التحقق من اتصال الطابعة والتعريف.`
+              `تعذرت طباعة الفاتورة رقم ${displaySaleId}: ${reason}\nالفاتورة محفوظة ولم تُسجَّل مرة ثانية. يمكن إعادة طباعتها من سجل الفواتير بعد توصيل الطابعة.`
             )
           })
       }

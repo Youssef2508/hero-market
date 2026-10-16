@@ -4,6 +4,7 @@ import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { powershellExe } from './winTools'
+import { printFailureReason, PRINT_TIMEOUT_MS } from './printErrors'
 import { getPrintSettings } from './printSettings'
 import { buildReceiptText } from '../shared/legacyReceiptText.mjs'
 import { REPORTS } from '../shared/reportLines.mjs'
@@ -88,15 +89,20 @@ export function runPrintScript(
         String(logoFile || ''),
         ...(templateLayout ? ['-TemplateLayout'] : [])
       ]
-      execFile(powershellExe(), args, { timeout: 20000, windowsHide: true }, (err, stdout) => {
-        try {
-          if (existsSync(txt)) unlinkSync(txt)
-        } catch (_) {}
-        if (err) return reject(new Error(`Print failed: ${err.message}`))
-        stdout.includes('PRINT_DONE')
-          ? resolve(true)
-          : reject(new Error('Not confirmed: ' + stdout))
-      })
+      execFile(
+        powershellExe(),
+        args,
+        { timeout: PRINT_TIMEOUT_MS, windowsHide: true },
+        (err, stdout = '', stderr = '') => {
+          try {
+            if (existsSync(txt)) unlinkSync(txt)
+          } catch (_) {}
+          if (!err && stdout.includes('PRINT_DONE')) return resolve(true)
+          // The cashier gets a plain reason; the technical detail stays in the log.
+          console.error('[print] failed:', err ? err.message : 'not confirmed', stdout, stderr)
+          reject(new Error(printFailureReason(err, `${stdout}${stderr}`, printerName)))
+        }
+      )
     } catch (err) {
       try {
         if (existsSync(txt)) unlinkSync(txt)
