@@ -53,8 +53,8 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | BACKUP-01    | Scheduled midnight backup                                 | G               | Not started (approved, Q5 and Q6 answered)                                             | none                  |
 | BACKUP-02    | Lifecycle regression gate                                 | every phase     | In progress                                                                            | —                     |
 | QA-01…06     | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress                                                                            | —                     |
-| INSTALL-01   | Laptop install failure: regression test, evidence         | D               | In progress                                                                            | none                  |
-| DATA-02      | Test-data isolation (QA rows never reach a release)       | D               | In progress                                                                            | none                  |
+| INSTALL-01   | Laptop install failure: regression test, evidence         | D               | Done with evidence (automated + laptop; new path automated only)                       | none                  |
+| DATA-02      | Test-data isolation (QA rows never reach a release)       | D               | In progress (verified and guarded; drop `heromarket_qa` after phase D)                 | none                  |
 | HW-01        | Physical scanner                                          | H               | Pending physical hardware                                                              | —                     |
 | HW-02        | Physical receipt printer (sale + shift close)             | H               | Pending physical hardware                                                              | —                     |
 | DOC-01       | Canonical docs                                            | every phase     | In progress                                                                            | —                     |
@@ -270,6 +270,18 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 
 ### Phases D–H
 
+#### PAY-01: payment methods (owner note, 2026-10-21)
+
+- **The only payment methods are Cash, Visa, Wallet and InstaPay** (نقدي، فيزا، محفظة، انستا باي).
+- **Today** the till offers نقدي، فودافون كاش، انستا باي، آجل، دفع جزئي. There is no Visa.
+- **Mapping:**
+  - فودافون كاش becomes محفظة (Wallet). Old sales keep their stored text and are reported under Wallet.
+  - Visa is added.
+- **Interpretation, to be confirmed by the owner:**
+  - آجل (on account) and partial payment are not payment methods. They leave an amount unpaid on the customer's account (customer debt).
+  - They stay so that existing credit sales and debts keep working. The paid part, if any, uses one of the four methods.
+  - Not covered: removing on-account sales altogether.
+
 #### BACKUP-01: automatic midnight backup (approved 2026-10-21)
 
 - **Schedule:** every day at 00:00 local time, with no confirmation and no window. It runs while nobody is signed in (Windows Task Scheduler or the service, as the system account).
@@ -297,13 +309,42 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - writing `app.log` failed with EPERM;
   - the connection setup screen appeared even though preparation had failed.
 - **Fix:** commit bfde35b (AUDIT A-20 to A-23).
-- **Evidence and the regression test:** in the INSTALL-01 section of the session log below.
+- **Root causes and the fix:** commit bfde35b, 2026-10-16 (AUDIT A-20 to A-23):
+  - **Preparation failure:** a Unix `whoami.exe` (`C:\WinAVR-20100110\utils\bin`) came first on the laptop's PATH, so the elevated setup could not read the user's SID. Every Windows tool now starts from System32 (`src/main/winTools.js`).
+  - **EPERM on `app.log`:** the elevated setup had created `logs\app.log`, and the program running with normal rights could not open it. Installer steps now log only to `setup.log`, and the app log falls back and never throws (`src/main/logFile.js`).
+  - **Connection screen after the failure:** the installer now stops with exit code 3 and does not start the program. An installed store that cannot open shows "قاعدة بيانات المتجر غير جاهزة" with a retry.
+- **Gap found and closed (2026-10-21):**
+  - a damaged `heromarket.json` (the file and its `.bak`) on an installed PC still led to the connection screen, which would have rewritten the file;
+  - it now shows the store problem (`config_damaged`);
+  - the checks moved to `src/main/storeCheck.js` and the screen choice to `src/renderer/src/lib/startupPhase.js`, so both are tested without Electron.
+- **Regression tests:**
+  - `tests/unit/startupPhase.test.mjs` (7): no config written (the laptop's state) → `store_not_prepared` → store problem; `setup_incomplete`; `database_newer`; `config_damaged`; a service start failure with and without a code; a prepared store opens; client and development PCs keep the connection screen;
+  - the earlier `winTools.test.mjs` (PATH hijack reproduced), `logFile.test.mjs` (unwritable log) and `migration.test.js` (1.3 files unchanged).
+- **Evidence, kept apart by where it was obtained:**
+
+  | Where                                                                      | What                                                                                                                                                                | Result                          |
+  | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+  | Automated (this PC, CI)                                                    | The tests above                                                                                                                                                     | Pass                            |
+  | Windows Sandbox laptop replica (clean Windows, `whoami.exe` first on PATH) | The old build fails exactly as on the laptop; the fixed build installs over that state; first start with normal rights; the store-problem screen                    | Pass (AUDIT §10, screenshot)    |
+  | **The owner's laptop**                                                     | Build 4fbed9f installed over the failed attempt (service, locked folders, import, 1.3 files byte- and time-identical); f351e4f installed over it as a Case A update | Pass (AUDIT §10, rows 6 and 11) |
+  | **The owner's laptop: not done**                                           | The store-problem screen itself (it needs a failed preparation); the `config_damaged` case; any 1.5.0 build                                                         | **Not tested on the laptop**    |
+
+- **Status:** the reported failure is fixed, with evidence from the laptop for the install and the update. The new `config_damaged` path has automated evidence only.
 
 #### DATA-02: test-data isolation
 
-- Sale #34 and the product "QA زبادي" exist only in the disposable QA database. The exact database is recorded with the evidence.
-- The real shop database is never touched.
-- Release builds and the data importer must carry no QA rows.
+- **Where the QA rows are (queried 2026-10-21):**
+  - only in the database `heromarket_qa`, on the development cluster at `D:\Youssef\Brands\HeroMarket\.pgdata` (port 54329) on the development PC;
+  - sale #34 (total 18.00, manual discount 2.00, shift 6, item `QAYOG`); products `QAYOG` "QA زبادي" and `QAUNC723869`; 34 sales and 11 products in all;
+  - the other databases on that cluster (`heromarket`, `heromarket_installed`, `heromarket_test`) have no QA products and no sale #34.
+- **The real shop data:** the supermarket PC and its database were never reached by this work. The 1.3 store `%APPDATA%\elnagdi-pos` was only ever read or copied.
+- **Clean-up:** `heromarket_qa` is disposable and stays until the money phase's checks in the app are done. It is then dropped, and its removal is recorded here.
+- **Release check:**
+  - the 1.4.0 candidate installer (f0f0d84, SHA-256 `960bc572…`) was unpacked and searched: no database, dump, backup, `PG_VERSION`, `heromarket.json`, credentials or `.env` file, and no QA product code anywhere, including the 5,196 files of `app.asar`.
+- **Guard test** `tests/unit/releaseContents.test.mjs` (3):
+  - the package excludes `.pgdata`, backups, docs, tests, scripts, database and log files, and `.env` (checked to fail when `.pgdata` is removed from the exclusions);
+  - migrations add rows to the shop's tables only by copying existing rows (`INSERT … SELECT`), never literal rows;
+  - no QA record name appears in migrations or in the service and shared code.
 
 Each requirement keeps the scope, acceptance criteria and tests listed in the specification; the audit gaps are in the plan §3. Detail is added here when its phase starts.
 

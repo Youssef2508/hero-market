@@ -677,3 +677,14 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Cheques (NAV-02, Q7):** removed from navigation and workflows. Historical records are kept; deleting a record or dropping a table needs a separate approval. Any archive view is for authorised administrators only. Cheque processing is not reintroduced.
 - **Version (Q8):** this work ships as 1.5.0, and 1.4.0 is not published first. Merging, tagging, publishing and deploying each still need explicit approval.
 - **Supplier invoice discount (SUP-02, Q9):** spread over the lines in proportion to their pre-discount values. Rounding is largest remainder in whole piastres, so the shares sum exactly to the discount.
+
+## D-061 Payment methods: Cash, Visa, Wallet, InstaPay (2026-10-21)
+
+- **Owner note:** the only payment methods are Cash, Visa, Wallet and InstaPay.
+- **Mapping:**
+  - فودافون كاش becomes Wallet (محفظة).
+  - Visa is added.
+  - Stored sales are not rewritten; reports group them by method.
+- **Interpretation, pending the owner's confirmation:**
+  - On account (آجل) and partial payment are not methods. They are an unpaid balance on the customer's account.
+  - They stay, so existing credit sales and debts are not broken.

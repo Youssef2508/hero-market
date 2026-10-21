@@ -14,7 +14,7 @@ import { join } from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import os from 'os'
-import { newerVersion } from './versions'
+import { installedStoreProblem, failureCode } from './storeCheck'
 import { ensureLocalDatabase, stopLocalDatabase, localUrl, localDataDir } from './localDatabase'
 import { needsSnapshot, snapshotDataDir, pruneSnapshots } from './upgradeSnapshot'
 import {
@@ -35,8 +35,6 @@ let backend = null // { mode, call(op, body, headers) }
 let token = null
 let lastError = null
 let lastErrorCode = null // why the store cannot open: shown on its own screen, never as a mode choice
-/** An error the start-up screen explains (code) rather than offering connection settings. */
-const storeError = (code, message) => Object.assign(new Error(message), { code })
 
 let starting = null // in-flight startBackend() promise
 let stage = null // what the startup is doing, for the waiting screen
@@ -357,6 +355,15 @@ async function doStart() {
     return
   }
   let cfg = readConfig()
+  // Installed: a damaged settings file is a store problem too (the connection screen would rewrite it).
+  const damaged =
+    !cfg && usesDatabaseService() ? installedStoreProblem(cfg, app.getVersion()) : null
+  if (damaged) {
+    backend = null
+    lastError = damaged.message
+    lastErrorCode = damaged.code
+    return
+  }
   if (
     !cfg ||
     (cfg.mode === 'standalone' && !cfg.databaseUrl) ||
@@ -377,24 +384,8 @@ async function doStart() {
     if (cfg.mode === 'local' && usesDatabaseService()) {
       // Installed: the database runs as the installer's Windows service, and that setup must be the
       // one of this version (it took the verified copy before this version's migrations).
-      if (!cfg.local || !cfg.local.service) {
-        throw storeError(
-          'store_not_prepared',
-          'لم يتم تجهيز قاعدة بيانات المتجر على هذا الجهاز. شغّل برنامج تثبيت HeroMarket مرة أخرى (يحتاج موافقة المسؤول).'
-        )
-      }
-      if (newerVersion(cfg.local.setupVersion, app.getVersion())) {
-        throw storeError(
-          'database_newer',
-          `بيانات هذا الجهاز حُدِّثت بالنسخة ${cfg.local.setupVersion}، وهي أحدث من هذا البرنامج (${app.getVersion()}). ثبّت النسخة الأحدث مرة أخرى، أو استعد النسخة الاحتياطية المأخوذة قبل التحديث (دليل التحديث).`
-        )
-      }
-      if (cfg.local.setupVersion !== app.getVersion()) {
-        throw storeError(
-          'setup_incomplete',
-          'لم يكتمل تجهيز قاعدة البيانات لهذه النسخة، فلم يتم تحديث البيانات. شغّل برنامج تثبيت HeroMarket مرة أخرى.'
-        )
-      }
+      const problem = installedStoreProblem(cfg, app.getVersion())
+      if (problem) throw problem
     }
     if (cfg.mode === 'local') {
       stage = 'database'
@@ -419,8 +410,7 @@ async function doStart() {
     backend = null
     lastError = e.message
     // An installed shop's own database failing is a store problem, never a reason to offer modes.
-    lastErrorCode =
-      e.code || (cfg && cfg.mode === 'local' && usesDatabaseService() ? 'store_failed' : null)
+    lastErrorCode = failureCode(e, { cfg, installed: usesDatabaseService() })
     console.error('[backend] failed to start:', e.message)
   } finally {
     stage = null

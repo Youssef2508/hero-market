@@ -31,6 +31,7 @@ import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePasswordModal from './components/modals/ChangePasswordModal'
 import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
 import { ALL_NAV_ITEMS } from './components/shell/navigation'
+import { startupPhaseFor } from './lib/startupPhase'
 
 function App() {
   // Refs
@@ -464,9 +465,7 @@ function App() {
       const st = window.api?.backend ? await window.api.backend.status() : { ready: false }
       setBackendInfo(st)
       if (!st.ready) {
-        // An installed shop whose own database cannot open gets an explanation and a retry, never
-        // the connection settings (choosing another mode would not repair it).
-        setStartupPhase(st.installedStore && st.errorCode ? 'store_problem' : 'connect')
+        setStartupPhase(startupPhaseFor(st))
         return
       }
       const auth = await api('auth.status')
