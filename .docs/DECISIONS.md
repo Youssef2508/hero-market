@@ -637,3 +637,23 @@ Format: context → decision → reason → consequences (→ alternatives).
 - This follows NIST SP 800-63B: no composition rules; refuse guessable passwords instead.
 - **Unchanged:** scrypt hashes; no normalisation (the stored password is compared exactly); temporary passwords and recovery codes.
 - **Existing accounts:** no change; their passwords keep working.
+
+## D-057 Manual fixed invoice discount for authorised users (owner decision 2026-10-21, DISC-01)
+
+- **Decision:** approved by the owner; supersedes D-044's "no operator discounts" **for holders of the new permission only**.
+  - Permission `pos.manual_discount` ("خصم يدوي على الفاتورة").
+  - By default only `super_admin` and `store_admin` hold it. It is not in the manager defaults and is never given to cashiers automatically; the owner assigns it to roles.
+- **Use:** a fixed EGP amount off the current sale invoice, with a reason (3–200 characters). Example: a yogurt pack whose EGP 2 promotion was missed at receiving. It never changes the product's price or stock.
+- **Pricing (`pricing/discounts.js` rule 6):**
+  - It applies after the automatic rules, on the total after them, and must not exceed it; amounts are in whole piastres.
+  - It is spread over the lines by largest remainder and kept in each line's `cart_discount` share. So line nets, returns (refund = drop in the line's net) and profit need no new formula.
+  - Customer credit applies after it.
+- **Enforcement:**
+  - `pos.price` and `pos.checkout` check the permission on the server. A refusal is 403 and written to the activity log (`manual_discount_refused`).
+  - The old free `discount` field stays refused for everyone.
+- **Records (migration 0015, schema only):**
+  - `sales.manual_discount` holds the invoice's total; `sale_discounts` keeps a `manual` row with the amount, reason, user and time; there is one activity-log entry per discount.
+  - These records feed invoice details (`sales.detail`, reprint data), the shift figures (`shifts.liveSummary.manualDiscounts`: count, total, invoices with user and amount), and the shift-close report section "الخصومات اليدوية".
+- **Data lifecycle:**
+  - The columns are in tables already backed up; tested by a backup → restore round trip.
+  - Sales are not part of the import/export template, so neither is affected.

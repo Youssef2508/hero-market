@@ -83,12 +83,18 @@ export function usePOSController({
   const [selectedClient, setSelectedClient] = useState(null)
   // Automatic discounts (administrator rules) priced by the service for the current cart.
   const [appliedDiscounts, setAppliedDiscounts] = useState([])
+  // Manual fixed invoice discount (D-057): { amount, reason } or null; priced by the service too.
+  const [manualDiscount, setManualDiscount] = useState(null)
+  // Total after the automatic rules (the most a manual discount can be), from the last preview.
+  const [afterRules, setAfterRules] = useState(0)
   const pricingSeqRef = useRef(0)
   const refreshPricing = async () => {
     const seq = ++pricingSeqRef.current
     if (cart.length === 0) {
       setDiscount(0)
       setAppliedDiscounts([])
+      setAfterRules(0)
+      setManualDiscount(null)
       return
     }
     try {
@@ -97,20 +103,29 @@ export function usePOSController({
           barcode: item.barcode,
           unitId: item.unitId ?? null,
           qty: item.qty
-        }))
+        })),
+        manualDiscount: manualDiscount || undefined
       })
       if (seq !== pricingSeqRef.current) return // a newer cart is being priced
       setDiscount(r.discount)
       setAppliedDiscounts(r.applied)
-    } catch {
-      // Pricing problems (e.g. an invalid quantity) surface at checkout with their message.
+      setAfterRules(r.afterRules ?? r.afterDiscount)
+    } catch (err) {
+      if (seq !== pricingSeqRef.current) return
+      // The cart shrank below the manual discount (or the permission was withdrawn): drop it and
+      // say so; the next preview prices the cart without it.
+      if (manualDiscount) {
+        setManualDiscount(null)
+        triggerCustomAlert(`أُلغي الخصم اليدوي: ${err.message}`, 'الخصم اليدوي')
+      }
+      // Other pricing problems (e.g. an invalid quantity) surface at checkout with their message.
     }
   }
   useEffect(() => {
     const t = setTimeout(refreshPricing, 120)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart])
+  }, [cart, manualDiscount])
   const [clientSearchResults, setClientSearchResults] = useState([])
 
   const handleLock = () => {
@@ -245,7 +260,8 @@ export function usePOSController({
                 actual: closed.actual,
                 difference: closed.difference,
                 momkn: momknSummary,
-                wallets: mobileMoneySummary
+                wallets: mobileMoneySummary,
+                manualDiscounts: closed.live?.manualDiscounts
               })
             } catch (printErr) {
               console.error('Failed to print grand shift report:', printErr)
@@ -503,6 +519,7 @@ export function usePOSController({
         })),
         // The total shown to the customer; the service refuses the sale if its own differs.
         expectedTotal: cartTotal,
+        manualDiscount: manualDiscount || undefined,
         paymentType,
         paidAmount: paidAmount ? parseFloat(paidAmount) || 0 : null,
         appliedCredit: parseFloat(appliedCredit) || 0,
@@ -612,6 +629,7 @@ export function usePOSController({
       setTimeout(() => setToastMessage(null), notSaved.length ? 7000 : 3000)
       setCart([])
       setDiscount(0)
+      setManualDiscount(null)
       setAppliedCredit(0)
       setDepositChange('')
       setPaidAmount('')
@@ -773,6 +791,9 @@ export function usePOSController({
   }
 
   return {
+    manualDiscount,
+    setManualDiscount,
+    afterRules,
     appliedDiscounts,
     addProductByBarcode,
     completeSignIn,

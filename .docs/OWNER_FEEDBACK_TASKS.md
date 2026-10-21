@@ -8,55 +8,55 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 
 ## Summary
 
-| ID           | Name                                                      | Phase           | Status                                                              | Migration             |
-| ------------ | --------------------------------------------------------- | --------------- | ------------------------------------------------------------------- | --------------------- |
-| PLAN-01      | Inspect repository, docs, flows                           | —               | Done with evidence (plan §2–3)                                      | —                     |
-| PLAN-02      | Dependency graph, conflicts                               | —               | Done with evidence (plan §5, §1: D-038)                             | —                     |
-| PLAN-03      | Inventory of visible controls                             | G               | Not started (UX-01)                                                 | —                     |
-| PLAN-04      | Permission matrix, ledger map                             | G               | In progress (plan §4; matrix in G)                                  | —                     |
-| PLAN-05      | Migration and data-lifecycle implications                 | —               | Done with evidence (plan §6–7)                                      | —                     |
-| ANALYTICS-01 | Report date filters                                       | A               | Done with evidence                                                  | none                  |
-| SCALE-01     | Scale barcode, check digit                                | A               | Done with evidence (Q4 confirmation at the shop)                    | none (settings field) |
-| POS-01       | Keyboard, 0.5, Esc confirm, sign-out                      | A               | In progress (0.5, Esc, sign-out done; list keyboard audit in UX-01) | none                  |
-| USER-01      | Flexible password characters                              | A               | Done with evidence                                                  | none                  |
-| EXP-02       | Optional note (categories in D)                           | A / D           | In progress (optional note done; categories in D)                   | none / 0016           |
-| NAV-01       | Remove "جرد الدرج" menu entry                             | A               | Done with evidence                                                  | none                  |
-| NAV-02       | Remove cheques screen                                     | A               | Done with evidence (UI hidden, data kept; Q7 for reports)           | none                  |
-| SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | In progress (renamed; live details in D)                            | 0016                  |
-| DISC-01      | Manual fixed invoice discount                             | B               | Not started (**approved 2026-10-21**)                               | 0015                  |
-| PRINT-01     | Arabic RTL receipt and shift report                       | C               | Not started                                                         | none                  |
-| CASH-01      | Drawer ↔ treasury                                         | D               | Not started                                                         | 0016                  |
-| TREAS-01     | Treasury page and ledger                                  | D               | Not started                                                         | 0016                  |
-| PAY-01       | Payment methods, blind close                              | D               | Not started                                                         | 0016                  |
-| PAY-02       | Change a sale's payment method                            | D               | Not started                                                         | 0016                  |
-| EXP-01       | Expense visibility                                        | D               | Blocked — owner decision (Q2)                                       | 0016                  |
-| EXP-03       | Admin expense without shift                               | D               | Not started                                                         | 0016                  |
-| CUST-02      | Debt payments without shift                               | D               | Not started                                                         | 0016                  |
-| SHIFT-02     | Shift-close report                                        | D               | Not started                                                         | 0016                  |
-| SUP-01       | Supplier invoice notice                                   | E               | Blocked — owner decision (Q3) for the amount's meaning              | 0017                  |
-| SUP-02       | Purchase sale price, discount, posting                    | E               | Not started (Q9 for cost allocation)                                | 0017                  |
-| SUP-03       | Supplier opening balance, contact edit                    | E               | Not started                                                         | 0017                  |
-| SUP-04       | Notice vs draft vs posted                                 | E               | Not started                                                         | 0017                  |
-| INV-01       | Packages and loose units                                  | E               | In progress (exists; confirmation and acceptance tests missing)     | none                  |
-| CUST-01      | Customer code                                             | F               | Not started                                                         | 0018                  |
-| PROD-01      | Edit barcode                                              | F               | Not started                                                         | 0018                  |
-| PROD-02      | Stock valuation                                           | F               | Not started                                                         | none                  |
-| WASTE-01     | Product search in waste                                   | F               | Not started                                                         | none                  |
-| STOCK-01     | "حركات المخزون" page                                      | F               | Not started                                                         | none                  |
-| DASH-01      | Dashboard snapshots                                       | F               | Not started                                                         | none                  |
-| DATA-01      | Export in the import template                             | G               | Not started                                                         | none                  |
-| ROLE-01      | Import/export permissions                                 | G               | Not started                                                         | none (catalogue)      |
-| ROLE-02      | Backend permission audit, matrix                          | G               | Not started                                                         | —                     |
-| UX-01        | Visible-control audit                                     | G               | Not started                                                         | —                     |
-| POS-02       | Receipt modes, reprints                                   | G               | Not started                                                         | none                  |
-| USER-02      | Admin password reset                                      | G               | In progress (exists, D-046; verify, add re-authentication)          | none                  |
-| BACKUP-01    | Scheduled midnight backup                                 | G               | Blocked — owner decision (Q5 retention, Q6 after measurement)       | none                  |
-| BACKUP-02    | Lifecycle regression gate                                 | every phase     | In progress                                                         | —                     |
-| QA-01…06     | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress                                                         | —                     |
-| HW-01        | Physical scanner                                          | H               | Pending physical hardware                                           | —                     |
-| HW-02        | Physical receipt printer (sale + shift close)             | H               | Pending physical hardware                                           | —                     |
-| DOC-01       | Canonical docs                                            | every phase     | In progress                                                         | —                     |
-| REL-01       | Release notes, risk register                              | H               | Not started                                                         | —                     |
+| ID           | Name                                                      | Phase           | Status                                                                       | Migration             |
+| ------------ | --------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------- | --------------------- |
+| PLAN-01      | Inspect repository, docs, flows                           | —               | Done with evidence (plan §2–3)                                               | —                     |
+| PLAN-02      | Dependency graph, conflicts                               | —               | Done with evidence (plan §5, §1: D-038)                                      | —                     |
+| PLAN-03      | Inventory of visible controls                             | G               | Not started (UX-01)                                                          | —                     |
+| PLAN-04      | Permission matrix, ledger map                             | G               | In progress (plan §4; matrix in G)                                           | —                     |
+| PLAN-05      | Migration and data-lifecycle implications                 | —               | Done with evidence (plan §6–7)                                               | —                     |
+| ANALYTICS-01 | Report date filters                                       | A               | Done with evidence                                                           | none                  |
+| SCALE-01     | Scale barcode, check digit                                | A               | Done with evidence (Q4 confirmation at the shop)                             | none (settings field) |
+| POS-01       | Keyboard, 0.5, Esc confirm, sign-out                      | A               | In progress (0.5, Esc, sign-out done; list keyboard audit in UX-01)          | none                  |
+| USER-01      | Flexible password characters                              | A               | Done with evidence                                                           | none                  |
+| EXP-02       | Optional note (categories in D)                           | A / D           | In progress (optional note done; categories in D)                            | none / 0016           |
+| NAV-01       | Remove "جرد الدرج" menu entry                             | A               | Done with evidence                                                           | none                  |
+| NAV-02       | Remove cheques screen                                     | A               | Done with evidence (UI hidden, data kept; Q7 for reports)                    | none                  |
+| SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | In progress (renamed; live details in D)                                     | 0016                  |
+| DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H) | 0015                  |
+| PRINT-01     | Arabic RTL receipt and shift report                       | C               | Not started                                                                  | none                  |
+| CASH-01      | Drawer ↔ treasury                                         | D               | Not started                                                                  | 0016                  |
+| TREAS-01     | Treasury page and ledger                                  | D               | Not started                                                                  | 0016                  |
+| PAY-01       | Payment methods, blind close                              | D               | Not started                                                                  | 0016                  |
+| PAY-02       | Change a sale's payment method                            | D               | Not started                                                                  | 0016                  |
+| EXP-01       | Expense visibility                                        | D               | Blocked — owner decision (Q2)                                                | 0016                  |
+| EXP-03       | Admin expense without shift                               | D               | Not started                                                                  | 0016                  |
+| CUST-02      | Debt payments without shift                               | D               | Not started                                                                  | 0016                  |
+| SHIFT-02     | Shift-close report                                        | D               | Not started                                                                  | 0016                  |
+| SUP-01       | Supplier invoice notice                                   | E               | Blocked — owner decision (Q3) for the amount's meaning                       | 0017                  |
+| SUP-02       | Purchase sale price, discount, posting                    | E               | Not started (Q9 for cost allocation)                                         | 0017                  |
+| SUP-03       | Supplier opening balance, contact edit                    | E               | Not started                                                                  | 0017                  |
+| SUP-04       | Notice vs draft vs posted                                 | E               | Not started                                                                  | 0017                  |
+| INV-01       | Packages and loose units                                  | E               | In progress (exists; confirmation and acceptance tests missing)              | none                  |
+| CUST-01      | Customer code                                             | F               | Not started                                                                  | 0018                  |
+| PROD-01      | Edit barcode                                              | F               | Not started                                                                  | 0018                  |
+| PROD-02      | Stock valuation                                           | F               | Not started                                                                  | none                  |
+| WASTE-01     | Product search in waste                                   | F               | Not started                                                                  | none                  |
+| STOCK-01     | "حركات المخزون" page                                      | F               | Not started                                                                  | none                  |
+| DASH-01      | Dashboard snapshots                                       | F               | Not started                                                                  | none                  |
+| DATA-01      | Export in the import template                             | G               | Not started                                                                  | none                  |
+| ROLE-01      | Import/export permissions                                 | G               | Not started                                                                  | none (catalogue)      |
+| ROLE-02      | Backend permission audit, matrix                          | G               | Not started                                                                  | —                     |
+| UX-01        | Visible-control audit                                     | G               | Not started                                                                  | —                     |
+| POS-02       | Receipt modes, reprints                                   | G               | Not started                                                                  | none                  |
+| USER-02      | Admin password reset                                      | G               | In progress (exists, D-046; verify, add re-authentication)                   | none                  |
+| BACKUP-01    | Scheduled midnight backup                                 | G               | Blocked — owner decision (Q5 retention, Q6 after measurement)                | none                  |
+| BACKUP-02    | Lifecycle regression gate                                 | every phase     | In progress                                                                  | —                     |
+| QA-01…06     | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress                                                                  | —                     |
+| HW-01        | Physical scanner                                          | H               | Pending physical hardware                                                    | —                     |
+| HW-02        | Physical receipt printer (sale + shift close)             | H               | Pending physical hardware                                                    | —                     |
+| DOC-01       | Canonical docs                                            | every phase     | In progress                                                                  | —                     |
+| REL-01       | Release notes, risk register                              | H               | Not started                                                                  | —                     |
 
 ## Owner decisions
 
@@ -215,6 +215,22 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - backup → restore keeps it;
   - the price preview equals checkout.
 - **Acceptance:** the yogurt example: price 20, automatic 0, manual 2 → total 18; stock −1; price unchanged; the return refunds 18.
+
+- **Evidence (2026-10-21):**
+  - **Service tests:** `tests/service/manualDiscount.test.js` (4 tests, pass).
+    - A cashier is refused in the preview and at checkout (403), with two `manual_discount_refused` log rows, and nothing is sold.
+    - The old `discount` field stays refused.
+    - Only store_admin and super_admin hold the permission by default.
+    - Yogurt: 20 − 2 = 18. The price stays 20; stock goes 10 → 9 → 10; the manual row records owner and reason; an activity-log entry exists; invoice details show it; the return refunds 18.
+    - Stacking: 150 − 15 (10% rule) = 135 − 10 manual = 125. Line shares: line 15, invoice 10. Over 135 refused; reason missing refused; 1.005 refused. Three partial returns refund 125 exactly.
+    - Shift figures: count 2, total 12, invoices with user. A custom role granted the permission can use it. Backup → restore keeps the columns and the reason.
+  - **Unit and property tests** of `priceCart` (unchanged) pass, so rule results are unchanged without a manual amount.
+  - **UI (dev app, QA data):**
+    - the owner sees "خصم يدوي"; 25 on a 20 invoice is refused in the window;
+    - with 2 and a reason the due amount is 18.00 and the reason is shown;
+    - F1 records total 18, discount 2, manual 2;
+    - cashier1 sees no button.
+  - **Not yet:** the installer's Case B check for migration 0015 runs in phase H with the other migrations. The receipt printing of the discount line is covered by PRINT-01 (phase C).
 
 ### Phase C: PRINT-01, Arabic right-to-left printing
 

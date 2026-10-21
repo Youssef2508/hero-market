@@ -196,6 +196,9 @@ function App() {
     handleBarcodeSubmit,
     addProductByBarcode,
     appliedDiscounts,
+    manualDiscount,
+    setManualDiscount,
+    afterRules,
     searchInput,
     setSearchInput,
     handleSearchChange,
@@ -707,6 +710,10 @@ function App() {
             cartSubtotal={cartSubtotal}
             discount={discount}
             appliedDiscounts={appliedDiscounts}
+            canManualDiscount={can(currentUser, 'pos.manual_discount')}
+            manualDiscount={manualDiscount}
+            setManualDiscount={setManualDiscount}
+            afterRules={afterRules}
             paidAmount={paidAmount}
             setPaidAmount={setPaidAmount}
             changeRemaining={changeDue}

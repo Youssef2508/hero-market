@@ -45,6 +45,20 @@ export function buildShiftReportLines(r, opts = {}) {
     `الفعلي في الدرج|${money(r.actual)}`,
     `[B]الفرق (${verdict})|${money(diff)}`
   ]
+  // Manual invoice discounts (D-057): total, count and each affected invoice.
+  const md = r.manualDiscounts
+  if (md && md.count > 0) {
+    lines.push(
+      sep,
+      '[C]الخصومات اليدوية',
+      `عدد الفواتير|${md.count}`,
+      `[B]إجمالي الخصم اليدوي|${money(md.total)}`,
+      ...md.invoices.map(
+        (m) =>
+          `فاتورة #${text(m.saleId, 12)}${m.username ? ` (${text(m.username, 20)})` : ''}|${money(m.amount)}`
+      )
+    )
+  }
   if (r.momkn) {
     lines.push(
       sep,

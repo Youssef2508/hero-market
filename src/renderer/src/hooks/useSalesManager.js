@@ -41,8 +41,9 @@ export function useSalesManager({
 
   const selectSaleForDetail = async (sale) => {
     try {
-      const { items } = await api('sales.detail', { saleId: sale.id })
-      setSelectedSale(sale)
+      const { items, discounts } = await api('sales.detail', { saleId: sale.id })
+      // Discounts of the invoice, incl. a manual one with who and why (D-057).
+      setSelectedSale({ ...sale, discounts: discounts || [] })
       setSelectedSaleItems(items || [])
     } catch (e) {
       console.error('Failed to load sale details:', e)

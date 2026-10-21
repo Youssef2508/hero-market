@@ -39,6 +39,38 @@ async function summarizeSale(db, saleId) {
   return rows[0]
 }
 
+// Manual fixed invoice discount (owner decision 2026-10-21, D-057).
+const manualSchema = {
+  type: ['object', 'null'],
+  properties: {
+    amount: { type: 'number', minimum: 0 },
+    reason: { type: 'string', maxLength: 200 }
+  }
+}
+
+/**
+ * The manual discount of a request, checked before any pricing: the permission (enforced here, a
+ * refusal is logged), whole piastres and a reason. Returns null when there is none.
+ */
+async function manualDiscountOf(ctx, m) {
+  const amount = m ? Number(m.amount) || 0 : 0
+  if (!(amount > 0)) return null
+  if (!ctx.can('pos.manual_discount')) {
+    await ctx.audit(
+      ctx.pool,
+      'manual_discount_refused',
+      `محاولة خصم يدوي ${amount.toFixed(2)} ج.م بدون صلاحية`,
+      { amount }
+    )
+    throw forbidden('الخصم اليدوي يتطلب صلاحية "خصم يدوي على الفاتورة".')
+  }
+  if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6)
+    throw badRequest('الخصم اليدوي بالقروش الكاملة (رقمان بعد العلامة على الأكثر).')
+  const reason = String(m.reason || '').trim()
+  if (reason.length < 3) throw badRequest('اكتب سبب الخصم اليدوي (3 أحرف على الأقل).')
+  return { amount: round2(amount), reason }
+}
+
 /**
  * Price the till's items from the catalogue: unit, validated quantity, unit price, gross line total
  * and cost per unit. `products` maps barcode → product row. A stale unit price is refused.
@@ -385,10 +417,12 @@ module.exports = function posModule(app) {
               unitPrice: { type: 'number' }
             }
           }
-        }
+        },
+        manualDiscount: manualSchema
       }
     },
     handler: async (ctx, b) => {
+      const manual = await manualDiscountOf(ctx, b.manualDiscount)
       if (!b.items.length)
         return { lines: [], subTotal: 0, discount: 0, afterDiscount: 0, applied: [] }
       const barcodes = [...new Set(b.items.map((i) => i.barcode))]
@@ -400,7 +434,8 @@ module.exports = function posModule(app) {
       const lines = await buildLines(db, b.items, products)
       const pricing = priceCart(
         lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
-        await activeRules(db, barcodes)
+        await activeRules(db, barcodes),
+        { manualAmount: manual ? manual.amount : 0 }
       )
       return {
         lines: pricing.lines.map((pl, i) => ({
@@ -414,6 +449,8 @@ module.exports = function posModule(app) {
         })),
         subTotal: pricing.subTotal,
         discount: pricing.discount,
+        manualDiscount: pricing.manualDiscount,
+        afterRules: pricing.afterRules,
         afterDiscount: pricing.afterDiscount,
         applied: pricing.applied
       }
@@ -445,8 +482,10 @@ module.exports = function posModule(app) {
             }
           }
         },
-        // Manual discounts no longer exist (owner, 2026-10-15): only 0 is accepted.
+        // The old free "discount" field stays refused (D-044); a manual discount is the separate,
+        // permission-checked manualDiscount (D-057).
         discount: { type: 'number', minimum: 0 },
+        manualDiscount: manualSchema,
         // The total the till showed (after automatic discounts and applied credit). If the
         // service computes another total (a rule or price changed), the sale is refused.
         expectedTotal: { type: 'number' },
@@ -475,6 +514,7 @@ module.exports = function posModule(app) {
       // No operator can grant a discount: discounts come only from the administrator's rules.
       if (Number(b.discount || 0) > 0)
         throw forbidden('الخصومات تُطبَّق تلقائياً حسب قواعد الإدارة؛ لا يمكن إدخال خصم يدوي.')
+      const manual = await manualDiscountOf(ctx, b.manualDiscount)
       // One line per product unit (a carton and loose packets of one product are two lines).
       const lineKeys = b.items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)
       if (new Set(lineKeys).size !== lineKeys.length) throw badRequest('الصنف مكرر في الفاتورة.')
@@ -509,10 +549,12 @@ module.exports = function posModule(app) {
         const products = new Map(prodRows.map((p) => [p.barcode, p]))
         const lines = await buildLines(db, b.items, products)
         const subTotal = round2(lines.reduce((s, l) => s + l.total, 0))
-        // Automatic discounts, evaluated here from the rules in force (never from the till).
+        // Automatic discounts, evaluated here from the rules in force (never from the till), then
+        // the manual amount (D-057).
         const pricing = priceCart(
           lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
-          await activeRules(db, barcodes)
+          await activeRules(db, barcodes),
+          { manualAmount: manual ? manual.amount : 0 }
         )
         const discount = pricing.discount
 
@@ -714,8 +756,8 @@ module.exports = function posModule(app) {
               : 0
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address, manual_discount)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13, $14) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,
@@ -729,7 +771,8 @@ module.exports = function posModule(app) {
               onAccount,
               clientId ? credit : 0,
               !!b.isDelivery,
-              deliveryAddress
+              deliveryAddress,
+              pricing.manualDiscount
             ]
           )
         ).rows[0]
@@ -765,11 +808,30 @@ module.exports = function posModule(app) {
         }
 
         for (const a of pricing.applied) {
+          const isManual = a.scope === 'manual'
           await db.query(
-            'INSERT INTO sale_discounts (sale_id, rule_id, scope, name, value_type, value, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [saleId, a.ruleId, a.scope, a.name, a.valueType, a.value, a.amount]
+            `INSERT INTO sale_discounts (sale_id, rule_id, scope, name, value_type, value, amount, user_id, reason, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${isManual ? 'LOCALTIMESTAMP(0)' : 'NULL'})`,
+            [
+              saleId,
+              a.ruleId,
+              a.scope,
+              a.name,
+              a.valueType,
+              a.value,
+              a.amount,
+              isManual ? ctx.user.id : null,
+              isManual ? manual.reason : null
+            ]
           )
         }
+        if (manual)
+          await ctx.audit(
+            db,
+            'manual_discount',
+            `خصم يدوي ${manual.amount.toFixed(2)} ج.م على الفاتورة #${saleId}: ${manual.reason}`,
+            { saleId, amount: manual.amount, reason: manual.reason }
+          )
 
         if (clientId) {
           await db.query('UPDATE clients SET points = points + $1 WHERE id = $2', [
@@ -837,6 +899,7 @@ module.exports = function posModule(app) {
           timestamp: sale.timestamp,
           subTotal,
           discount,
+          manualDiscount: pricing.manualDiscount,
           discounts: pricing.applied,
           lines: lines.map((l, i) => ({
             ...l,

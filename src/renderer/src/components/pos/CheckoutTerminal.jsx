@@ -35,6 +35,7 @@ import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
 import { kindInfo } from '../../lib/measureKinds'
 import { qtyFromText } from '../../lib/qtyText'
+import ManualDiscountModal from './ManualDiscountModal'
 
 // Payment types are business values written to sales.payment_type – do not rename.
 const PAYMENT_METHODS = [
@@ -176,6 +177,10 @@ function CheckoutTerminal({
   cartSubtotal,
   discount,
   appliedDiscounts = [],
+  canManualDiscount = false,
+  manualDiscount = null,
+  setManualDiscount,
+  afterRules = 0,
   paidAmount,
   setPaidAmount,
   changeRemaining,
@@ -283,6 +288,8 @@ function CheckoutTerminal({
         : { warn: false, text: 'سيُحفظ العنوان الجديد للعميل ليظهر في الطلبات القادمة.' }
   // Category browsing panel (1.4.0). F6 opens/closes it; the cart stays as it is.
   const [browsing, setBrowsing] = useState(false)
+  // Manual invoice discount window (D-057).
+  const [manualOpen, setManualOpen] = useState(false)
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'F6' && !document.querySelector('.modal-overlay')) {
@@ -749,10 +756,15 @@ function CheckoutTerminal({
               <dt>إجمالي الأصناف</dt>
               <dd className="money">{money(cartSubtotal)}</dd>
             </div>
-            {/* Automatic discounts from the administrator's rules (no manual discount). */}
+            {/* Automatic discounts (administrator rules) and the manual one (D-057), as priced
+                by the service. */}
             {appliedDiscounts.map((d) => (
-              <div key={d.ruleId}>
-                <dt>خصم: {d.name}</dt>
+              <div key={`${d.scope}-${d.ruleId ?? 'manual'}`}>
+                <dt>
+                  {d.scope === 'manual'
+                    ? `خصم يدوي: ${manualDiscount?.reason || ''}`
+                    : `خصم: ${d.name}`}
+                </dt>
                 <dd className="money text-danger">− {money(d.amount)}</dd>
               </div>
             ))}
@@ -769,6 +781,37 @@ function CheckoutTerminal({
               </div>
             )}
           </dl>
+          {canManualDiscount && cart.length > 0 && (
+            <div className="manual-discount-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setManualOpen(true)}
+              >
+                {manualDiscount ? 'تعديل الخصم اليدوي' : 'خصم يدوي'}
+              </button>
+              {manualDiscount && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setManualDiscount(null)}
+                >
+                  إلغاء الخصم اليدوي
+                </button>
+              )}
+            </div>
+          )}
+          {manualOpen && (
+            <ManualDiscountModal
+              current={manualDiscount}
+              maxAmount={afterRules}
+              onApply={(m) => {
+                setManualDiscount(m)
+                setManualOpen(false)
+              }}
+              onClose={() => setManualOpen(false)}
+            />
+          )}
         </div>
 
         <div className="checkout-body">

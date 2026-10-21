@@ -32,6 +32,19 @@ async function saleWithCashier(db, saleId) {
   ).rows[0]
 }
 
+/** Discounts of an invoice: rules applied and the manual amount with who and why (D-057). */
+async function saleDiscounts(db, saleId) {
+  return (
+    await db.query(
+      `SELECT d.scope, d.name, d.value_type, d.value::float AS value, d.amount::float AS amount,
+              d.reason, d.created_at, u.username
+         FROM sale_discounts d LEFT JOIN users u ON u.id = d.user_id
+        WHERE d.sale_id = $1 ORDER BY d.id`,
+      [saleId]
+    )
+  ).rows
+}
+
 async function saleItems(db, saleId) {
   return (
     await db.query(
@@ -216,7 +229,11 @@ module.exports = function salesModule(app) {
       const sale = (await ctx.pool.query('SELECT * FROM sales WHERE id = $1', [saleId])).rows[0]
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
       const withCashier = await saleWithCashier(ctx.pool, saleId)
-      return { sale: withCashier || sale, items: await saleItems(ctx.pool, saleId) }
+      return {
+        sale: withCashier || sale,
+        items: await saleItems(ctx.pool, saleId),
+        discounts: await saleDiscounts(ctx.pool, saleId)
+      }
     }
   })
 
@@ -228,7 +245,11 @@ module.exports = function salesModule(app) {
     handler: async (ctx, { saleId }) => {
       const sale = await saleWithCashier(ctx.pool, saleId)
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
-      return { sale, items: await saleItems(ctx.pool, saleId) }
+      return {
+        sale,
+        items: await saleItems(ctx.pool, saleId),
+        discounts: await saleDiscounts(ctx.pool, saleId)
+      }
     }
   })
 

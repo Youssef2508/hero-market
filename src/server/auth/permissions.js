@@ -17,6 +17,14 @@ const PERMISSIONS = [
     description: 'إتمام بيع آجل أو دفع جزئي على حساب عميل'
   },
   {
+    // Owner decision 2026-10-21 (D-057): a fixed EGP amount off the current invoice, with a reason.
+    // Not given to cashiers by default; the owner assigns it to roles.
+    key: 'pos.manual_discount',
+    module: 'pos',
+    label: 'خصم يدوي على الفاتورة',
+    description: 'خصم مبلغ ثابت من إجمالي فاتورة البيع الحالية مع ذكر السبب'
+  },
+  {
     key: 'pos.approve',
     module: 'pos',
     label: 'اعتماد عمليات الكاشير',
@@ -232,6 +240,8 @@ const MANAGEMENT = ALL.filter(
       'tills.manage',
       // Discounts are the administrator's alone (owner, 2026-10-15).
       'discounts.manage',
+      // Manual invoice discount: administrators by default; the owner assigns it (D-057).
+      'pos.manual_discount',
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
       'sync.manage'
     ].includes(k)

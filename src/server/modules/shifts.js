@@ -99,10 +99,24 @@ async function liveDetails(db, shift) {
        COALESCE((SELECT SUM(digital_impact) FROM mobile_money_transactions WHERE shift_id = $1 AND platform = 'bank_transfer'), 0) AS bank_digital_impact`,
     [shift.id]
   )
+  // Manual invoice discounts of the shift (D-057): count, total and the invoices, with who and why.
+  const manual = (
+    await db.query(
+      `SELECT s.id AS "saleId", d.amount::float AS amount, d.reason, u.username, d.created_at AS "at"
+         FROM sale_discounts d JOIN sales s ON s.id = d.sale_id LEFT JOIN users u ON u.id = d.user_id
+        WHERE s.shift_id = $1 AND d.scope = 'manual' ORDER BY s.id`,
+      [shift.id]
+    )
+  ).rows
   // drawer: the figure both dialogs show, identical to what shifts.close saves and prints.
   return {
     initial_cash: Number(shift.initial_cash) || 0,
     ...rows[0],
+    manualDiscounts: {
+      count: manual.length,
+      total: Math.round(manual.reduce((s, m) => s + m.amount, 0) * 100) / 100,
+      invoices: manual
+    },
     drawer: await drawerFigures(db, shift)
   }
 }

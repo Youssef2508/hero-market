@@ -222,6 +222,17 @@ export default function SalesTab({
                   <dt>الخصم</dt>
                   <dd className="num">{formatMoney(selectedSale.discount)} ج.م</dd>
                 </div>
+                {(selectedSale.discounts || [])
+                  .filter((d) => d.scope === 'manual')
+                  .map((d, i) => (
+                    <div key={`m${i}`} className="span-2">
+                      <dt>خصم يدوي</dt>
+                      <dd>
+                        <span className="num">{formatMoney(d.amount)} ج.م</span> — {d.reason}
+                        {d.username ? ` (${d.username})` : ''}
+                      </dd>
+                    </div>
+                  ))}
                 <div>
                   <dt>الإجمالي الصافي</dt>
                   <dd className={`money-strong ${fullyReturned ? 'text-danger' : 'text-accent'}`}>
