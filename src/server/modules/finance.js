@@ -320,89 +320,20 @@ module.exports = function financeModule(app) {
       })
   })
 
-  // ── Cheques ────────────────────────────────────────────────
+  // ── Cheques: read-only archive ─────────────────────────────
+  // Cheque processing is removed (owner, 2026-10-21, D-060): nothing creates, settles or deletes a
+  // cheque any more. The records stay in checks_register (and in backups); administrators may read
+  // them here.
   app.operation({
-    name: 'checks.list',
-    permission: 'checks.manage',
+    name: 'checks.archive',
+    permission: 'checks.archive',
     handler: async (ctx) => ({
-      all: (await ctx.pool.query('SELECT * FROM checks_register ORDER BY due_date ASC, id')).rows,
-      // K-27: "today" is the store's local date (was the UTC date).
-      dueToday: (
+      rows: (
         await ctx.pool.query(
-          "SELECT * FROM checks_register WHERE status = 'غير مسدد' AND due_date = CURRENT_DATE ORDER BY due_date ASC, id"
+          'SELECT id, check_type, check_number, bank_name, party_name, issue_date, due_date, amount, status, notes, created_at FROM checks_register ORDER BY due_date DESC, id DESC'
         )
       ).rows
     })
-  })
-
-  app.operation({
-    name: 'checks.create',
-    permission: 'checks.manage',
-    schema: {
-      type: 'object',
-      required: ['check_type', 'party_name', 'due_date', 'amount'],
-      properties: {
-        check_type: { type: 'string', maxLength: 40 },
-        check_number: str(80),
-        bank_name: str(120),
-        party_name: { type: 'string', minLength: 1, maxLength: 120 },
-        issue_date: { type: ['string', 'null'], pattern: '^(\\d{4}-\\d{2}-\\d{2})?$' },
-        due_date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-        amount: { type: 'number', minimum: 0 },
-        notes: str(1000)
-      }
-    },
-    handler: async (ctx, c) =>
-      ctx.tx(async (db) => {
-        await db.query(
-          `INSERT INTO checks_register (check_type, check_number, bank_name, party_name, issue_date, due_date, amount, status, notes, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'غير مسدد', $8, LOCALTIMESTAMP(0))`,
-          [
-            c.check_type,
-            c.check_number || '',
-            c.bank_name || '',
-            c.party_name,
-            c.issue_date || null,
-            c.due_date,
-            c.amount,
-            c.notes || ''
-          ]
-        )
-        await ctx.audit(
-          db,
-          'check_create',
-          `تسجيل شيك ${c.check_type} باسم "${c.party_name}" بقيمة ${Number(c.amount).toFixed(2)} ج.م`
-        )
-      })
-  })
-
-  app.operation({
-    name: 'checks.markPaid',
-    permission: 'checks.manage',
-    schema: { type: 'object', required: ['checkId'], properties: { checkId: { type: 'integer' } } },
-    handler: async (ctx, { checkId }) =>
-      ctx.tx(async (db) => {
-        const r = await db.query(
-          "UPDATE checks_register SET status = 'مسدد' WHERE id = $1 RETURNING party_name",
-          [checkId]
-        )
-        if (!r.rowCount) throw notFound()
-        await ctx.audit(db, 'check_paid', `تسديد شيك "${r.rows[0].party_name}" #${checkId}`)
-      })
-  })
-
-  app.operation({
-    name: 'checks.delete',
-    permission: 'checks.manage',
-    schema: { type: 'object', required: ['checkId'], properties: { checkId: { type: 'integer' } } },
-    handler: async (ctx, { checkId }) =>
-      ctx.tx(async (db) => {
-        const r = await db.query('DELETE FROM checks_register WHERE id = $1 RETURNING *', [checkId])
-        if (!r.rowCount) throw notFound()
-        await ctx.audit(db, 'check_delete', `حذف شيك "${r.rows[0].party_name}" #${checkId}`, {
-          check: r.rows[0]
-        })
-      })
   })
 
   // ── Expenses ───────────────────────────────────────────────

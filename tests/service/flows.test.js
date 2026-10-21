@@ -348,21 +348,10 @@ test('FLOWS 18–20: price change keeps historical sale lines; damaged goods mov
   )
 })
 
-test('FLOWS 24–27: cheques and expenses (one drawer row per expense)', async (t) => {
+test('FLOW 27: expenses (one drawer row per expense)', async (t) => {
   if (!requireDb(t)) return
-  const today = (await one("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d")).d
-  ok(
-    await svc.call(
-      'checks.create',
-      { check_type: 'مورد', party_name: 'مورد شيكات', due_date: today, amount: 1000 },
-      admin
-    )
-  )
-  const list = ok(await svc.call('checks.list', {}, admin))
-  assert.equal(list.dueToday.length, 1)
-  ok(await svc.call('checks.markPaid', { checkId: list.all[0].id }, admin))
-  assert.equal((await one('SELECT status FROM checks_register')).status, 'مسدد')
-  ok(await svc.call('checks.delete', { checkId: list.all[0].id }, admin))
+  // FLOWS 24–26 (record, settle, delete a cheque) ended with cheque processing (owner, 2026-10-21,
+  // D-060); the read-only archive is covered by checksArchive.test.js.
   // Two identical expenses → deleting one removes exactly one drawer outflow (K-28)
   ok(
     await svc.call(

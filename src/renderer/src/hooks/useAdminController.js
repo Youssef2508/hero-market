@@ -100,10 +100,7 @@ export function useAdminController({
     triggerCustomConfirm
   })
 
-  const checksManager = useChecksManager({
-    triggerCustomAlert,
-    triggerCustomConfirm
-  })
+  const checksManager = useChecksManager()
 
   const usersManager = useUsersManager({
     currentUser,
@@ -277,18 +274,7 @@ export function useAdminController({
 
     // checksManager
     checksList: checksManager.checksList,
-    setChecksList: checksManager.setChecksList,
-    showAddCheckModal: checksManager.showAddCheckModal,
-    setShowAddCheckModal: checksManager.setShowAddCheckModal,
-    newCheckForm: checksManager.newCheckForm,
-    setNewCheckForm: checksManager.setNewCheckForm,
-    checksDueToday: checksManager.checksDueToday,
-    setChecksDueToday: checksManager.setChecksDueToday,
     fetchChecksList: checksManager.fetchChecksList,
-    fetchChecksDueToday: checksManager.fetchChecksDueToday,
-    handleAddCheck: checksManager.handleAddCheck,
-    handleMarkCheckPaid: checksManager.handleMarkCheckPaid,
-    handleDeleteCheck: checksManager.handleDeleteCheck,
 
     // usersManager
     usersList: usersManager.usersList,

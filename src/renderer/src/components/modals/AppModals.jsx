@@ -11,7 +11,6 @@ import AddClientModal from './AddClientModal'
 import EditClientModal from './EditClientModal'
 import AddSupplierModal from './AddSupplierModal'
 import AddPurchaseModal from './AddPurchaseModal'
-import AddCheckModal from './AddCheckModal'
 import CustomConfirmModal from './CustomConfirmModal'
 
 export default function AppModals({
@@ -98,13 +97,7 @@ export default function AppModals({
   selectedSupplier,
   newPurchaseForm,
   setNewPurchaseForm,
-  handleAddPurchase,
-
-  showAddCheckModal,
-  setShowAddCheckModal,
-  newCheckForm,
-  setNewCheckForm,
-  handleAddCheck
+  handleAddPurchase
 }) {
   return (
     <>
@@ -219,14 +212,6 @@ export default function AppModals({
         newPurchaseForm={newPurchaseForm}
         setNewPurchaseForm={setNewPurchaseForm}
         handleAddPurchase={handleAddPurchase}
-      />
-
-      <AddCheckModal
-        showAddCheckModal={showAddCheckModal}
-        setShowAddCheckModal={setShowAddCheckModal}
-        newCheckForm={newCheckForm}
-        setNewCheckForm={setNewCheckForm}
-        handleAddCheck={handleAddCheck}
       />
     </>
   )

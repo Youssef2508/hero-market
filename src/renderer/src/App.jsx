@@ -519,14 +519,13 @@ function App() {
   }, [appSettings])
 
   // Data the shell needs right after a login (previously loaded at mount, before login).
-  const onLoggedIn = (user) => {
+  const onLoggedIn = () => {
     loadAppSettings()
     loadMeasureKinds()
     api('sync.state')
       .then((r) => setRecoveryPending(!!r.recoveryPending))
       .catch(() => {})
     adminController.fetchStats()
-    if (user.permissions.includes('checks.manage')) adminController.fetchChecksDueToday()
   }
 
   // Global keyboard shortcuts

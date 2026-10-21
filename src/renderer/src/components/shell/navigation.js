@@ -32,7 +32,8 @@ import {
   Cloud,
   ShieldCheck,
   BadgePercent,
-  Settings
+  Settings,
+  Archive
 } from 'lucide-react'
 
 export const NAV_GROUPS = [
@@ -303,6 +304,17 @@ export const NAV_GROUPS = [
         view: 'admin',
         tab: 'import',
         description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket).'
+      },
+      {
+        // Read-only archive of the cheques kept from before cheques were removed (D-060).
+        id: 'checks',
+        permission: ['checks.archive'],
+        label: 'أرشيف الشيكات',
+        icon: Archive,
+        view: 'admin',
+        tab: 'checks',
+        description: 'الشيكات القديمة للعرض فقط؛ الشيكات متوقفة.',
+        onEnter: (c) => c.fetchChecksList()
       },
       {
         id: 'sync',

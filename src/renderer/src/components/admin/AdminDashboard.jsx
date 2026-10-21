@@ -7,7 +7,6 @@ import {
   ReceiptText,
   TriangleAlert,
   Users,
-  Landmark,
   Clock,
   ShieldAlert
 } from 'lucide-react'
@@ -42,14 +41,7 @@ const DiscountsTab = lazy(() => import('./DiscountsTab'))
 const SyncTab = lazy(() => import('./SyncTab'))
 const CategoriesTab = lazy(() => import('./CategoriesTab'))
 
-function Overview({
-  currentUser,
-  currentShift,
-  periodicAnalytics,
-  dbStats,
-  checksDueToday,
-  onNavigate
-}) {
+function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNavigate }) {
   const groups = visibleGroups(currentUser).filter((g) => g.id !== 'overview')
   const find = (id) => groups.flatMap((g) => g.items).find((i) => i.id === id)
   const go = (id) => {
@@ -57,7 +49,6 @@ function Overview({
     if (item) onNavigate(item)
   }
   const pa = periodicAnalytics || {}
-  const dueChecks = checksDueToday?.length || 0
   const today = new Date().toLocaleDateString('ar-EG-u-nu-latn', {
     weekday: 'long',
     day: 'numeric',
@@ -81,12 +72,6 @@ function Overview({
             <button type="button" className="hero-chip is-alert" onClick={() => go('reordering')}>
               <TriangleAlert size={15} aria-hidden="true" />
               {dbStats.lowStock} صنف تحت حد الطلب
-            </button>
-          )}
-          {dueChecks > 0 && (
-            <button type="button" className="hero-chip is-alert" onClick={() => go('checks')}>
-              <Landmark size={15} aria-hidden="true" />
-              {dueChecks} شيك مستحق اليوم
             </button>
           )}
         </div>

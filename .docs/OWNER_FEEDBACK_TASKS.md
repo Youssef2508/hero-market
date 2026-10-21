@@ -21,7 +21,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | USER-01      | Flexible password characters                              | A               | Done with evidence                                                                     | none                  |
 | EXP-02       | Optional note (categories in D)                           | A / D           | In progress (optional note done; categories in D)                                      | none / 0016           |
 | NAV-01       | Remove "جرد الدرج" menu entry                             | A               | Done with evidence                                                                     | none                  |
-| NAV-02       | Remove cheques screen                                     | A               | In progress (UI hidden, data kept; write operations to close, admin-only archive)      | none                  |
+| NAV-02       | Remove cheques screen                                     | A               | Done with evidence (admin-only read-only archive, processing removed, data kept)       | none                  |
 | SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | In progress (renamed; live details in D)                                               | 0016                  |
 | DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H)           | 0015                  |
 | PRINT-01     | Arabic RTL receipt and shift report                       | C               | Done with evidence (software); HW-02 pending                                           | none                  |
@@ -185,7 +185,17 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - keep every historical record; no deletion and no table drop without a separate explicit approval;
   - an archive or history view, if any, is for authorised administrators only;
   - cheque processing is not reintroduced.
-- **Remaining work:** the write operations (`checks.create`, status changes, delete) are refused for everyone; a read-only archive operation behind its own administrator permission; tests that a cashier and a manager are refused.
+- **Done (2026-10-21):**
+  - the service no longer has `checks.create`, `checks.markPaid`, `checks.delete` or `checks.list` (they answer 404); the "due today" alert on the dashboard and at sign-in is gone;
+  - new read-only operation `checks.archive` behind the new permission `checks.archive` ("أرشيف الشيكات (عرض فقط)"), held only by مدير النظام and مدير المتجر (excluded from the manager role);
+  - `checks.manage` grants nothing; it stays so that stored roles remain valid;
+  - the "أرشيف الشيكات" menu entry shows only to holders of `checks.archive`, and the screen has no add, settle or delete button;
+  - `checks_register` is unchanged, with no migration, no deletion and no drop. It stays in backups and the import list.
+- **Tests:** `tests/service/checksArchive.test.js` (3):
+  - both administrator roles read the old records complete;
+  - manager and cashier get 403; only the two administrator roles hold the permission;
+  - the four old operations give 404 and the rows are byte-identical afterwards.
+- **Changed test:** `flows.test.js` "FLOWS 24–27" exercised recording, settling and deleting a cheque. Those operations were removed by the owner's decision, so the test is now "FLOW 27" (expenses, unchanged), and the cheque cases moved to the archive test.
 - **Evidence (2026-10-21):** the menu has no "الشيكات"; the roles screen labels the permission "الشيكات (الشاشة مخفية)"; `checks_register` stays in the backup list.
 
 #### SHIFT-01 (part 1)

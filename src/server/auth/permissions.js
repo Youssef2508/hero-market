@@ -170,10 +170,16 @@ const PERMISSIONS = [
   {
     key: 'checks.manage',
     module: 'finance',
-    // The cheques screen is hidden (owner feedback NAV-02); the key stays so stored roles and the
-    // history in checks_register remain valid.
-    label: 'الشيكات (الشاشة مخفية)',
-    description: 'الشاشة لم تعد في القائمة؛ السجلات القديمة محفوظة'
+    // Cheque processing is removed (owner, 2026-10-21, D-060): this key grants nothing any more and
+    // stays only so stored roles remain valid. The old records are kept in checks_register.
+    label: 'الشيكات (متوقفة)',
+    description: 'لم تعد تمنح أي صلاحية؛ تسجيل الشيكات وسدادها وحذفها متوقف'
+  },
+  {
+    key: 'checks.archive',
+    module: 'finance',
+    label: 'أرشيف الشيكات (عرض فقط)',
+    description: 'عرض الشيكات القديمة المسجلة قبل إيقاف الشيكات، بدون تعديل أو حذف'
   },
   {
     key: 'expenses.manage',
@@ -242,6 +248,8 @@ const MANAGEMENT = ALL.filter(
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).
       'pos.manual_discount',
+      // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
+      'checks.archive',
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
       'sync.manage'
     ].includes(k)
