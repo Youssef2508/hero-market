@@ -18,6 +18,7 @@ import {
 import { formatMoney } from '../../lib/utils'
 import { api, can } from '../../lib/api'
 import { EmptyState } from '../ui'
+import { MethodReconciliation, MoneyCategories } from './ShiftMoney'
 
 const PAGE_SIZE = 25
 // Live details of an open shift refresh every 5 seconds while shown: each refresh reads the saved
@@ -391,6 +392,19 @@ function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
           <strong>{signed(difference)}</strong>
         </div>
       </div>
+
+      {/* D-064: expected, counted and the difference per payment method, with the totals – the
+          same figures as the closing report. */}
+      <section className="card">
+        <div className="card-body stack">
+          <h2 className="card-title">التسوية حسب طريقة الدفع</h2>
+          <MethodReconciliation
+            report={r}
+            legacyActualCash={!open && !r.actual ? actualCash : null}
+          />
+          <MoneyCategories report={r} />
+        </div>
+      </section>
 
       <section className="card">
         <div className="card-body stack">

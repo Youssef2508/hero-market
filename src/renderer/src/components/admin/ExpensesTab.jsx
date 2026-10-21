@@ -3,6 +3,7 @@ import { HandCoins, Plus, Trash2, NotebookPen, Tags, Pencil } from 'lucide-react
 import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { can } from '../../lib/api'
+import PaymentMethodSelect from './PaymentMethodSelect'
 
 /**
  * Expense categories (owner feedback EXP-02): add, rename, stop. A renamed category keeps its old
@@ -344,6 +345,10 @@ export default function ExpensesTab({
                   ))}
                 </select>
               </label>
+              <PaymentMethodSelect
+                value={newExpenseForm.method || 'cash'}
+                onChange={(v) => setNewExpenseForm({ ...newExpenseForm, method: v })}
+              />
               {fixedDestination === null && (
                 <fieldset className="field">
                   <legend className="field-label">يُدفع من *</legend>

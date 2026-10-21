@@ -12,6 +12,9 @@ const AddPurchaseModal = ({
   showAddPurchaseModal,
   setShowAddPurchaseModal,
   selectedSupplier,
+  // A preliminary invoice being completed (D-064): lines required, its payment already recorded.
+  convertingPending,
+  setConvertingPending,
   newPurchaseForm,
   setNewPurchaseForm,
   handleAddPurchase
@@ -81,8 +84,19 @@ const AddPurchaseModal = ({
           <span className="modal-icon" aria-hidden="true">
             <ReceiptText size={22} />
           </span>
-          <h2 id="add-purchase-title">فاتورة شراء جديدة</h2>
+          <h2 id="add-purchase-title">
+            {convertingPending
+              ? `إكمال الفاتورة المبدئية #${convertingPending.id}`
+              : 'فاتورة شراء جديدة'}
+          </h2>
           <p>المورد: {selectedSupplier.name}</p>
+          {convertingPending && (
+            <p className="field-hint">
+              الإجمالي المبدئي {formatMoney(convertingPending.total)} ج.م، مدفوع منه{' '}
+              {formatMoney(convertingPending.paid)} ج.م (لا يُدفع مرة أخرى). أي فرق بين إجمالي
+              الأصناف والإجمالي المبدئي يُسجَّل تسويةً على حساب المورد.
+            </p>
+          )}
         </div>
         <form
           onSubmit={handleAddPurchase}
@@ -221,30 +235,37 @@ const AddPurchaseModal = ({
               />
             )}
           </div>
-          <div className="form-group">
-            <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
-            <input
-              type="number"
-              className="form-input"
-              min="0"
-              step="0.01"
-              value={newPurchaseForm.paid_amount}
-              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))}
-              placeholder="0.00"
-            />
-          </div>
-          <div className="form-group">
-            <label>نوع الدفع</label>
-            <select
-              className="form-input"
-              value={newPurchaseForm.payment_type}
-              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, payment_type: e.target.value }))}
-            >
-              <option value="آجل">آجل</option>
-              <option value="نقدي">نقدي كامل</option>
-              <option value="شيك">شيك</option>
-            </select>
-          </div>
+          {!convertingPending && (
+            <>
+              <div className="form-group">
+                <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  min="0"
+                  step="0.01"
+                  value={newPurchaseForm.paid_amount}
+                  onChange={(e) =>
+                    setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="form-group">
+                <label>نوع الدفع</label>
+                <select
+                  className="form-input"
+                  value={newPurchaseForm.payment_type}
+                  onChange={(e) =>
+                    setNewPurchaseForm((p) => ({ ...p, payment_type: e.target.value }))
+                  }
+                >
+                  <option value="آجل">آجل</option>
+                  <option value="نقدي">نقدي كامل</option>
+                </select>
+              </div>
+            </>
+          )}
           <div className="form-group">
             <label>ملاحظات</label>
             <input
@@ -259,12 +280,19 @@ const AddPurchaseModal = ({
               data-modal-close
               type="button"
               className="btn btn-secondary"
-              onClick={() => setShowAddPurchaseModal(false)}
+              onClick={() => {
+                setShowAddPurchaseModal(false)
+                if (setConvertingPending) setConvertingPending(null)
+              }}
             >
               إلغاء
             </button>
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-              {items.length ? 'تسجيل الفاتورة واستلام الأصناف' : 'تسجيل الفاتورة'}
+              {convertingPending
+                ? 'إكمال الفاتورة واستلام الأصناف'
+                : items.length
+                  ? 'تسجيل الفاتورة واستلام الأصناف'
+                  : 'تسجيل الفاتورة'}
             </button>
           </div>
         </form>

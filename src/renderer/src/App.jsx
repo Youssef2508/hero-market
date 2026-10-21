@@ -141,6 +141,8 @@ function App() {
   const {
     cart,
     setCart,
+    upfrontMethod,
+    setUpfrontMethod,
     discount,
     setDiscount,
     paidAmount,
@@ -253,6 +255,8 @@ function App() {
     setDiscount,
     paidAmount,
     setPaidAmount,
+    upfrontMethod,
+    setUpfrontMethod,
     paymentType,
     setPaymentType,
     clientName,
@@ -742,6 +746,8 @@ function App() {
             selectClient={selectClient}
             paymentType={paymentType}
             setPaymentType={setPaymentType}
+            upfrontMethod={upfrontMethod}
+            setUpfrontMethod={setUpfrontMethod}
             cartTotal={cartTotal}
             depositChange={depositChange}
             setDepositChange={setDepositChange}

@@ -271,6 +271,11 @@ export function useAdminController({
     handleAddPurchase: suppliersManager.handleAddPurchase,
     handleSupplierRepay: suppliersManager.handleSupplierRepay,
     handleDeleteSupplier: suppliersManager.handleDeleteSupplier,
+    pendingInvoices: suppliersManager.pendingInvoices,
+    fetchPendingInvoices: suppliersManager.fetchPendingInvoices,
+    convertingPending: suppliersManager.convertingPending,
+    setConvertingPending: suppliersManager.setConvertingPending,
+    startConvertPending: suppliersManager.startConvertPending,
 
     // checksManager
     checksList: checksManager.checksList,

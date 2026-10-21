@@ -75,6 +75,16 @@ export function buildCloseReportLines(rep, opts = {}) {
         `[B]الفرق|${text(verdictOf(rep.variance?.[m]), 24)}`
       )
     }
+    // Totals of the four methods (D-064).
+    const expectedTotal =
+      rep.expectedTotal ?? METHODS.reduce((a, m) => a + (Number(rep.expected?.[m]) || 0), 0)
+    lines.push(
+      sep,
+      '[C]الإجمالي',
+      `المتوقع|${money(expectedTotal)}`,
+      `الفعلي|${money(rep.actualTotal ?? rep.netTotal)}`,
+      `[B]الفرق|${text(verdictOf(rep.varianceTotal ?? (rep.netTotal || 0) - expectedTotal), 24)}`
+    )
     lines.push(sep, `[B]صافي الوردية (الفعلي)|${money(rep.netTotal)}`)
   } else {
     lines.push(
@@ -82,6 +92,28 @@ export function buildCloseReportLines(rep, opts = {}) {
       ...METHODS.map((m) => `المتوقع ${METHOD_LABELS[m]}|${money(rep.expected?.[m])}`)
     )
   }
+  // What the money was (D-064): credit, collections and supplier payments are not sales.
+  const cat = []
+  if (rep.creditSales?.count > 0)
+    cat.push(`مبيعات آجل (${rep.creditSales.count})|${money(rep.creditSales.total)}`)
+  if (rep.partialSales?.count > 0)
+    cat.push(
+      `مبيعات دفع جزئي (${rep.partialSales.count})|${money(rep.partialSales.total)}`,
+      `  مدفوع منها|${money(rep.partialSales.paidNow)}`,
+      `  متبقي على العملاء|${money(rep.partialSales.unpaid)}`
+    )
+  if (Number(rep.collections) > 0) cat.push(`تحصيلات ديون عملاء|${money(rep.collections)}`)
+  if (Number(rep.supplierPayments?.withInvoices) > 0)
+    cat.push(`مدفوعات فواتير موردين|${money(rep.supplierPayments.withInvoices)}`)
+  if (Number(rep.supplierPayments?.settlements) > 0)
+    cat.push(`سداد مديونيات موردين|${money(rep.supplierPayments.settlements)}`)
+  if (cat.length) lines.push(sep, '[C]حركات أخرى (ليست مبيعات)', ...cat)
+  if (rep.treasuryTransfers)
+    lines.push(
+      sep,
+      '[C]المحوَّل إلى الخزنة',
+      ...METHODS.map((m) => `${METHOD_LABELS[m]}|${money(rep.treasuryTransfers[m])}`)
+    )
   const ex = rep.expenses
   if (ex && ex.count > 0) {
     lines.push(sep, '[C]المصروفات', `العدد|${ex.count}`, `[B]الإجمالي|${money(ex.total)}`)

@@ -197,6 +197,29 @@ async function shiftReport(
             r.refund_method AS method, COALESCE(r.paid_back, r.refund)::float8 AS "paidBack"
        FROM sale_returns r WHERE r.shift_id = $1 ORDER BY r.id`
   )
+  // D-064: what each method's money was (sales are not collections; settlements are not invoice
+  // payments), from the movement kinds of the shift.
+  const moves = await q(
+    `SELECT method, kind, type, COALESCE(SUM(amount), 0)::float8 AS total, COUNT(*)::int AS count
+       FROM safe_ledger WHERE shift_id = $1 GROUP BY method, kind, type`
+  )
+  const movements = Object.fromEntries(METHODS.map((m) => [m, {}]))
+  for (const r of moves) {
+    const sign = r.type === 'inflow' ? 1 : -1
+    movements[r.method][r.kind] = round2((movements[r.method][r.kind] || 0) + sign * r.total)
+  }
+  const sumKind = (kind) =>
+    round2(moves.filter((r) => r.kind === kind).reduce((a, r) => a + r.total, 0))
+  const credit = (
+    await q(
+      `SELECT COUNT(*) FILTER (WHERE payment_type = 'آجل')::int AS "creditCount",
+              COALESCE(SUM(${SALE_VALUE}) FILTER (WHERE payment_type = 'آجل'), 0)::float8 AS "creditTotal",
+              COUNT(*) FILTER (WHERE payment_type = 'دفع جزئي')::int AS "partialCount",
+              COALESCE(SUM(${SALE_VALUE}) FILTER (WHERE payment_type = 'دفع جزئي'), 0)::float8 AS "partialTotal"
+         FROM sales WHERE shift_id = $1`
+    )
+  )[0]
+  const upfront = sumKind('sale_upfront')
   const report = {
     shiftId: shift.id,
     cashier: cashier?.username || '',
@@ -225,7 +248,21 @@ async function shiftReport(
       lines: returns
     },
     manualDiscounts: await manualDiscounts(db, shift),
+    movements,
+    creditSales: { count: credit.creditCount, total: round2(credit.creditTotal) },
+    partialSales: {
+      count: credit.partialCount,
+      total: round2(credit.partialTotal),
+      paidNow: upfront,
+      unpaid: round2(credit.partialTotal - upfront)
+    },
+    collections: sumKind('customer_payment'),
+    supplierPayments: {
+      withInvoices: sumKind('supplier_payment'),
+      settlements: sumKind('supplier_settlement')
+    },
     expected: Object.fromEntries(METHODS.map((m) => [m, methods[m].expected])),
+    expectedTotal: round2(METHODS.reduce((a, m) => a + methods[m].expected, 0)),
     labels: LABELS,
     note: note || null,
     acknowledgedBy
@@ -239,6 +276,11 @@ async function shiftReport(
       METHODS.map((m) => [m, varianceLabel(report.variance[m])])
     )
     report.netTotal = round2(METHODS.reduce((s, m) => s + report.actual[m], 0))
+    report.actualTotal = report.netTotal
+    report.varianceTotal = variance(report.actualTotal, report.expectedTotal)
+    report.varianceTotalLabel = varianceLabel(report.varianceTotal)
+    // At close each method's counted amount goes to its treasury balance (D-064): a transfer.
+    report.treasuryTransfers = { ...report.actual }
   }
   return { report, methods, drawer }
 }
@@ -564,16 +606,22 @@ module.exports = function shiftsModule(app) {
           note,
           acknowledgedBy: approval.approvalId ? approval.approver : null
         })
-        // CASH-01: the counted cash goes to the treasury once (a transfer, not income).
-        const entry = await treasury.post(db, ctx, {
-          kind: 'shift_close',
-          amount: actualCash,
-          shiftId: shift.id,
-          refType: 'shift',
-          refId: shift.id,
-          description: `توريد نقدية إغلاق الوردية #${shift.id}`,
-          idemKey: `shift-close:${shift.id}`
-        })
+        // CASH-01 / D-064: each method's counted amount goes to its own treasury balance, once (a
+        // transfer, not income). Cash keeps its key of 1.5.0 builds before D-064.
+        let entry = null
+        for (const m of METHODS) {
+          const posted = await treasury.post(db, ctx, {
+            kind: 'shift_close',
+            method: m,
+            amount: counted[m],
+            shiftId: shift.id,
+            refType: 'shift',
+            refId: shift.id,
+            description: `توريد ${LABELS[m]} إغلاق الوردية #${shift.id}`,
+            idemKey: m === 'cash' ? `shift-close:${shift.id}` : `shift-close:${shift.id}:${m}`
+          })
+          if (m === 'cash') entry = posted
+        }
         await db.query(
           `INSERT INTO shift_closings (shift_id, closed_at, closed_by, client_ref, expected, actual, variance, report, treasury_entry_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,

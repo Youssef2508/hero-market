@@ -3,6 +3,8 @@
 // useExpensesManager, useDamagedGoodsManager). Legacy amounts and ledger texts are unchanged.
 const { badRequest, conflict, notFound, shiftRequired, forbidden } = require('../errors')
 const treasury = require('../money/treasury')
+const { addMovement, recorded } = require('../money/shiftLedger')
+const { METHODS } = require('../money/methods')
 const { postMovement, receiveStock } = require('../inventory/stock')
 const { loadUnit, toBaseQty, round4, kindRule } = require('../inventory/units')
 
@@ -29,7 +31,9 @@ async function ownOpenShift(db, ctx, shiftId) {
  * `drawer: false` (owner commands from the cloud): any paid amount was paid outside the drawer,
  * so no shift is needed and no drawer movement is written.
  */
-async function recordPurchase(db, ctx, p, { drawer = true } = {}) {
+// `payable: false` (a preliminary invoice converted, D-064): the payment and the supplier's payable
+// were recorded with the preliminary invoice; only stock, cost and the purchase record are written.
+async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}) {
   const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId]))
     .rows[0]
   if (!s) throw notFound('المورد غير موجود.')
@@ -108,7 +112,7 @@ async function recordPurchase(db, ctx, p, { drawer = true } = {}) {
       reason: `فاتورة شراء #${ref} من ${s.name}`
     })
   }
-  if (remaining > 0) {
+  if (payable && remaining > 0) {
     await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
       remaining,
       s.id
@@ -119,10 +123,13 @@ async function recordPurchase(db, ctx, p, { drawer = true } = {}) {
     )
   }
   if (drawer && paid > 0) {
-    await db.query(
-      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-      [shift.id, paid, `دفعة لمورد: ${s.name} - فاتورة #${ref}`]
-    )
+    await addMovement(db, {
+      shiftId: shift.id,
+      type: 'outflow',
+      amount: paid,
+      description: `دفعة لمورد: ${s.name} - فاتورة #${ref}`,
+      kind: 'supplier_payment'
+    })
   }
   await ctx.audit(
     db,
@@ -171,6 +178,13 @@ module.exports = function financeModule(app) {
       purchases: (
         await ctx.pool.query(
           'SELECT * FROM supplier_purchases WHERE supplier_id = $1 ORDER BY id DESC',
+          [supplierId]
+        )
+      ).rows,
+      // Preliminary invoices waiting for their lines (D-064).
+      pending: (
+        await ctx.pool.query(
+          "SELECT *, total::float8 AS total, paid::float8 AS paid FROM supplier_pending_invoices WHERE supplier_id = $1 AND status = 'pending' ORDER BY id DESC",
           [supplierId]
         )
       ).rows
@@ -250,14 +264,21 @@ module.exports = function financeModule(app) {
         currentShiftId: { type: ['integer', 'null'] },
         // 1.5.0 (CUST-02): 'treasury' pays from the treasury without a shift (treasury.manage).
         destination: { type: 'string', enum: ['shift', 'treasury'] },
+        // 1.5.0 (D-064): how it was paid; a retry with the same request id pays once.
+        method: { type: 'string', enum: METHODS },
         clientRef: { type: 'string', minLength: 8, maxLength: 120 }
       }
     },
-    handler: async (ctx, { supplierId, amount, currentShiftId, destination, clientRef }) =>
+    handler: async (
+      ctx,
+      { supplierId, amount, currentShiftId, destination, method = 'cash', clientRef }
+    ) =>
       ctx.tx(async (db) => {
         const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [supplierId]))
           .rows[0]
         if (!s) throw notFound('المورد غير موجود.')
+        if (clientRef && (await recorded(db, `supplier-pay:${clientRef}`)))
+          return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
         if (
           destination === 'treasury' ||
           (!destination && !currentShiftId && ctx.can('treasury.manage'))
@@ -266,6 +287,7 @@ module.exports = function financeModule(app) {
           if (dest.destination === 'treasury') {
             const entry = await treasury.post(db, ctx, {
               kind: 'supplier_payment',
+              method,
               amount: -amount,
               refType: 'supplier',
               refId: s.id,
@@ -304,10 +326,15 @@ module.exports = function financeModule(app) {
         if (destination === 'shift' && !shift)
           throw shiftRequired('لا توجد وردية مفتوحة لك: افتح وردية أو اختر الخزنة.')
         if (shift) {
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-            [shift.id, amount, `سداد دين مورد: ${s.name}`]
-          )
+          await addMovement(db, {
+            shiftId: shift.id,
+            type: 'outflow',
+            amount,
+            description: `سداد دين مورد: ${s.name}`,
+            method,
+            kind: 'supplier_settlement',
+            clientRef: clientRef ? `supplier-pay:${clientRef}` : null
+          })
         }
         await ctx.audit(db, 'supplier_payment', `سداد ${amount.toFixed(2)} ج.م للمورد "${s.name}"`)
         return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
@@ -413,11 +440,22 @@ module.exports = function financeModule(app) {
         description: str(1000),
         currentShiftId: { type: ['integer', 'null'] },
         destination: { type: 'string', enum: ['shift', 'treasury'] },
+        // How it was paid (D-064); cash unless stated.
+        method: { type: 'string', enum: METHODS },
         clientRef: { type: 'string', minLength: 8, maxLength: 120 }
       }
     },
     handler: async (ctx, e) =>
       ctx.tx(async (db) => {
+        const method = e.method || 'cash'
+        if (e.clientRef) {
+          const prior = await recorded(db, `expense:${e.clientRef}`)
+          if (prior) {
+            const x = (await db.query('SELECT id FROM expenses WHERE ledger_id = $1', [prior.id]))
+              .rows[0]
+            return { id: x ? x.id : null, destination: 'shift', duplicate: true }
+          }
+        }
         const dest = await treasury.resolveDestination(db, ctx, e)
         let category = (e.category || '').trim() || 'عام'
         let categoryId = null
@@ -455,6 +493,7 @@ module.exports = function financeModule(app) {
           ).rows[0]
           const entry = await treasury.post(db, ctx, {
             kind: 'expense',
+            method,
             amount: -e.amount,
             refType: 'expense',
             refId: x.id,
@@ -476,12 +515,15 @@ module.exports = function financeModule(app) {
           return { id: x.id, destination: 'treasury' }
         }
         const shift = dest.shift
-        const ledger = (
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0)) RETURNING id`,
-            [shift.id, e.amount, text]
-          )
-        ).rows[0]
+        const ledger = await addMovement(db, {
+          shiftId: shift.id,
+          type: 'outflow',
+          amount: e.amount,
+          description: text,
+          method,
+          kind: 'expense',
+          clientRef: e.clientRef ? `expense:${e.clientRef}` : null
+        })
         const x = (
           await db.query(
             `INSERT INTO expenses (shift_id, amount, category, description, timestamp, created_by, category_id, destination, ledger_id)
@@ -523,6 +565,7 @@ module.exports = function financeModule(app) {
           if (original)
             await treasury.post(db, ctx, {
               kind: 'reversal',
+              method: original.method,
               amount: -Number(original.amount),
               reversesId: original.id,
               refType: 'expense',

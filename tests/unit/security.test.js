@@ -27,13 +27,17 @@ test('built-in roles reproduce the original access rules', () => {
   // Cashier: sell (cash, wallets, credit), own shift, tills – nothing in management. No discount
   // authority at all (owner, 2026-10-15): discounts come only from the administrator's rules.
   // Returns only on request, completed by a supervisor (owner, 2026-10-14; phase 3).
+  // Preliminary supplier invoices at the till (owner, 2026-10-21, D-064): total and payment only;
+  // completing them (stock, cost) stays with suppliers.manage.
   assert.deepEqual(role('cashier').permissions.sort(), [
     'pos.credit',
     'pos.sell',
     'sales.return_request',
     'shifts.operate',
+    'suppliers.pending',
     'tills.operate'
   ])
+  assert.ok(!role('cashier').permissions.includes('suppliers.manage'), 'cannot complete them')
   assert.ok(!role('cashier').permissions.includes('sales.return'), 'no direct returns')
   assert.ok(!role('cashier').permissions.includes('pos.approve'), 'cannot approve')
   // Original manager: every management screen except users; no multi-till close, till deletion or reset.

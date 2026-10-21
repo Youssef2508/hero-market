@@ -24,6 +24,18 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     items: []
   })
   const [supplierRepayAmount, setSupplierRepayAmount] = useState('')
+  // Preliminary supplier invoices (D-064): those waiting for their lines, and the one being
+  // completed in the purchase window (with its request id, so a retry converts once).
+  const [pendingInvoices, setPendingInvoices] = useState([])
+  const [convertingPending, setConvertingPending] = useState(null)
+
+  const fetchPendingInvoices = async () => {
+    try {
+      setPendingInvoices((await api('supplierInvoices.list', { status: 'pending' })) || [])
+    } catch (err) {
+      console.error('fetchPendingInvoices error:', err)
+    }
+  }
 
   const fetchSuppliersList = async (search = '') => {
     try {
@@ -31,6 +43,22 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     } catch (err) {
       console.error('fetchSuppliersList error:', err)
     }
+    fetchPendingInvoices()
+  }
+
+  /** Open the purchase window to enter the lines of a preliminary invoice. */
+  const startConvertPending = async (inv) => {
+    await fetchSupplierProfile({ id: inv.supplier_id, name: inv.supplier_name })
+    setNewPurchaseForm({
+      invoice_ref: inv.invoice_ref || '',
+      total_amount: '',
+      paid_amount: '',
+      payment_type: 'آجل',
+      notes: '',
+      items: []
+    })
+    setConvertingPending({ ...inv, clientRef: newClientRef() })
+    setShowAddPurchaseModal(true)
   }
 
   const fetchSupplierProfile = async (supplier) => {
@@ -69,6 +97,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
   const handleAddPurchase = async (e) => {
     if (e) e.preventDefault()
     if (!selectedSupplier) return
+    if (convertingPending) return handleConvertPending()
     // With item lines the total is their sum (the service checks it again).
     const items = (newPurchaseForm.items || []).map((l) => ({
       barcode: l.barcode,
@@ -116,8 +145,42 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     }
   }
 
+  // Stage B (D-064): the lines of a preliminary invoice – stock and cost, never a second payment.
+  const handleConvertPending = async () => {
+    const items = (newPurchaseForm.items || []).map((l) => ({
+      barcode: l.barcode,
+      unitId: l.unitId ?? null,
+      qty: parseFloat(l.qty) || 0,
+      unitCost: parseFloat(l.unitCost) || 0
+    }))
+    if (!items.length || items.some((l) => l.qty <= 0)) {
+      triggerCustomAlert('أضف أصناف الفاتورة بكمية صحيحة لكل صنف.')
+      return
+    }
+    try {
+      const res = await api('supplierInvoices.convert', {
+        invoiceId: convertingPending.id,
+        invoiceRef: newPurchaseForm.invoice_ref || null,
+        notes: newPurchaseForm.notes || null,
+        items,
+        clientRef: convertingPending.clientRef
+      })
+      setShowAddPurchaseModal(false)
+      setConvertingPending(null)
+      await fetchSupplierProfile(selectedSupplier)
+      await fetchPendingInvoices()
+      triggerCustomAlert(
+        res.difference
+          ? `تم إكمال الفاتورة واستلام الأصناف. الفرق عن الفاتورة المبدئية ${res.difference.toFixed(2)} ج.م سُجّل على حساب المورد.`
+          : 'تم إكمال الفاتورة واستلام الأصناف.'
+      )
+    } catch (err) {
+      triggerCustomAlert('فشل إكمال الفاتورة: ' + err.message)
+    }
+  }
+
   // destination: 'shift' or 'treasury' (owner feedback CUST-02), chosen on the form.
-  const handleSupplierRepay = async (e, destination) => {
+  const handleSupplierRepay = async (e, destination, method = 'cash') => {
     if (e) e.preventDefault()
     const amount = parseFloat(supplierRepayAmount) || 0
     if (amount <= 0) {
@@ -129,6 +192,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         supplierId: selectedSupplier.id,
         amount,
         destination,
+        method,
         currentShiftId: destination === 'shift' && currentShift ? currentShift.id : null,
         clientRef: newClientRef()
       })
@@ -177,6 +241,11 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     handleAddSupplier,
     handleAddPurchase,
     handleSupplierRepay,
-    handleDeleteSupplier
+    handleDeleteSupplier,
+    pendingInvoices,
+    fetchPendingInvoices,
+    convertingPending,
+    setConvertingPending,
+    startConvertPending
   }
 }

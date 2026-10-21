@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Banknote, CreditCard, Smartphone, ArrowLeftRight, Wallet, Clock } from 'lucide-react'
+import {
+  Banknote,
+  CreditCard,
+  Smartphone,
+  ArrowLeftRight,
+  Wallet,
+  Clock,
+  ReceiptText
+} from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 
 // الأدراج والتحويلات (owner, 2026-10-21, D-063): the shift's money by payment method – cash, Visa,
 // wallet, InstaPay – and nothing else. The Momkn machine and the wallet-service tills of earlier
@@ -18,7 +27,7 @@ const METHODS = [
 const REFRESH_MS = 5000
 const money = (n) => `${formatMoney(n)} ج.م`
 
-export default function TillsManagerTab({ currentUser, currentShift }) {
+function TillsBody({ currentUser, currentShift }) {
   const [live, setLive] = useState(null)
   const canSee = can(currentUser, 'shifts.view_expected')
   const shiftId = currentShift?.status === 'open' ? currentShift.id : null
@@ -137,6 +146,42 @@ export default function TillsManagerTab({ currentUser, currentShift }) {
           </div>
         </div>
       </section>
+    </>
+  )
+}
+
+/** The page: the shift's money, and the preliminary supplier invoice (D-064) for the cashier. */
+export default function TillsManagerTab({ currentUser, currentShift, triggerCustomAlert }) {
+  const [pendingOpen, setPendingOpen] = useState(false)
+  const [savedAt, setSavedAt] = useState(0)
+  return (
+    <>
+      {can(currentUser, 'suppliers.pending') && (
+        <div className="page-head">
+          <span />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setPendingOpen(true)}
+          >
+            <ReceiptText size={15} aria-hidden="true" />
+            فاتورة مورد مبدئية
+          </button>
+        </div>
+      )}
+      <TillsBody key={savedAt} currentUser={currentUser} currentShift={currentShift} />
+      {pendingOpen && (
+        <PendingInvoiceModal
+          currentUser={currentUser}
+          currentShift={currentShift}
+          onClose={() => setPendingOpen(false)}
+          onSaved={() => {
+            setSavedAt(Date.now())
+            triggerCustomAlert?.('تم تسجيل الفاتورة المبدئية. تُكمل الأصناف من شاشة الموردين.')
+          }}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
     </>
   )
 }

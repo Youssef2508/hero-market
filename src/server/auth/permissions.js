@@ -183,6 +183,13 @@ const PERMISSIONS = [
     description: 'إضافة الموردين وفواتير الشراء والسداد'
   },
   {
+    // Preliminary supplier invoice at the till (D-064): total and payment, no lines, no stock.
+    key: 'suppliers.pending',
+    module: 'suppliers',
+    label: 'فاتورة مورد مبدئية',
+    description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
+  },
+  {
     key: 'checks.manage',
     module: 'finance',
     // Cheque processing is removed (owner, 2026-10-21, D-060): this key grants nothing any more and
@@ -333,7 +340,8 @@ const SYSTEM_ROLES = [
       'pos.credit',
       'shifts.operate',
       'tills.operate',
-      'sales.return_request'
+      'sales.return_request',
+      'suppliers.pending'
     ]
   },
   {

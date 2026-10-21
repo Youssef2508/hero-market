@@ -81,3 +81,33 @@ test('values cannot inject printer tags or columns', () => {
   assert.ok(!text.includes('[BIG]x'))
   assert.ok(text.includes('ملاحظات: a b'))
 })
+
+test('the close report prints the totals of the four methods and what the money was (D-064)', () => {
+  const rep = {
+    ...report,
+    expectedTotal: 295,
+    actualTotal: 290,
+    varianceTotal: -5,
+    creditSales: { count: 2, total: 80 },
+    partialSales: { count: 1, total: 30, paidNow: 10, unpaid: 20 },
+    collections: 35,
+    supplierPayments: { withInvoices: 400, settlements: 200 },
+    treasuryTransfers: { cash: 240, visa: 10, wallet: 5, instapay: 35 }
+  }
+  const text = buildCloseReportLines(rep, opts).join('\n')
+  for (const s of [
+    '[C]الإجمالي',
+    'المتوقع|295.00 ج.م',
+    'الفعلي|290.00 ج.م',
+    'الفرق|عجز 5.00',
+    'مبيعات آجل (2)|80.00 ج.م',
+    'مدفوع منها|10.00 ج.م',
+    'متبقي على العملاء|20.00 ج.م',
+    'تحصيلات ديون عملاء|35.00 ج.م',
+    'مدفوعات فواتير موردين|400.00 ج.م',
+    'سداد مديونيات موردين|200.00 ج.م',
+    '[C]المحوَّل إلى الخزنة',
+    'انستا باي|35.00 ج.م'
+  ])
+    assert.ok(text.includes(s), s)
+})

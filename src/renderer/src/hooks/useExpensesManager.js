@@ -9,6 +9,7 @@ const emptyForm = () => ({
   categoryId: '',
   description: '',
   destination: '',
+  method: 'cash',
   clientRef: newClientRef()
 })
 
@@ -69,6 +70,7 @@ export function useExpensesManager({
         categoryId: newExpenseForm.categoryId ? Number(newExpenseForm.categoryId) : null,
         description: newExpenseForm.description,
         destination: dest,
+        method: newExpenseForm.method || 'cash',
         currentShiftId: dest === 'shift' && currentShift ? currentShift.id : null,
         clientRef: newExpenseForm.clientRef
       })

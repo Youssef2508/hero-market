@@ -3,7 +3,7 @@
 // Formulas and rules: .docs/FINANCIAL_RECONCILIATION.md §4 and §8.
 const { badRequest, conflict, notFound } = require('../errors')
 const treasury = require('../money/treasury')
-const { TYPES, CREDIT_TYPES, LABELS, methodOf, round2 } = require('../money/methods')
+const { TYPES, CREDIT_TYPES, LABELS, METHODS, methodOf, round2 } = require('../money/methods')
 
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
 const date = { type: ['string', 'null'], pattern: '^(\\d{4}-\\d{2}-\\d{2})?$' }
@@ -20,7 +20,14 @@ module.exports = function moneyModule(app) {
              FROM treasury_ledger GROUP BY kind ORDER BY kind`
         )
       ).rows
-      return { balance: await treasury.balance(ctx.pool), byKind, labels: treasury.KIND_LABELS }
+      // D-064: one balance per payment method; their sum is the treasury total.
+      return {
+        balance: await treasury.balance(ctx.pool),
+        balances: await treasury.balances(ctx.pool),
+        byKind,
+        labels: treasury.KIND_LABELS,
+        methodLabels: LABELS
+      }
     }
   })
 
@@ -33,6 +40,7 @@ module.exports = function moneyModule(app) {
         from: date,
         to: date,
         kind: { type: ['string', 'null'], enum: [null, ...Object.keys(treasury.KIND_LABELS)] },
+        method: { type: ['string', 'null'], enum: [null, ...METHODS] },
         userId: { type: ['integer', 'null'] },
         limit: { type: 'integer', minimum: 1, maximum: 1000 }
       }
@@ -47,6 +55,7 @@ module.exports = function moneyModule(app) {
       if (f.from) add('t.created_at >= ?::date', f.from)
       if (f.to) add("t.created_at < ?::date + interval '1 day'", f.to)
       if (f.kind) add('t.kind = ?', f.kind)
+      if (f.method) add('t.method = ?', f.method)
       if (f.userId) add('t.user_id = ?', f.userId)
       p.push(f.limit || 500)
       const rows = (
@@ -61,7 +70,7 @@ module.exports = function moneyModule(app) {
         )
       ).rows
       // running_balance is computed over the filtered rows; the true balance comes from summary.
-      return { rows, labels: treasury.KIND_LABELS }
+      return { rows, labels: treasury.KIND_LABELS, methodLabels: LABELS }
     }
   })
 
@@ -76,6 +85,7 @@ module.exports = function moneyModule(app) {
         kind: { type: 'string', enum: ['deposit', 'withdrawal', 'adjustment'] },
         // deposit / withdrawal: positive; adjustment: signed (+ adds to the treasury).
         amount: { type: 'number' },
+        method: { type: 'string', enum: METHODS },
         reason: { type: 'string', maxLength: 300 },
         clientRef: ref
       }
@@ -89,6 +99,7 @@ module.exports = function moneyModule(app) {
         const amount = b.kind === 'withdrawal' ? -Math.abs(b.amount) : b.amount
         const entry = await treasury.post(db, ctx, {
           kind: b.kind,
+          method: b.method || 'cash',
           amount,
           description: `${treasury.KIND_LABELS[b.kind]}${reason ? `: ${reason}` : ''}`,
           reason,
@@ -126,6 +137,7 @@ module.exports = function moneyModule(app) {
           throw conflict('تُعكس هذه الحركة من مكانها (الوردية أو المصروف أو حساب العميل/المورد).')
         const entry = await treasury.post(db, ctx, {
           kind: 'reversal',
+          method: e.method,
           amount: -Number(e.amount),
           reversesId: e.id,
           description: `عكس الحركة #${e.id} (${treasury.KIND_LABELS[e.kind]})`,

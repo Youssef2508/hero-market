@@ -6,6 +6,7 @@ const { postMovement } = require('../inventory/stock')
 const { toBaseQty, kindRule } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
 const { methodOf } = require('../money/methods')
+const { addMovement } = require('../money/shiftLedger')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -127,10 +128,14 @@ async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
   const method = methodOf(sale.payment_type) || 'cash'
   if (cash > 0) {
     shiftId = await refundShift(db, ctx, currentShiftId, sale)
-    await db.query(
-      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0), $4)`,
-      [shiftId, cash, label.cash, method]
-    )
+    await addMovement(db, {
+      shiftId,
+      type: 'outflow',
+      amount: cash,
+      description: label.cash,
+      method,
+      kind: 'refund'
+    })
   }
   // cash: what left the drawer; paidBack: what went back by the sale's own method (cash included).
   return {

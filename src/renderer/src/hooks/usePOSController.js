@@ -37,6 +37,8 @@ export function usePOSController({
   paidAmount,
   setPaidAmount,
   paymentType,
+  upfrontMethod,
+  setUpfrontMethod,
   setPaymentType,
   clientName,
   setClientName,
@@ -527,6 +529,7 @@ export function usePOSController({
         manualDiscount: manualDiscount || undefined,
         paymentType,
         paidAmount: paidAmount ? parseFloat(paidAmount) || 0 : null,
+        upfrontMethod: paymentType === 'دفع جزئي' ? upfrontMethod || 'cash' : undefined,
         appliedCredit: parseFloat(appliedCredit) || 0,
         depositChange: parseFloat(depositChange) || 0,
         isDelivery: !!isDelivery,
@@ -646,6 +649,7 @@ export function usePOSController({
       setSelectedClient(null)
       setClientSearchResults([])
       setPaymentType('نقدي')
+      if (setUpfrontMethod) setUpfrontMethod('cash')
       try {
         if (fetchStats) fetchStats()
         if (fetchClientsList) fetchClientsList()

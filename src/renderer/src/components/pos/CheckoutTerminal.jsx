@@ -202,6 +202,8 @@ function CheckoutTerminal({
   clientSearchResults,
   selectClient,
   paymentType,
+  upfrontMethod,
+  setUpfrontMethod,
   setPaymentType,
   cartTotal,
   handleCheckout,
@@ -863,10 +865,25 @@ function CheckoutTerminal({
           </div>
 
           {paymentType === 'دفع جزئي' && (
-            <p className="checkout-note">
-              <Info size={14} aria-hidden="true" />
-              المبلغ المدفوع يُسجَّل مقدماً، والمتبقي من الفاتورة يُضاف لحساب العميل.
-            </p>
+            <>
+              <p className="checkout-note">
+                <Info size={14} aria-hidden="true" />
+                المبلغ المدفوع يُسجَّل مقدماً، والمتبقي من الفاتورة يُضاف لحساب العميل.
+              </p>
+              <label className="field">
+                <span className="field-label">طريقة دفع المقدَّم</span>
+                <select
+                  className="input"
+                  value={upfrontMethod || 'cash'}
+                  onChange={(e) => setUpfrontMethod?.(e.target.value)}
+                >
+                  <option value="cash">نقدي</option>
+                  <option value="visa">فيزا</option>
+                  <option value="wallet">محفظة</option>
+                  <option value="instapay">انستا باي</option>
+                </select>
+              </label>
+            </>
           )}
 
           <div className="customer">

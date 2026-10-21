@@ -2,6 +2,7 @@
 // Customers (useClientsManager): directory, monthly report, profile, add/edit/delete, repayments.
 const { badRequest, conflict, notFound } = require('../errors')
 const treasury = require('../money/treasury')
+const { addMovement, recorded } = require('../money/shiftLedger')
 const { METHODS } = require('../money/methods')
 
 const path = require('path')
@@ -341,14 +342,14 @@ module.exports = function customersModule(app) {
         const c = (await db.query('SELECT * FROM clients WHERE id = $1 FOR UPDATE', [clientId]))
           .rows[0]
         if (!c) throw notFound('العميل غير موجود.')
+        // A retried collection (same request id) is recorded once (D-064).
+        if (clientRef && (await recorded(db, `client-pay:${clientRef}`)))
+          return (await db.query('SELECT * FROM clients WHERE id = $1', [clientId])).rows[0]
         const dest = await treasury.resolveDestination(db, ctx, { destination, currentShiftId })
-        if (dest.destination === 'treasury' && method !== 'cash')
-          throw badRequest(
-            'الخزنة نقدية فقط: التحصيل بفيزا أو محفظة أو انستا باي يُسجَّل في الوردية.'
-          )
         if (dest.destination === 'treasury') {
           const entry = await treasury.post(db, ctx, {
             kind: 'customer_payment',
+            method,
             amount,
             refType: 'client',
             refId: c.id,
@@ -376,10 +377,15 @@ module.exports = function customersModule(app) {
           ]
         )
         if (dest.destination === 'shift') {
-          await db.query(
-            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0), $4)`,
-            [dest.shift.id, amount, `سداد دين العميل: ${c.name}`, method]
-          )
+          await addMovement(db, {
+            shiftId: dest.shift.id,
+            type: 'inflow',
+            amount,
+            description: `سداد دين العميل: ${c.name}`,
+            method,
+            kind: 'customer_payment',
+            clientRef: clientRef ? `client-pay:${clientRef}` : null
+          })
         }
         await ctx.audit(
           db,

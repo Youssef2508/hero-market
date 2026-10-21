@@ -111,3 +111,71 @@ test('0016 keeps every figure of existing shifts and fills the new columns from 
     fs.rmSync(tmp, { recursive: true, force: true })
   }
 })
+
+test('0018 classifies existing shift movements from their texts and keeps every amount', async (t) => {
+  if (!requireDb(t)) return
+  const fresh = await freshDatabase()
+  const pool = createPool(fresh.url, { max: 2 })
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-mig18-'))
+  try {
+    for (const m of listMigrations().filter((x) => Number(x.version) < 18))
+      fs.copyFileSync(
+        path.join(__dirname, '../../src/server/db/migrations', `${m.name}.sql`),
+        path.join(tmp, `${m.name}.sql`)
+      )
+    await migrate(pool, { dir: tmp, logger: quiet })
+    const c = await pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query("SELECT set_config('hm.bulk_load', 'on', true)")
+      await c.query(`INSERT INTO users (id, username, role) VALUES (1, 'a', 'cashier')`)
+      await c.query(`INSERT INTO shifts (id, user_id, start_time, end_time, initial_cash, status)
+        VALUES (1, 1, '2026-10-01 08:00', '2026-10-01 20:00', 100, 'closed')`)
+      await c.query(`INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES
+        (1, 'outflow', 5, 'مرتجع صنف أ للفاتورة #3', '2026-10-01 09:00'),
+        (1, 'outflow', 7, 'دفعة لمورد: س - فاتورة #1', '2026-10-01 09:00'),
+        (1, 'outflow', 8, 'سداد دين مورد: س', '2026-10-01 09:00'),
+        (1, 'inflow', 9, 'سداد دين العميل: ع', '2026-10-01 09:00'),
+        (1, 'inflow', 10, 'مقدم نقدي بيع دفع جزئي فاتورة رقم #4', '2026-10-01 09:00'),
+        (1, 'inflow', 2, 'باقي محفوظ كرصيد للعميل فاتورة رقم #5', '2026-10-01 09:00'),
+        (1, 'outflow', 11, 'مصروفات - تصنيف: عام', '2026-10-01 09:00'),
+        (1, 'outflow', 1, 'شيء آخر', '2026-10-01 09:00')`)
+      await c.query(
+        `INSERT INTO treasury_ledger (kind, amount, description, idem_key) VALUES ('deposit', 50, 'إيداع', 'd1')`
+      )
+      await c.query('COMMIT')
+    } finally {
+      c.release()
+    }
+    const amounts = async () =>
+      (await pool.query('SELECT id, amount::text, type FROM safe_ledger ORDER BY id')).rows
+    const before = await amounts()
+    await migrate(pool, { logger: quiet })
+    assert.deepEqual(await amounts(), before, 'amounts unchanged')
+    const kinds = (await pool.query('SELECT kind FROM safe_ledger ORDER BY id')).rows.map(
+      (r) => r.kind
+    )
+    assert.deepEqual(kinds, [
+      'refund',
+      'supplier_payment',
+      'supplier_settlement',
+      'customer_payment',
+      'sale_upfront',
+      'kept_change',
+      'expense',
+      'other'
+    ])
+    assert.equal((await pool.query('SELECT method FROM treasury_ledger')).rows[0].method, 'cash')
+    // The closed shift stays closed for money after the backfill.
+    await assert.rejects(
+      pool.query(
+        "INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES (1, 'inflow', 1, 'x', LOCALTIMESTAMP)"
+      ),
+      /مغلقة/
+    )
+  } finally {
+    await pool.end()
+    await fresh.dispose()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})

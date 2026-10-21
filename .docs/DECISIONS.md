@@ -709,3 +709,23 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **الورديات:** the page follows the owner's screenshots: a list with filters, and a full details page per shift.
 - **Barcodes:** a product's barcode can be changed. Its whole history follows it.
 - **No reasons asked:** the manual invoice discount needs no reason (this replaces the reason rule of D-057), and neither does a payment method correction.
+
+## D-064 Owner decisions: preliminary supplier invoices, per-method treasury, receivables, close (2026-10-21)
+
+- **Preliminary supplier invoice (replaces the "information only" notice of D-059 / SUP-01).**
+  - A cashier records a supplier, a total, a payment mode (cash, credit, partial), the amount paid now and its payment method.
+  - The payment is real and recorded once in the current shift (or, for treasury managers, the treasury). The rest becomes a supplier payable.
+  - Nothing reaches stock or cost until an administrator converts it into a detailed purchase. That conversion moves stock and the moving average and records no payment again.
+- **Final total ≠ preliminary total.** The detailed invoice is the true debt: the payable is adjusted by (final − preliminary), recorded as an explicit "تسوية فاتورة مبدئية" supplier ledger row. If more was paid than the final total, the supplier owes the store (a credit balance, as with customers).
+- **Per-method treasury.** The treasury is a ledger of the business's funds by method: cash, Visa, wallet and InstaPay, plus the overall total.
+  - At close, each method's **counted** amount goes to its own treasury balance (one row per method, once).
+  - The opening float is cash.
+  - Treasury expenses and debt payments state their method.
+- **Close (owner, 2026-10-21).**
+  - The cashier enters the four counted amounts. The total is calculated from them.
+  - The difference is shown per method and overall, in the shift details page and the closing report. Nothing is charged to cash by default.
+  - The total-only handover proposal is withdrawn.
+- **Receivables.**
+  - On account and partial sales stay.
+  - The part paid at once on a partial sale is recorded with its own payment method.
+  - Later collections reduce the customer's balance and appear in the collecting shift as collections, never as sales. Each request is recorded once.

@@ -97,7 +97,9 @@ export default function AppModals({
   selectedSupplier,
   newPurchaseForm,
   setNewPurchaseForm,
-  handleAddPurchase
+  handleAddPurchase,
+  convertingPending,
+  setConvertingPending
 }) {
   return (
     <>
@@ -209,6 +211,8 @@ export default function AppModals({
         showAddPurchaseModal={showAddPurchaseModal}
         setShowAddPurchaseModal={setShowAddPurchaseModal}
         selectedSupplier={selectedSupplier}
+        convertingPending={convertingPending}
+        setConvertingPending={setConvertingPending}
         newPurchaseForm={newPurchaseForm}
         setNewPurchaseForm={setNewPurchaseForm}
         handleAddPurchase={handleAddPurchase}

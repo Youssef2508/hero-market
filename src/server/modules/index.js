@@ -12,6 +12,7 @@ module.exports = [
   require('./finance'),
   require('./tills'),
   require('./money'),
+  require('./supplierInvoices'),
   require('./admin'),
   require('./settings'),
   require('./backup'),

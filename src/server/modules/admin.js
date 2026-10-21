@@ -411,6 +411,7 @@ module.exports = function adminModule(app) {
       ctx.tx(async (db) => {
         const tables = [
           'sale_payment_corrections',
+          'supplier_pending_invoices',
           'supplier_purchase_items',
           'sale_items',
           'sales',

@@ -34,6 +34,7 @@ const TABLES = [
   'supplier_ledger',
   'supplier_purchases',
   'supplier_purchase_items',
+  'supplier_pending_invoices',
   'checks_register',
   'expense_categories',
   'expenses',

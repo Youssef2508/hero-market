@@ -49,7 +49,7 @@ variance(S, m)    = actual(S, m) − expected(S, m)      > 0 surplus (زيادة
 - **Sign convention:** expected 1,000, actual 950 → variance −50, labelled **عجز 50.00**. Expected 1,000, actual 1,050 → +50, labelled **زيادة 50.00**.
 - **The 50 EGP rule:** a cash variance above 50 EGP still needs a supervisor's acknowledgement (owner, 2026-10-14). Cashless variances are reported but don't need one.
 
-## 4. Treasury (`treasury_ledger`, cash only)
+## 4. Treasury (`treasury_ledger`, by payment method since D-064)
 
 Each row has a signed amount (+ into the treasury, − out), a kind, an actor, a time and a reference (shift, expense, customer, supplier). There's also a unique idempotency key, and the reason when one is required.
 
@@ -70,9 +70,9 @@ treasury_balance = Σ treasury_ledger.amount        (may be negative: shown in r
 
 - **A transfer is not income.** The float and the close are transfers between the drawer and the treasury. They never count as sales or expenses.
 - **Expenses and refunds at close:** what the drawer paid during the shift is already missing from the counted cash. The close moves only the counted cash, so nothing is subtracted twice.
-- **Counted cash, not expected cash, goes to the treasury.** A shortage stays visible as the shift's cash variance. It is not covered by the treasury.
+- **Counted amounts, not expected amounts, go to the treasury** (D-064): one `shift_close` row per method. Each method's shortage or surplus stays visible as that method's variance; nothing is moved to cash.
 - **A float left in the drawer** for the next shift is part of the counted cash. It goes to the treasury at close and comes back as the next shift's float. The money is never counted twice.
-- **Cashless amounts never enter the treasury.** They settle with the bank or the wallet provider outside HeroMarket, and their reconciliation is the per-method variance at close.
+- **Cash and electronic balances stay apart** (D-064). The treasury has a balance per method (cash = physical money; Visa, wallet, InstaPay = electronic balances) and an overall total. A Visa amount is never cash.
 - **Rows are immutable.** A database trigger refuses UPDATE and DELETE except during a restore. A correction is a `reversal` or an `adjustment`.
 - **At the upgrade to 1.5.0,** the treasury starts at 0. Earlier shifts are not replayed: that would invent a balance. The owner records the counted treasury once, as a deposit with the reason "رصيد افتتاحي".
 
@@ -122,3 +122,34 @@ treasury_balance = Σ treasury_ledger.amount        (may be negative: shown in r
 - **Treasury and shifts:** the treasury balance equals Σ deposits − Σ withdrawals − Σ floats + Σ counted cash at close − Σ treasury expenses + Σ customer receipts − Σ supplier payments ± adjustments and reversals.
 - **Retries:** every idempotency key appears at most once.
 - **Cashless:** no cashless sale or refund ever changes `expected_cash` or the treasury.
+
+## 10. Movement kinds, receivables and payables (D-064, migration 0018)
+
+- **Movement kinds.** Every `safe_ledger` row has a kind:
+  - `sale_upfront`: the part of a دفع جزئي sale paid at once, by its method;
+  - `kept_change`;
+  - `customer_payment`: a collection, never a sale;
+  - `supplier_payment`: paid with an invoice or a preliminary invoice;
+  - `supplier_settlement`: a later payment of a payable;
+  - `expense`, `refund`, `other`.
+
+  The drawer formula of §3 is unchanged. The kinds feed the report's categories.
+
+- **Retries.** A request id (`client_ref`) on the row makes a retried collection, settlement or expense a no-op.
+- **Customer receivable.**
+  - آجل adds the whole sale; دفع جزئي adds the sale minus what was paid at once.
+  - A later collection reduces it and is a `customer_payment` of the collecting shift (or a treasury `customer_payment`).
+- **Supplier payable, preliminary invoice.**
+  - Payable += total − paid now. Supplier ledger: `purchase` (total) and `payment` (paid now).
+  - The payment is a `supplier_payment` of the shift by its method, or a treasury `supplier_payment`.
+  - No stock movement.
+- **Supplier payable, conversion.**
+  - Stock and moving-average cost from the lines (`receiveStock`), with no payment.
+  - Payable += final − preliminary, as a supplier ledger `adjustment` row (negative when the final total is lower).
+  - Exactly once: a converted invoice refuses a second conversion, and the same request id returns the first result.
+- **Later settlement.** Payable −= amount; a `supplier_settlement` of the shift by its method, or a treasury `supplier_payment`.
+- **Report categories.**
+  - per method: sales, collections, supplier payments, expenses, refunds;
+  - credit sales; partial sales (paid now and unpaid); collections; supplier payments (with invoices and settlements);
+  - the expected, actual and difference totals;
+  - the transfers to the treasury at close.

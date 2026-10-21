@@ -211,7 +211,7 @@ export function useClientsManager({
   }
 
   // destination: 'shift' or 'treasury' (owner feedback CUST-02), chosen on the form.
-  const handleRepayment = async (destination) => {
+  const handleRepayment = async (destination, method = 'cash') => {
     const amount = parseFloat(repaymentAmount) || 0
     if (amount <= 0) return
     if (!selectedAdminClient) return
@@ -227,6 +227,7 @@ export function useClientsManager({
           clientId: selectedAdminClient.id,
           amount,
           destination,
+          method,
           currentShiftId: destination === 'shift' && currentShift ? currentShift.id : null,
           clientRef
         })

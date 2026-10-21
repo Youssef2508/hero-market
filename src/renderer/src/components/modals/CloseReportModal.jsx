@@ -1,15 +1,6 @@
 import { useState } from 'react'
 import { ClipboardCheck, Printer } from 'lucide-react'
-import { formatMoney } from '../../lib/utils'
-
-const METHODS = [
-  ['cash', 'نقدي'],
-  ['visa', 'فيزا'],
-  ['wallet', 'محفظة'],
-  ['instapay', 'انستا باي']
-]
-const m = (n) => `${formatMoney(n)} ج.م`
-const tone = (v) => (Math.abs(v) < 0.005 ? '' : v < 0 ? 'text-danger' : 'text-success')
+import { MethodReconciliation, MoneyCategories } from '../admin/ShiftMoney'
 
 /**
  * The saved close of a shift (owner feedback SHIFT-02): expected, counted and the difference per
@@ -50,60 +41,14 @@ export default function CloseReportModal({ data, onDone, title, doneLabel = 'ت�
           </p>
         </div>
         <div className="modal-body">
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>طريقة الدفع</th>
-                  <th className="num">المبيعات</th>
-                  <th className="num">المتوقع</th>
-                  {closed && <th className="num">الفعلي</th>}
-                  {closed && <th>الفرق</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {METHODS.map(([k, label]) => (
-                  <tr key={k}>
-                    <td className="cell-strong">{label}</td>
-                    <td className="num">{m(r.salesByMethod?.[k])}</td>
-                    <td className="num">{m(r.expected?.[k])}</td>
-                    {closed && <td className="num">{m(r.actual?.[k])}</td>}
-                    {closed && (
-                      <td className={tone(r.variance?.[k] || 0)}>{r.varianceLabels?.[k]}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <dl className="kv">
-            <dt>العهدة الافتتاحية</dt>
-            <dd>{m(r.openingFloat)}</dd>
-            <dt>إجمالي المبيعات ({r.invoiceCount} فاتورة)</dt>
-            <dd>{m(r.totalSales)}</dd>
-            <dt>المصروفات النقدية ({r.expenses?.count || 0})</dt>
-            <dd>{m(r.cash?.expenses)}</dd>
-            <dt>المرتجعات ({r.returns?.count || 0})</dt>
-            <dd>{m(r.returns?.total)}</dd>
-            {r.manualDiscounts?.count > 0 && (
-              <>
-                <dt>الخصومات اليدوية ({r.manualDiscounts.count})</dt>
-                <dd>{m(r.manualDiscounts.total)}</dd>
-              </>
-            )}
-            {closed && (
-              <>
-                <dt className="fw-bold">صافي الوردية (الفعلي)</dt>
-                <dd className="fw-bold">{m(r.netTotal)}</dd>
-              </>
-            )}
-            {r.acknowledgedBy && (
-              <>
-                <dt>اعتمد الفرق</dt>
-                <dd>{r.acknowledgedBy}</dd>
-              </>
-            )}
-          </dl>
+          <MethodReconciliation report={r} />
+          <MoneyCategories report={r} />
+          {r.acknowledgedBy && (
+            <dl className="kv">
+              <dt>اعتمد الفرق</dt>
+              <dd>{r.acknowledgedBy}</dd>
+            </dl>
+          )}
         </div>
         <div className="modal-footer">
           {closed && (

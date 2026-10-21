@@ -26,7 +26,8 @@ const { priceCart, activeRules } = require('../pricing/discounts')
 const { ADDRESSES } = require('./customers').helpers
 
 // Cash, Visa, wallet, InstaPay; on account (D-061). The list and its mapping: money/methods.js.
-const { PAYMENT_TYPES, CREDIT_TYPES, storedType } = require('../money/methods')
+const { PAYMENT_TYPES, CREDIT_TYPES, METHODS, LABELS, storedType } = require('../money/methods')
+const { addMovement } = require('../money/shiftLedger')
 const CASH_TENDER_TYPES = ['نقدي', 'دفع جزئي']
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
@@ -491,6 +492,8 @@ module.exports = function posModule(app) {
         expectedTotal: { type: 'number' },
         paymentType: { type: 'string', enum: PAYMENT_TYPES },
         paidAmount: { type: ['number', 'null'], minimum: 0 },
+        // دفع جزئي (D-064): how the part paid at once was paid; cash unless stated.
+        upfrontMethod: { type: 'string', enum: METHODS },
         appliedCredit: { type: 'number', minimum: 0 },
         depositChange: { type: 'number', minimum: 0 },
         isDelivery: { type: 'boolean' },
@@ -862,10 +865,18 @@ module.exports = function posModule(app) {
               await ledger('sale', remaining, `متبقي بيع دفع جزئي فاتورة رقم #${saleId}`)
             }
             if (upfront > 0) {
-              await db.query(
-                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
-                [shift.id, upfront, `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`]
-              )
+              const m = b.upfrontMethod || 'cash'
+              await addMovement(db, {
+                shiftId: shift.id,
+                type: 'inflow',
+                amount: upfront,
+                description:
+                  m === 'cash'
+                    ? `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`
+                    : `مقدم بيع دفع جزئي (${LABELS[m]}) فاتورة رقم #${saleId}`,
+                method: m,
+                kind: 'sale_upfront'
+              })
             }
           }
           if (credit > 0) {
@@ -884,10 +895,13 @@ module.exports = function posModule(app) {
             // K-36: the kept change is cash that stays in the drawer. Wallet payments never
             // reach the drawer, so only cash tenders record it.
             if (CASH_TENDER_TYPES.includes(b.paymentType)) {
-              await db.query(
-                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
-                [shift.id, deposit, `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`]
-              )
+              await addMovement(db, {
+                shiftId: shift.id,
+                type: 'inflow',
+                amount: deposit,
+                description: `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`,
+                kind: 'kept_change'
+              })
             }
           }
         }

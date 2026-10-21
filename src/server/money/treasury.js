@@ -1,8 +1,9 @@
 'use strict'
 // Treasury ledger (owner feedback CASH-01 / TREAS-01, .docs/FINANCIAL_RECONCILIATION.md §4): the
-// store's cash outside the drawers. Every posting goes through post(); rows are never changed.
+// business's funds by payment method – cash, Visa, wallet, InstaPay (D-064) – outside the drawers.
+// Every posting goes through post(); rows are never changed.
 const { badRequest, forbidden, conflict, shiftRequired } = require('../errors')
-const { round2 } = require('./methods')
+const { round2, METHODS } = require('./methods')
 
 const KIND_LABELS = {
   opening_float: 'عهدة افتتاح وردية',
@@ -24,6 +25,8 @@ const KIND_LABELS = {
 async function post(db, ctx, e) {
   const amount = round2(e.amount)
   if (!amount) return null
+  const method = e.method || 'cash'
+  if (!METHODS.includes(method)) throw badRequest('طريقة دفع غير معروفة.')
   const values = [
     e.kind,
     amount,
@@ -35,18 +38,19 @@ async function post(db, ctx, e) {
     e.reason ? String(e.reason).trim().slice(0, 300) : null,
     ctx.user?.id ?? null,
     ctx.user?.username ?? null,
-    e.idemKey ?? null
+    e.idemKey ?? null,
+    method
   ]
   const ins = await db.query(
-    `INSERT INTO treasury_ledger (kind, amount, shift_id, ref_type, ref_id, reverses_id, description, reason, user_id, username, idem_key, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, LOCALTIMESTAMP(0))
+    `INSERT INTO treasury_ledger (kind, amount, shift_id, ref_type, ref_id, reverses_id, description, reason, user_id, username, idem_key, method, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, LOCALTIMESTAMP(0))
      ON CONFLICT (idem_key) DO NOTHING RETURNING *`,
     values
   )
   if (ins.rows[0]) return ins.rows[0]
   const prior = (await db.query('SELECT * FROM treasury_ledger WHERE idem_key = $1', [e.idemKey]))
     .rows[0]
-  if (!prior || prior.kind !== e.kind || round2(prior.amount) !== amount)
+  if (!prior || prior.kind !== e.kind || round2(prior.amount) !== amount || prior.method !== method)
     throw conflict('هذا الطلب سُجّل من قبل ببيانات مختلفة.')
   return { ...prior, duplicate: true }
 }
@@ -54,6 +58,18 @@ async function post(db, ctx, e) {
 async function balance(db) {
   return round2(
     (await db.query('SELECT COALESCE(SUM(amount), 0)::float8 AS b FROM treasury_ledger')).rows[0].b
+  )
+}
+
+/** Balance of each payment method (D-064); their sum is balance(). */
+async function balances(db) {
+  const rows = (
+    await db.query(
+      'SELECT method, COALESCE(SUM(amount), 0)::float8 AS b FROM treasury_ledger GROUP BY method'
+    )
+  ).rows
+  return Object.fromEntries(
+    METHODS.map((m) => [m, round2(rows.find((r) => r.method === m)?.b || 0)])
   )
 }
 
@@ -105,4 +121,4 @@ async function resolveDestination(db, ctx, { destination, currentShiftId }) {
   return { destination: 'shift', shift }
 }
 
-module.exports = { KIND_LABELS, post, balance, resolveDestination }
+module.exports = { KIND_LABELS, post, balance, balances, resolveDestination }

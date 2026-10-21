@@ -4,6 +4,16 @@ import { EmptyState, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { api, can, newClientRef } from '../../lib/api'
 
+// D-064: the treasury holds the business's funds by payment method; cash is physical money, the
+// others are card, wallet and InstaPay balances.
+const METHODS = [
+  ['cash', 'نقدي (مال فعلي)'],
+  ['visa', 'فيزا'],
+  ['wallet', 'محفظة'],
+  ['instapay', 'انستا باي']
+]
+const METHOD_SHORT = { cash: 'نقدي', visa: 'فيزا', wallet: 'محفظة', instapay: 'انستا باي' }
+
 const signed = (n) => `${n < 0 ? '−' : n > 0 ? '+' : ''}${formatMoney(Math.abs(n))} ج.م`
 
 /**
@@ -15,7 +25,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
   const [summary, setSummary] = useState(null)
   const [rows, setRows] = useState([])
   const [labels, setLabels] = useState({})
-  const [filters, setFilters] = useState({ from: '', to: '', kind: '' })
+  const [filters, setFilters] = useState({ from: '', to: '', kind: '', method: '' })
   const [form, setForm] = useState(null) // { kind, amount, reason, clientRef }
   const [busy, setBusy] = useState(false)
   const canManage = can(currentUser, 'treasury.manage')
@@ -27,7 +37,8 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
         api('treasury.entries', {
           from: filters.from || null,
           to: filters.to || null,
-          kind: filters.kind || null
+          kind: filters.kind || null,
+          method: filters.method || null
         })
       ])
       setSummary(s)
@@ -42,7 +53,8 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
     load()
   }, [load])
 
-  const openForm = (kind) => setForm({ kind, amount: '', reason: '', clientRef: newClientRef() })
+  const openForm = (kind) =>
+    setForm({ kind, amount: '', reason: '', method: 'cash', clientRef: newClientRef() })
 
   const save = async (e) => {
     e.preventDefault()
@@ -56,6 +68,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
       await api('treasury.record', {
         kind: form.kind,
         amount,
+        method: form.method,
         reason: form.reason,
         clientRef: form.clientRef
       })
@@ -104,7 +117,8 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
               الخزنة
             </h2>
             <div className="card-subtitle">
-              نقدية المتجر خارج الأدراج. الفيزا والمحافظ وانستا باي لا تدخل الخزنة.
+              أموال المتجر خارج الأدراج حسب طريقة الدفع: النقدي مال فعلي، والفيزا والمحفظة وانستا
+              باي أرصدة إلكترونية. يُحوَّل إليها ما عُدّ من كل طريقة عند إغلاق كل وردية.
             </div>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={load}>
@@ -114,10 +128,21 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
         </div>
         <div className="card-body">
           <div className="audit-expected">
-            <span>رصيد الخزنة الحالي</span>
+            <span>إجمالي رصيد الخزنة</span>
             <strong className={`money ${balance < 0 ? 'text-danger' : 'text-success'}`}>
               {signed(balance)}
             </strong>
+          </div>
+          <div className="method-tiles">
+            {METHODS.map(([k, label]) => {
+              const b = summary?.balances?.[k] ?? 0
+              return (
+                <div key={k} className={`method-tile tone-${k}`}>
+                  <span>{label}</span>
+                  <strong className={b < 0 ? 'text-danger' : ''}>{signed(b)}</strong>
+                </div>
+              )
+            })}
           </div>
           {balance < 0 && (
             <p className="field-error" role="alert">
@@ -190,6 +215,21 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
               />
             </label>
             <label className="field">
+              <span className="field-label">طريقة الدفع</span>
+              <select
+                className="input"
+                value={filters.method}
+                onChange={(e) => setFilters({ ...filters, method: e.target.value })}
+              >
+                <option value="">الكل</option>
+                {METHODS.map(([k]) => (
+                  <option key={k} value={k}>
+                    {METHOD_SHORT[k]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
               <span className="field-label">النوع</span>
               <select
                 className="input"
@@ -221,6 +261,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
                     <th>#</th>
                     <th>الوقت</th>
                     <th>النوع</th>
+                    <th>الطريقة</th>
                     <th>البيان</th>
                     <th className="num">المبلغ</th>
                     <th>بواسطة</th>
@@ -237,6 +278,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
                         <Timestamp value={r.created_at} />
                       </td>
                       <td>{labels[r.kind] || r.kind}</td>
+                      <td>{METHOD_SHORT[r.method] || r.method}</td>
                       <td>
                         {r.description}
                         {r.reason && r.kind === 'reversal' ? ` – ${r.reason}` : ''}
@@ -342,6 +384,20 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
               )}
             </div>
             <div className="modal-body">
+              <label className="field">
+                <span className="field-label">طريقة الدفع *</span>
+                <select
+                  className="input"
+                  value={form.method}
+                  onChange={(e) => setForm({ ...form, method: e.target.value })}
+                >
+                  {METHODS.map(([k, label]) => (
+                    <option key={k} value={k}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field">
                 <span className="field-label">المبلغ (ج.م) *</span>
                 <input

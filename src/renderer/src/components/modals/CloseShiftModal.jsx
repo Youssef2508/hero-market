@@ -16,25 +16,35 @@ const CASHLESS = [
   { key: 'instapay', label: 'انستا باي' }
 ]
 
-/** Counted Visa, wallet and InstaPay amounts (every close sends them). */
-function CashlessCount({ values, onChange }) {
+/**
+ * Counted Visa, wallet and InstaPay amounts (every close sends them), and the total of the four
+ * counted amounts (owner, 2026-10-21, D-064). Only what the user typed is added: nothing expected.
+ */
+function CashlessCount({ values, onChange, cash }) {
+  const total = (Number(cash) || 0) + Object.values(countedOf(values)).reduce((a, b) => a + b, 0)
   return (
-    <div className="two-col">
-      {CASHLESS.map((c) => (
-        <label className="field" key={c.key}>
-          <span className="field-label">{c.label} (ج.م)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            className="input input-money"
-            value={values[c.key]}
-            placeholder="0.00"
-            onChange={(e) => onChange({ ...values, [c.key]: e.target.value })}
-          />
-        </label>
-      ))}
-    </div>
+    <>
+      <div className="two-col">
+        {CASHLESS.map((c) => (
+          <label className="field" key={c.key}>
+            <span className="field-label">{c.label} (ج.م)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input input-money"
+              value={values[c.key]}
+              placeholder="0.00"
+              onChange={(e) => onChange({ ...values, [c.key]: e.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="audit-expected">
+        <span>إجمالي المبالغ الفعلية (نقدي + فيزا + محفظة + انستا باي)</span>
+        <strong className="money">{m(total)} ج.م</strong>
+      </div>
+    </>
   )
 }
 
@@ -107,7 +117,7 @@ const BlindCloseShiftModal = ({
               autoFocus
             />
           </label>
-          <CashlessCount values={count} onChange={setCount} />
+          <CashlessCount values={count} onChange={setCount} cash={actualEndCash} />
         </div>
         <div className="modal-footer">
           <button
@@ -238,7 +248,7 @@ const OwnerCloseShiftModal = ({
               autoFocus
             />
           </label>
-          <CashlessCount values={count} onChange={setCount} />
+          <CashlessCount values={count} onChange={setCount} cash={actualEndCash} />
         </div>
 
         <div className="modal-footer">

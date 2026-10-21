@@ -26,17 +26,17 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H)                                 | 0015                  |
 | PRINT-01     | Arabic RTL receipt and shift report                       | C               | Done with evidence (software); HW-02 pending                                                                 | none                  |
 | CASH-01      | Drawer ↔ treasury                                         | D               | Done with evidence (phase D)                                                                                 | 0016                  |
-| TREAS-01     | Treasury page and ledger                                  | D               | Done with evidence (phase D)                                                                                 | 0016                  |
+| TREAS-01     | Treasury page and ledger                                  | D               | Done with evidence (per payment method since D-064)                                                          | 0016                  |
 | PAY-01       | Payment methods, blind close                              | D               | Done with evidence (phase D; blind close enforced in the service)                                            | 0016                  |
 | PAY-02       | Change a sale's payment method                            | D               | Done with evidence (phase D)                                                                                 | 0016                  |
 | EXP-01       | Expense visibility                                        | D               | Done with evidence (phase D)                                                                                 | 0016                  |
 | EXP-03       | Admin expense without shift                               | D               | Done with evidence (phase D)                                                                                 | 0016                  |
-| CUST-02      | Debt payments without shift                               | D               | Done with evidence (phase D)                                                                                 | 0016                  |
+| CUST-02      | Debt payments without shift                               | D               | Done with evidence (collections by method, retries recorded once, D-064)                                     | 0016                  |
 | SHIFT-02     | Shift-close report                                        | D               | Done with evidence (software; HW-02 print of the close report pending)                                       | 0016                  |
-| SUP-01       | Supplier invoice notice                                   | E               | Not started (Q3 answered: amount paid, informational)                                                        | 0017                  |
-| SUP-02       | Purchase sale price, discount, posting                    | E               | Not started (Q9 answered: proportional, deterministic rounding)                                              | 0017                  |
+| SUP-01       | Supplier invoice notice                                   | E               | Done with evidence (preliminary invoice with real payment and payable, D-064)                                | 0017                  |
+| SUP-02       | Purchase sale price, discount, posting                    | E               | In progress (conversion with lines done; sale price on purchase and invoice discount allocation remain)      | 0017                  |
 | SUP-03       | Supplier opening balance, contact edit                    | E               | Not started                                                                                                  | 0017                  |
-| SUP-04       | Notice vs draft vs posted                                 | E               | Not started                                                                                                  | 0017                  |
+| SUP-04       | Notice vs draft vs posted                                 | E               | Done with evidence (preliminary ≠ posted; conversion moves stock once, D-064)                                | 0017                  |
 | INV-01       | Packages and loose units                                  | E               | In progress (exists; confirmation and acceptance tests missing)                                              | none                  |
 | CUST-01      | Customer code                                             | F               | Not started                                                                                                  | 0018                  |
 | PROD-01      | Edit barcode                                              | F               | Done with evidence (owner notes, 0017)                                                                       | 0018                  |
@@ -280,6 +280,50 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 
 ### Phases D–H
 
+### Owner decisions D-064 (2026-10-21, migration 0018): payables, receivables, per-method treasury, close
+
+- **Decided:**
+  - The owner answered the close question: the cashier enters the four counted amounts, as already built. The total is shown from them.
+  - The difference is per method and overall, on both the shift details page and the closing report. The total-only proposal is withdrawn.
+  - Each method's counted amount goes to its own treasury balance.
+- **Inferred from the model and recorded in D-064 (not invented):**
+  - the detailed invoice is the true debt, so the payable is adjusted by final − preliminary in an explicit ledger row;
+  - when more was paid than the final total, the supplier owes the store (a credit balance, as for customers).
+- **Built:**
+  - **Preliminary supplier invoices** (`supplierInvoices.*`, permission `suppliers.pending` for cashiers):
+    - stage A records the payment once, by its method, from the shift (or the treasury), plus the payable; no stock;
+    - stage B ("إكمال" on the suppliers screen, `suppliers.manage`) records the lines, stock and moving-average cost, with no payment, and an explicit adjustment for a different total;
+    - one conversion only; retries return the first result.
+  - **Treasury per method:** balances for cash, Visa, wallet and InstaPay plus the total; a method on every row, filter and form; one close transfer per method.
+  - **Movement kinds and retries:** `safe_ledger.kind` and `client_ref`. Collections, settlements and expenses are recorded once per request.
+  - **Receivables:** the part of a دفع جزئي sale paid at once has its own method at the till. Collections can be by any method.
+  - **Reports:**
+    - shift details and the closing report (screen and print) show per method the expected, actual and difference, with the totals;
+    - they also show credit and partial sales (paid now / unpaid), collections, supplier payments (with invoices / settlements) and the transfers to the treasury.
+  - **Payment method pickers:** on collections, supplier payments and expenses.
+  - **Purchase window:** the "شيك" option is removed (cheques are not processed).
+- **Opening and close screens:** the opening window shows only the drawer float (as since D-063). The close dialog shows the four counted amounts and their total.
+- **Migration 0018:** schema + data. It backfills the kinds from existing texts and changes no amount.
+  - Rollback: the installer's verified copy (Case B).
+  - Backup, restore and the system reset include `supplier_pending_invoices`; the new columns travel with their tables.
+- **Tests:**
+  - new `payablesReceivables.test.js` (7);
+  - `moneyMigration.test.js`: 0018 backfill on existing data;
+  - `closeReport.test.mjs`: totals and categories.
+- **Updated tests (owner rules):**
+  - `moneyModel.test.js`: cashless counted amounts now reach their treasury balances;
+  - `security.test.js`: the cashier holds `suppliers.pending`, and not `suppliers.manage`.
+- **UI evidence (dev app, `heromarket_qa`):**
+  - the opening window has one section and one input;
+  - preliminary invoice 250 with 100 paid shows 150 remaining;
+  - the blind dialog shows only the shift number and the cashier's own total;
+  - report rows per method and the total row; completion with a +10 difference;
+  - per-method treasury tiles; the details page reconciliation.
+- **Not done in this segment:**
+  - SUP-02: sale price entry on purchase, and the supplier invoice discount allocation;
+  - SUP-03: opening balance and contact edit;
+  - a "cancel" for a preliminary invoice entered by mistake (not requested; a reversal would need an owner rule).
+
 ### Owner notes after phase D (2026-10-21, D-063, migration 0017)
 
 1. **Payment methods only (no Momkn):**
@@ -458,5 +502,6 @@ Each requirement keeps the scope, acceptance criteria and tests listed in the sp
 | 2026-10-21 | A         | ANALYTICS-01, SCALE-01, USER-01, NAV-01, NAV-02; POS-01, EXP-02 and SHIFT-01 in part | npm test 266/266; lint 0 errors; UI runs in the dev app at 1353×706                     | Q4 at the shop                                    | Phase B (DISC-01)              |
 | 2026-10-21 | B         | DISC-01                                                                              | npm test 270/270; manualDiscount.test.js 4/4; UI in the dev app                         | —                                                 | Phase C                        |
 | 2026-10-21 | Decisions | Q4, Q6–Q9 recorded (D-060); payment methods note (D-061); INSTALL-01; NAV-02         | 283 → 286 tests; startupPhase.test.mjs, releaseContents.test.mjs, checksArchive.test.js | —                                                 | Phase D                        |
+| 2026-10-21 | D-064     | SUP-01, SUP-04, TREAS-01 (per method), CUST-02, close per method                     | 316/316 tests; payablesReceivables, moneyMigration 0018, closeReport; UI evidence above | —                                                 | SUP-02 rest, SUP-03, phase F   |
 | 2026-10-21 | D         | CASH-01, TREAS-01, PAY-01, PAY-02, EXP-01/02/03, CUST-02, SHIFT-01, SHIFT-02         | 295/295; moneyModel, moneyMigration, closeReport tests; UI and print evidence above     | Payment methods interpretation (D-061) to confirm | BACKUP-01, then phase E        |
 | 2026-10-21 | C         | PRINT-01 (software)                                                                  | npm test 273/273; printPreview.test.mjs; preview PNGs in reference-images               | HW-02 at the shop                                 | Phase D (money model; Q2, Q10) |

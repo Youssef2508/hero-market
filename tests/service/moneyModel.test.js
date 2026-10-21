@@ -293,8 +293,10 @@ test('a full shift reconciles per method, with the treasury, exactly once', asyn
   assert.equal(rep.returns.count, 2)
   assert.equal(rep.openingFloat, 200)
   assert.equal(rep.netTotal, r2(exp2.cash - 10 + exp2.visa + 5 + exp2.instapay))
-  // The counted cash went to the treasury once; a retry returns the same close.
-  const afterClose = 800 - 25 + 60 - 70 + (exp2.cash - 10)
+  // Each method's counted amount went to its treasury balance once (D-064); a retry returns the
+  // same close.
+  const cashAfter = 800 - 25 + 60 - 70 + (exp2.cash - 10)
+  const afterClose = cashAfter + exp2.visa + 5 + exp2.instapay
   assert.equal(await balance(), r2(afterClose))
   const retry = ok(await svc.call('shifts.close', body, mgr))
   assert.equal(retry.duplicate, true)
@@ -320,10 +322,32 @@ test('a full shift reconciles per method, with the treasury, exactly once', asyn
     expense: -25,
     customer_payment: 60,
     supplier_payment: -70,
-    shift_close: r2(exp2.cash - 10)
+    shift_close: r2(exp2.cash - 10 + exp2.visa + 5 + exp2.instapay)
   })
   const sum = ok(await svc.call('treasury.summary', {}, owner))
   assert.equal(sum.balance, r2(afterClose))
+  // Cash and the electronic balances stay apart; each is its counted amount at close.
+  assert.deepEqual(sum.balances, {
+    cash: r2(cashAfter),
+    visa: exp2.visa,
+    wallet: 5,
+    instapay: exp2.instapay
+  })
+  assert.equal(
+    (
+      await one(
+        "SELECT COUNT(*)::int n FROM treasury_ledger WHERE kind = 'shift_close' AND shift_id = $1",
+        [shift.id]
+      )
+    ).n,
+    4,
+    'one transfer per method'
+  )
+  // The report tells collections, supplier payments and transfers apart from sales.
+  assert.equal(rep.collections, 50)
+  assert.equal(rep.expectedTotal, r2(exp2.cash + exp2.visa + exp2.wallet + exp2.instapay))
+  assert.equal(rep.varianceTotal, -5)
+  assert.deepEqual(rep.treasuryTransfers, rep.actual)
   assert.equal((await svc.call('treasury.summary', {}, mgr)).status, 403)
   // Every idempotency key appears once.
   assert.equal(
