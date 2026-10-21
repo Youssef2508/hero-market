@@ -305,6 +305,8 @@ export function useAdminController({
     fetchExpensesList: expensesManager.fetchExpensesList,
     handleAddExpense: expensesManager.handleAddExpense,
     handleDeleteExpense: expensesManager.handleDeleteExpense,
+    expenseCategories: expensesManager.expenseCategories,
+    saveExpenseCategory: expensesManager.saveExpenseCategory,
 
     // bestSellersManager
     bsPeriod: bestSellersManager.bsPeriod,

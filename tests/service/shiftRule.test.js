@@ -34,6 +34,7 @@ before(async () => {
   await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
   await createUser(svc, { username: 'cashier', pin: '5173', roleKey: 'cashier' })
   await createUser(svc, { username: 'auditor', pin: '7319', roleKey: 'auditor' })
+  await createUser(svc, { username: 'manager', pin: '9517', roleKey: 'manager' })
   await seedProducts(
     svc,
     "INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, unit) VALUES ('A', 'صنف أ', 5, 10, 100, 'قطعة')"
@@ -108,13 +109,24 @@ test('without a shift the owner can work, but drawer cash answers shift_required
   )
   assert.equal(paid.status, 409)
   assert.equal(paid.body.error.code, 'shift_required')
-  const expense = await svc.call(
+  // 1.5.0 (EXP-03): the owner records an expense without a shift on the treasury; a manager
+  // (no treasury rights) still needs an open drawer.
+  const expense = ok(
+    await svc.call(
+      'expenses.create',
+      { amount: 10, description: 'شاي', currentShiftId: null },
+      ownerToken
+    )
+  )
+  assert.equal(expense.destination, 'treasury')
+  const manager = await login(svc, '9517')
+  const refused = await svc.call(
     'expenses.create',
     { amount: 10, description: 'شاي', currentShiftId: null },
-    ownerToken
+    manager
   )
-  assert.equal(expense.status, 409)
-  assert.equal(expense.body.error.code, 'shift_required')
+  assert.equal(refused.status, 409)
+  assert.equal(refused.body.error.code, 'shift_required')
   // After opening a shift the same sale goes through.
   const shift = ok(await svc.call('shifts.open', { startingCash: 0 }, ownerToken))
   ok(

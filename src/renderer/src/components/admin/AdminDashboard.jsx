@@ -23,6 +23,7 @@ const SalesTab = lazy(() => import('./SalesTab'))
 const ClientsTab = lazy(() => import('./ClientsTab'))
 const SuppliersTab = lazy(() => import('./SuppliersTab'))
 const ChecksTab = lazy(() => import('./ChecksTab'))
+const TreasuryTab = lazy(() => import('./TreasuryTab'))
 const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
 const BestSellersTab = lazy(() => import('./BestSellersTab'))
@@ -198,11 +199,23 @@ export default function AdminDashboard(props) {
         {adminTab === 'stats' && <StatsTab {...props} />}
         {adminTab === 'inventory' && <InventoryTab {...props} />}
         {adminTab === 'shifts' && (
-          <ShiftsTab shiftsHistory={props.shiftsHistory} shiftAudits={props.shiftAudits} />
+          <ShiftsTab
+            shiftsHistory={props.shiftsHistory}
+            shiftAudits={props.shiftAudits}
+            currentUser={currentUser}
+            triggerCustomAlert={props.triggerCustomAlert}
+          />
         )}
         {adminTab === 'sales' && <SalesTab {...props} />}
         {adminTab === 'suppliers' && <SuppliersTab {...props} />}
         {adminTab === 'checks' && <ChecksTab {...props} />}
+        {adminTab === 'treasury' && (
+          <TreasuryTab
+            currentUser={currentUser}
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
         {adminTab === 'expenses' && <ExpensesTab {...props} />}
         {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
         {adminTab === 'users' && <UsersTab {...props} />}

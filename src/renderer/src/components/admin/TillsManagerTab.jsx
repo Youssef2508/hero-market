@@ -52,6 +52,8 @@ const TillsManagerTab = ({
 
   // True once the drawer summary for the current shift has loaded (avoids showing misleading zeros).
   const [drawerReady, setDrawerReady] = useState(false)
+  // Blind close (PAY-01): without shifts.view_expected the service sends no drawer figures.
+  const [drawerBlind, setDrawerBlind] = useState(false)
 
   // Printing and deleting till movements: same permission the service checks.
   const isAdmin = can(currentUser, 'tills.manage')
@@ -69,6 +71,11 @@ const TillsManagerTab = ({
     try {
       // Same sums as before (sale value = original − discount, returns/suppliers/expenses split by ledger text).
       const r = await api('tills.drawerSummary', { shiftId })
+      setDrawerBlind(!!r.blind)
+      if (r.blind) {
+        setDrawerReady(true)
+        return
+      }
       const allSalesTotal = r.allSalesTotal || 0
       const cashSalesTotal = r.cashSalesTotal || 0
       const debtSalesTotal = r.debtSalesTotal || 0
@@ -216,7 +223,16 @@ const TillsManagerTab = ({
         )}
 
       {/* ── Supermarket drawer ── */}
-      {activeSubTab === 'supermarket' && (drawerReady || !currentShift) && (
+      {activeSubTab === 'supermarket' && drawerBlind && (
+        <div className="notice">
+          <Coins size={16} aria-hidden="true" />
+          <span>
+            أرصدة درج السوبر ماركت تظهر في تقرير إغلاق الوردية بعد تأكيده. يمكنك تسجيل حركات ممكن
+            والمحافظ من التبويبات الأخرى.
+          </span>
+        </div>
+      )}
+      {activeSubTab === 'supermarket' && !drawerBlind && (drawerReady || !currentShift) && (
         <>
           <div className="stat-grid stat-grid-3">
             <StatCard

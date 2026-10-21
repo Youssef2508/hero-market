@@ -41,9 +41,17 @@ export function useSalesManager({
 
   const selectSaleForDetail = async (sale) => {
     try {
-      const { items, discounts } = await api('sales.detail', { saleId: sale.id })
-      // Discounts of the invoice, incl. a manual one with who and why (D-057).
-      setSelectedSale({ ...sale, discounts: discounts || [] })
+      const { items, discounts, corrections, shiftOpen } = await api('sales.detail', {
+        saleId: sale.id
+      })
+      // Discounts of the invoice, incl. a manual one with who and why (D-057); payment method
+      // changes and whether its shift is still open (PAY-02).
+      setSelectedSale({
+        ...sale,
+        discounts: discounts || [],
+        corrections: corrections || [],
+        shiftOpen: !!shiftOpen
+      })
       setSelectedSaleItems(items || [])
     } catch (e) {
       console.error('Failed to load sale details:', e)

@@ -688,3 +688,17 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Interpretation, pending the owner's confirmation:**
   - On account (آجل) and partial payment are not methods. They are an unpaid balance on the customer's account.
   - They stay, so existing credit sales and debts are not broken.
+
+## D-062 Money model: treasury, payment methods, blind close (2026-10-21)
+
+- **Owner rules applied:** CASH-01, PAY-01 and D-059. This closes D-038, the shift-close formula. The formulas are in `FINANCIAL_RECONCILIATION.md`.
+- **Treasury:** a cash-only, immutable ledger.
+  - The opening float leaves it and the counted cash at close returns to it, each exactly once.
+  - Corrections are reversals or adjustments with a reason.
+  - It starts at 0 after the update; the owner records the counted treasury once.
+- **Methods:** cash, Visa, wallet and InstaPay each have their own expected, counted and variance figures at close.
+  - Variance = actual − expected: below zero is a shortage (عجز), above zero a surplus (زيادة).
+  - The 50 EGP acknowledgement applies to cash only.
+- **Blind close:** expected amounts are refused by the service to users without `shifts.view_expected` (administrators only) until the close is saved. The supervisor request carries no amounts, and refused attempts are logged.
+- **Expenses and debt payments:** they go to the user's shift or, for treasury managers, the treasury. When both are possible the user must choose; the service never guesses. Expenses are visible to their creator, and to administrators with `expenses.view_all`.
+- **Payment method correction:** only while the sale's shift is open, never for a sale with a return. It's recorded in `sale_payment_corrections`.

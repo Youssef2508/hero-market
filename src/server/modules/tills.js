@@ -20,6 +20,9 @@ module.exports = function tillsModule(app) {
     schema: { type: 'object', required: ['shiftId'], properties: { shiftId: { type: 'integer' } } },
     handler: async (ctx, { shiftId }) => {
       const shift = await loadShift(ctx.pool, ctx, shiftId)
+      // Blind close (PAY-01): the drawer's money figures are owner-only until the close.
+      if (!ctx.can('shifts.view_expected'))
+        return { shift: { id: shift.id, status: shift.status }, blind: true }
       const r = (
         await ctx.pool.query(
           `SELECT
@@ -27,10 +30,10 @@ module.exports = function tillsModule(app) {
              COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type = 'نقدي'), 0) AS "cashSalesTotal",
              COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type = 'آجل'), 0) AS "debtSalesTotal",
              COALESCE((SELECT SUM(${SALE_VALUE}) FROM sales WHERE shift_id = $1 AND payment_type NOT IN ('نقدي', 'آجل')), 0) AS "digitalSalesTotal",
-             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'inflow'), 0) AS "repayTotal",
-             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND (description LIKE 'مرتجع%' OR description LIKE 'إرجاع%')), 0) AS "returnsTotal",
-             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%')), 0) AS "supplierTotal",
-             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'إرجاع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%')), 0) AS "expensesTotal"`,
+             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND method = 'cash' AND type = 'inflow'), 0) AS "repayTotal",
+             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND method = 'cash' AND type = 'outflow' AND (description LIKE 'مرتجع%' OR description LIKE 'إرجاع%')), 0) AS "returnsTotal",
+             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND method = 'cash' AND type = 'outflow' AND (description LIKE 'دفعة لمورد%' OR description LIKE 'سداد دين مورد%')), 0) AS "supplierTotal",
+             COALESCE((SELECT SUM(amount) FROM safe_ledger WHERE shift_id = $1 AND method = 'cash' AND type = 'outflow' AND (description NOT LIKE 'مرتجع%' AND description NOT LIKE 'إرجاع%' AND description NOT LIKE 'دفعة لمورد%' AND description NOT LIKE 'سداد دين مورد%')), 0) AS "expensesTotal"`,
           [shift.id]
         )
       ).rows[0]

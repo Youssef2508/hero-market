@@ -311,8 +311,9 @@ test('shift close: up to EGP 50 closes freely; above 50 needs a supervisor (over
   const open = async (token) => ok(await svc.call('shifts.open', { startingCash: 100 }, token))
   const close = (token, s, actualCash, extra = {}) =>
     svc.call('shifts.close', { shiftId: s.id, actualCash, ...extra }, token)
-  const expectedOf = async (token, s) =>
-    ok(await svc.call('shifts.auditPreview', { shiftId: s.id }, token)).expected
+  // Expected figures are the owner's (blind close, PAY-01): read them with the owner's session.
+  const expectedOf = async (_token, s) =>
+    ok(await svc.call('shifts.auditPreview', { shiftId: s.id }, owner)).expected
 
   // Exactly 50.00 short: no acknowledgement needed.
   ok(await close(cashier, shift, (await expectedOf(cashier, shift)) - 50))
@@ -327,7 +328,16 @@ test('shift close: up to EGP 50 closes freely; above 50 needs a supervisor (over
   const actual = (await expectedOf(cashier2, s2)) + 50.01
   const req = await close(cashier2, s2, actual)
   assert.equal(req.body.error.code, 'approval_required')
-  assert.equal(req.body.error.details.difference, 50.01)
+  // The cashier is not told the expected amount or the difference; the owner sees the attempt.
+  const told = req.body.error.details
+  assert.equal(told.blind, true)
+  assert.equal(told.amount, null)
+  assert.ok(!('difference' in told) && !('expected' in told) && !('actual' in told))
+  assert.doesNotMatch(req.body.error.message, /\d/, 'no amount in the message')
+  const attempt = await one(
+    "SELECT details FROM system_logs WHERE action_type = 'shift_close_attempt' ORDER BY id DESC LIMIT 1"
+  )
+  assert.equal(JSON.parse(attempt.details).difference, 50.01)
   const refused = await close(cashier2, s2, actual, { approver: supervisor('refuse') })
   assert.equal(refused.body.error.code, 'approval_refused')
   assert.equal((await one('SELECT status FROM shifts WHERE id = $1', [s2.id])).status, 'open')

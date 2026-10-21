@@ -7,6 +7,7 @@ import {
   Plus,
   X,
   Banknote,
+  CreditCard,
   Smartphone,
   ArrowLeftRight,
   BookOpen,
@@ -37,10 +38,13 @@ import { kindInfo } from '../../lib/measureKinds'
 import { qtyFromText } from '../../lib/qtyText'
 import ManualDiscountModal from './ManualDiscountModal'
 
-// Payment types are business values written to sales.payment_type – do not rename.
+// Payment types are business values written to sales.payment_type – do not rename. The payment
+// methods are cash, Visa, wallet and InstaPay (owner, 2026-10-21, D-061); آجل and دفع جزئي put the
+// unpaid part on the customer's account.
 const PAYMENT_METHODS = [
   { value: 'نقدي', label: 'نقدي', icon: Banknote },
-  { value: 'فودافون كاش', label: 'فودافون كاش', icon: Smartphone },
+  { value: 'فيزا', label: 'فيزا', icon: CreditCard },
+  { value: 'محفظة', label: 'محفظة', icon: Smartphone },
   { value: 'انستا باي', label: 'انستا باي', icon: ArrowLeftRight },
   { value: 'آجل', label: 'آجل', icon: BookOpen, needsClient: true },
   { value: 'دفع جزئي', label: 'دفع جزئي', icon: Split, needsClient: true }

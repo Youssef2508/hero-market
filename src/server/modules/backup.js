@@ -24,6 +24,8 @@ const TABLES = [
   'client_ledger',
   'approvals',
   'shifts',
+  'treasury_ledger',
+  'shift_closings',
   'sales',
   'sale_items',
   'sale_discounts',
@@ -33,6 +35,7 @@ const TABLES = [
   'supplier_purchases',
   'supplier_purchase_items',
   'checks_register',
+  'expense_categories',
   'expenses',
   'damaged_goods',
   'settings',
@@ -41,6 +44,7 @@ const TABLES = [
   'momkn_transactions',
   'mobile_money_transactions',
   'safe_ledger',
+  'sale_payment_corrections',
   'receipt_templates'
 ]
 // User triggers are off while rows are restored: restored movements must not be applied to stock

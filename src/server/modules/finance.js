@@ -1,7 +1,8 @@
 'use strict'
 // Suppliers & purchases, cheques, expenses, damaged goods (useSuppliersManager, useChecksManager,
 // useExpensesManager, useDamagedGoodsManager). Legacy amounts and ledger texts are unchanged.
-const { badRequest, conflict, notFound, shiftRequired } = require('../errors')
+const { badRequest, conflict, notFound, shiftRequired, forbidden } = require('../errors')
+const treasury = require('../money/treasury')
 const { postMovement, receiveStock } = require('../inventory/stock')
 const { loadUnit, toBaseQty, round4, kindRule } = require('../inventory/units')
 
@@ -246,14 +247,49 @@ module.exports = function financeModule(app) {
       properties: {
         supplierId: { type: 'integer' },
         amount: { type: 'number', exclusiveMinimum: 0 },
-        currentShiftId: { type: ['integer', 'null'] }
+        currentShiftId: { type: ['integer', 'null'] },
+        // 1.5.0 (CUST-02): 'treasury' pays from the treasury without a shift (treasury.manage).
+        destination: { type: 'string', enum: ['shift', 'treasury'] },
+        clientRef: { type: 'string', minLength: 8, maxLength: 120 }
       }
     },
-    handler: async (ctx, { supplierId, amount, currentShiftId }) =>
+    handler: async (ctx, { supplierId, amount, currentShiftId, destination, clientRef }) =>
       ctx.tx(async (db) => {
         const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [supplierId]))
           .rows[0]
         if (!s) throw notFound('المورد غير موجود.')
+        if (
+          destination === 'treasury' ||
+          (!destination && !currentShiftId && ctx.can('treasury.manage'))
+        ) {
+          const dest = await treasury.resolveDestination(db, ctx, { destination, currentShiftId })
+          if (dest.destination === 'treasury') {
+            const entry = await treasury.post(db, ctx, {
+              kind: 'supplier_payment',
+              amount: -amount,
+              refType: 'supplier',
+              refId: s.id,
+              description: `سداد للمورد: ${s.name}`,
+              idemKey: clientRef ? `supplier-pay:${clientRef}` : null
+            })
+            if (entry.duplicate)
+              return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+            await db.query('UPDATE suppliers SET debt_balance = debt_balance - $1 WHERE id = $2', [
+              amount,
+              s.id
+            ])
+            await db.query(
+              `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, 'دفعة سداد للمورد من الخزنة', LOCALTIMESTAMP(0))`,
+              [s.id, amount]
+            )
+            await ctx.audit(
+              db,
+              'supplier_payment',
+              `سداد ${amount.toFixed(2)} ج.م للمورد "${s.name}" من الخزنة`
+            )
+            return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+          }
+        }
         await db.query('UPDATE suppliers SET debt_balance = debt_balance - $1 WHERE id = $2', [
           amount,
           s.id
@@ -262,8 +298,11 @@ module.exports = function financeModule(app) {
           `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, 'دفعة سداد للمورد', LOCALTIMESTAMP(0))`,
           [s.id, amount]
         )
-        // Legacy rule: the drawer outflow is recorded only when there is an open shift.
+        // Legacy rule: the drawer outflow is recorded only when there is an open shift. A payment
+        // that names the shift as its destination (1.5.0) needs that shift.
         const shift = await ownOpenShift(db, ctx, currentShiftId)
+        if (destination === 'shift' && !shift)
+          throw shiftRequired('لا توجد وردية مفتوحة لك: افتح وردية أو اختر الخزنة.')
         if (shift) {
           await db.query(
             `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
@@ -337,10 +376,27 @@ module.exports = function financeModule(app) {
   })
 
   // ── Expenses ───────────────────────────────────────────────
+  // 1.5.0 (owner feedback EXP-01/02/03, Q2): each user sees and deletes only the expenses they
+  // created; expenses.view_all (administrators) sees every one. An expense is paid from the user's
+  // open shift drawer or, for treasury managers, from the treasury without a shift.
+  const expenseScope = (ctx) =>
+    ctx.can('expenses.view_all')
+      ? { sql: '', params: [] }
+      : { sql: 'WHERE x.created_by = $1', params: [ctx.user.id] }
+
   app.operation({
     name: 'expenses.list',
     permission: 'expenses.manage',
-    handler: async (ctx) => (await ctx.pool.query('SELECT * FROM expenses ORDER BY id DESC')).rows
+    handler: async (ctx) => {
+      const scope = expenseScope(ctx)
+      return (
+        await ctx.pool.query(
+          `SELECT x.*, u.username AS created_by_name FROM expenses x LEFT JOIN users u ON u.id = x.created_by
+           ${scope.sql} ORDER BY x.id DESC`,
+          scope.params
+        )
+      ).rows
+    }
   })
 
   app.operation({
@@ -353,32 +409,93 @@ module.exports = function financeModule(app) {
       properties: {
         amount: { type: 'number', exclusiveMinimum: 0 },
         category: str(80),
+        categoryId: { type: ['integer', 'null'] },
         description: str(1000),
-        currentShiftId: { type: ['integer', 'null'] }
+        currentShiftId: { type: ['integer', 'null'] },
+        destination: { type: 'string', enum: ['shift', 'treasury'] },
+        clientRef: { type: 'string', minLength: 8, maxLength: 120 }
       }
     },
     handler: async (ctx, e) =>
       ctx.tx(async (db) => {
-        const shift = await ownOpenShift(db, ctx, e.currentShiftId)
-        if (!shift) throw shiftRequired('يجب فتح وردية لتسجيل المصروف وخصمه من الخزنة.')
-        const category = e.category || 'عام'
-        await db.query(
-          `INSERT INTO expenses (shift_id, amount, category, description, timestamp) VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0))`,
-          [shift.id, e.amount, category, (e.description || '').trim()]
-        )
-        await db.query(
-          `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-          [
-            shift.id,
-            e.amount,
-            `مصروفات - تصنيف: ${category}${(e.description || '').trim() ? ` - ${e.description.trim()}` : ''}`
-          ]
-        )
+        const dest = await treasury.resolveDestination(db, ctx, e)
+        let category = (e.category || '').trim() || 'عام'
+        let categoryId = null
+        if (e.categoryId) {
+          const c = (
+            await db.query('SELECT * FROM expense_categories WHERE id = $1', [e.categoryId])
+          ).rows[0]
+          if (!c || !c.is_active) throw badRequest('تصنيف المصروف غير موجود أو موقوف.')
+          category = c.name
+          categoryId = c.id
+        } else {
+          const c = (
+            await db.query(
+              'SELECT id FROM expense_categories WHERE lower(btrim(name)) = lower(btrim($1))',
+              [category]
+            )
+          ).rows[0]
+          categoryId = c ? c.id : null
+        }
+        const note = (e.description || '').trim()
+        const text = `مصروفات - تصنيف: ${category}${note ? ` - ${note}` : ''}`
+        if (dest.destination === 'treasury') {
+          const idemKey = e.clientRef ? `expense:${e.clientRef}` : null
+          const prior = idemKey
+            ? (await db.query('SELECT ref_id FROM treasury_ledger WHERE idem_key = $1', [idemKey]))
+                .rows[0]
+            : null
+          if (prior) return { id: prior.ref_id, destination: 'treasury', duplicate: true }
+          const x = (
+            await db.query(
+              `INSERT INTO expenses (shift_id, amount, category, description, timestamp, created_by, category_id, destination)
+               VALUES (NULL, $1, $2, $3, LOCALTIMESTAMP(0), $4, $5, 'treasury') RETURNING id`,
+              [e.amount, category, note, ctx.user.id, categoryId]
+            )
+          ).rows[0]
+          const entry = await treasury.post(db, ctx, {
+            kind: 'expense',
+            amount: -e.amount,
+            refType: 'expense',
+            refId: x.id,
+            description: text.slice(0, 300),
+            idemKey
+          })
+          // The same request arriving twice at once: the second one is rolled back.
+          if (entry.duplicate) throw conflict('تم تسجيل هذا المصروف بالفعل.')
+          await db.query('UPDATE expenses SET treasury_entry_id = $1 WHERE id = $2', [
+            entry.id,
+            x.id
+          ])
+          await ctx.audit(
+            db,
+            'expense_create',
+            `تسجيل مصروف من الخزنة ${e.amount.toFixed(2)} ج.م (${category})`,
+            { expenseId: x.id, treasuryEntryId: entry.id }
+          )
+          return { id: x.id, destination: 'treasury' }
+        }
+        const shift = dest.shift
+        const ledger = (
+          await db.query(
+            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0)) RETURNING id`,
+            [shift.id, e.amount, text]
+          )
+        ).rows[0]
+        const x = (
+          await db.query(
+            `INSERT INTO expenses (shift_id, amount, category, description, timestamp, created_by, category_id, destination, ledger_id)
+             VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0), $5, $6, 'shift', $7) RETURNING id`,
+            [shift.id, e.amount, category, note, ctx.user.id, categoryId, ledger.id]
+          )
+        ).rows[0]
         await ctx.audit(
           db,
           'expense_create',
-          `تسجيل مصروف ${e.amount.toFixed(2)} ج.م (${category})`
+          `تسجيل مصروف ${e.amount.toFixed(2)} ج.م (${category})`,
+          { expenseId: x.id }
         )
+        return { id: x.id, destination: 'shift' }
       })
   })
 
@@ -388,26 +505,119 @@ module.exports = function financeModule(app) {
     schema: {
       type: 'object',
       required: ['expenseId'],
-      properties: { expenseId: { type: 'integer' } }
+      properties: { expenseId: { type: 'integer' }, reason: str(300) }
     },
-    handler: async (ctx, { expenseId }) =>
+    handler: async (ctx, { expenseId, reason }) =>
       ctx.tx(async (db) => {
-        const x = (await db.query('DELETE FROM expenses WHERE id = $1 RETURNING *', [expenseId]))
+        const x = (await db.query('SELECT * FROM expenses WHERE id = $1 FOR UPDATE', [expenseId]))
           .rows[0]
-        if (!x) throw notFound()
-        // Reverse the matching drawer outflow – exactly one row (K-28: the legacy query removed every identical row).
-        await db.query(
-          `DELETE FROM safe_ledger WHERE ctid = (
-             SELECT ctid FROM safe_ledger WHERE shift_id IS NOT DISTINCT FROM $1 AND type = 'outflow' AND amount = $2 AND description = $3
-             ORDER BY id DESC LIMIT 1)`,
-          [x.shift_id, x.amount, `مصروفات - تصنيف: ${x.category} - ${x.description}`]
-        )
+        // Another user's expense is "not found" for someone who may not see it (EXP-01).
+        if (!x || (!ctx.can('expenses.view_all') && x.created_by !== ctx.user.id)) throw notFound()
+        if (x.destination === 'treasury') {
+          // Posted treasury money is never removed: the expense is undone by a reversal (TREAS-01).
+          if (!ctx.can('treasury.manage'))
+            throw forbidden('إلغاء مصروف الخزنة يتطلب صلاحية الخزنة.')
+          const original = (
+            await db.query('SELECT * FROM treasury_ledger WHERE id = $1', [x.treasury_entry_id])
+          ).rows[0]
+          if (original)
+            await treasury.post(db, ctx, {
+              kind: 'reversal',
+              amount: -Number(original.amount),
+              reversesId: original.id,
+              refType: 'expense',
+              refId: x.id,
+              description: `عكس مصروف من الخزنة #${x.id}`,
+              reason,
+              idemKey: `reverse:${original.id}`
+            })
+          await db.query('DELETE FROM expenses WHERE id = $1', [x.id])
+        } else {
+          await db.query('DELETE FROM expenses WHERE id = $1', [x.id])
+          if (x.ledger_id) {
+            await db.query('DELETE FROM safe_ledger WHERE id = $1', [x.ledger_id])
+          } else {
+            // Before 1.5.0 the expense was matched to its drawer row by text – exactly one row
+            // (K-28), in both text forms (with and without a note).
+            await db.query(
+              `DELETE FROM safe_ledger WHERE ctid = (
+                 SELECT ctid FROM safe_ledger WHERE shift_id IS NOT DISTINCT FROM $1 AND type = 'outflow' AND amount = $2
+                    AND description = ANY($3::text[])
+                 ORDER BY id DESC LIMIT 1)`,
+              [
+                x.shift_id,
+                x.amount,
+                [
+                  `مصروفات - تصنيف: ${x.category} - ${x.description || ''}`,
+                  `مصروفات - تصنيف: ${x.category}${x.description ? ` - ${x.description}` : ''}`
+                ]
+              ]
+            )
+          }
+        }
         await ctx.audit(
           db,
           'expense_delete',
           `حذف مصروف ${Number(x.amount).toFixed(2)} ج.م (${x.category})`,
-          { expense: x }
+          { expense: x, reason: reason || null }
         )
+      })
+  })
+
+  // Expense categories (EXP-02): renaming keeps the name stored on older expenses; a category is
+  // stopped, never deleted, so no expense loses its category.
+  app.operation({
+    name: 'expenseCategories.list',
+    anyPermission: ['expenses.manage', 'expenses.categories'],
+    handler: async (ctx) =>
+      (
+        await ctx.pool.query(
+          `SELECT c.*, (SELECT COUNT(*)::int FROM expenses x WHERE x.category_id = c.id) AS uses
+             FROM expense_categories c ORDER BY c.is_active DESC, c.sort_order, c.name`
+        )
+      ).rows
+  })
+
+  app.operation({
+    name: 'expenseCategories.save',
+    permission: 'expenses.categories',
+    schema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        id: { type: ['integer', 'null'] },
+        name: { type: 'string', minLength: 1, maxLength: 60 },
+        isActive: { type: 'boolean' }
+      }
+    },
+    handler: async (ctx, c) =>
+      ctx.tx(async (db) => {
+        const name = c.name.trim()
+        if (!name) throw badRequest('اكتب اسم التصنيف.')
+        const dup = (
+          await db.query(
+            'SELECT id FROM expense_categories WHERE lower(btrim(name)) = lower($1) AND id IS DISTINCT FROM $2',
+            [name, c.id ?? null]
+          )
+        ).rows[0]
+        if (dup) throw conflict('يوجد تصنيف بنفس الاسم.')
+        if (c.id) {
+          const r = await db.query(
+            `UPDATE expense_categories SET name = $2, is_active = COALESCE($3, is_active), updated_at = LOCALTIMESTAMP(0)
+              WHERE id = $1 RETURNING *`,
+            [c.id, name, c.isActive ?? null]
+          )
+          if (!r.rowCount) throw notFound()
+          await ctx.audit(db, 'expense_category_save', `تعديل تصنيف مصروفات "${name}"`)
+          return r.rows[0]
+        }
+        const r = await db.query(
+          `INSERT INTO expense_categories (name, sort_order, is_active)
+           VALUES ($1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM expense_categories), COALESCE($2, true)) RETURNING *`,
+          [name, c.isActive ?? null]
+        )
+        await ctx.audit(db, 'expense_category_save', `إضافة تصنيف مصروفات "${name}"`)
+        return r.rows[0]
       })
   })
 

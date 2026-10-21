@@ -147,8 +147,15 @@ export function usePOSController({
   }
 
   // Signed in on the lock screen (auth.login / auth.setPassword / auth.recover answer).
+  // One request id per close: a retry after a lost answer returns the saved close (PAY-01).
+  const closeRef = useRef(null)
+  // The saved close report, shown after the close is confirmed and saved (SHIFT-02).
+  const [closeReport, setCloseReport] = useState(null)
+
   const completeSignIn = (res) => {
     const user = res.user
+    // A close report belongs to the user who closed: never shown to the next one.
+    setCloseReport(null)
     setCurrentUser(user)
     if (onLoggedIn) onLoggedIn(user)
     setIsLocked(false) // Unlock the screen layout
@@ -219,11 +226,19 @@ export function usePOSController({
   }
 
   // Close Active Shift
-  const handleConfirmCloseShift = async () => {
+  const handleConfirmCloseShift = async (opts) => {
     const actual = parseFloat(actualEndCash) || 0
     if (isNaN(actual) || actual < 0) {
       triggerCustomAlert('الرجاء إدخال مبلغ صحيح.')
       return
+    }
+    const counted = opts?.actual || { visa: 0, wallet: 0, instapay: 0 }
+    if (!closeRef.current) closeRef.current = newClientRef()
+    const closeBody = {
+      shiftId: currentShift.id,
+      actualCash: actual,
+      actual: counted,
+      clientRef: closeRef.current
     }
 
     try {
@@ -231,6 +246,12 @@ export function usePOSController({
         try {
           const live = closed.live || {}
           const shiftRow = closed.shift || currentShift
+          // The close is saved: the dialog goes and the saved report shows at once; printing
+          // follows (a missing printer can take seconds to report and never undoes the close).
+          playSound('chime')
+          closeRef.current = null
+          setCloseShiftModal(false)
+          if (closed.report) setCloseReport({ report: closed.report, shift: closed.shift })
 
           // Trigger print report automatically!
           if (window.api?.printer?.printReport) {
@@ -261,16 +282,17 @@ export function usePOSController({
                 difference: closed.difference,
                 momkn: momknSummary,
                 wallets: mobileMoneySummary,
-                manualDiscounts: closed.live?.manualDiscounts
+                manualDiscounts: closed.live?.manualDiscounts,
+                // The saved close (SHIFT-02): the printed report is exactly what was confirmed.
+                report: closed.report
               })
             } catch (printErr) {
               console.error('Failed to print grand shift report:', printErr)
             }
           }
 
-          playSound('chime')
-          handleLock()
-          setCloseShiftModal(false)
+          // Signing out follows when the report is dismissed (a close without one signs out now).
+          if (!closed.report) handleLock()
         } catch (e) {
           console.error('Failed after closing the shift:', e)
         }
@@ -279,7 +301,7 @@ export function usePOSController({
       const finalizeShiftClose = async () => {
         try {
           // The service computes the expected drawer cash with the legacy formula and closes the shift.
-          const closed = await api('shifts.close', { shiftId: currentShift.id, actualCash: actual })
+          const closed = await api('shifts.close', closeBody)
           await afterClose(closed)
         } catch (e) {
           if (e.code === 'approval_required') {
@@ -288,13 +310,15 @@ export function usePOSController({
             playSound('error')
             setApprovalRequest({
               title: 'فرق في إغلاق الوردية',
-              summary: `الفرق ${Number(d.difference).toFixed(2)} ج.م (المتوقع ${Number(d.expected).toFixed(2)}، الفعلي ${Number(d.actual).toFixed(2)}) يتجاوز 50 ج.م ويحتاج إلى اعتماد المشرف.`,
+              // Blind close: the cashier is not told the expected amount or the difference.
+              summary: d.blind
+                ? 'المبالغ المكتوبة تختلف عن المتوقع بأكثر من 50 ج.م: يلزم اعتماد المشرف لإغلاق الوردية. يمكنك الإلغاء وإعادة العد؛ كل محاولة تُسجَّل.'
+                : `الفرق ${Number(d.difference).toFixed(2)} ج.م (المتوقع ${Number(d.expected).toFixed(2)}، الفعلي ${Number(d.actual).toFixed(2)}) يتجاوز 50 ج.م ويحتاج إلى اعتماد المشرف.`,
               noteLabel: 'سبب الفرق (اختياري)',
               noteRequired: false,
               onSubmit: async (approver, note) => {
                 const closed = await api('shifts.close', {
-                  shiftId: currentShift.id,
-                  actualCash: actual,
+                  ...closeBody,
                   approver,
                   note: note || undefined
                 })
@@ -799,6 +823,11 @@ export function usePOSController({
     completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
+    closeReport,
+    dismissCloseReport: () => {
+      setCloseReport(null)
+      handleLock()
+    },
     handleLock,
     barcodeInput,
     setBarcodeInput,

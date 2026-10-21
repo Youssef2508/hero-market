@@ -22,6 +22,128 @@ function Row({ label, value, tone, sign = '' }) {
 
 // Both dialogs show the service's drawer figure (shifts.liveSummary → drawer), the same value that
 // shifts.close saves and prints (K-24 option 1). They never compute their own formula.
+// Users without shifts.view_expected get the blind dialog (owner feedback PAY-01): only the counted
+// amounts, nothing that reveals or lets them derive the expected ones; the service refuses those.
+
+const CASHLESS = [
+  { key: 'visa', label: 'فيزا (إجمالي ماكينة الفيزا)' },
+  { key: 'wallet', label: 'المحفظة' },
+  { key: 'instapay', label: 'انستا باي' }
+]
+
+/** Counted Visa, wallet and InstaPay amounts (every close sends them). */
+function CashlessCount({ values, onChange }) {
+  return (
+    <div className="two-col">
+      {CASHLESS.map((c) => (
+        <label className="field" key={c.key}>
+          <span className="field-label">{c.label} (ج.م)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="input input-money"
+            value={values[c.key]}
+            placeholder="0.00"
+            onChange={(e) => onChange({ ...values, [c.key]: e.target.value })}
+          />
+        </label>
+      ))}
+    </div>
+  )
+}
+
+const emptyCount = { visa: '', wallet: '', instapay: '' }
+const countedOf = (v) => ({
+  visa: Number(v.visa) || 0,
+  wallet: Number(v.wallet) || 0,
+  instapay: Number(v.instapay) || 0
+})
+
+// Blind close: what the cashier counted, then confirm. The figures come after the close is saved.
+const BlindCloseShiftModal = ({
+  closeShiftModal,
+  currentShift,
+  actualEndCash,
+  setActualEndCash,
+  setCloseShiftModal,
+  handleConfirmCloseShift
+}) => {
+  const [count, setCount] = useState(emptyCount)
+  const [busy, setBusy] = useState(false)
+  if (!closeShiftModal) return null
+  return (
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
+      <form
+        className="modal-content tone-warning"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="close-shift-blind-title"
+        style={{ width: 520 }}
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (busy) return
+          setBusy(true)
+          try {
+            await handleConfirmCloseShift({ actual: countedOf(count) })
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <LogOut size={24} />
+          </span>
+          <h2 id="close-shift-blind-title">تسوية وإنهاء الوردية</h2>
+          <p>
+            الوردية <span className="num">#{currentShift?.id}</span>
+          </p>
+        </div>
+        <div className="modal-body">
+          <div className="notice">
+            <Calculator size={16} aria-hidden="true" />
+            <span>
+              عُدّ النقدية الموجودة في الدرج كلها، واكتب إجمالي كل طريقة دفع كما هو في الماكينة أو
+              التطبيق. تظهر المقارنة والتقرير بعد تأكيد الإغلاق.
+            </span>
+          </div>
+          <label className="field">
+            <span className="field-label">النقدية الموجودة في الدرج (ج.م) *</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input input-lg input-money"
+              value={actualEndCash}
+              placeholder="0.00"
+              required
+              onChange={(e) => setActualEndCash(e.target.value)}
+              autoFocus
+            />
+          </label>
+          <CashlessCount values={count} onChange={setCount} />
+        </div>
+        <div className="modal-footer">
+          <button
+            data-modal-close
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setCount(emptyCount)
+              setCloseShiftModal(false)
+            }}
+          >
+            إلغاء
+          </button>
+          <button type="submit" className="btn btn-danger" style={{ flex: 1 }} disabled={busy}>
+            {busy ? 'جاري الإغلاق…' : 'تأكيد المبالغ وإنهاء الوردية'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
 
 // Simple close dialog (cashier / manager).
 const SimpleCloseShiftModal = ({
@@ -33,6 +155,7 @@ const SimpleCloseShiftModal = ({
   handleConfirmCloseShift
 }) => {
   const [expected, setExpected] = useState(null)
+  const [count, setCount] = useState(emptyCount)
   const [withFloat, setWithFloat] = useState(true)
   const [loading, setLoading] = useState(false)
 
@@ -72,7 +195,7 @@ const SimpleCloseShiftModal = ({
         style={{ width: 480 }}
         onSubmit={(e) => {
           e.preventDefault()
-          handleConfirmCloseShift(null)
+          handleConfirmCloseShift({ actual: countedOf(count) })
         }}
       >
         <div className="modal-header">
@@ -148,6 +271,7 @@ const SimpleCloseShiftModal = ({
               autoFocus
             />
           </label>
+          <CashlessCount values={count} onChange={setCount} />
         </div>
 
         <div className="modal-footer">
@@ -198,6 +322,7 @@ const AdvancedCloseShiftModal = ({
   })
   const [withFloat, setWithFloat] = useState(false)
   const [floatAmount, setFloatAmount] = useState('200')
+  const [count, setCount] = useState(emptyCount)
 
   useEffect(() => {
     if (!closeShiftModal || !currentShift) {
@@ -266,7 +391,8 @@ const AdvancedCloseShiftModal = ({
       grandTotalExpected: grandTotalCash,
       handoverAmount: handoverAmount,
       withFloat: withFloat,
-      floatAmount: parsedFloat
+      floatAmount: parsedFloat,
+      actual: countedOf(count)
     })
   }
 
@@ -432,6 +558,7 @@ const AdvancedCloseShiftModal = ({
               autoFocus
             />
           </label>
+          <CashlessCount values={count} onChange={setCount} />
         </div>
 
         <div className="modal-footer">
@@ -454,6 +581,8 @@ const AdvancedCloseShiftModal = ({
 
 export default function CloseShiftModal(props) {
   const { currentUser } = props
+  // Expected amounts are the owner's until the close is confirmed (PAY-01).
+  if (!can(currentUser, 'shifts.view_expected')) return <BlindCloseShiftModal {...props} />
   // Multi-till close (drawer + Momkn + wallets): the permission the service checks for multi-till data.
   if (can(currentUser, 'shifts.multi_till')) {
     return <AdvancedCloseShiftModal {...props} />

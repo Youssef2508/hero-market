@@ -28,8 +28,102 @@ function frame(title, { store = {}, paper = '80mm', shift = {}, printedAt } = {}
   return { head, sep, tail }
 }
 
-/** Shift-close report: the figures shifts.close returned (legacy formula), plus till summaries. */
+const METHODS = ['cash', 'visa', 'wallet', 'instapay']
+const METHOD_LABELS = { cash: 'نقدي', visa: 'فيزا', wallet: 'محفظة', instapay: 'انستا باي' }
+const verdictOf = (v) => {
+  const n = Number(v) || 0
+  if (Math.abs(n) < 0.005) return 'مطابق'
+  return n < 0 ? `عجز ${Math.abs(n).toFixed(2)}` : `زيادة ${n.toFixed(2)}`
+}
+
+/**
+ * Close report (owner feedback SHIFT-02) from the saved close snapshot (shift_closings.report):
+ * every figure was persisted when the close was confirmed, so a reprint prints the same report.
+ */
+export function buildCloseReportLines(rep, opts = {}) {
+  const shift = {
+    id: rep.shiftId,
+    username: rep.cashier,
+    start_time: rep.openedAt,
+    end_time: rep.closedAt
+  }
+  const { head, sep, tail } = frame('تقرير تقفيل الوردية', { ...opts, shift })
+  const lines = [...head, sep, '[C]المبيعات حسب طريقة الدفع']
+  for (const m of METHODS) lines.push(`${METHOD_LABELS[m]}|${money(rep.salesByMethod?.[m])}`)
+  if (Number(rep.onAccountSales) > 0) lines.push(`آجل ودفع جزئي|${money(rep.onAccountSales)}`)
+  lines.push(
+    `[B]إجمالي المبيعات|${money(rep.totalSales)}`,
+    `عدد الفواتير|${Number(rep.invoiceCount) || 0}`,
+    sep,
+    '[C]الدرج النقدي',
+    `العهدة الافتتاحية|${money(rep.openingFloat)}`,
+    `مبيعات نقدية|${money(rep.cash?.sales)}`,
+    `مقبوضات نقدية أخرى|${money(rep.cash?.inflow)}`,
+    `مصروفات نقدية|${money(rep.cash?.expenses)}`,
+    `مرتجعات نقدية|${money(rep.cash?.refunds)}`
+  )
+  if (Number(rep.cash?.supplier) > 0) lines.push(`مدفوعات موردين|${money(rep.cash.supplier)}`)
+  if (rep.actual) {
+    for (const m of METHODS) {
+      lines.push(
+        sep,
+        `[C]${METHOD_LABELS[m]}`,
+        `المتوقع|${money(rep.expected?.[m])}`,
+        `الفعلي|${money(rep.actual?.[m])}`,
+        `[B]الفرق|${text(verdictOf(rep.variance?.[m]), 24)}`
+      )
+    }
+    lines.push(sep, `[B]صافي الوردية (الفعلي)|${money(rep.netTotal)}`)
+  } else {
+    lines.push(
+      sep,
+      ...METHODS.map((m) => `المتوقع ${METHOD_LABELS[m]}|${money(rep.expected?.[m])}`)
+    )
+  }
+  const ex = rep.expenses
+  if (ex && ex.count > 0) {
+    lines.push(sep, '[C]المصروفات', `العدد|${ex.count}`, `[B]الإجمالي|${money(ex.total)}`)
+    for (const e of ex.lines || [])
+      lines.push(
+        `${text(e.category, 20)}${e.description ? ` – ${text(e.description, 18)}` : ''}|${money(e.amount)}`
+      )
+  }
+  const rt = rep.returns
+  if (rt && rt.count > 0) {
+    lines.push(sep, '[C]المرتجعات', `العدد|${rt.count}`, `[B]الإجمالي|${money(rt.total)}`)
+    for (const r of rt.lines || []) lines.push(`فاتورة #${text(r.saleId, 12)}|${money(r.refund)}`)
+  }
+  const md = rep.manualDiscounts
+  if (md && md.count > 0) {
+    lines.push(
+      sep,
+      '[C]الخصومات اليدوية',
+      `عدد الفواتير|${md.count}`,
+      `[B]إجمالي الخصم اليدوي|${money(md.total)}`
+    )
+    for (const m of md.invoices || [])
+      lines.push(
+        `فاتورة #${text(m.saleId, 12)}${m.username ? ` (${text(m.username, 20)})` : ''}|${money(m.amount)}`
+      )
+  }
+  if (rep.acknowledgedBy) lines.push(sep, `اعتمد الفرق|${text(rep.acknowledgedBy, 30)}`)
+  if (rep.note) lines.push(`[R]ملاحظات: ${text(rep.note, 120)}`)
+  return [...lines, ...tail]
+}
+
+/**
+ * Shift-close report. With the saved snapshot (1.5.0, r.report) it is the full close report;
+ * a close from before 1.5.0 prints the figures shifts.close returned (legacy formula). Till
+ * summaries are added to either.
+ */
 export function buildShiftReportLines(r, opts = {}) {
+  if (r.report) {
+    const lines = buildCloseReportLines(r.report, opts)
+    const extra = tillLines(r, '-'.repeat(opts.paper === '58mm' ? 32 : 48))
+    if (!extra.length) return lines
+    const end = lines.length - frame('', opts).tail.length
+    return [...lines.slice(0, end), ...extra, ...lines.slice(end)]
+  }
   const { head, sep, tail } = frame('تقرير تقفيل الوردية', { ...opts, shift: r.shift })
   const diff = Number(r.difference) || 0
   const verdict = Math.abs(diff) < 0.005 ? 'مطابق' : diff < 0 ? 'عجز' : 'زيادة'
@@ -59,6 +153,12 @@ export function buildShiftReportLines(r, opts = {}) {
       )
     )
   }
+  return [...lines, ...tillLines(r, sep), ...tail]
+}
+
+/** Momkn machine and wallet service sections of a shift report (multi-till close). */
+function tillLines(r, sep) {
+  const lines = []
   if (r.momkn) {
     lines.push(
       sep,
@@ -80,7 +180,7 @@ export function buildShiftReportLines(r, opts = {}) {
       `العمولة|${money(r.wallets.totalCommission)}`
     )
   }
-  return [...lines, ...tail]
+  return lines
 }
 
 /** Momkn machine report for a shift (summary from momkn.list). */
@@ -122,6 +222,7 @@ export function buildWalletsReportLines(r, opts = {}) {
 
 export const REPORTS = {
   shift: buildShiftReportLines,
+  close: (r, opts) => buildCloseReportLines(r.report || r, opts),
   momkn: buildMomknReportLines,
   wallets: buildWalletsReportLines
 }

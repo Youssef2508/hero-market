@@ -5,6 +5,7 @@ const { badRequest, notFound, conflict, shiftRequired } = require('../errors')
 const { postMovement } = require('../inventory/stock')
 const { toBaseQty, kindRule } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
+const { methodOf } = require('../money/methods')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -86,7 +87,8 @@ async function refundShift(db, ctx, currentShiftId, sale) {
  * Pay a refund through the right channel (audit 1.4.0, migration 0011): first what the customer
  * still owes for this invoice, then store balance the customer spent on it, and only the rest in
  * cash from an open drawer. A plain cash sale is refunded in cash as before; a credit (آجل) sale
- * entirely on account, as before.
+ * entirely on account, as before. 1.5.0 (PAY-01): a Visa, wallet or InstaPay sale is refunded on
+ * its own method: the open shift's movement for that method, never drawer cash.
  */
 async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
   const refund = round2(amount)
@@ -122,14 +124,24 @@ async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
       await ledger(toCredit, `إعادة رصيد مستخدم في الفاتورة #${sale.id} (${label.what})`)
   }
   let shiftId = null
+  const method = methodOf(sale.payment_type) || 'cash'
   if (cash > 0) {
     shiftId = await refundShift(db, ctx, currentShiftId, sale)
     await db.query(
-      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-      [shiftId, cash, label.cash]
+      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0), $4)`,
+      [shiftId, cash, label.cash, method]
     )
   }
-  return { refund, cash, toDebt, toCredit, shiftId }
+  // cash: what left the drawer; paidBack: what went back by the sale's own method (cash included).
+  return {
+    refund,
+    cash: method === 'cash' ? cash : 0,
+    paidBack: cash,
+    method,
+    toDebt,
+    toCredit,
+    shiftId
+  }
 }
 
 /**
@@ -232,7 +244,20 @@ module.exports = function salesModule(app) {
       return {
         sale: withCashier || sale,
         items: await saleItems(ctx.pool, saleId),
-        discounts: await saleDiscounts(ctx.pool, saleId)
+        discounts: await saleDiscounts(ctx.pool, saleId),
+        // PAY-02: payment method changes of this invoice, and whether its shift is still open.
+        corrections: (
+          await ctx.pool.query(
+            'SELECT from_type, to_type, amount::float8 AS amount, reason, username, created_at FROM sale_payment_corrections WHERE sale_id = $1 ORDER BY id',
+            [saleId]
+          )
+        ).rows,
+        shiftOpen:
+          (
+            await ctx.pool.query("SELECT status = 'open' AS open FROM shifts WHERE id = $1", [
+              sale.shift_id
+            ])
+          ).rows[0]?.open === true
       }
     }
   })
@@ -369,6 +394,9 @@ module.exports = function salesModule(app) {
         return {
           netRefund,
           cashRefund: paid.cash,
+          // 1.5.0: the method the refund went back on, and how much (Visa, wallet, InstaPay or cash).
+          refundMethod: paid.method,
+          methodRefund: paid.paidBack,
           toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, sale.id),
           items: await saleItems(db, sale.id)
@@ -464,6 +492,9 @@ module.exports = function salesModule(app) {
         return {
           refund,
           cashRefund: paid.cash,
+          // 1.5.0: the method the refund went back on, and how much (Visa, wallet, InstaPay or cash).
+          refundMethod: paid.method,
+          methodRefund: paid.paidBack,
           toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, saleId),
           items: await saleItems(db, saleId)

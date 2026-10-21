@@ -1,6 +1,8 @@
 'use strict'
 // Customers (useClientsManager): directory, monthly report, profile, add/edit/delete, repayments.
-const { badRequest, conflict, notFound, shiftRequired } = require('../errors')
+const { badRequest, conflict, notFound } = require('../errors')
+const treasury = require('../money/treasury')
+const { METHODS } = require('../money/methods')
 
 const path = require('path')
 const { pathToFileURL } = require('url')
@@ -323,38 +325,67 @@ module.exports = function customersModule(app) {
       properties: {
         clientId: { type: 'integer' },
         amount: { type: 'number', exclusiveMinimum: 0 },
-        currentShiftId: { type: ['integer', 'null'] }
+        currentShiftId: { type: ['integer', 'null'] },
+        // 1.5.0 (CUST-02): into the user's shift (any of the four methods) or, for treasury
+        // managers, straight into the treasury (cash) without a shift.
+        destination: { type: 'string', enum: ['shift', 'treasury'] },
+        method: { type: 'string', enum: METHODS },
+        clientRef: { type: 'string', minLength: 8, maxLength: 120 }
       }
     },
-    handler: async (ctx, { clientId, amount, currentShiftId }) =>
+    handler: async (
+      ctx,
+      { clientId, amount, currentShiftId, destination, method = 'cash', clientRef }
+    ) =>
       ctx.tx(async (db) => {
         const c = (await db.query('SELECT * FROM clients WHERE id = $1 FOR UPDATE', [clientId]))
           .rows[0]
         if (!c) throw notFound('العميل غير موجود.')
+        const dest = await treasury.resolveDestination(db, ctx, { destination, currentShiftId })
+        if (dest.destination === 'treasury' && method !== 'cash')
+          throw badRequest(
+            'الخزنة نقدية فقط: التحصيل بفيزا أو محفظة أو انستا باي يُسجَّل في الوردية.'
+          )
+        if (dest.destination === 'treasury') {
+          const entry = await treasury.post(db, ctx, {
+            kind: 'customer_payment',
+            amount,
+            refType: 'client',
+            refId: c.id,
+            description: `تحصيل من العميل: ${c.name}`,
+            idemKey: clientRef ? `client-pay:${clientRef}` : null
+          })
+          if (entry.duplicate)
+            return (await db.query('SELECT * FROM clients WHERE id = $1', [clientId])).rows[0]
+        }
         if (Number(c.debt_balance) <= 0) throw badRequest('العميل ليس لديه مديونية مستحقة!')
-        const shift = currentShiftId
-          ? (
-              await db.query(
-                "SELECT id FROM shifts WHERE id = $1 AND user_id = $2 AND status = 'open'",
-                [currentShiftId, ctx.user.id]
-              )
-            ).rows[0]
-          : null
-        // Cash goes into the drawer of an open shift (safe_ledger.shift_id is required).
-        if (!shift) throw shiftRequired('يجب فتح وردية لتسجيل السداد النقدي في الخزينة.')
         await db.query('UPDATE clients SET debt_balance = debt_balance - $1 WHERE id = $2', [
           amount,
           clientId
         ])
         await db.query(
-          `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, 'سداد نقدي من العميل', LOCALTIMESTAMP(0))`,
-          [clientId, amount]
+          `INSERT INTO client_ledger (client_id, type, amount, description, timestamp) VALUES ($1, 'payment', $2, $3, LOCALTIMESTAMP(0))`,
+          [
+            clientId,
+            amount,
+            dest.destination === 'treasury'
+              ? 'سداد نقدي من العميل (الخزنة)'
+              : method === 'cash'
+                ? 'سداد نقدي من العميل'
+                : `سداد من العميل (${method})`
+          ]
         )
-        await db.query(
-          `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
-          [shift.id, amount, `سداد دين العميل: ${c.name}`]
+        if (dest.destination === 'shift') {
+          await db.query(
+            `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0), $4)`,
+            [dest.shift.id, amount, `سداد دين العميل: ${c.name}`, method]
+          )
+        }
+        await ctx.audit(
+          db,
+          'client_payment',
+          `سداد ${amount.toFixed(2)} ج.م من العميل "${c.name}"${dest.destination === 'treasury' ? ' إلى الخزنة' : ''}`
         )
-        await ctx.audit(db, 'client_payment', `سداد ${amount.toFixed(2)} ج.م من العميل "${c.name}"`)
         return (await db.query('SELECT * FROM clients WHERE id = $1', [clientId])).rows[0]
       })
   })

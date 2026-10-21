@@ -2,7 +2,7 @@
 // Admin screen: shift history and periodic drawer audits.
 // Read-only tables with client-side pagination (25 rows per page).
 // ─────────────────────────────────────────────────────────────
-import { Fragment, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -10,10 +10,131 @@ import {
   ChevronRight,
   Archive,
   ClipboardCheck,
-  PackageOpen
+  PackageOpen,
+  Clock,
+  FileText
 } from 'lucide-react'
 import { formatMoney } from '../../lib/utils'
 import { Timestamp } from '../ui'
+import { api, can } from '../../lib/api'
+import CloseReportModal from '../modals/CloseReportModal'
+
+// Live details of an open shift refresh every 5 seconds while shown (SHIFT-01): each refresh reads
+// the saved records again, so the figures are right after a reconnect too.
+const LIVE_REFRESH_MS = 5000
+
+/** Details of one shift: its saved close, or the live figures of an open one (owner only). */
+function ShiftDetails({ shiftId, onClose, triggerCustomAlert }) {
+  const [data, setData] = useState(null)
+  const load = useCallback(async () => {
+    try {
+      const d = await api('shifts.details', { shiftId })
+      setData(d)
+      return d
+    } catch (err) {
+      triggerCustomAlert?.('تعذّر عرض تفاصيل الوردية: ' + err.message)
+      onClose()
+      return null
+    }
+  }, [shiftId, onClose, triggerCustomAlert])
+  useEffect(() => {
+    let timer = null
+    let stopped = false
+    const tick = async () => {
+      const d = await load()
+      if (!stopped && d && d.shift.status === 'open') timer = setTimeout(tick, LIVE_REFRESH_MS)
+    }
+    tick()
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [load])
+  if (!data) return null
+  const open = data.shift.status === 'open'
+  return (
+    <CloseReportModal
+      data={data}
+      onDone={onClose}
+      doneLabel="إغلاق"
+      title={
+        open
+          ? `الوردية #${shiftId} (مفتوحة – تتحدث تلقائياً)`
+          : data.saved
+            ? `تقرير إغلاق الوردية #${shiftId}`
+            : `الوردية #${shiftId} (أُغلقت قبل الإصدار 1.5.0: الأرقام محسوبة من السجلات)`
+      }
+    />
+  )
+}
+
+function OpenShiftsTable({ onDetails }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    api('shifts.openList')
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [])
+  return (
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          <Clock size={18} aria-hidden="true" />
+          الورديات المفتوحة الآن
+        </h2>
+      </div>
+      <div className="card-body">
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>الوردية</th>
+                <th>الكاشير</th>
+                <th>البدء</th>
+                <th className="num">الافتتاحي</th>
+                <th className="num">الفواتير</th>
+                <th>
+                  <span className="visually-hidden">تفاصيل</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {!rows || rows.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="table-empty">
+                    {rows ? 'لا توجد ورديات مفتوحة.' : 'جاري التحميل...'}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="cell-strong num">#{r.id}</td>
+                    <td className="cell-strong">{r.username}</td>
+                    <td className="nowrap cell-muted">
+                      <Timestamp value={r.start_time} />
+                    </td>
+                    <td className="num">{formatMoney(r.initial_cash)}</td>
+                    <td className="num">{r.invoices}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => onDetails(r.id)}
+                      >
+                        <FileText size={15} aria-hidden="true" />
+                        التفاصيل
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 const PAGE_SIZE = 25
 
@@ -68,7 +189,7 @@ function PaginationBar({ page, totalPages, setPage, total }) {
 
 const signed = (v) => (v > 0 ? `+${formatMoney(v)}` : formatMoney(v || 0))
 
-function ClosedShiftsTable({ shiftsHistory }) {
+function ClosedShiftsTable({ shiftsHistory, onDetails }) {
   const [page, setPage] = useState(1)
   const data = shiftsHistory || []
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
@@ -96,12 +217,15 @@ function ClosedShiftsTable({ shiftsHistory }) {
                 <th className="num">المتوقع بالدرج</th>
                 <th className="num">الفعلي المسلَّم</th>
                 <th className="num">الفرق</th>
+                <th>
+                  <span className="visually-hidden">التقرير</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {pageData.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="table-empty">
+                  <td colSpan="9" className="table-empty">
                     لا توجد ورديات مغلقة مسجلة بعد.
                   </td>
                 </tr>
@@ -114,7 +238,7 @@ function ClosedShiftsTable({ shiftsHistory }) {
                     <Fragment key={s.id}>
                       {showSeparator && (
                         <tr>
-                          <td colSpan="8" className="table-separator">
+                          <td colSpan="9" className="table-separator">
                             <PackageOpen size={16} aria-hidden="true" />
                             <strong>بداية نظام التوريد الجديد — عهدة 200 ج.م</strong>
                             <span>
@@ -140,6 +264,17 @@ function ClosedShiftsTable({ shiftsHistory }) {
                           className={`num money-strong ${s.difference < 0 ? 'text-danger' : s.difference > 0 ? 'text-success' : ''}`}
                         >
                           {signed(s.difference)}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`تقرير الوردية ${s.id}`}
+                            title="التقرير"
+                            onClick={() => onDetails(s.id)}
+                          >
+                            <FileText size={15} />
+                          </button>
                         </td>
                       </tr>
                     </Fragment>
@@ -233,8 +368,12 @@ function AuditsTable({ shiftAudits }) {
   )
 }
 
-export default function ShiftsTab({ shiftsHistory, shiftAudits }) {
+export default function ShiftsTab({ shiftsHistory, shiftAudits, currentUser, triggerCustomAlert }) {
   const [activeSubTab, setActiveSubTab] = useState('closed')
+  const [detailsOf, setDetailsOf] = useState(null)
+  const closeDetails = useCallback(() => setDetailsOf(null), [])
+  // Live figures of open shifts are the owner's (expected amounts, PAY-01).
+  const canLive = can(currentUser, 'shifts.view_expected')
 
   return (
     <>
@@ -249,6 +388,18 @@ export default function ShiftsTab({ shiftsHistory, shiftAudits }) {
           <Archive size={16} aria-hidden="true" />
           الورديات المغلقة
         </button>
+        {canLive && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubTab === 'open'}
+            className={activeSubTab === 'open' ? 'active' : ''}
+            onClick={() => setActiveSubTab('open')}
+          >
+            <Clock size={16} aria-hidden="true" />
+            الورديات المفتوحة
+          </button>
+        )}
         <button
           type="button"
           role="tab"
@@ -261,10 +412,17 @@ export default function ShiftsTab({ shiftsHistory, shiftAudits }) {
         </button>
       </div>
 
-      {activeSubTab === 'closed' ? (
-        <ClosedShiftsTable shiftsHistory={shiftsHistory} />
-      ) : (
-        <AuditsTable shiftAudits={shiftAudits} />
+      {activeSubTab === 'closed' && (
+        <ClosedShiftsTable shiftsHistory={shiftsHistory} onDetails={setDetailsOf} />
+      )}
+      {activeSubTab === 'open' && canLive && <OpenShiftsTable onDetails={setDetailsOf} />}
+      {activeSubTab === 'audits' && <AuditsTable shiftAudits={shiftAudits} />}
+      {detailsOf && (
+        <ShiftDetails
+          shiftId={detailsOf}
+          onClose={closeDetails}
+          triggerCustomAlert={triggerCustomAlert}
+        />
       )}
     </>
   )

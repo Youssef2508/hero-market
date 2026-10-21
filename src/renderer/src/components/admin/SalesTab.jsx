@@ -3,6 +3,8 @@ import { Search, Printer, Undo2, ReceiptText, X } from 'lucide-react'
 import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { splitStamp } from '../../lib/time'
+import { can } from '../../lib/api'
+import ChangePaymentModal from './ChangePaymentModal'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 
@@ -24,7 +26,12 @@ function Stamp({ value }) {
 /**
  * Invoices & returns. Data and mutations come from useSalesManager.
  */
+// The four payment methods (D-061); on-account invoices keep their type.
+const METHOD_TYPES = ['نقدي', 'فيزا', 'محفظة', 'فودافون كاش', 'انستا باي']
+
 export default function SalesTab({
+  currentUser,
+  triggerCustomAlert,
   salesSearch,
   setSalesSearch,
   salesHistory,
@@ -41,9 +48,23 @@ export default function SalesTab({
   itemsPerPage,
   handleReprintSale
 }) {
+  const [changingPayment, setChangingPayment] = useState(false)
+  // PAY-02: holders of sales.change_payment, while the invoice's shift is open; the service checks
+  // the same and also refuses an invoice with a return.
+  const canChangePayment =
+    selectedSale &&
+    can(currentUser, 'sales.change_payment') &&
+    selectedSale.shiftOpen &&
+    METHOD_TYPES.includes(selectedSale.payment_type)
   const [activeReturnItem, setActiveReturnItem] = useState(null)
   const [returnQty, setReturnQty] = useState('')
   const [returnErrorMsg, setReturnErrorMsg] = useState('')
+
+  const afterPaymentChange = async () => {
+    setChangingPayment(false)
+    await fetchSalesHistory(salesSearch, salesSortField, salesSortAsc, salesPage)
+    await selectSaleForDetail({ ...selectedSale })
+  }
 
   const handleSortClick = (field) => {
     const isAsc = salesSortField === field ? !salesSortAsc : true
@@ -216,6 +237,20 @@ export default function SalesTab({
                   <dt>طريقة الدفع</dt>
                   <dd>
                     <span className="badge">{selectedSale.payment_type}</span>
+                    {canChangePayment && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setChangingPayment(true)}
+                      >
+                        تغيير
+                      </button>
+                    )}
+                    {(selectedSale.corrections || []).map((c, i) => (
+                      <div key={i} className="cell-muted">
+                        غُيّرت من {c.from_type} إلى {c.to_type} بواسطة {c.username}: {c.reason}
+                      </div>
+                    ))}
                   </dd>
                 </div>
                 <div>
@@ -405,6 +440,14 @@ export default function SalesTab({
             </div>
           </form>
         </div>
+      )}
+      {changingPayment && selectedSale && (
+        <ChangePaymentModal
+          sale={selectedSale}
+          onDone={afterPaymentChange}
+          onClose={() => setChangingPayment(false)}
+          triggerCustomAlert={triggerCustomAlert}
+        />
       )}
     </div>
   )

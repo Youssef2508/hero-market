@@ -51,6 +51,14 @@ const PERMISSIONS = [
     description: 'عرض جميع الورديات وجرد الأدراج'
   },
   {
+    // Blind close (owner feedback PAY-01): without it, expected amounts stay hidden until the close
+    // is confirmed; the service refuses them, the screens only follow.
+    key: 'shifts.view_expected',
+    module: 'shifts',
+    label: 'عرض المبالغ المتوقعة قبل الإغلاق',
+    description: 'رؤية المتوقع في الدرج وكل طريقة دفع أثناء الوردية وقبل تأكيد الإغلاق'
+  },
+  {
     key: 'tills.operate',
     module: 'tills',
     label: 'حركات الأدراج والتحويلات',
@@ -86,6 +94,12 @@ const PERMISSIONS = [
     module: 'sales',
     label: 'طلب مرتجع بموافقة المشرف',
     description: 'فتح الفاتورة برقمها وتنفيذ مرتجع بعد موافقة المشرف وكتابة السبب'
+  },
+  {
+    key: 'sales.change_payment',
+    module: 'sales',
+    label: 'تغيير طريقة دفع فاتورة',
+    description: 'تصحيح طريقة الدفع لفاتورة في وردية مفتوحة مع ذكر السبب'
   },
   // Catalogue and stock
   {
@@ -185,7 +199,31 @@ const PERMISSIONS = [
     key: 'expenses.manage',
     module: 'finance',
     label: 'المصروفات',
-    description: 'تسجيل وحذف المصروفات'
+    description: 'تسجيل مصروفاته وعرضها وحذفها'
+  },
+  {
+    key: 'expenses.view_all',
+    module: 'finance',
+    label: 'كل المصروفات',
+    description: 'عرض وحذف مصروفات كل المستخدمين ومصروفات الخزنة'
+  },
+  {
+    key: 'expenses.categories',
+    module: 'finance',
+    label: 'تصنيفات المصروفات',
+    description: 'إضافة تصنيفات المصروفات وتعديلها وإيقافها'
+  },
+  {
+    key: 'treasury.view',
+    module: 'finance',
+    label: 'عرض الخزنة',
+    description: 'رصيد الخزنة وحركاتها'
+  },
+  {
+    key: 'treasury.manage',
+    module: 'finance',
+    label: 'حركات الخزنة',
+    description: 'إيداع وسحب وتسوية، ومصروفات وتحصيلات وسداد من الخزنة مباشرة بدون وردية'
   },
   // Reports and administration
   {
@@ -250,6 +288,13 @@ const MANAGEMENT = ALL.filter(
       'pos.manual_discount',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
+      // Owner-only money (owner feedback phase D, D-062): expected amounts before the close, every
+      // user's expenses, the treasury and payment method corrections.
+      'shifts.view_expected',
+      'expenses.view_all',
+      'treasury.view',
+      'treasury.manage',
+      'sales.change_payment',
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
       'sync.manage'
     ].includes(k)

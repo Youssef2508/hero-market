@@ -25,8 +25,8 @@ const { readAll } = require('./settings')
 const { priceCart, activeRules } = require('../pricing/discounts')
 const { ADDRESSES } = require('./customers').helpers
 
-const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
-const CREDIT_TYPES = ['آجل', 'دفع جزئي']
+// Cash, Visa, wallet, InstaPay; on account (D-061). The list and its mapping: money/methods.js.
+const { PAYMENT_TYPES, CREDIT_TYPES, storedType } = require('../money/methods')
 const CASH_TENDER_TYPES = ['نقدي', 'دفع جزئي']
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
@@ -507,7 +507,9 @@ module.exports = function posModule(app) {
         }
       }
     },
-    handler: async (ctx, b) => {
+    handler: async (ctx, request) => {
+      // A till queued before 1.5.0 may still send فودافون كاش: it is stored as محفظة.
+      const b = { ...request, paymentType: storedType(request.paymentType) }
       const credit = Number(b.appliedCredit || 0)
       if (CREDIT_TYPES.includes(b.paymentType) && !ctx.can('pos.credit'))
         throw forbidden('البيع الآجل يتطلب صلاحية.')

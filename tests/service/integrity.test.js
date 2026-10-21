@@ -156,7 +156,7 @@ test('cash refunds need an open drawer; they never go into a closed shift', asyn
   const evening = await login(svc, '1357')
   const s1 = ok(await svc.call('shifts.open', { startingCash: 0 }, evening))
   const sale = ok(await sell(evening, s1.id, [{ barcode: 'A', qty: 2 }]))
-  const p = ok(await svc.call('shifts.auditPreview', { shiftId: s1.id }, evening))
+  const p = ok(await svc.call('shifts.auditPreview', { shiftId: s1.id }, owner))
   ok(await svc.call('shifts.close', { shiftId: s1.id, actualCash: p.expected }, evening))
   // The owner has no open shift now (closed above): refusing is better than changing a closed drawer.
   const item = await one('SELECT id FROM sale_items WHERE sale_id = $1', [sale.saleId])

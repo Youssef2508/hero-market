@@ -33,7 +33,8 @@ import {
   ShieldCheck,
   BadgePercent,
   Settings,
-  Archive
+  Archive,
+  Landmark
 } from 'lucide-react'
 
 export const NAV_GROUPS = [
@@ -70,6 +71,22 @@ export const NAV_GROUPS = [
         tab: 'menu',
         description: 'ملخص سريع والوصول لكل الأقسام.',
         onEnter: (c) => c.fetchAdminData()
+      }
+    ]
+  },
+  {
+    // Owner feedback TREAS-01: the treasury is a top-level section.
+    id: 'treasury',
+    label: 'الخزنة',
+    items: [
+      {
+        id: 'treasury',
+        permission: ['treasury.view'],
+        label: 'الخزنة',
+        icon: Landmark,
+        view: 'admin',
+        tab: 'treasury',
+        description: 'رصيد الخزنة وحركاتها: الإيداع والسحب وتوريد الورديات والمصروفات والتحصيلات.'
       }
     ]
   },

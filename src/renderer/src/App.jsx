@@ -27,6 +27,7 @@ import TillsManagerTab from './components/admin/TillsManagerTab'
 
 // Import Modals Components
 import AppModals from './components/modals/AppModals'
+import CloseReportModal from './components/modals/CloseReportModal'
 import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePasswordModal from './components/modals/ChangePasswordModal'
 import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
@@ -191,6 +192,8 @@ function App() {
     completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
+    closeReport,
+    dismissCloseReport,
     handleLock,
     barcodeInput,
     setBarcodeInput,
@@ -341,10 +344,18 @@ function App() {
   const triggerAuditCheck = async () => {
     if (!currentShift) return
     try {
-      // Same formula as before, computed by the service (shifts.auditPreview).
-      const { expected, breakdown } = await api('shifts.auditPreview', { shiftId: currentShift.id })
-      setAuditExpectedCash(expected)
-      setAuditBreakdown(breakdown)
+      // Same formula as before, computed by the service (shifts.auditPreview). A blind count
+      // (no shifts.view_expected, PAY-01) shows only the input: the service refuses the figures.
+      if (can(currentUser, 'shifts.view_expected')) {
+        const { expected, breakdown } = await api('shifts.auditPreview', {
+          shiftId: currentShift.id
+        })
+        setAuditExpectedCash(expected)
+        setAuditBreakdown(breakdown)
+      } else {
+        setAuditExpectedCash(null)
+        setAuditBreakdown(null)
+      }
       setAuditActualCash('')
       setAuditNotes('')
       setShowAuditModal(true)
@@ -759,6 +770,7 @@ function App() {
         )}
       </AppShell>
 
+      <CloseReportModal data={closeReport} onDone={dismissCloseReport} />
       <AppModals
         openShiftModal={openShiftModal}
         setOpenShiftModal={setOpenShiftModal}
@@ -836,31 +848,39 @@ function App() {
             </div>
 
             <div className="modal-body">
-              <div className="audit-summary">
-                <dl className="kv">
-                  {auditRows
-                    .filter((r) => r.sign === '' || r.value > 0)
-                    .map((r) => (
-                      <div key={r.label} style={{ display: 'contents' }}>
-                        <dt>{r.label}</dt>
-                        <dd className={r.tone ? `text-${r.tone}` : ''}>
-                          {r.sign} {r.value.toFixed(2)} ج.م
-                        </dd>
-                      </div>
-                    ))}
-                </dl>
-                <div className="audit-expected">
-                  <span>صافي الكاش المتوقع بالدرج</span>
-                  <strong className="money">{(auditExpectedCash || 0).toFixed(2)} ج.م</strong>
+              {auditExpectedCash === null ? (
+                <div className="notice">
+                  <span>
+                    عُدّ النقدية الموجودة في الدرج واكتبها. لا يظهر المبلغ المتوقع أثناء الوردية.
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-accent-soft btn-sm btn-block"
-                  onClick={() => setAuditActualCash((auditExpectedCash || 0).toFixed(2))}
-                >
-                  تعبئة المبلغ المتوقع تلقائياً
-                </button>
-              </div>
+              ) : (
+                <div className="audit-summary">
+                  <dl className="kv">
+                    {auditRows
+                      .filter((r) => r.sign === '' || r.value > 0)
+                      .map((r) => (
+                        <div key={r.label} style={{ display: 'contents' }}>
+                          <dt>{r.label}</dt>
+                          <dd className={r.tone ? `text-${r.tone}` : ''}>
+                            {r.sign} {r.value.toFixed(2)} ج.م
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                  <div className="audit-expected">
+                    <span>صافي الكاش المتوقع بالدرج</span>
+                    <strong className="money">{(auditExpectedCash || 0).toFixed(2)} ج.م</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-accent-soft btn-sm btn-block"
+                    onClick={() => setAuditActualCash((auditExpectedCash || 0).toFixed(2))}
+                  >
+                    تعبئة المبلغ المتوقع تلقائياً
+                  </button>
+                </div>
+              )}
 
               <label className="field">
                 <span className="field-label">المبلغ النقدي الفعلي في الدرج حالياً (ج.م) *</span>

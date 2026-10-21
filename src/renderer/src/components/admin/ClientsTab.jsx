@@ -22,6 +22,8 @@ import {
 import { api } from '../../lib/api'
 import { EmptyState, SortableTh, StatCard, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import PaymentDestination from './PaymentDestination'
+import { fixedDestination } from '../../lib/destination'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 const PERIODS = [
@@ -35,6 +37,8 @@ const PERIODS = [
  * Customers & accounts. Data and mutations come from useClientsManager.
  */
 export default function ClientsTab({
+  currentUser,
+  currentShift,
   highestPointsCustomer,
   bestCustomerOfMonth,
   monthlyClientsReport,
@@ -60,6 +64,7 @@ export default function ClientsTab({
   clientPeriodFilter,
   changeClientPeriodFilter
 }) {
+  const [repayTo, setRepayTo] = useState('')
   const [activeInvoice, setActiveInvoice] = useState(null)
   const [activeInvoiceItems, setActiveInvoiceItems] = useState([])
   const [clientsSortField, setClientsSortField] = useState('name')
@@ -336,9 +341,16 @@ export default function ClientsTab({
                   className="repay-form"
                   onSubmit={(e) => {
                     e.preventDefault()
-                    handleRepayment()
+                    handleRepayment(fixedDestination(currentUser, currentShift) || repayTo)
                   }}
                 >
+                  <PaymentDestination
+                    currentUser={currentUser}
+                    currentShift={currentShift}
+                    value={repayTo}
+                    onChange={setRepayTo}
+                    name="client-repay-destination"
+                  />
                   <label className="field" style={{ flex: 1 }}>
                     <span className="field-label">سداد مديونية (ج.م)</span>
                     <input

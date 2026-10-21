@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, newClientRef } from '../lib/api'
 
 export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerCustomConfirm }) {
   const [suppliersList, setSuppliersList] = useState([])
@@ -116,7 +116,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     }
   }
 
-  const handleSupplierRepay = async (e) => {
+  // destination: 'shift' or 'treasury' (owner feedback CUST-02), chosen on the form.
+  const handleSupplierRepay = async (e, destination) => {
     if (e) e.preventDefault()
     const amount = parseFloat(supplierRepayAmount) || 0
     if (amount <= 0) {
@@ -127,7 +128,9 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       const updated = await api('suppliers.repay', {
         supplierId: selectedSupplier.id,
         amount,
-        currentShiftId: currentShift ? currentShift.id : null
+        destination,
+        currentShiftId: destination === 'shift' && currentShift ? currentShift.id : null,
+        clientRef: newClientRef()
       })
       setSupplierRepayAmount('')
       if (updated) await fetchSupplierProfile(updated)

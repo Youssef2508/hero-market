@@ -13,11 +13,15 @@ import {
 } from 'lucide-react'
 import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import PaymentDestination from './PaymentDestination'
+import { fixedDestination } from '../../lib/destination'
 
 /**
  * Suppliers & purchases. Data and mutations come from useSuppliersManager.
  */
 export default function SuppliersTab({
+  currentUser,
+  currentShift,
   setNewSupplierForm,
   setShowAddSupplierModal,
   suppliersSearch,
@@ -35,6 +39,7 @@ export default function SuppliersTab({
   supplierPurchases,
   supplierLedger
 }) {
+  const [repayTo, setRepayTo] = useState('')
   const [sortField, setSortField] = useState('name')
   const [sortAsc, setSortAsc] = useState(true)
 
@@ -212,7 +217,19 @@ export default function SuppliersTab({
                 <span>إجمالي المديونية للمورد</span>
                 <strong className="money">{formatMoney(s.debt_balance)} ج.م</strong>
               </div>
-              <form className="repay-form" onSubmit={handleSupplierRepay}>
+              <form
+                className="repay-form"
+                onSubmit={(e) =>
+                  handleSupplierRepay(e, fixedDestination(currentUser, currentShift) || repayTo)
+                }
+              >
+                <PaymentDestination
+                  currentUser={currentUser}
+                  currentShift={currentShift}
+                  value={repayTo}
+                  onChange={setRepayTo}
+                  name="supplier-repay-destination"
+                />
                 <label className="field" style={{ flex: 1 }}>
                   <span className="field-label">سداد دفعة للمورد (ج.م)</span>
                   <input

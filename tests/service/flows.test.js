@@ -223,11 +223,10 @@ test('FLOWS 14–17: customer repayment and supplier purchase / payment move the
     )
   )
   assert.equal(Number(repaid.debt_balance), 20)
-  assert.equal(
-    (await svc.call('clients.repay', { clientId: client.id, amount: 5 }, admin)).status,
-    409,
-    'repayment needs an open shift'
-  )
+  // 1.5.0 (CUST-02): the owner, with a shift open, must choose the shift or the treasury.
+  const unclear = await svc.call('clients.repay', { clientId: client.id, amount: 5 }, admin)
+  assert.equal(unclear.status, 400, 'no destination chosen')
+  assert.equal(unclear.body.error.details.code, 'destination_required')
   // Overpayment creates a credit balance (legacy rule, after confirmation in the UI)
   const over = ok(
     await svc.call(
@@ -414,7 +413,9 @@ test('Tills: cashier records Momkn / wallet operations; only managers of tills m
   )
   assert.equal((await svc.call('momkn.delete', { id: m.rows[0].id }, cashier)).status, 403)
   ok(await svc.call('momkn.delete', { id: m.rows[0].id }, admin))
-  const live = ok(await svc.call('shifts.liveSummary', { shiftId: cshift.id }, cashier))
+  // The live figures are the owner's (blind close, PAY-01).
+  assert.equal((await svc.call('shifts.liveSummary', { shiftId: cshift.id }, cashier)).status, 403)
+  const live = ok(await svc.call('shifts.liveSummary', { shiftId: cshift.id }, admin))
   assert.equal(Number(live.mm_cash_impact), 200)
 })
 
