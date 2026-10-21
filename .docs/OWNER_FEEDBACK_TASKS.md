@@ -50,7 +50,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | UX-01        | Visible-control audit                                     | G               | Not started                                                                                                  | —                     |
 | POS-02       | Receipt modes, reprints                                   | G               | Not started                                                                                                  | none                  |
 | USER-02      | Admin password reset                                      | G               | In progress (exists, D-046; verify, add re-authentication)                                                   | none                  |
-| BACKUP-01    | Scheduled midnight backup                                 | G               | Not started (approved, Q5 and Q6 answered)                                                                   | none                  |
+| BACKUP-01    | Scheduled midnight backup                                 | G               | Done with evidence (tests + Windows Sandbox; shop PC check pending)                                          | none                  |
 | BACKUP-02    | Lifecycle regression gate                                 | every phase     | In progress                                                                                                  | —                     |
 | QA-01…06     | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress                                                                                                  | —                     |
 | INSTALL-01   | Laptop install failure: regression test, evidence         | D               | Done with evidence (automated + laptop; new path automated only)                                             | none                  |
@@ -376,6 +376,15 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - Not covered: removing on-account sales altogether.
 
 #### BACKUP-01: automatic midnight backup (approved 2026-10-21)
+
+- **Built 2026-10-21:** see [NIGHTLY_BACKUP.md](NIGHTLY_BACKUP.md) for the path, schedule, names, retention, restore steps, failure reporting and the evidence table.
+- **Method:** the program's own backup format, read from one consistent REPEATABLE READ snapshot.
+  - The bundled PostgreSQL has no `pg_dump`/`pg_restore`, and adding binaries needs approval.
+  - The manual backup had the same consistency gap (each table on any free connection); it is fixed too.
+- **Evidence:**
+  - `backupJob.test.mjs` (6) and `scheduledBackup.test.js` (3): restore into a disposable database, sales during a backup, about 80,000 rows in 1.6 s;
+  - Windows Sandbox B1–B5: task, run with the program closed as SYSTEM, permissions, same-day skip, automatic catch-up after a missed midnight, uninstall.
+- **Pending at the shop:** a PC switched off over midnight, and the timing on the real data.
 
 - **Schedule:** every day at 00:00 local time, with no confirmation and no window. It runs while nobody is signed in (Windows Task Scheduler or the service, as the system account).
 - **Catch-up:** one backup at the next start of the machine when midnight was missed. Never more than one.
