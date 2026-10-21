@@ -181,6 +181,7 @@ export default function DamagedGoodsTab({
       {showAddDamagedModal && (
         <div className="modal-overlay">
           <form
+            data-enter-step
             className="modal-content tone-danger"
             role="dialog"
             aria-modal="true"

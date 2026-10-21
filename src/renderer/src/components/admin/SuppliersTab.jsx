@@ -17,7 +17,9 @@ import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
 import { fixedDestination } from '../../lib/destination'
 import { can } from '../../lib/api'
+import { rowKeys } from '../../lib/keyboard'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
+import CancelPendingModal from '../modals/CancelPendingModal'
 
 const MODE_LABELS = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جزئي' }
 
@@ -25,7 +27,7 @@ const MODE_LABELS = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جز�
  * Preliminary supplier invoices waiting for their lines (D-064): total and payment recorded, no
  * stock yet. An administrator completes each one ("إكمال") in the purchase window.
  */
-function PendingInvoices({ rows, canConvert, onConvert }) {
+function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
   if (!rows || rows.length === 0) return null
   return (
     <section className="card">
@@ -56,7 +58,9 @@ function PendingInvoices({ rows, canConvert, onConvert }) {
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td className="num">{p.id}</td>
+                  <td>
+                    <span className="ltr-id">{p.id}</span>
+                  </td>
                   <td className="cell-strong">{p.supplier_name}</td>
                   <td className="nowrap cell-muted">
                     <Timestamp value={p.created_at} />
@@ -69,15 +73,24 @@ function PendingInvoices({ rows, canConvert, onConvert }) {
                     <span className="badge badge-warning">بدون أصناف</span>
                   </td>
                   <td>
-                    {canConvert && (
+                    <div className="cell-actions">
+                      {canConvert && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={() => onConvert(p)}
+                        >
+                          إكمال
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="btn btn-sm btn-primary"
-                        onClick={() => onConvert(p)}
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => onCancel(p)}
                       >
-                        إكمال
+                        إلغاء
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -117,6 +130,7 @@ export default function SuppliersTab({
   supplierLedger
 }) {
   const [pendingOpen, setPendingOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(null)
   const [repayTo, setRepayTo] = useState('')
   const [repayMethod, setRepayMethod] = useState('cash')
   const [sortField, setSortField] = useState('name')
@@ -153,7 +167,18 @@ export default function SuppliersTab({
         rows={pendingInvoices}
         canConvert={can(currentUser, 'suppliers.manage')}
         onConvert={startConvertPending}
+        onCancel={setCancelling}
       />
+      {cancelling && (
+        <CancelPendingModal
+          invoice={cancelling}
+          currentUser={currentUser}
+          currentShift={currentShift}
+          onClose={() => setCancelling(null)}
+          onDone={() => fetchPendingInvoices?.()}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {pendingOpen && (
         <PendingInvoiceModal
           currentUser={currentUser}
@@ -233,9 +258,7 @@ export default function SuppliersTab({
                       <tr
                         key={row.id}
                         className={s?.id === row.id ? 'is-selected' : ''}
-                        onClick={() => fetchSupplierProfile(row)}
-                        tabIndex={0}
-                        onKeyDown={(e) => e.key === 'Enter' && fetchSupplierProfile(row)}
+                        {...rowKeys(() => fetchSupplierProfile(row))}
                       >
                         <td className="cell-strong">{row.name}</td>
                         <td className="num cell-muted nowrap">{row.phone || '—'}</td>
@@ -322,6 +345,7 @@ export default function SuppliersTab({
                   <strong className="money">{formatMoney(s.debt_balance)} ج.م</strong>
                 </div>
                 <form
+                  data-enter-step
                   className="repay-form"
                   onSubmit={(e) =>
                     handleSupplierRepay(

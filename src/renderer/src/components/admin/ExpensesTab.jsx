@@ -247,7 +247,9 @@ export default function ExpensesTab({
               ) : (
                 sortedExpenses.map((exp, idx) => (
                   <tr key={exp.id}>
-                    <td className="num cell-muted">{idx + 1}</td>
+                    <td className="cell-muted">
+                      <span className="ltr-id">{idx + 1}</span>
+                    </td>
                     <td className="nowrap cell-muted">
                       <Timestamp value={exp.timestamp} />
                     </td>
@@ -292,6 +294,7 @@ export default function ExpensesTab({
       {showAddExpenseModal && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <form
+            data-enter-step
             className="modal-content"
             role="dialog"
             aria-modal="true"

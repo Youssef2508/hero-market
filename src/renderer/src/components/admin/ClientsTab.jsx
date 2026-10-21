@@ -25,6 +25,7 @@ import { formatMoney } from '../../lib/utils'
 import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
 import { fixedDestination } from '../../lib/destination'
+import { rowKeys } from '../../lib/keyboard'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 const PERIODS = [
@@ -206,9 +207,7 @@ export default function ClientsTab({
                       <tr
                         key={cl.id}
                         className={c && c.id === cl.id ? 'is-selected' : ''}
-                        onClick={() => selectAdminClientForProfile(cl)}
-                        tabIndex={0}
-                        onKeyDown={(e) => e.key === 'Enter' && selectAdminClientForProfile(cl)}
+                        {...rowKeys(() => selectAdminClientForProfile(cl))}
                       >
                         <td className="cell-strong">{cl.name}</td>
                         <td className="num cell-muted nowrap">
@@ -340,6 +339,7 @@ export default function ClientsTab({
 
               {c.debt_balance > 0 && (
                 <form
+                  data-enter-step
                   className="repay-form"
                   onSubmit={(e) => {
                     e.preventDefault()
@@ -554,7 +554,7 @@ export default function ClientsTab({
                     </thead>
                     <tbody>
                       {monthlyClientsReport.slice(0, 5).map((client, idx) => (
-                        <tr key={client.id} onClick={() => selectAdminClientForProfile(client)}>
+                        <tr key={client.id} {...rowKeys(() => selectAdminClientForProfile(client))}>
                           <td>
                             <span className={`rank rank-${idx + 1}`}>{idx + 1}</span>
                           </td>

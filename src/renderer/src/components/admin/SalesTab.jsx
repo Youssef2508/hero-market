@@ -4,6 +4,7 @@ import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { splitStamp } from '../../lib/time'
 import { can } from '../../lib/api'
+import { rowKeys } from '../../lib/keyboard'
 import ChangePaymentModal from './ChangePaymentModal'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
@@ -49,12 +50,11 @@ export default function SalesTab({
   handleReprintSale
 }) {
   const [changingPayment, setChangingPayment] = useState(false)
-  // PAY-02: holders of sales.change_payment, while the invoice's shift is open; the service checks
-  // the same and also refuses an invoice with a return.
+  // PAY-02: holders of sales.change_payment, also after the shift closed (D-065: a reclassification,
+  // no money moves); the service also refuses an invoice with a return.
   const canChangePayment =
     selectedSale &&
     can(currentUser, 'sales.change_payment') &&
-    selectedSale.shiftOpen &&
     METHOD_TYPES.includes(selectedSale.payment_type)
   const [activeReturnItem, setActiveReturnItem] = useState(null)
   const [returnQty, setReturnQty] = useState('')
@@ -147,11 +147,11 @@ export default function SalesTab({
                     <tr
                       key={s.id}
                       className={selectedSale?.id === s.id ? 'is-selected' : ''}
-                      onClick={() => selectSaleForDetail(s)}
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && selectSaleForDetail(s)}
+                      {...rowKeys(() => selectSaleForDetail(s))}
                     >
-                      <td className="cell-strong num">#{displayNo(s.id)}</td>
+                      <td className="cell-strong">
+                        <span className="ltr-id">#{displayNo(s.id)}</span>
+                      </td>
                       <td className="num cell-muted">
                         <Stamp value={s.timestamp} />
                       </td>
@@ -380,6 +380,7 @@ export default function SalesTab({
       {activeReturnItem && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <form
+            data-enter-step
             className="modal-content tone-warning"
             role="dialog"
             aria-modal="true"

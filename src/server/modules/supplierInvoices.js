@@ -148,11 +148,12 @@ module.exports = function supplierInvoicesModule(app) {
 
   app.operation({
     name: 'supplierInvoices.list',
-    anyPermission: ['suppliers.view', 'suppliers.manage'],
+    // A cashier (suppliers.pending only) sees the invoices they recorded, to cancel a mistake.
+    anyPermission: ['suppliers.view', 'suppliers.manage', 'suppliers.pending'],
     schema: {
       type: 'object',
       properties: {
-        status: { type: ['string', 'null'], enum: [null, 'pending', 'converted'] },
+        status: { type: ['string', 'null'], enum: [null, 'pending', 'converted', 'cancelled'] },
         supplierId: { type: ['integer', 'null'] }
       }
     },
@@ -164,10 +165,131 @@ module.exports = function supplierInvoicesModule(app) {
              FROM supplier_pending_invoices p JOIN suppliers s ON s.id = p.supplier_id
              LEFT JOIN users u ON u.id = p.created_by
             WHERE ($1::text IS NULL OR p.status = $1) AND ($2::int IS NULL OR p.supplier_id = $2)
+              AND ($3::int IS NULL OR p.created_by = $3)
             ORDER BY p.id DESC LIMIT 500`,
-          [status || null, supplierId || null]
+          [
+            status || null,
+            supplierId || null,
+            ctx.can('suppliers.view') || ctx.can('suppliers.manage') ? null : ctx.user.id
+          ]
         )
       ).rows
+  })
+
+  // Cancel a preliminary invoice entered by mistake (owner, 2026-10-21, D-065). It is kept, marked
+  // "cancelled"; what it did is reversed by new records: the payable it created goes, and money it
+  // paid either came back (a real movement, in the current shift or the treasury, by its method)
+  // or did not (then the supplier owes it to the store – nothing is added to cash or electronic
+  // balances). A converted invoice already moved stock and cost: it needs a purchase return.
+  app.operation({
+    name: 'supplierInvoices.cancel',
+    anyPermission: ['suppliers.pending', 'suppliers.manage'],
+    schema: {
+      type: 'object',
+      required: ['invoiceId', 'refund', 'clientRef'],
+      properties: {
+        invoiceId: { type: 'integer' },
+        // Did the supplier give back what was paid? 'none' for an invoice that paid nothing.
+        refund: { type: 'string', enum: ['none', 'returned'] },
+        method: { type: 'string', enum: METHODS },
+        destination: { type: 'string', enum: ['shift', 'treasury'] },
+        currentShiftId: { type: ['integer', 'null'] },
+        reason: { type: ['string', 'null'], maxLength: 300 },
+        clientRef: ref
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const inv = await pendingRow(db, b.invoiceId, true)
+        if (!inv) throw notFound('الفاتورة المبدئية غير موجودة.')
+        // A cashier cancels the invoices they recorded; an administrator any.
+        if (!ctx.can('suppliers.manage') && inv.created_by !== ctx.user.id) throw notFound()
+        if (inv.status === 'cancelled') {
+          if (inv.cancel_ref === b.clientRef) return { invoice: inv, duplicate: true }
+          throw conflict(`الفاتورة المبدئية #${inv.id} ملغاة بالفعل.`)
+        }
+        if (inv.status === 'converted')
+          throw conflict(
+            `الفاتورة المبدئية #${inv.id} أُكملت بفاتورة الشراء #${inv.purchase_id} وأثّرت في المخزون والتكلفة؛ لا تُلغى من هنا. يلزم مرتجع مشتريات (غير متاح بعد): راجع الإدارة.`
+          )
+        const total = Number(inv.total)
+        const paid = Number(inv.paid)
+        const refund = paid > 0 ? b.refund : 'none'
+        const method = b.method || inv.method || 'cash'
+        const label = `الفاتورة المبدئية #${inv.id}`
+        const ledger = (type, amount, text) =>
+          db.query(
+            `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0))`,
+            [inv.supplier_id, type, amount, text]
+          )
+        // 1. The payable the invoice created.
+        const unpaid = round2(total - paid)
+        if (unpaid > 0) {
+          await db.query('UPDATE suppliers SET debt_balance = debt_balance - $1 WHERE id = $2', [
+            unpaid,
+            inv.supplier_id
+          ])
+          await ledger('adjustment', -unpaid, `إلغاء ${label}: المتبقي غير مستحق`)
+        }
+        // 2. What it paid.
+        if (paid > 0 && refund === 'returned') {
+          // Real money back, recorded where it arrives now (the original payment stays in its shift).
+          const dest = await treasury.resolveDestination(db, ctx, b)
+          if (dest.destination === 'shift') {
+            await addMovement(db, {
+              shiftId: dest.shift.id,
+              type: 'inflow',
+              amount: paid,
+              description: `مبلغ أعاده المورد ${inv.supplier_name} – إلغاء ${label}`,
+              method,
+              kind: 'supplier_refund',
+              clientRef: `cancel-pending:${b.clientRef}`
+            })
+          } else {
+            await treasury.post(db, ctx, {
+              kind: 'supplier_refund',
+              method,
+              amount: paid,
+              refType: 'supplier',
+              refId: inv.supplier_id,
+              description: `مبلغ أعاده المورد ${inv.supplier_name} – إلغاء ${label}`,
+              idemKey: `cancel-pending:${b.clientRef}`
+            })
+          }
+          await ledger('refund', paid, `المورد أعاد ${paid.toFixed(2)} ج.م (إلغاء ${label})`)
+        } else if (paid > 0) {
+          // Not returned: the supplier owes it to the store (a credit on the supplier's account).
+          await db.query('UPDATE suppliers SET debt_balance = debt_balance - $1 WHERE id = $2', [
+            paid,
+            inv.supplier_id
+          ])
+          await ledger(
+            'adjustment',
+            -paid,
+            `إلغاء ${label}: المدفوع ${paid.toFixed(2)} مستحق من المورد`
+          )
+        }
+        await db.query(
+          `UPDATE supplier_pending_invoices SET status = 'cancelled', cancelled_by = $2, cancelled_at = LOCALTIMESTAMP(0),
+                  cancel_ref = $3, cancel_refund = $4, cancel_method = $5, cancel_reason = $6
+            WHERE id = $1`,
+          [
+            inv.id,
+            ctx.user.id,
+            b.clientRef,
+            refund,
+            refund === 'returned' ? method : null,
+            (b.reason || '').trim() || null
+          ]
+        )
+        await ctx.audit(
+          db,
+          'supplier_pending_cancel',
+          `إلغاء ${label} للمورد "${inv.supplier_name}" (${total.toFixed(2)} ج.م، مدفوع ${paid.toFixed(2)}${paid > 0 ? (refund === 'returned' ? '، أُعيد' : '، لم يُعد: مستحق من المورد') : ''})`,
+          { invoiceId: inv.id, total, paid, refund, method: refund === 'returned' ? method : null }
+        )
+        return { invoice: await pendingRow(db, inv.id) }
+      })
   })
 
   // Stage B: the lines of a preliminary invoice. Exactly once: a second conversion is refused, the
@@ -204,6 +326,8 @@ module.exports = function supplierInvoicesModule(app) {
       ctx.tx(async (db) => {
         const inv = await pendingRow(db, b.invoiceId, true)
         if (!inv) throw notFound('الفاتورة المبدئية غير موجودة.')
+        if (inv.status === 'cancelled')
+          throw conflict(`الفاتورة المبدئية #${inv.id} ملغاة ولا يمكن إكمالها.`)
         if (inv.status === 'converted') {
           if (inv.convert_ref === b.clientRef) return { invoice: inv, duplicate: true }
           throw conflict(

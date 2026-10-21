@@ -729,3 +729,36 @@ Format: context → decision → reason → consequences (→ alternatives).
   - On account and partial sales stay.
   - The part paid at once on a partial sale is recorded with its own payment method.
   - Later collections reduce the customer's balance and appear in the collecting shift as collections, never as sales. Each request is recorded once.
+
+## D-065 Owner requests of 2026-10-21 (evening)
+
+- **Cancelling a preliminary supplier invoice (owner's answer).** A cashier may cancel their own preliminary invoice entered by mistake; an administrator may cancel any. The invoice is never deleted: it becomes "ملغاة", with who, when and how.
+  - Cancelling reverses the payable it created.
+  - **If money was paid:** the user says whether the supplier returned it.
+    - Returned: the return is a real money movement in the current shift (or the treasury) by its method, and the original payment stays in its shift's history.
+    - Not returned: nothing is added to cash or electronic balances. The amount becomes the supplier's debt to the store (a credit on the supplier's account).
+  - **A converted invoice cannot be cancelled here.** Its stock and cost need a purchase return, which is not built yet; the user is told so. A cancelled invoice cannot be converted. Cancelling is atomic and happens once.
+- **Payment method correction (owner's answer).** No reason is asked, as decided before (D-063). The correction is now also allowed after the sale's shift is closed:
+  - the sale's method is reclassified and recorded (who, when, from, to, after close);
+  - no money moves and the closed shift's saved close is not rewritten, because the treasury already holds the counted amounts;
+  - the correction is listed with that shift.
+- **Hotkeys:** F1 prints, as before (confirm and print). F2 confirms without printing. F7 opens the product search.
+- **Dashboard:** period selector (today, this week, this month, this year, custom range) with cards and charts. The quick actions stay.
+- **Packaging (Parts 9–10).** Already in place since 1.4.0: units with a factor, their own barcode and price, and the factor kept on every sale and purchase line (INV-01, D-055).
+  - Added now: a package purchase price entered by the owner; a package selling price required for a sellable package (no derived price); stock shown as complete packages and loose units (floor); acceptance tests for the HoHos example.
+- **Keyboard (Part 2), one shared behaviour for every window and list** (`lib/modalChrome.js`, `lib/keyboard.js`):
+  - **Windows:**
+    - a window that opens takes the focus: its first field, else its cancel button, never a confirm button;
+    - Tab and Shift+Tab stay inside the top window;
+    - Esc closes it the way its cancel button does, asking "إغلاق بدون حفظ؟" if something was typed. A window or list that uses Esc itself keeps it. Windows without a cancel (a required shift opening) do not close;
+    - on closing, the focus goes back to the control that opened it.
+  - **No action from a stray Enter:**
+    - in the 13 forms that move money or stock (close, cancel, preliminary invoice, payment correction, returns, purchase, expense, treasury, debt payments, damaged goods), Enter in a field goes to the next field, and from the last field to the confirm button;
+    - only Enter on that button carries the action out;
+    - a confirm that deletes, cancels or returns starts on إلغاء.
+  - **Lists:** clickable rows (invoices, customers, suppliers, cashiers) are reached by Tab, open with Enter or Space, and ↑ ↓ move between rows. The dashboard's period tabs move with ← →. A visible focus ring is on every row and control.
+  - **The till's Esc:** Esc in the product search clears it and goes back to the barcode field. It no longer also asks to clear the invoice (a bug found in the running app).
+- **Invoice numbers (Part 3):**
+  - on the shift details they are buttons: a click or Enter opens the invoice in الفواتير والمرتجعات;
+  - identifiers in tables are isolated left to right (`.ltr-id`), so "INV-39" and "#12" no longer flip or misalign in right-to-left cells.
+- **Stat cards:** a long amount is shown smaller until it fits its card, measured at any window width, instead of being cut to "12,350.26 …".

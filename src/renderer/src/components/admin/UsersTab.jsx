@@ -83,7 +83,9 @@ export default function UsersTab({
                     const isMe = currentUser?.id === u.id
                     return (
                       <tr key={u.id}>
-                        <td className="num cell-muted">#{u.id}</td>
+                        <td className="cell-muted">
+                          <span className="ltr-id">#{u.id}</span>
+                        </td>
                         <td>
                           <span className="cell-strong">{u.username}</span>
                           {isMe && <span className="badge ms-2">أنت</span>}

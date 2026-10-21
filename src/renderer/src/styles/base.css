@@ -101,6 +101,12 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* A table row reached by Tab or the arrows (D-065) */
+tr[tabindex]:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
 table {
   border-collapse: collapse;
 }
@@ -181,4 +187,14 @@ html.theme-transition *::after {
 .ltr {
   direction: ltr;
   unicode-bidi: isolate;
+}
+
+/* Latin identifiers in RTL tables and text (invoice "INV-38", "#38", return "RET-5", shift ids):
+   isolated left-to-right so their characters keep their order, inline so the cell's own start
+   alignment applies and the value sits under its column heading (owner, 2026-10-21, D-065). */
+.ltr-id {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
 }

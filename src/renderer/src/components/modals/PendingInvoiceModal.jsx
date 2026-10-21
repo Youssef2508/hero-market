@@ -86,6 +86,7 @@ export default function PendingInvoiceModal({
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <form
+        data-enter-step
         className="modal-content modal-scroll"
         role="dialog"
         aria-modal="true"

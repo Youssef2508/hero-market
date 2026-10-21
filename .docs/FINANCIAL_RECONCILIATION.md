@@ -111,10 +111,11 @@ treasury_balance = Σ treasury_ledger.amount        (may be negative: shown in r
 ## 8. Changing a sale's payment method (PAY-02)
 
 - **Who:** only holders of `sales.change_payment` (administrators by default).
-- **When:** only while the sale's shift is open, only between the four methods, and only for a sale without returns. A refund has already used the old method, so moving the sale afterwards would misplace money.
-- **What changes:** `sales.payment_type` becomes the new method. The original method, new method, amount, actor, time and reason are kept in `sale_payment_corrections` and the activity log.
+- **When:** between the four methods, for a sale without returns (a refund has already used the old method). Since D-065 also after the sale's shift is closed (`after_close` on the correction).
+- **What changes:** `sales.payment_type` becomes the new method. The original method, new method, amount, actor, time and an optional note (D-063) are kept in `sale_payment_corrections` and the activity log.
 - **What doesn't change:** totals, stock, revenue and customer debt.
-- **Effect:** the shift's per-method expected figures move by the sale's value at once, and their sum is unchanged.
+- **Effect while the shift is open:** the shift's per-method expected figures move by the sale's value at once, and their sum is unchanged.
+- **Effect after the close (D-065):** a reclassification only. The close already moved the counted amounts per method to the treasury, so no money row is written, the saved close is not rewritten, and the treasury is not changed. The correction is listed with that shift, so a per-method difference it explains can be read there.
 
 ## 9. Reconciliation checks (automated, `tests/service/moneyModel.test.js`)
 
@@ -153,3 +154,17 @@ treasury_balance = Σ treasury_ledger.amount        (may be negative: shown in r
   - credit sales; partial sales (paid now and unpaid); collections; supplier payments (with invoices and settlements);
   - the expected, actual and difference totals;
   - the transfers to the treasury at close.
+
+## 11. Cancelling a preliminary supplier invoice (D-065, migration 0019)
+
+One transaction, once per request (`cancel_ref`); the invoice is kept with status `cancelled`, who, when, how and an optional note.
+
+| Case                           | Supplier payable                         | Money                                                                           |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------- |
+| Credit (nothing paid)          | − total (an `adjustment` row)            | none                                                                            |
+| Paid, the supplier returned it | − unpaid part; the paid part refunded    | an inflow `supplier_refund` by its method, in the current shift or the treasury |
+| Paid, not returned             | − total: the supplier owes the paid part | none (no cash or electronic balance is created)                                 |
+| Converted to a purchase        | refused                                  | refused: stock and cost need a purchase return                                  |
+
+- The original payment stays in its shift's history. A closed shift's saved close and count are never rewritten: money returned later is recorded where it arrives now.
+- Tested with exact balances in `tests/service/supplierCancel.test.js` (6 tests).

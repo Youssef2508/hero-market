@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Banknote,
   CreditCard,
@@ -12,6 +12,80 @@ import { EmptyState, StatCard } from '../ui'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
+import CancelPendingModal from '../modals/CancelPendingModal'
+
+/** The preliminary invoices this user recorded and that wait for their lines: cancel a mistake. */
+function MyPendingInvoices({ currentUser, currentShift, refreshKey, triggerCustomAlert }) {
+  const [rows, setRows] = useState([])
+  const [cancelling, setCancelling] = useState(null)
+  const load = useCallback(() => {
+    api('supplierInvoices.list', { status: 'pending' })
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load, refreshKey])
+  if (!rows.length) return null
+  return (
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          <ReceiptText size={18} aria-hidden="true" />
+          فواتير مبدئية بانتظار الأصناف
+        </h2>
+      </div>
+      <div className="card-body">
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>المورد</th>
+                <th className="num">الإجمالي</th>
+                <th className="num">المدفوع</th>
+                <th>
+                  <span className="visually-hidden">إجراءات</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <span className="ltr-id">{p.id}</span>
+                  </td>
+                  <td>{p.supplier_name}</td>
+                  <td className="num">{formatMoney(p.total)}</td>
+                  <td className="num">{formatMoney(p.paid)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => setCancelling(p)}
+                    >
+                      إلغاء
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {cancelling && (
+        <CancelPendingModal
+          invoice={cancelling}
+          currentUser={currentUser}
+          currentShift={currentShift}
+          onClose={() => setCancelling(null)}
+          onDone={load}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
+    </section>
+  )
+}
 
 // الأدراج والتحويلات (owner, 2026-10-21, D-063): the shift's money by payment method – cash, Visa,
 // wallet, InstaPay – and nothing else. The Momkn machine and the wallet-service tills of earlier
@@ -170,6 +244,14 @@ export default function TillsManagerTab({ currentUser, currentShift, triggerCust
         </div>
       )}
       <TillsBody key={savedAt} currentUser={currentUser} currentShift={currentShift} />
+      {can(currentUser, 'suppliers.pending') && (
+        <MyPendingInvoices
+          currentUser={currentUser}
+          currentShift={currentShift}
+          refreshKey={savedAt}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {pendingOpen && (
         <PendingInvoiceModal
           currentUser={currentUser}

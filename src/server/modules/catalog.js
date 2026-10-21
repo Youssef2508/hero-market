@@ -104,7 +104,13 @@ module.exports = function catalogModule(app) {
       ).rows[0].count
       const rows = (
         await ctx.pool.query(
-          `SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id = p.category_id
+          // The largest active package (D-065): the stock is also shown as complete packages and
+          // loose units; the stock itself stays one quantity in the base unit.
+          `SELECT p.*, c.name AS category_name, pk.name AS pack_name, pk.factor::float8 AS pack_factor
+             FROM products p LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN LATERAL (SELECT name, factor FROM product_units u
+                                 WHERE u.product_barcode = p.barcode AND u.is_active
+                                 ORDER BY u.factor DESC, u.id LIMIT 1) pk ON true
             ${where} ORDER BY p.${field} ${sortAsc ? 'ASC' : 'DESC'}, p.barcode LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
           params
         )
@@ -391,7 +397,7 @@ module.exports.registerInventory = function inventoryOperations(app) {
       if (!product) throw notFound('الصنف غير موجود.')
       const units = (
         await ctx.pool.query(
-          'SELECT id, name, factor, retail_price, wholesale_price, sellable, purchasable FROM product_units WHERE product_barcode = $1 AND is_active ORDER BY factor, id',
+          'SELECT id, name, factor, retail_price, wholesale_price, purchase_cost, sellable, purchasable FROM product_units WHERE product_barcode = $1 AND is_active ORDER BY factor, id',
           [barcode]
         )
       ).rows
@@ -439,6 +445,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
               factor: { type: 'number', exclusiveMinimum: 0 },
               retail_price: { type: ['number', 'null'], minimum: 0 },
               wholesale_price: { type: ['number', 'null'], minimum: 0 },
+              // The price the owner pays for one package (D-065), the default cost in purchases.
+              purchase_cost: { type: ['number', 'null'], minimum: 0 },
               sellable: { type: 'boolean' },
               purchasable: { type: 'boolean' },
               barcodes: {
@@ -480,6 +488,10 @@ module.exports.registerInventory = function inventoryOperations(app) {
             throw badRequest(
               `الوحدة "${name}" بمعامل 1 مطابقة للوحدة الأساسية؛ استخدم باركوداً إضافياً بدلاً منها.`
             )
+          // The owner sets the package's selling price; it is never derived from the loose price
+          // (owner, 2026-10-21, D-065).
+          if (u.sellable !== false && (u.retail_price === null || u.retail_price === undefined))
+            throw badRequest(`اكتب سعر بيع "${name}" (سعر العبوة كاملة).`)
           return {
             ...u,
             name,
@@ -505,7 +517,7 @@ module.exports.registerInventory = function inventoryOperations(app) {
           if (id && !prev) throw badRequest(`الوحدة رقم ${id} لا تخص هذا الصنف.`)
           if (prev) {
             await db.query(
-              `UPDATE product_units SET name = $2, factor = $3, retail_price = $4, wholesale_price = $5, sellable = $6, purchasable = $7, updated_at = LOCALTIMESTAMP(0)
+              `UPDATE product_units SET name = $2, factor = $3, retail_price = $4, wholesale_price = $5, sellable = $6, purchasable = $7, purchase_cost = $8, updated_at = LOCALTIMESTAMP(0)
                WHERE id = $1`,
               [
                 id,
@@ -514,7 +526,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
                 u.retail_price ?? null,
                 u.wholesale_price ?? null,
                 u.sellable,
-                u.purchasable
+                u.purchasable,
+                u.purchase_cost ?? null
               ]
             )
             const diff = {}
@@ -524,7 +537,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
               'retail_price',
               'wholesale_price',
               'sellable',
-              'purchasable'
+              'purchasable',
+              'purchase_cost'
             ]) {
               const a = prev[k] === null ? null : String(prev[k])
               const c = u[k] === null || u[k] === undefined ? null : String(u[k])
@@ -534,8 +548,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
           } else {
             id = (
               await db.query(
-                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable, purchase_cost)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
                 [
                   b.barcode,
                   u.name,
@@ -543,7 +557,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
                   u.retail_price ?? null,
                   u.wholesale_price ?? null,
                   u.sellable,
-                  u.purchasable
+                  u.purchasable,
+                  u.purchase_cost ?? null
                 ]
               )
             ).rows[0].id

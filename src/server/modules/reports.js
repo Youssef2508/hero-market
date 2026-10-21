@@ -44,6 +44,144 @@ module.exports = function reportsModule(app) {
     }
   })
 
+  // The dashboard for any period (owner, 2026-10-21, D-065): today, this week, month, year or a
+  // chosen range – inclusive local dates. Every figure is selected by its own record's time
+  // (ANALYTICS-01). Sales are what was sold (returns already lower total_amount); customer
+  // collections are shown apart and never added to sales; treasury transfers are not revenue.
+  // Net profit is the same formula as reports.periodic.
+  const DAY = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+  app.operation({
+    name: 'reports.dashboard',
+    permission: 'reports.view',
+    schema: { type: 'object', required: ['from', 'to'], properties: { from: DAY, to: DAY } },
+    handler: async (ctx, { from, to }) => {
+      if (from > to) [from, to] = [to, from]
+      const db = ctx.pool
+      const p = [from, to]
+      const inRange = (col) => `${col} >= $1::date AND ${col} < $2::date + 1`
+      const days = (await rows(db, 'SELECT ($2::date - $1::date + 1) AS n', p))[0].n
+      // Daily buckets up to about two months, monthly beyond.
+      const unit = days <= 62 ? 'day' : 'month'
+      const bucket = (col) =>
+        unit === 'day' ? `to_char(${col}, 'YYYY-MM-DD')` : `to_char(${col}, 'YYYY-MM')`
+      const one = async (sql) => (await rows(db, sql, p))[0]
+      const sales = await one(
+        `SELECT COALESCE(SUM(total_amount), 0)::float8 AS total, COUNT(*)::int AS count,
+                COALESCE(SUM(total_amount) FILTER (WHERE payment_type IN ('آجل', 'دفع جزئي')), 0)::float8 AS "onAccount"
+           FROM sales WHERE ${inRange('timestamp')}`
+      )
+      const profit = (
+        await one(
+          `SELECT COALESCE(SUM(${PROFIT}), 0)::float8 AS v FROM sale_items si JOIN sales s ON si.sale_id = s.id
+             JOIN products p ON si.product_barcode = p.barcode WHERE ${inRange('s.timestamp')}`
+        )
+      ).v
+      const expenses = (
+        await one(
+          `SELECT COALESCE(SUM(amount), 0)::float8 AS v FROM expenses WHERE ${inRange('timestamp')}`
+        )
+      ).v
+      const damaged = (
+        await one(
+          `SELECT COALESCE(SUM(quantity * cost_price), 0)::float8 AS v FROM damaged_goods WHERE ${inRange('timestamp')}`
+        )
+      ).v
+      const purchases = await one(
+        `SELECT COALESCE(SUM(total_amount), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_purchases WHERE ${inRange('timestamp')}`
+      )
+      const pending = await one(
+        `SELECT COALESCE(SUM(total), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_pending_invoices
+          WHERE status = 'pending' AND ${inRange('created_at')}`
+      )
+      const collections = (
+        await one(
+          `SELECT (SELECT COALESCE(SUM(amount), 0) FROM safe_ledger WHERE kind = 'customer_payment' AND ${inRange('timestamp')})
+                + (SELECT COALESCE(SUM(amount), 0) FROM treasury_ledger WHERE kind = 'customer_payment' AND ${inRange('created_at')}) AS v`
+        )
+      ).v
+      const byType = await rows(
+        db,
+        `SELECT payment_type, COALESCE(SUM(total_amount), 0)::float8 AS total, COUNT(*)::int AS count
+           FROM sales WHERE ${inRange('timestamp')} GROUP BY payment_type`,
+        p
+      )
+      const methodOfType = {
+        نقدي: 'cash',
+        فيزا: 'visa',
+        محفظة: 'wallet',
+        'فودافون كاش': 'wallet',
+        'انستا باي': 'instapay',
+        آجل: 'credit',
+        'دفع جزئي': 'partial'
+      }
+      const salesByMethod = {}
+      for (const r of byType) {
+        const k = methodOfType[r.payment_type] || 'other'
+        salesByMethod[k] = {
+          total: Math.round(((salesByMethod[k]?.total || 0) + r.total) * 100) / 100,
+          count: (salesByMethod[k]?.count || 0) + r.count
+        }
+      }
+      const series = async (sql) =>
+        Object.fromEntries((await rows(db, sql, p)).map((r) => [r.k, Number(r.v) || 0]))
+      const sSales = await series(
+        `SELECT ${bucket('timestamp')} AS k, SUM(total_amount) AS v FROM sales WHERE ${inRange('timestamp')} GROUP BY 1`
+      )
+      const sExp = await series(
+        `SELECT ${bucket('timestamp')} AS k, SUM(amount) AS v FROM expenses WHERE ${inRange('timestamp')} GROUP BY 1`
+      )
+      const sPur = await series(
+        `SELECT ${bucket('timestamp')} AS k, SUM(total_amount) AS v FROM supplier_purchases WHERE ${inRange('timestamp')} GROUP BY 1`
+      )
+      const keys = (
+        await rows(
+          db,
+          unit === 'day'
+            ? `SELECT to_char(d, 'YYYY-MM-DD') AS k FROM generate_series($1::date, $2::date, interval '1 day') d`
+            : `SELECT to_char(d, 'YYYY-MM') AS k FROM generate_series(date_trunc('month', $1::date), $2::date, interval '1 month') d`,
+          p
+        )
+      ).map((r) => r.k)
+      const top = await rows(
+        db,
+        `SELECT si.product_barcode AS barcode, MAX(p.name) AS name,
+                SUM((si.quantity - COALESCE(si.returned_qty, 0)) * si.unit_factor)::float8 AS qty,
+                SUM(si.total_price - si.line_discount - si.cart_discount)::float8 AS revenue
+           FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.barcode = si.product_barcode
+          WHERE ${inRange('s.timestamp')}
+          GROUP BY si.product_barcode ORDER BY revenue DESC LIMIT 10`,
+        p
+      )
+      const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+      return {
+        from,
+        to,
+        unit,
+        totals: {
+          sales: r2(sales.total),
+          invoices: sales.count,
+          onAccountSales: r2(sales.onAccount),
+          expenses: r2(expenses),
+          damaged: r2(damaged),
+          purchases: r2(purchases.v),
+          purchaseCount: purchases.n,
+          pendingPurchases: r2(pending.v),
+          pendingCount: pending.n,
+          collections: r2(collections),
+          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses))
+        },
+        salesByMethod,
+        series: keys.map((k) => ({
+          key: k,
+          sales: r2(sSales[k]),
+          expenses: r2(sExp[k]),
+          purchases: r2(sPur[k])
+        })),
+        topProducts: top.map((t) => ({ ...t, qty: r2(t.qty), revenue: r2(t.revenue) }))
+      }
+    }
+  })
+
   // useAdminController.fetchAnalytics (performance & profit screen, overview KPIs)
   app.operation({
     name: 'reports.periodic',

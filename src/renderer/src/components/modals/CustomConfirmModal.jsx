@@ -33,6 +33,7 @@ const CustomConfirmModal = ({ customConfirm, closeCustomConfirm }) => {
             type="button"
             className="btn btn-secondary btn-lg"
             onClick={() => closeCustomConfirm(false)}
+            autoFocus={destructive}
           >
             إلغاء
           </button>
@@ -41,10 +42,10 @@ const CustomConfirmModal = ({ customConfirm, closeCustomConfirm }) => {
             className={`btn btn-lg ${destructive ? 'btn-danger' : 'btn-primary'}`}
             style={{ flex: 1 }}
             onClick={() => closeCustomConfirm(true)}
-            autoFocus
+            autoFocus={!destructive}
           >
             تأكيد
-            <span className="kbd">Enter</span>
+            {!destructive && <span className="kbd">Enter</span>}
           </button>
         </div>
       </div>

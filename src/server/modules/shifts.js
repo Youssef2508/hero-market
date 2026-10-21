@@ -257,6 +257,7 @@ async function shiftReport(
       unpaid: round2(credit.partialTotal - upfront)
     },
     collections: sumKind('customer_payment'),
+    supplierRefunds: sumKind('supplier_refund'),
     supplierPayments: {
       withInvoices: sumKind('supplier_payment'),
       settlements: sumKind('supplier_settlement')
@@ -494,6 +495,15 @@ module.exports = function shiftsModule(app) {
       ).rows[0]
       const extra = {
         sales: await shiftSales(ctx.pool, shift.id),
+        // Payment method corrections of this shift's invoices, also those made after its close
+        // (D-065): listed here, never written into the saved close.
+        corrections: (
+          await ctx.pool.query(
+            `SELECT sale_id AS "saleId", from_type, to_type, amount::float8 AS amount, username, created_at, after_close
+               FROM sale_payment_corrections WHERE shift_id = $1 ORDER BY id`,
+            [shift.id]
+          )
+        ).rows,
         branch: await branchName(ctx.pool),
         cashier: cashier?.username || ''
       }

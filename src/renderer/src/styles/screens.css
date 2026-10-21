@@ -1859,3 +1859,55 @@ button.hero-chip:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Dashboard period charts (D-065): plain SVG in the chart tokens. */
+.dash-chart svg {
+  width: 100%;
+  height: auto;
+}
+.dash-axis {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+.dash-legend {
+  display: flex;
+  gap: 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.dash-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.dash-share {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.dash-share li {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.dash-share-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-share-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.dash-share-bar {
+  display: block;
+  height: 100%;
+  background: var(--chart-1);
+  border-radius: 5px;
+}

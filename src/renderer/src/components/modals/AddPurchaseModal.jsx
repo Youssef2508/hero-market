@@ -53,7 +53,12 @@ const AddPurchaseModal = ({
           unit: p.unit || '',
           units: [
             { id: null, name: p.unit || 'الوحدة الأساسية', factor: 1 },
-            ...extra.map((u) => ({ id: u.id, name: u.name, factor: Number(u.factor) }))
+            ...extra.map((u) => ({
+              id: u.id,
+              name: u.name,
+              factor: Number(u.factor),
+              cost: u.purchase_cost === null ? null : Number(u.purchase_cost)
+            }))
           ],
           unitId: null,
           baseCost,
@@ -99,6 +104,7 @@ const AddPurchaseModal = ({
           )}
         </div>
         <form
+          data-enter-step
           onSubmit={handleAddPurchase}
           style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
         >
@@ -163,10 +169,14 @@ const AddPurchaseModal = ({
                               const u = l.units.find((x) => (x.id ?? null) === id)
                               update(i, {
                                 unitId: id,
+                                // The package's own purchase price when the owner set one
+                                // (D-065), else the piece cost × the factor.
                                 unitCost:
-                                  l.baseCost !== null
-                                    ? String(Math.round(l.baseCost * u.factor * 10000) / 10000)
-                                    : l.unitCost
+                                  u.cost !== null && u.cost !== undefined
+                                    ? String(u.cost)
+                                    : l.baseCost !== null
+                                      ? String(Math.round(l.baseCost * u.factor * 10000) / 10000)
+                                      : l.unitCost
                               })
                             }}
                             aria-label={`وحدة شراء ${l.name}`}
@@ -182,6 +192,18 @@ const AddPurchaseModal = ({
                         ) : (
                           l.unit && <span className="cell-muted"> {l.unit}</span>
                         )}
+                        {(() => {
+                          // The stock it adds, in the base unit (D-065: no mental arithmetic).
+                          const u = (l.units || []).find(
+                            (x) => (x.id ?? null) === (l.unitId ?? null)
+                          )
+                          const q = parseFloat(l.qty)
+                          return u && u.factor > 1 && q > 0 ? (
+                            <div className="cell-muted">
+                              = {Math.round(q * u.factor * 1000) / 1000} {l.unit}
+                            </div>
+                          ) : null
+                        })()}
                       </td>
                       <td>
                         <input

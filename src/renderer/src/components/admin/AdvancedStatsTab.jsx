@@ -351,7 +351,9 @@ export default function AdvancedStatsTab() {
                       const diff = sh.difference
                       return (
                         <tr key={sh.id}>
-                          <td className="num cell-muted">#{sh.id}</td>
+                          <td className="cell-muted">
+                            <span className="ltr-id">#{sh.id}</span>
+                          </td>
                           <td className="cell-strong">{sh.username}</td>
                           <td className="num nowrap cell-muted">
                             {sh.start_time?.slice(0, 16) || '—'}

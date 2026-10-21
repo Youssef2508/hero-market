@@ -33,6 +33,7 @@ export default function ChangePaymentModal({ sale, onDone, onClose, triggerCusto
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <form
+        data-enter-step
         className="modal-content"
         role="dialog"
         aria-modal="true"
@@ -47,6 +48,8 @@ export default function ChangePaymentModal({ sale, onDone, onClose, triggerCusto
           <p>
             الحالية: {sale.payment_type} · {formatMoney(sale.total_amount)} ج.م. الإجمالي والمخزون
             لا يتغيران.
+            {sale.shiftOpen === false &&
+              ' الوردية مغلقة: يُصحَّح تسجيل الفاتورة فقط ولا تتحرك أي مبالغ، فالخزنة استلمت ما عُدّ فعلاً.'}
           </p>
         </div>
         <div className="modal-body">

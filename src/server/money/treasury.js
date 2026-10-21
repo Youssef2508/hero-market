@@ -13,6 +13,7 @@ const KIND_LABELS = {
   expense: 'مصروف من الخزنة',
   customer_payment: 'تحصيل من عميل',
   supplier_payment: 'سداد لمورد',
+  supplier_refund: 'مبلغ أعاده مورد',
   adjustment: 'تسوية',
   reversal: 'عكس حركة'
 }

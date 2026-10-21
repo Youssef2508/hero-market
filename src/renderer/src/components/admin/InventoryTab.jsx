@@ -16,6 +16,7 @@ import { api } from '../../lib/api'
 import StockHistoryModal from '../modals/StockHistoryModal'
 import ProductUnitsModal from '../modals/ProductUnitsModal'
 import MeasureKindsModal from '../modals/MeasureKindsModal'
+import { packagesText } from '../../../../shared/packages.mjs'
 
 /**
  * Products & stock screen. Data and mutations come from useProductsManager
@@ -173,6 +174,12 @@ export default function InventoryTab({
                           {p.stock_qty} {p.unit}
                           {isNegative ? ' · بالسالب' : ''}
                         </span>
+                        {p.pack_factor > 1 &&
+                          packagesText(p.stock_qty, p.pack_factor, p.pack_name, p.unit) && (
+                            <div className="cell-muted">
+                              = {packagesText(p.stock_qty, p.pack_factor, p.pack_name, p.unit)}
+                            </div>
+                          )}
                       </td>
                       <td className="num cell-muted">{p.reorder_limit}</td>
                       <td>

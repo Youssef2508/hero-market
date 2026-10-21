@@ -1,5 +1,6 @@
 // Shared presentation primitives. Styling lives in styles/components.css and
 // styles/screens.css; these components only standardise markup.
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Moon, Sun, Inbox } from 'lucide-react'
 import { useTheme } from '../../theme/ThemeProvider'
 import { formatStamp } from '../../lib/time'
@@ -28,6 +29,32 @@ const NBSP = String.fromCharCode(160)
 const keepCurrency = (text) =>
   typeof text === 'string' ? text.replace(/ (ج\.م)/g, `${NBSP}$1`) : text
 
+const FIT_STEPS = ['', ' is-long', ' is-longer', ' is-longest']
+
+// A long amount (a month of sales: 1,250,000.00 ج.م) is shown smaller until it fits the card,
+// never cut off (D-065); measured, so it holds at any window width.
+function useFitText(ref, value, off) {
+  const [step, setStep] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || off) return
+    const measure = () => {
+      let i = 0
+      el.className = 'stat-value'
+      while (i < FIT_STEPS.length - 1 && el.scrollWidth > el.clientWidth + 1) {
+        i++
+        el.className = 'stat-value' + FIT_STEPS[i]
+      }
+      setStep(i)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el.parentElement)
+    return () => ro.disconnect()
+  }, [ref, value, off])
+  return FIT_STEPS[step]
+}
+
 export function StatCard({
   icon: Icon,
   label,
@@ -38,6 +65,8 @@ export function StatCard({
   textValue = false
 }) {
   const Tag = onClick ? 'button' : 'div'
+  const valueRef = useRef(null)
+  const fitSize = useFitText(valueRef, value, textValue)
   return (
     <Tag
       className={`stat-card tone-${tone}${onClick ? ' is-clickable' : ''}${textValue ? ' is-text' : ''}`}
@@ -50,7 +79,11 @@ export function StatCard({
       )}
       <span className="stat-info">
         <span className="stat-label">{label}</span>
-        <span className="stat-value" title={typeof value === 'string' ? value : undefined}>
+        <span
+          ref={valueRef}
+          className={`stat-value${fitSize}`}
+          title={typeof value === 'string' ? value : undefined}
+        >
           {value}
         </span>
         {meta && <span className="stat-meta">{keepCurrency(meta)}</span>}

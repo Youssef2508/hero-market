@@ -273,7 +273,9 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.id}>
-                      <td className="num cell-muted">{r.id}</td>
+                      <td className="cell-muted">
+                        <span className="ltr-id">{r.id}</span>
+                      </td>
                       <td className="nowrap cell-muted">
                         <Timestamp value={r.created_at} />
                       </td>
@@ -321,6 +323,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
       {reversing && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <form
+            data-enter-step
             className="modal-content"
             role="dialog"
             aria-modal="true"
@@ -368,6 +371,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
       {form && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <form
+            data-enter-step
             className="modal-content"
             role="dialog"
             aria-modal="true"

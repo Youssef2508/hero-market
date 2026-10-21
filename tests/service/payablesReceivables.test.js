@@ -385,12 +385,14 @@ test('the cashier cannot read expected amounts through any operation before clos
     ['shifts.list', {}],
     ['shifts.closeReport', { shiftId: shift.id }],
     ['treasury.summary', {}],
-    ['treasury.entries', {}],
-    ['supplierInvoices.list', {}]
+    ['treasury.entries', {}]
   ]) {
     const r = await svc.call(op, body, cashier)
     assert.notEqual(r.status, 200, `${op} must not answer the cashier`)
   }
+  // D-065: a cashier lists only the preliminary invoices they recorded (to cancel a mistake).
+  const mine = ok(await svc.call('supplierInvoices.list', {}, cashier))
+  assert.ok(mine.length > 0 && mine.every((r) => r.created_by_name === 'cashier'))
   const tills = ok(await svc.call('tills.drawerSummary', { shiftId: shift.id }, cashier))
   assert.deepEqual(Object.keys(tills).sort(), ['blind', 'shift'])
   const counted = ok(await svc.call('shifts.audit', { shiftId: shift.id, actualCash: 1 }, cashier))

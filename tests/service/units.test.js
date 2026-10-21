@@ -67,7 +67,8 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
         baseBarcodes: ['CAKE-ALT'],
         units: [
           { name: 'كرتونة', factor: 24, retail_price: 60, barcodes: ['CAKE-CTN'] },
-          { name: 'علبة 6', factor: 6, retail_price: null, purchasable: false, barcodes: [] }
+          // D-065: the owner enters the package price (here the same 3 × 6); none is derived.
+          { name: 'علبة 6', factor: 6, retail_price: 18, purchasable: false, barcodes: [] }
         ]
       },
       admin
@@ -84,7 +85,7 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
   )
   cartonId = u.units.find((x) => x.name === 'كرتونة').id
 
-  // Scans: carton barcode → carton unit; extra barcode → base unit; derived price = 3 × 6.
+  // Scans: carton barcode → carton unit; extra barcode → base unit; the box at its own 18.
   const c = ok(await svc.call('pos.resolve', { code: 'CAKE-CTN' }, admin))
   assert.deepEqual(
     [c.product.barcode, c.unit.name, c.unit.factor, c.unit.price],
@@ -107,16 +108,19 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
     assert.ok([400, 409].includes(r.status), JSON.stringify(r.body))
     if (re) assert.match(r.body.error.message, re)
   }
-  await bad([{ name: 'كسر', factor: 2.5 }], /عدداً صحيحاً/)
+  // Each case has a price (D-065), so only the rule it is about refuses it.
+  await bad([{ name: 'كسر', factor: 2.5, retail_price: 1 }], /عدداً صحيحاً/)
   await bad(
     [
-      { name: 'كرتونة', factor: 24 },
-      { name: 'كرتونة', factor: 12 }
+      { name: 'كرتونة', factor: 24, retail_price: 1 },
+      { name: 'كرتونة', factor: 12, retail_price: 1 }
     ],
     /مكرر/
   )
-  await bad([{ name: 'واحد', factor: 1 }], /مطابقة/)
-  await bad([{ name: 'سرقة', factor: 2, barcodes: ['WATER'] }], /مستخدم بالفعل/)
+  await bad([{ name: 'واحد', factor: 1, retail_price: 1 }], /مطابقة/)
+  await bad([{ name: 'سرقة', factor: 2, retail_price: 1, barcodes: ['WATER'] }], /مستخدم بالفعل/)
+  // A sellable package without the owner's price is refused (no derived price, D-065).
+  await bad([{ name: 'علبة بلا سعر', factor: 4 }], /اكتب سعر بيع/)
   // A new product cannot take an existing extra barcode.
   const clash = await svc.call(
     'products.create',
@@ -204,11 +208,14 @@ test('weighed product: 200 g, 250 g, 1.25 kg at a per-kilogram price; 3 decimals
   }
   assert.equal(await stock('CHZ'), Math.round((start - 2.45) * 1000) / 1000)
   assert.equal((await checkout([{ barcode: 'CHZ', qty: 0.2505, unitPrice: 180 }])).status, 400)
-  // A "half kilo" unit with a derived price.
+  // A "half kilo" unit at the price the owner enters (D-065).
   ok(
     await svc.call(
       'productUnits.save',
-      { barcode: 'CHZ', units: [{ name: 'نصف كيلو', factor: 0.5, barcodes: ['CHZ-HALF'] }] },
+      {
+        barcode: 'CHZ',
+        units: [{ name: 'نصف كيلو', factor: 0.5, retail_price: 90, barcodes: ['CHZ-HALF'] }]
+      },
       admin
     )
   )

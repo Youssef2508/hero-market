@@ -140,3 +140,52 @@ test('a payment method correction needs no reason', async (t) => {
   ])
   assert.deepEqual([c.to_type, c.reason], ['فيزا', null])
 })
+
+test('a payment method is corrected after the shift closed: reclassified, no money moves, the saved close stays', async (t) => {
+  if (!requireDb(t)) return
+  const s2 = ok(await svc.call('shifts.open', { startingCash: 0 }, cashier))
+  const sale = ok(
+    await svc.call(
+      'pos.checkout',
+      {
+        clientRef: crypto.randomUUID(),
+        shiftId: s2.id,
+        paymentType: 'نقدي',
+        items: [{ barcode: 'NEW1', qty: 1 }]
+      },
+      cashier
+    )
+  )
+  ok(
+    await svc.call(
+      'shifts.close',
+      { shiftId: s2.id, actualCash: 10, clientRef: crypto.randomUUID() },
+      cashier
+    )
+  )
+  const saved = (await one('SELECT report FROM shift_closings WHERE shift_id = $1', [s2.id])).report
+  const treasury = await q('SELECT * FROM treasury_ledger ORDER BY id')
+  // Not for a cashier; for the owner, without a reason.
+  const change = { saleId: sale.saleId, method: 'visa', clientRef: crypto.randomUUID() }
+  assert.equal((await svc.call('sales.changePaymentMethod', change, cashier)).status, 403)
+  ok(await svc.call('sales.changePaymentMethod', change, owner))
+  const c = await one(
+    'SELECT to_type, after_close, reason FROM sale_payment_corrections WHERE sale_id = $1',
+    [sale.saleId]
+  )
+  assert.deepEqual([c.to_type, c.after_close, c.reason], ['فيزا', true, null])
+  assert.equal(
+    (await one('SELECT payment_type FROM sales WHERE id = $1', [sale.saleId])).payment_type,
+    'فيزا'
+  )
+  // No money moved; the shift's saved close is exactly as confirmed; the correction is listed.
+  assert.deepEqual(await q('SELECT * FROM treasury_ledger ORDER BY id'), treasury)
+  assert.deepEqual(
+    (await one('SELECT report FROM shift_closings WHERE shift_id = $1', [s2.id])).report,
+    saved
+  )
+  const details = ok(await svc.call('shifts.details', { shiftId: s2.id }, owner))
+  assert.deepEqual(details.report, saved)
+  assert.equal(details.corrections.length, 1)
+  assert.equal(details.corrections[0].after_close, true)
+})

@@ -23,6 +23,7 @@ const SalesTab = lazy(() => import('./SalesTab'))
 const ClientsTab = lazy(() => import('./ClientsTab'))
 const SuppliersTab = lazy(() => import('./SuppliersTab'))
 const ChecksTab = lazy(() => import('./ChecksTab'))
+const DashboardPeriod = lazy(() => import('./DashboardPeriod'))
 const TreasuryTab = lazy(() => import('./TreasuryTab'))
 const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
@@ -130,6 +131,9 @@ function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNav
         </div>
       </section>
 
+      {/* Period statistics and charts (owner, 2026-10-21, D-065); the quick actions stay below. */}
+      <DashboardPeriod />
+
       {groups.map((group) => (
         <section key={group.id} aria-labelledby={`grp-${group.id}`}>
           <h2 id={`grp-${group.id}`} className="overview-section-title">
@@ -203,6 +207,16 @@ export default function AdminDashboard(props) {
             currentUser={currentUser}
             currentShift={props.currentShift}
             onOpenShift={props.onOpenShift}
+            onOpenInvoice={async (saleId) => {
+              // The invoices screen with that invoice open; a missing or forbidden one says so.
+              if (!props.selectSaleForDetail) return
+              const shown = await props.selectSaleForDetail({ id: saleId })
+              if (shown === false) {
+                props.triggerCustomAlert?.('تعذّر فتح الفاتورة (غير موجودة أو بدون صلاحية).')
+                return
+              }
+              props.setAdminTab('sales')
+            }}
             triggerCustomAlert={props.triggerCustomAlert}
           />
         )}

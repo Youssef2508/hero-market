@@ -11,6 +11,7 @@ const KINDS = [
   'customer_payment',
   'supplier_payment',
   'supplier_settlement',
+  'supplier_refund',
   'expense',
   'refund',
   'other'

@@ -1600,3 +1600,14 @@ label.btn.is-disabled {
   pointer-events: none;
   opacity: 0.6;
 }
+
+/* Long amounts in a stat card: smaller, not cut off (D-065) */
+.stat-value.is-long {
+  font-size: var(--fs-xl);
+}
+.stat-value.is-longer {
+  font-size: var(--fs-lg);
+}
+.stat-value.is-longest {
+  font-size: var(--fs-md);
+}

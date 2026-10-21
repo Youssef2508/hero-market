@@ -41,20 +41,30 @@ export function useSalesManager({
 
   const selectSaleForDetail = async (sale) => {
     try {
-      const { items, discounts, corrections, shiftOpen } = await api('sales.detail', {
+      const {
+        sale: full,
+        items,
+        discounts,
+        corrections,
+        shiftOpen
+      } = await api('sales.detail', {
         saleId: sale.id
       })
       // Discounts of the invoice, incl. a manual one with who and why (D-057); payment method
       // changes and whether its shift is still open (PAY-02).
+      // An invoice opened by its number alone (e.g. from a shift's details) takes the service's row.
       setSelectedSale({
+        ...(full || {}),
         ...sale,
         discounts: discounts || [],
         corrections: corrections || [],
         shiftOpen: !!shiftOpen
       })
       setSelectedSaleItems(items || [])
+      return true
     } catch (e) {
       console.error('Failed to load sale details:', e)
+      return false
     }
   }
 

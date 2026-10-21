@@ -500,7 +500,7 @@ function CheckoutTerminal({
                   صنف
                 </span>
                 <span aria-hidden="true">
-                  <Kbd>F2</Kbd>
+                  <Kbd>F7</Kbd>
                 </span>
               </span>
             </div>
@@ -613,7 +613,7 @@ function CheckoutTerminal({
                   <ShoppingBasket size={30} />
                 </span>
                 <strong>الفاتورة فارغة</strong>
-                <span>امسح باركود الصنف، أو ابحث بالاسم بالضغط على F2.</span>
+                <span>امسح باركود الصنف، أو ابحث بالاسم بالضغط على F7.</span>
               </div>
             ) : (
               <table className="cart-table">
@@ -728,10 +728,13 @@ function CheckoutTerminal({
 
           <footer className="pos-hints" aria-label="اختصارات لوحة المفاتيح">
             <span>
-              <Kbd>F1</Kbd> دفع
+              <Kbd>F1</Kbd> دفع وطباعة
             </span>
             <span>
-              <Kbd>F2</Kbd> بحث
+              <Kbd>F2</Kbd> دفع بدون طباعة
+            </span>
+            <span>
+              <Kbd>F7</Kbd> بحث
             </span>
             <span>
               <Kbd>F3</Kbd> كمية أول صنف

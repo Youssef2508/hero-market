@@ -183,8 +183,11 @@ module.exports = function moneyModule(app) {
         const shift = (
           await db.query('SELECT status FROM shifts WHERE id = $1 FOR SHARE', [sale.shift_id])
         ).rows[0]
-        if (!shift || shift.status !== 'open')
-          throw conflict('تغيير طريقة الدفع متاح فقط لفواتير وردية مفتوحة.')
+        if (!shift) throw conflict('وردية الفاتورة غير موجودة.')
+        // D-065: a sale of a closed shift is reclassified too. No money moves (the treasury already
+        // holds what was counted at close) and the shift's saved close is not rewritten; the
+        // correction is listed with that shift.
+        const afterClose = shift.status !== 'open'
         if (CREDIT_TYPES.includes(sale.payment_type) || !methodOf(sale.payment_type))
           throw conflict('فواتير الآجل والدفع الجزئي لا تُغيَّر طريقة دفعها.')
         const from = methodOf(sale.payment_type)
@@ -202,8 +205,8 @@ module.exports = function moneyModule(app) {
         await db.query('UPDATE sales SET payment_type = $1 WHERE id = $2', [toType, saleId])
         const correction = (
           await db.query(
-            `INSERT INTO sale_payment_corrections (sale_id, shift_id, from_type, to_type, amount, reason, user_id, username, client_ref)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            `INSERT INTO sale_payment_corrections (sale_id, shift_id, from_type, to_type, amount, reason, user_id, username, client_ref, after_close)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
             [
               saleId,
               sale.shift_id,
@@ -213,15 +216,16 @@ module.exports = function moneyModule(app) {
               reason,
               ctx.user.id,
               ctx.user.username,
-              clientRef
+              clientRef,
+              afterClose
             ]
           )
         ).rows[0]
         await ctx.audit(
           db,
           'sale_payment_change',
-          `تغيير طريقة دفع الفاتورة #${saleId} من ${LABELS[from]} إلى ${LABELS[method]} (${amount.toFixed(2)} ج.م)${reason ? `: ${reason}` : ''}`,
-          { saleId, from: sale.payment_type, to: toType, amount }
+          `تغيير طريقة دفع الفاتورة #${saleId} من ${LABELS[from]} إلى ${LABELS[method]} (${amount.toFixed(2)} ج.م)${afterClose ? ' بعد إغلاق الوردية' : ''}${reason ? `: ${reason}` : ''}`,
+          { saleId, from: sale.payment_type, to: toType, amount, afterClose }
         )
         return { correction }
       })

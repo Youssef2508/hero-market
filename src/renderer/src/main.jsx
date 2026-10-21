@@ -15,8 +15,10 @@ import App from './App'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { installModalChrome } from './lib/modalChrome'
+import { installKeyboard } from './lib/keyboard'
 
 installModalChrome()
+installKeyboard()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

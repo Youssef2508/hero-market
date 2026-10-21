@@ -229,7 +229,9 @@ function ShiftsList({ onDetails, onOpenShift, canOpen, triggerCustomAlert }) {
                 ) : (
                   pageData.map((s) => (
                     <tr key={s.id}>
-                      <td className="cell-strong num">{s.id}</td>
+                      <td className="cell-strong">
+                        <span className="ltr-id">{s.id}</span>
+                      </td>
                       <td>{s.username}</td>
                       <td>{branchName}</td>
                       <td className="nowrap num">{stamp(s.start_time)}</td>
@@ -273,7 +275,7 @@ function ShiftsList({ onDetails, onOpenShift, canOpen, triggerCustomAlert }) {
 }
 
 /** The full page of one shift. */
-function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
+function ShiftDetailsPage({ shiftId, onBack, onOpenInvoice, triggerCustomAlert }) {
   const [data, setData] = useState(null)
   const [filter, setFilter] = useState('all')
 
@@ -403,6 +405,20 @@ function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
             legacyActualCash={!open && !r.actual ? actualCash : null}
           />
           <MoneyCategories report={r} />
+          {data.corrections?.length > 0 && (
+            <>
+              <h3 className="till-section-title">تصحيحات طريقة الدفع لفواتير هذه الوردية</h3>
+              <ul className="stack">
+                {data.corrections.map((c, i) => (
+                  <li key={i} className="cell-muted">
+                    <span className="ltr-id">{invoiceNo(c.saleId)}</span>: من {c.from_type} إلى{' '}
+                    {c.to_type} ({money(c.amount)} ج.م) – {c.username}
+                    {c.after_close ? ' – بعد إغلاق الوردية (لا تتحرك أي مبالغ)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </section>
 
@@ -506,7 +522,17 @@ function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
                 <tbody>
                   {shown.map((s) => (
                     <tr key={s.id}>
-                      <td className="num text-info">{invoiceNo(s.id)}</td>
+                      <td>
+                        {/* Opens the invoice's details (owner, 2026-10-21, D-065); Enter works too. */}
+                        <button
+                          type="button"
+                          className="link-btn ltr-id"
+                          onClick={() => onOpenInvoice?.(s.id)}
+                          aria-label={`فتح الفاتورة ${invoiceNo(s.id)}`}
+                        >
+                          {invoiceNo(s.id)}
+                        </button>
+                      </td>
                       <td>{s.client_name || 'عميل نقدي'}</td>
                       <td>{typeOf(s)}</td>
                       <td>
@@ -582,8 +608,12 @@ function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
                 <tbody>
                   {r.returns.lines.map((x) => (
                     <tr key={x.id}>
-                      <td className="num">RET-{x.id}</td>
-                      <td className="num text-info">{invoiceNo(x.saleId)}</td>
+                      <td>
+                        <span className="ltr-id">RET-{x.id}</span>
+                      </td>
+                      <td>
+                        <span className="ltr-id text-info">{invoiceNo(x.saleId)}</span>
+                      </td>
                       <td className="num">{money(x.refund)} ج.م</td>
                       <td className="num text-danger">
                         − {money(x.paidBack ?? x.refund)} ج.م
@@ -601,7 +631,13 @@ function ShiftDetailsPage({ shiftId, onBack, triggerCustomAlert }) {
   )
 }
 
-export default function ShiftsTab({ currentUser, currentShift, onOpenShift, triggerCustomAlert }) {
+export default function ShiftsTab({
+  currentUser,
+  currentShift,
+  onOpenShift,
+  onOpenInvoice,
+  triggerCustomAlert
+}) {
   const [detailsOf, setDetailsOf] = useState(null)
   const back = useCallback(() => setDetailsOf(null), [])
   const canOpen =
@@ -610,7 +646,12 @@ export default function ShiftsTab({ currentUser, currentShift, onOpenShift, trig
     !(currentShift && currentShift.status === 'open')
   if (detailsOf)
     return (
-      <ShiftDetailsPage shiftId={detailsOf} onBack={back} triggerCustomAlert={triggerCustomAlert} />
+      <ShiftDetailsPage
+        shiftId={detailsOf}
+        onBack={back}
+        onOpenInvoice={onOpenInvoice}
+        triggerCustomAlert={triggerCustomAlert}
+      />
     )
   return (
     <ShiftsList

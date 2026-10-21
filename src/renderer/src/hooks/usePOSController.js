@@ -488,7 +488,11 @@ export function usePOSController({
   // An attempt whose outcome is unknown (reply lost) is retried under the same key (lib/checkoutRetry).
   const checkoutPendingRef = useRef(null)
   const unresolvedCheckoutRef = useRef(null)
-  const handleCheckout = async (openedShift = null) => {
+  // F2 (owner, 2026-10-21, D-065): the same checkout, without printing; kept across "open a shift
+  // first" so the sale finishes as it was asked.
+  const pendingPrintRef = useRef(null)
+  const handleCheckout = async (openedShift = null, { print } = {}) => {
+    const printThis = print === undefined ? (pendingPrintRef.current ?? !noPrint) : print
     // The button passes its click event; only a shift object from handleStartShift counts.
     const shiftNow = openedShift?.status === 'open' ? openedShift : currentShift
     if (cart.length === 0) {
@@ -500,6 +504,7 @@ export function usePOSController({
     if (!shiftNow || !shiftNow.id || shiftNow.status !== 'open') {
       // A user allowed to work without a shift (the owner) is asked to open one now.
       if (currentUser?.permissions?.includes('shifts.operate')) {
+        pendingPrintRef.current = printThis
         setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
         setOpenShiftModal('sale')
         return
@@ -511,6 +516,7 @@ export function usePOSController({
       )
       return
     }
+    pendingPrintRef.current = null
     if (checkoutPendingRef.current) return
     checkoutPendingRef.current = true
     let attempt = null
@@ -570,7 +576,7 @@ export function usePOSController({
       const timePart = ltrText(formatClock(new Date()))
       const paidShown = paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal
 
-      if (!noPrint && window.api && window.api.printer && window.api.printer.printSale) {
+      if (printThis && window.api && window.api.printer && window.api.printer.printSale) {
         window.api.printer
           .printSale(
             {

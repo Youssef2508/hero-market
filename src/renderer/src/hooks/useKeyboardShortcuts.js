@@ -32,14 +32,24 @@ export function useKeyboardShortcuts({
         return
       }
 
+      // Owner, 2026-10-21 (D-065): F1 confirms and prints, F2 confirms without printing, F7 opens
+      // the product search. None of them acts behind an open window (its own keys come first).
+      const windowOpen = !!document.querySelector('.modal-overlay')
       switch (e.key) {
         case 'F1':
           e.preventDefault()
-          handleCheckout()
+          if (!windowOpen) handleCheckout()
           break
         case 'F2':
           e.preventDefault()
-          searchInputRef.current?.focus()
+          if (!windowOpen) handleCheckout(null, { print: false })
+          break
+        case 'F7':
+          e.preventDefault()
+          if (!windowOpen) {
+            searchInputRef.current?.focus()
+            searchInputRef.current?.select?.()
+          }
           break
         case 'F3':
           e.preventDefault()
@@ -58,7 +68,9 @@ export function useKeyboardShortcuts({
         case 'Escape':
           // Esc belongs to an open window (its own cancel), never to "clear the invoice" behind
           // it; on the till it asks before clearing (POS-01).
-          if (document.querySelector('.modal-overlay')) break
+          // A field that used Esc itself (the product search clears and goes back to the barcode
+          // field) keeps it (D-065).
+          if (document.querySelector('.modal-overlay') || e.defaultPrevented) break
           e.preventDefault()
           triggerClearCart()
           break

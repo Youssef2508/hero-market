@@ -70,6 +70,7 @@ const BlindCloseShiftModal = ({
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <form
+        data-enter-step
         className="modal-content tone-warning"
         role="dialog"
         aria-modal="true"
@@ -185,6 +186,7 @@ const OwnerCloseShiftModal = ({
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <form
+        data-enter-step
         className="modal-content modal-scroll tone-warning"
         role="dialog"
         aria-modal="true"
