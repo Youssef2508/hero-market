@@ -664,3 +664,16 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Treasury below zero (CASH-01 / TREAS-01):** allowed. Shown clearly as negative (red), and every movement is logged.
 - **Supplier invoice notice (SUP-01):** its amount is what the cashier says was paid to the supplier. It is information only: no money, stock, price or balance changes.
 - **Scheduled backup retention (BACKUP-01):** 14 daily copies plus 8 weekly copies. Enabling the schedule waits for the measured impact on checkout (Q6).
+
+## D-060 Owner answers: scale format, midnight backup, cheques, version, supplier discount (2026-10-21)
+
+- **Scale labels (SCALE-01, Q4):** every label has one layout. Product code = the first 7 digits (`2000001`). Weight = the next 5 digits in grams (`00125` = 0.125 kg). Last digit = EAN-13 check digit, validated. The physical scan at the shop stays a hardware check (HW-01).
+- **Midnight backup (BACKUP-01, Q6):** approved without further confirmation, and replaces the "waits for measurement" note in D-059.
+  - It runs every day at 00:00 local time, with no UI, even when nobody is signed in.
+  - After a missed midnight, it runs one catch-up backup.
+  - Copies go to `%ProgramData%\HeroMarket\backups`, timestamped and named daily or weekly. Retention is 14 daily + 8 weekly.
+  - Each new copy is verified before pruning. The only good copy is never deleted, and a good copy is never overwritten.
+  - It must not block checkout: the impact is measured, and a lower-impact method is used where needed.
+- **Cheques (NAV-02, Q7):** removed from navigation and workflows. Historical records are kept; deleting a record or dropping a table needs a separate approval. Any archive view is for authorised administrators only. Cheque processing is not reintroduced.
+- **Version (Q8):** this work ships as 1.5.0, and 1.4.0 is not published first. Merging, tagging, publishing and deploying each still need explicit approval.
+- **Supplier invoice discount (SUP-02, Q9):** spread over the lines in proportion to their pre-discount values. Rounding is largest remainder in whole piastres, so the shares sum exactly to the discount.
