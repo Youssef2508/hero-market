@@ -11,19 +11,18 @@ const METHODS = [
 ]
 
 /**
- * Change an invoice's payment method (owner feedback PAY-02): only while its shift is open, with a
- * reason. The total, stock and customer balance stay; the shift's figures per method move.
+ * Change an invoice's payment method (owner feedback PAY-02): only while its shift is open; no
+ * reason is asked (owner, D-063). The total, stock and customer balance stay; the shift's figures per method move.
  */
 export default function ChangePaymentModal({ sale, onDone, onClose, triggerCustomAlert }) {
   const [method, setMethod] = useState('')
-  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [clientRef] = useState(newClientRef)
   const save = async (e) => {
     e.preventDefault()
     setBusy(true)
     try {
-      await api('sales.changePaymentMethod', { saleId: sale.id, method, reason, clientRef })
+      await api('sales.changePaymentMethod', { saleId: sale.id, method, clientRef })
       await onDone()
     } catch (err) {
       triggerCustomAlert('تعذّر تغيير طريقة الدفع: ' + err.message)
@@ -66,17 +65,6 @@ export default function ChangePaymentModal({ sale, onDone, onClose, triggerCusto
                 </option>
               ))}
             </select>
-          </label>
-          <label className="field">
-            <span className="field-label">السبب *</span>
-            <input
-              className="input"
-              required
-              minLength={3}
-              maxLength={300}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
           </label>
         </div>
         <div className="modal-footer">

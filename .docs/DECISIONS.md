@@ -702,3 +702,10 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Blind close:** expected amounts are refused by the service to users without `shifts.view_expected` (administrators only) until the close is saved. The supervisor request carries no amounts, and refused attempts are logged.
 - **Expenses and debt payments:** they go to the user's shift or, for treasury managers, the treasury. When both are possible the user must choose; the service never guesses. Expenses are visible to their creator, and to administrators with `expenses.view_all`.
 - **Payment method correction:** only while the sale's shift is open, never for a sale with a return. It's recorded in `sale_payment_corrections`.
+
+## D-063 Owner notes after phase D (2026-10-21)
+
+- **Payment methods only:** the store uses cash, Visa, wallet and InstaPay only. The Momkn machine and the wallet-service tills are removed from every screen and from the shift report; their old records are kept.
+- **الورديات:** the page follows the owner's screenshots: a list with filters, and a full details page per shift.
+- **Barcodes:** a product's barcode can be changed. Its whole history follows it.
+- **No reasons asked:** the manual invoice discount needs no reason (this replaces the reason rule of D-057), and neither does a payment method correction.

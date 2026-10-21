@@ -200,9 +200,9 @@ export default function AdminDashboard(props) {
         {adminTab === 'inventory' && <InventoryTab {...props} />}
         {adminTab === 'shifts' && (
           <ShiftsTab
-            shiftsHistory={props.shiftsHistory}
-            shiftAudits={props.shiftAudits}
             currentUser={currentUser}
+            currentShift={props.currentShift}
+            onOpenShift={props.onOpenShift}
             triggerCustomAlert={props.triggerCustomAlert}
           />
         )}

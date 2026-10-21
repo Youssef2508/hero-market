@@ -4,11 +4,10 @@ import { formatMoney } from '../../lib/utils'
 import { qtyFromText } from '../../lib/qtyText'
 
 // Manual fixed invoice discount (owner decision 2026-10-21, D-057): a fixed EGP amount off the
-// current invoice, with a reason, for users holding "خصم يدوي على الفاتورة". It applies after the
-// automatic discounts; the service checks the permission, the amount and the reason again.
+// current invoice for users holding "خصم يدوي على الفاتورة", without a reason (owner, D-063). It
+// applies after the automatic discounts; the service checks the permission and the amount again.
 export default function ManualDiscountModal({ current, maxAmount, onApply, onClose }) {
   const [amount, setAmount] = useState(current ? String(current.amount) : '')
-  const [reason, setReason] = useState(current ? current.reason : '')
   const parsed = qtyFromText(amount)
   const value = parsed.value === null ? 0 : Number(parsed.value)
   const piastres = Math.abs(value * 100 - Math.round(value * 100)) < 1e-9
@@ -22,7 +21,7 @@ export default function ManualDiscountModal({ current, maxAmount, onApply, onClo
           : value > maxAmount + 1e-9
             ? `الخصم أكبر من إجمالي الفاتورة (${formatMoney(maxAmount)} ج.م).`
             : ''
-  const ready = value > 0 && !error && reason.trim().length >= 3
+  const ready = value > 0 && !error
 
   return (
     <div className="modal-overlay" style={{ zIndex: 99998 }}>
@@ -34,7 +33,7 @@ export default function ManualDiscountModal({ current, maxAmount, onApply, onClo
         style={{ width: 420 }}
         onSubmit={(e) => {
           e.preventDefault()
-          if (ready) onApply({ amount: Math.round(value * 100) / 100, reason: reason.trim() })
+          if (ready) onApply({ amount: Math.round(value * 100) / 100 })
         }}
       >
         <div className="modal-header">
@@ -60,16 +59,6 @@ export default function ManualDiscountModal({ current, maxAmount, onApply, onClo
             autoFocus
           />
           <span className="field-hint">الحد الأقصى: {formatMoney(maxAmount)} ج.م</span>
-        </label>
-        <label className="field">
-          <span className="field-label">السبب *</span>
-          <input
-            className="input"
-            value={reason}
-            maxLength={200}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="مثال: خصم الزبادي لم يُسجَّل وقت الاستلام"
-          />
         </label>
         <p id="manual-discount-error" className="text-danger" role="alert">
           {error}

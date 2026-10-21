@@ -166,8 +166,8 @@ function returnApproval(ctx, db, { subjectType, subjectId, amount, reason, appro
 
 async function recordReturn(db, ctx, row) {
   await db.query(
-    `INSERT INTO sale_returns (sale_id, sale_item_id, quantity, refund, reason, user_id, username, approval_id, shift_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO sale_returns (sale_id, sale_item_id, quantity, refund, reason, user_id, username, approval_id, shift_id, refund_method, paid_back)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       row.saleId,
       row.saleItemId ?? null,
@@ -177,7 +177,10 @@ async function recordReturn(db, ctx, row) {
       ctx.user.id,
       ctx.user.username,
       row.approvalId ?? null,
-      row.shiftId ?? null
+      row.shiftId ?? null,
+      // What went back by which method (0017): the rest went to the customer's account.
+      row.paidBack > 0 ? row.method : null,
+      row.paidBack ?? null
     ]
   )
 }
@@ -384,7 +387,9 @@ module.exports = function salesModule(app) {
           refund: netRefund,
           reason,
           approvalId: approval.approvalId,
-          shiftId
+          shiftId,
+          method: paid.method,
+          paidBack: paid.paidBack
         })
         await ctx.audit(
           db,
@@ -482,7 +487,9 @@ module.exports = function salesModule(app) {
           refund,
           reason,
           approvalId: approval.approvalId,
-          shiftId
+          shiftId,
+          method: paid.method,
+          paidBack: paid.paidBack
         })
         await ctx.audit(
           db,

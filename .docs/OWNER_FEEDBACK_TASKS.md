@@ -22,7 +22,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | EXP-02       | Optional note (categories in D)                           | A / D           | Done with evidence (optional note in A; categories in D)                                                     | none / 0016           |
 | NAV-01       | Remove "جرد الدرج" menu entry                             | A               | Done with evidence                                                                                           | none                  |
 | NAV-02       | Remove cheques screen                                     | A               | Done with evidence (admin-only read-only archive, processing removed, data kept)                             | none                  |
-| SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | Done with evidence (renamed in A; open shifts and live details in D)                                         | 0016                  |
+| SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | Done with evidence (page rebuilt to the owner’s screenshots, D-063)                                          | 0016                  |
 | DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H)                                 | 0015                  |
 | PRINT-01     | Arabic RTL receipt and shift report                       | C               | Done with evidence (software); HW-02 pending                                                                 | none                  |
 | CASH-01      | Drawer ↔ treasury                                         | D               | Done with evidence (phase D)                                                                                 | 0016                  |
@@ -39,7 +39,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | SUP-04       | Notice vs draft vs posted                                 | E               | Not started                                                                                                  | 0017                  |
 | INV-01       | Packages and loose units                                  | E               | In progress (exists; confirmation and acceptance tests missing)                                              | none                  |
 | CUST-01      | Customer code                                             | F               | Not started                                                                                                  | 0018                  |
-| PROD-01      | Edit barcode                                              | F               | Not started                                                                                                  | 0018                  |
+| PROD-01      | Edit barcode                                              | F               | Done with evidence (owner notes, 0017)                                                                       | 0018                  |
 | PROD-02      | Stock valuation                                           | F               | Not started                                                                                                  | none                  |
 | WASTE-01     | Product search in waste                                   | F               | Not started                                                                                                  | none                  |
 | STOCK-01     | "حركات المخزون" page                                      | F               | Not started                                                                                                  | none                  |
@@ -279,6 +279,33 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - **Pending:** HW-02, the shop's thermal printer (sale receipt and shift report). The preview uses the same code but not the printer's driver or fonts.
 
 ### Phases D–H
+
+### Owner notes after phase D (2026-10-21, D-063, migration 0017)
+
+1. **Payment methods only (no Momkn):**
+   - الأدراج والتحويلات now shows the shift's cash drawer and the four methods: expected per method, and sales, collections and refunds for cashless;
+   - for users without `shifts.view_expected` it shows a blind notice;
+   - the Momkn machine and wallet-service tills are gone from the open-shift window, the close dialog (the multi-till close is removed), the printed shift report and the menus;
+   - their permissions are labelled "(غير مستخدمة)", and their old records stay in the database.
+2. **الورديات rebuilt to the owner's screenshots:**
+   - list with branch and day filters: # / الكاشير / الفرع / الفتح / الإغلاق / افتتاح / المتوقع / الفعلي / الفرق / الحالة (مفتوحة / مغلقة) / تفاصيل, and "فتح وردية جديدة" when the user can open one;
+   - full details page with رجوع and طباعة الوردية: four cards (الافتتاح، المتوقع نقدي، الفعلي كاش، الفرق); sales by method with filter chips and method tiles; الكاشير / الفرع / المخزن / وقت الفتح / وقت الغلق / مدة الوردية; invoices; expenses; returns ("مسترد" per return, with its method);
+   - an open shift refreshes every 5 s;
+   - service: `shifts.list` (an open shift's expected cash only for `shifts.view_expected`); `shifts.details` adds invoices, branch and cashier;
+   - the periodic count tab (الجرد الدوري) is no longer shown; its records are kept.
+3. **Barcode edit (PROD-01):**
+   - the edit window has a الباركود field, saved through `products.changeBarcode`;
+   - sale lines, stock movements, units, extra barcodes, purchases, damaged goods and discount rules all follow the product;
+   - stock is unchanged, and movements stay immutable;
+   - migration 0017 makes the sale-line and damaged-goods foreign keys cascade.
+4. **Manual discount without a reason:** the field is removed. The service accepts the discount without one and keeps a reason if one is sent. This replaces the reason rule of D-057.
+5. **Payment method correction without a reason:** the field is removed; 0017 makes the column optional.
+
+- **Migration 0017:** schema only: two foreign keys, an optional reason, and `sale_returns.refund_method` / `paid_back`. Rollback is the installer's verified copy (Case B).
+- **Tests:**
+  - new `ownerNotes.test.js` (3): barcode change with its whole history and refusals; discount without a reason; correction without a reason;
+  - `manualDiscount.test.js` asserted "reason required"; it now asserts the owner's new rule.
+- **UI evidence (dev app, `heromarket_qa`):** shifts list, open and closed details (the Visa chip filters to 1 invoice), الأدراج والتحويلات per method with no Momkn, barcode QABAR1 → QABAR2.
 
 ### Phase D: money model (migration 0016, D-062)
 

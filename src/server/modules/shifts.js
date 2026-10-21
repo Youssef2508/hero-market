@@ -193,7 +193,8 @@ async function shiftReport(
        FROM expenses WHERE shift_id = $1 ORDER BY id`
   )
   const returns = await q(
-    `SELECT r.id, r.sale_id AS "saleId", r.refund::float8 AS refund, r.reason, r.username, r.created_at AS at
+    `SELECT r.id, r.sale_id AS "saleId", r.refund::float8 AS refund, r.reason, r.username, r.created_at AS at,
+            r.refund_method AS method, COALESCE(r.paid_back, r.refund)::float8 AS "paidBack"
        FROM sale_returns r WHERE r.shift_id = $1 ORDER BY r.id`
   )
   const report = {
@@ -243,6 +244,24 @@ async function shiftReport(
 }
 
 const money = { type: 'number', minimum: 0 }
+
+/** The store's branch name (one store, one branch: settings.branch_name). */
+async function branchName(db) {
+  const r = (await db.query("SELECT value FROM settings WHERE key = 'branch_name'")).rows[0]
+  return (r && r.value) || 'الفرع الرئيسي'
+}
+
+/** The invoices of a shift for its details page (SHIFT-01). */
+async function shiftSales(db, shiftId) {
+  return (
+    await db.query(
+      `SELECT id, timestamp, client_name, payment_type, is_delivery,
+              total_amount::float8 AS total, (${SALE_VALUE})::float8 AS sold
+         FROM sales WHERE shift_id = $1 ORDER BY id`,
+      [shiftId]
+    )
+  ).rows
+}
 
 module.exports = function shiftsModule(app) {
   app.operation({
@@ -386,6 +405,40 @@ module.exports = function shiftsModule(app) {
       ).rows
   })
 
+  // الورديات (owner, 2026-10-21): every shift, open and closed, newest first, optionally on one
+  // day. An open shift's expected cash is computed live, for holders of shifts.view_expected only.
+  app.operation({
+    name: 'shifts.list',
+    permission: 'shifts.view_all',
+    schema: {
+      type: 'object',
+      properties: { date: { type: ['string', 'null'], pattern: '^(\\d{4}-\\d{2}-\\d{2})?$' } }
+    },
+    handler: async (ctx, { date }) => {
+      const rows = (
+        await ctx.pool.query(
+          `SELECT s.id, s.user_id, u.username, s.start_time, s.end_time, s.status,
+                  s.initial_cash::float8 AS initial_cash, s.expected_end_cash::float8 AS expected,
+                  s.actual_end_cash::float8 AS actual, COALESCE(s.difference, 0)::float8 AS difference
+             FROM shifts s JOIN users u ON u.id = s.user_id
+            WHERE $1::date IS NULL OR s.start_time::date = $1::date OR s.end_time::date = $1::date
+               OR ($1::date >= s.start_time::date AND s.end_time IS NULL)
+            ORDER BY s.id DESC LIMIT 1000`,
+          [date || null]
+        )
+      ).rows
+      const seeExpected = ctx.can('shifts.view_expected')
+      for (const r of rows.filter((x) => x.status === 'open')) {
+        r.expected = seeExpected
+          ? (await drawerFigures(ctx.pool, { id: r.id, initial_cash: r.initial_cash })).expected
+          : null
+        r.actual = 0
+        r.difference = 0
+      }
+      return { rows, branch: await branchName(ctx.pool) }
+    }
+  })
+
   // SHIFT-01: the full details of any shift for the owner. An open shift is computed live from the
   // records; a closed one is its saved close (older closes, before 1.5.0, are computed again).
   app.operation({
@@ -394,13 +447,21 @@ module.exports = function shiftsModule(app) {
     schema: { type: 'object', required: ['shiftId'], properties: { shiftId: { type: 'integer' } } },
     handler: async (ctx, { shiftId }) => {
       const shift = await loadShift(ctx.pool, ctx, shiftId)
+      const cashier = (
+        await ctx.pool.query('SELECT username FROM users WHERE id = $1', [shift.user_id])
+      ).rows[0]
+      const extra = {
+        sales: await shiftSales(ctx.pool, shift.id),
+        branch: await branchName(ctx.pool),
+        cashier: cashier?.username || ''
+      }
       const saved = (
         await ctx.pool.query('SELECT report FROM shift_closings WHERE shift_id = $1', [shift.id])
       ).rows[0]
-      if (saved) return { shift, report: saved.report, saved: true }
+      if (saved) return { shift, report: saved.report, saved: true, ...extra }
       if (shift.status === 'open') requireExpected(ctx)
       const { report } = await shiftReport(ctx.pool, shift)
-      return { shift, report, saved: false }
+      return { shift, report, saved: false, ...extra }
     }
   })
 

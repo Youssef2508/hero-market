@@ -41,8 +41,9 @@ const PERMISSIONS = [
   {
     key: 'shifts.multi_till',
     module: 'shifts',
-    label: 'أرصدة مكن وكاش المحافظ والإغلاق المتقدم',
-    description: 'إدخال أرصدة بداية مكن والمحافظ وإغلاق الوردية متعدد الأدراج'
+    // Momkn and wallet-service tills are not used by the store (owner, 2026-10-21, D-063).
+    label: 'أرصدة مكن والمحافظ (غير مستخدمة)',
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة'
   },
   {
     key: 'shifts.view_all',
@@ -61,14 +62,14 @@ const PERMISSIONS = [
   {
     key: 'tills.operate',
     module: 'tills',
-    label: 'حركات الأدراج والتحويلات',
-    description: 'تسجيل حركات مكن والمحافظ والخزنة'
+    label: 'الأدراج والتحويلات',
+    description: 'صفحة الدرج وطرق الدفع للوردية الحالية (المبالغ لمن يملك عرض المتوقع فقط)'
   },
   {
     key: 'tills.manage',
     module: 'tills',
-    label: 'حذف وطباعة حركات الأدراج',
-    description: 'حذف حركات مكن والمحافظ وطباعة تقارير الجرد'
+    label: 'حركات مكن والمحافظ (غير مستخدمة)',
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة'
   },
   // Sales back office
   {

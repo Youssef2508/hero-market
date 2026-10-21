@@ -1,6 +1,8 @@
 // IPC surface between the renderer and the HeroMarket service. The renderer can only name an
 // operation and pass data; there is no SQL channel anymore.
 import { ipcMain, dialog } from 'electron'
+import { readCopy } from './backupJob'
+import { scheduledDir } from './scheduledBackup'
 import { join } from 'path'
 import fs from 'fs'
 import { describeRoot } from './tlsPin'
@@ -98,16 +100,30 @@ export function registerDataIpc({
     return { success: true, filePath }
   })
 
+  // The nightly backup's last result (logsackup-status.json): shown on the backup screen.
+  ipcMain.handle('backup:nightlyStatus', async () => {
+    try {
+      const s = JSON.parse(fs.readFileSync(join(storeDir(), 'logs', 'backup-status.json'), 'utf8'))
+      return { ...s, folder: scheduledDir() }
+    } catch {
+      return { result: null, folder: scheduledDir() }
+    }
+  })
+
   ipcMain.handle('backup:restore', async () => {
     const { filePaths } = await dialog.showOpenDialog({
       title: 'استعادة نسخة احتياطية',
-      filters: [{ name: 'HeroMarket backup', extensions: ['json'] }],
+      // The nightly copies are gzip-compressed (backupsscheduled, BACKUP-01).
+      defaultPath: scheduledDir(),
+      filters: [{ name: 'HeroMarket backup', extensions: ['json', 'gz'] }],
       properties: ['openFile']
     })
     if (!filePaths || !filePaths.length) return { success: false, error: 'User cancelled' }
     let backup
     try {
-      backup = JSON.parse(fs.readFileSync(filePaths[0], 'utf8'))
+      backup = filePaths[0].toLowerCase().endsWith('.gz')
+        ? readCopy(filePaths[0])
+        : JSON.parse(fs.readFileSync(filePaths[0], 'utf8'))
     } catch {
       return { success: false, error: 'الملف المختار ليس نسخة احتياطية صالحة.' }
     }

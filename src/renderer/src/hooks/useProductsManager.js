@@ -155,8 +155,15 @@ export function useProductsManager({
 
     const saveProduct = async () => {
       try {
+        // A corrected barcode (PROD-01) is changed first; the other fields are saved on it.
+        const nextBarcode = (editProduct.new_barcode ?? barcode).trim()
+        if (nextBarcode && nextBarcode !== barcode) {
+          await api('products.changeBarcode', { barcode, newBarcode: nextBarcode })
+          // Saved: a retry of the other fields uses the new barcode.
+          setEditProduct((prev) => ({ ...prev, barcode: nextBarcode, new_barcode: undefined }))
+        }
         await api('products.update', {
-          barcode,
+          barcode: nextBarcode || barcode,
           name,
           cost_price: cost,
           retail_price: retail,

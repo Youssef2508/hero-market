@@ -248,7 +248,8 @@ export default function SalesTab({
                     )}
                     {(selectedSale.corrections || []).map((c, i) => (
                       <div key={i} className="cell-muted">
-                        غُيّرت من {c.from_type} إلى {c.to_type} بواسطة {c.username}: {c.reason}
+                        غُيّرت من {c.from_type} إلى {c.to_type} بواسطة {c.username}
+                        {c.reason ? `: ${c.reason}` : ''}
                       </div>
                     ))}
                   </dd>
@@ -263,7 +264,8 @@ export default function SalesTab({
                     <div key={`m${i}`} className="span-2">
                       <dt>خصم يدوي</dt>
                       <dd>
-                        <span className="num">{formatMoney(d.amount)} ج.م</span> — {d.reason}
+                        <span className="num">{formatMoney(d.amount)} ج.م</span>
+                        {d.reason ? ` — ${d.reason}` : ''}
                         {d.username ? ` (${d.username})` : ''}
                       </dd>
                     </div>

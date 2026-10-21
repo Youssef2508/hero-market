@@ -1,5 +1,4 @@
-import { PlayCircle, Store, Smartphone, Wallet } from 'lucide-react'
-import { can } from '../../lib/api'
+import { PlayCircle, Store } from 'lucide-react'
 
 // Why the window is open (1.4.0). 'required' (or true): the user's role must open a shift before
 // working, so it cannot be closed. Otherwise the user may close it and work without a shift.
@@ -15,19 +14,9 @@ const OpenShiftModal = ({
   currentUser,
   startingCash,
   setStartingCash,
-  momknStartBalance,
-  setMomknStartBalance,
-  momknStartCash,
-  setMomknStartCash,
-  vfcashStartBalance,
-  setVfcashStartBalance,
-  vfcashStartCash,
-  setVfcashStartCash,
   handleStartShift
 }) => {
   if (!openShiftModal) return null
-  // Opening floats for Momkn and wallets: the service accepts them only with shifts.multi_till.
-  const isAdmin = can(currentUser, 'shifts.multi_till')
   const required = openShiftModal === true || openShiftModal === 'required'
   const reason = REASONS[openShiftModal]
 
@@ -79,68 +68,6 @@ const OpenShiftModal = ({
               الوردية، وتعود إليها مع نقدية الإغلاق.
             </span>
           </section>
-
-          {isAdmin && (
-            <>
-              <section className="till-section tone-info">
-                <h3 className="till-section-title">
-                  <Smartphone size={16} aria-hidden="true" />
-                  درج ماكينة ممكن *
-                </h3>
-                <div className="form-grid">
-                  <label className="field">
-                    <span className="field-label">رصيد الماكينة (رقمي)</span>
-                    <input
-                      type="number"
-                      className="input input-money"
-                      value={momknStartBalance}
-                      onChange={(e) => setMomknStartBalance(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">كاش الدرج (ورقي)</span>
-                    <input
-                      type="number"
-                      className="input input-money"
-                      value={momknStartCash}
-                      onChange={(e) => setMomknStartCash(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </label>
-                </div>
-              </section>
-
-              <section className="till-section tone-success">
-                <h3 className="till-section-title">
-                  <Wallet size={16} aria-hidden="true" />
-                  درج المحافظ والتحويلات *
-                </h3>
-                <div className="form-grid">
-                  <label className="field">
-                    <span className="field-label">رصيد فودافون (رقمي)</span>
-                    <input
-                      type="number"
-                      className="input input-money"
-                      value={vfcashStartBalance}
-                      onChange={(e) => setVfcashStartBalance(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">كاش الدرج (ورقي)</span>
-                    <input
-                      type="number"
-                      className="input input-money"
-                      value={vfcashStartCash}
-                      onChange={(e) => setVfcashStartCash(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </label>
-                </div>
-              </section>
-            </>
-          )}
         </div>
 
         <div className="modal-footer">

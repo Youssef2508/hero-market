@@ -47,7 +47,9 @@ export function buildCloseReportLines(rep, opts = {}) {
     start_time: rep.openedAt,
     end_time: rep.closedAt
   }
-  const { head, sep, tail } = frame('تقرير تقفيل الوردية', { ...opts, shift })
+  // An open shift (owner's live print) has no counted amounts yet.
+  const title = rep.actual ? 'تقرير تقفيل الوردية' : 'تقرير الوردية (مفتوحة)'
+  const { head, sep, tail } = frame(title, { ...opts, shift })
   const lines = [...head, sep, '[C]المبيعات حسب طريقة الدفع']
   for (const m of METHODS) lines.push(`${METHOD_LABELS[m]}|${money(rep.salesByMethod?.[m])}`)
   if (Number(rep.onAccountSales) > 0) lines.push(`آجل ودفع جزئي|${money(rep.onAccountSales)}`)

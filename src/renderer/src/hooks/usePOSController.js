@@ -244,7 +244,6 @@ export function usePOSController({
     try {
       const afterClose = async (closed) => {
         try {
-          const live = closed.live || {}
           const shiftRow = closed.shift || currentShift
           // The close is saved: the dialog goes and the saved report shows at once; printing
           // follows (a missing printer can take seconds to report and never undoes the close).
@@ -256,22 +255,6 @@ export function usePOSController({
           // Trigger print report automatically!
           if (window.api?.printer?.printReport) {
             try {
-              const momknSummary = {
-                expectedDigitalBalance:
-                  (shiftRow.momkn_start_balance || 0) + (Number(live.momkn_digital_impact) || 0),
-                totalCashImpact: Number(live.momkn_cash_impact) || 0,
-                totalCommission: Number(live.momkn_commission) || 0,
-                startBalance: shiftRow.momkn_start_balance || 0
-              }
-              const mobileMoneySummary = {
-                expectedVfcashDigitalBalance:
-                  (shiftRow.vfcash_start_balance || 0) + (Number(live.vfcash_digital_impact) || 0),
-                expectedInstapayDigitalBalance: Number(live.instapay_digital_impact) || 0,
-                expectedBankDigitalBalance: Number(live.bank_digital_impact) || 0,
-                totalCashImpact: Number(live.mm_cash_impact) || 0,
-                totalCommission: Number(live.mm_commission) || 0,
-                startBalance: shiftRow.vfcash_start_balance || 0
-              }
               await window.api.printer.printReport('shift', {
                 shift: { ...shiftRow, username: currentUser?.username },
                 cashSales: closed.figures.cashSales,
@@ -280,8 +263,6 @@ export function usePOSController({
                 expected: closed.expected,
                 actual: closed.actual,
                 difference: closed.difference,
-                momkn: momknSummary,
-                wallets: mobileMoneySummary,
                 manualDiscounts: closed.live?.manualDiscounts,
                 // The saved close (SHIFT-02): the printed report is exactly what was confirmed.
                 report: closed.report

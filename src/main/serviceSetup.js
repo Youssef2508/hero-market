@@ -26,6 +26,7 @@ import { storeDir, serviceName, perUserConfigFile } from './userDataPath'
 import { runPgTool, choosePort, toolError, DB_NAME } from './localDatabase'
 import { copyAndVerify, snapshotDataDir, pruneSnapshots, verifySnapshot } from './upgradeSnapshot'
 import { systemTool } from './winTools'
+import { registerBackupTask, removeBackupTask } from './scheduledBackup'
 
 const APP_ROLE = 'hm_app'
 const NEW_SUPERUSER = 'hm_admin'
@@ -459,6 +460,13 @@ export async function setupService() {
 
   // 7. The app's configuration (readable by Windows users: no superuser credentials in it).
   writeConfig(app.getVersion())
+  // 8. The nightly backup (BACKUP-01). A store that works without it is better than no store: a
+  // failure here is logged and shown by the backup status, and the next setup tries again.
+  try {
+    await registerBackupTask({ log })
+  } catch (e) {
+    log('WARNING nightly backup task not registered:', e.message)
+  }
   log('setup complete')
 }
 
@@ -618,6 +626,8 @@ export async function removeService() {
   await stopService(name)
   if ((await serviceState(name)) !== 'missing')
     await runPgTool('pg_ctl', ['unregister', '-N', name])
+  // The nightly task goes with the program; the backup copies stay with the store's data.
+  await removeBackupTask()
 }
 
 // The server code is CommonJS under the app's src/server folder (as in backend.js).

@@ -766,7 +766,7 @@ function CheckoutTerminal({
               <div key={`${d.scope}-${d.ruleId ?? 'manual'}`}>
                 <dt>
                   {d.scope === 'manual'
-                    ? `خصم يدوي: ${manualDiscount?.reason || ''}`
+                    ? `خصم يدوي${manualDiscount?.reason ? `: ${manualDiscount.reason}` : ''}`
                     : `خصم: ${d.name}`}
                 </dt>
                 <dd className="money text-danger">− {money(d.amount)}</dd>

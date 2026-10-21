@@ -269,6 +269,46 @@ module.exports = function catalogModule(app) {
       })
   })
 
+  // PROD-01: change a product's barcode. Its whole history (sale lines, stock movements, units,
+  // extra barcodes, purchases, damaged goods, discount rules) follows it to the new barcode in the
+  // same transaction (ON UPDATE CASCADE, 0017); nothing else changes.
+  app.operation({
+    name: 'products.changeBarcode',
+    permission: 'products.manage',
+    schema: {
+      type: 'object',
+      required: ['barcode', 'newBarcode'],
+      properties: {
+        barcode: { type: 'string', minLength: 1, maxLength: 64 },
+        newBarcode: { type: 'string', minLength: 1, maxLength: 64 }
+      }
+    },
+    handler: async (ctx, { barcode, newBarcode }) =>
+      ctx.tx(async (db) => {
+        const next = newBarcode.trim()
+        if (!next) throw badRequest('اكتب الباركود الجديد.')
+        if (next === barcode) return { barcode }
+        const p = (
+          await db.query('SELECT barcode, name FROM products WHERE barcode = $1 FOR UPDATE', [
+            barcode
+          ])
+        ).rows[0]
+        if (!p) throw notFound('الصنف غير موجود.')
+        // Stock movements are immutable (0004); the cascade only renames their product, so it is
+        // allowed for this one statement and switched off again at once.
+        await db.query("SELECT set_config('hm.ledger_rebuild', 'on', true)")
+        await db.query('UPDATE products SET barcode = $1 WHERE barcode = $2', [next, barcode])
+        await db.query("SELECT set_config('hm.ledger_rebuild', 'off', true)")
+        await ctx.audit(
+          db,
+          'product_barcode_change',
+          `تغيير باركود الصنف "${p.name}" من ${barcode} إلى ${next}`,
+          { from: barcode, to: next }
+        )
+        return { barcode: next }
+      })
+  })
+
   app.operation({
     name: 'products.delete',
     permission: 'products.manage',

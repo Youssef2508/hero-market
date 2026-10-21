@@ -173,10 +173,10 @@ test('after automatic rules, capped at what is left; partial returns add up to w
     owner
   )
   assert.equal(tooMuch.status, 400)
-  // A reason is required; whole piastres only.
+  // No reason is needed (owner, 2026-10-21, D-063, was required under D-057); whole piastres only.
   assert.equal(
     (await svc.call('pos.price', { items, manualDiscount: { amount: 5 } }, owner)).status,
-    400
+    200
   )
   assert.equal(
     (

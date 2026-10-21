@@ -688,6 +688,7 @@ function App() {
             handleReprintSale={handleReprintSale}
             onNavigate={handleNavigate}
             onSettingsChanged={loadAppSettings}
+            onOpenShift={() => setOpenShiftModal('optional')}
             {...adminController}
           />
         ) : currentView === 'tills' ? (

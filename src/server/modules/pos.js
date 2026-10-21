@@ -50,7 +50,8 @@ const manualSchema = {
 
 /**
  * The manual discount of a request, checked before any pricing: the permission (enforced here, a
- * refusal is logged), whole piastres and a reason. Returns null when there is none.
+ * refusal is logged) and whole piastres. No reason is asked (owner, 2026-10-21, D-063); one may
+ * still be sent. Returns null when there is none.
  */
 async function manualDiscountOf(ctx, m) {
   const amount = m ? Number(m.amount) || 0 : 0
@@ -66,8 +67,7 @@ async function manualDiscountOf(ctx, m) {
   }
   if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6)
     throw badRequest('الخصم اليدوي بالقروش الكاملة (رقمان بعد العلامة على الأكثر).')
-  const reason = String(m.reason || '').trim()
-  if (reason.length < 3) throw badRequest('اكتب سبب الخصم اليدوي (3 أحرف على الأقل).')
+  const reason = String(m.reason || '').trim() || null
   return { amount: round2(amount), reason }
 }
 
@@ -831,7 +831,7 @@ module.exports = function posModule(app) {
           await ctx.audit(
             db,
             'manual_discount',
-            `خصم يدوي ${manual.amount.toFixed(2)} ج.م على الفاتورة #${saleId}: ${manual.reason}`,
+            `خصم يدوي ${manual.amount.toFixed(2)} ج.م على الفاتورة #${saleId}${manual.reason ? `: ${manual.reason}` : ''}`,
             { saleId, amount: manual.amount, reason: manual.reason }
           )
 

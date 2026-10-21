@@ -105,12 +105,32 @@ async function exportAll(db) {
   return out
 }
 
+/**
+ * The whole database as one consistent copy: every table is read in one read-only REPEATABLE READ
+ * transaction, so a sale committing meanwhile is either entirely in the copy or not at all (before
+ * 1.5.0 each table was read on any free connection). Reading never blocks the tills.
+ */
+async function exportSnapshot(pool) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const data = await exportAll(client)
+    await client.query('COMMIT')
+    return data
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 module.exports = function backupModule(app) {
   app.operation({
     name: 'backup.export',
     permission: 'backup.manage',
     handler: async (ctx) => {
-      const data = await exportAll(ctx.pool)
+      const data = await exportSnapshot(ctx.pool)
       await ctx.audit(ctx.pool, 'database_backup', 'أخذ نسخة احتياطية من قاعدة البيانات')
       return data
     }
@@ -207,5 +227,6 @@ module.exports = function backupModule(app) {
 }
 
 module.exports.exportAll = exportAll
+module.exports.exportSnapshot = exportSnapshot
 module.exports.TABLES = TABLES
 module.exports.TRIGGER_TABLES = TRIGGER_TABLES

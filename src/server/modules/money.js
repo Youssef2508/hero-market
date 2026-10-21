@@ -147,7 +147,8 @@ module.exports = function moneyModule(app) {
     permission: 'sales.change_payment',
     schema: {
       type: 'object',
-      required: ['saleId', 'method', 'reason', 'clientRef'],
+      // No reason is asked (owner, 2026-10-21, D-063); one may still be sent.
+      required: ['saleId', 'method', 'clientRef'],
       properties: {
         saleId: { type: 'integer' },
         method: { type: 'string', enum: Object.keys(TYPES) },
@@ -155,7 +156,7 @@ module.exports = function moneyModule(app) {
         clientRef: ref
       }
     },
-    handler: async (ctx, { saleId, method, reason, clientRef }) =>
+    handler: async (ctx, { saleId, method, reason: given, clientRef }) =>
       ctx.tx(async (db) => {
         const done = (
           await db.query('SELECT * FROM sale_payment_corrections WHERE client_ref = $1', [
@@ -163,7 +164,7 @@ module.exports = function moneyModule(app) {
           ])
         ).rows[0]
         if (done) return { correction: done, duplicate: true }
-        if (reason.trim().length < 3) throw badRequest('اكتب سبب تغيير طريقة الدفع.')
+        const reason = (given || '').trim() || null
         const sale = (await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]))
           .rows[0]
         if (!sale) throw notFound('الفاتورة غير موجودة.')
@@ -197,7 +198,7 @@ module.exports = function moneyModule(app) {
               sale.payment_type,
               toType,
               amount,
-              reason.trim(),
+              reason,
               ctx.user.id,
               ctx.user.username,
               clientRef
@@ -207,7 +208,7 @@ module.exports = function moneyModule(app) {
         await ctx.audit(
           db,
           'sale_payment_change',
-          `تغيير طريقة دفع الفاتورة #${saleId} من ${LABELS[from]} إلى ${LABELS[method]} (${amount.toFixed(2)} ج.م): ${reason.trim()}`,
+          `تغيير طريقة دفع الفاتورة #${saleId} من ${LABELS[from]} إلى ${LABELS[method]} (${amount.toFixed(2)} ج.م)${reason ? `: ${reason}` : ''}`,
           { saleId, from: sale.payment_type, to: toType, amount }
         )
         return { correction }
