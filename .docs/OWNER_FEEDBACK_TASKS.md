@@ -24,7 +24,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | NAV-02       | Remove cheques screen                                     | A               | Done with evidence (UI hidden, data kept; Q7 for reports)                    | none                  |
 | SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | In progress (renamed; live details in D)                                     | 0016                  |
 | DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H) | 0015                  |
-| PRINT-01     | Arabic RTL receipt and shift report                       | C               | Not started                                                                  | none                  |
+| PRINT-01     | Arabic RTL receipt and shift report                       | C               | Done with evidence (software); HW-02 pending                                 | none                  |
 | CASH-01      | Drawer ↔ treasury                                         | D               | Not started                                                                  | 0016                  |
 | TREAS-01     | Treasury page and ledger                                  | D               | Not started                                                                  | 0016                  |
 | PAY-01       | Payment methods, blind close                              | D               | Not started                                                                  | 0016                  |
@@ -249,13 +249,27 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - the shift report uses its own template.
 - **Hardware:** HW-02 stays **Pending physical hardware**.
 
+- **Evidence (2026-10-21):**
+  - **Fix** (`resources/print_receipt.ps1`, line language unchanged): Arabic lines drawn as right-to-left paragraphs; the item table mirrored (name right … total left) with the header on the same columns; label right / value left; two-sided lines (date ↔ time) kept on their sides.
+    - Latin and digit runs inside Arabic lines are wrapped in U+200E marks, so "09:34 PM", "#6", "2026-10-21 08:00:00" and "-15.00" keep their order. Embedding and isolate controls were tried and rejected: GDI+ draws them as boxes.
+    - Table columns are sized from the widest value, so "0.125 كجم" is no longer cut to "0.12" (an earlier defect).
+  - **Preview mode** `-PreviewFile`: the same drawing code renders PNGs.
+    - Evidence: `.docs/reference-images/print-preview-receipt-rtl.png` and `print-preview-shift-rtl.png`.
+    - The fixture data is invented: an Arabic name, a Latin name, a weighed line, a phone, a manual discount, and the shift report with "الخصومات اليدوية".
+  - **Tests:**
+    - `tests/unit/printPreview.test.mjs` (3, Windows): BOM kept; receipt and shift report render; a preview never prints "PRINT_DONE"; a missing printer still exits 2 with INVALID_PRINTER.
+    - The 15 golden receipt cases and the report tests pass unchanged.
+  - **Pending:** HW-02, the shop's thermal printer (sale receipt and shift report). The preview uses the same code but not the printer's driver or fonts.
+
 ### Phases D–H
 
 Each requirement keeps the scope, acceptance criteria and tests listed in the specification; the audit gaps are in the plan §3. Detail is added here when its phase starts.
 
 ## Session log
 
-| Date       | Phase    | Completed IDs                                                                        | Tests / evidence                                                        | Blockers / decisions          | Next step         |
-| ---------- | -------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | ----------------------------- | ----------------- |
-| 2026-10-21 | Planning | PLAN-01, PLAN-02, PLAN-05                                                            | Audit in the plan §3; reference images stored, receipt redacted for git | DISC-01 approved; Q2–Q10 open | Phase A           |
-| 2026-10-21 | A        | ANALYTICS-01, SCALE-01, USER-01, NAV-01, NAV-02; POS-01, EXP-02 and SHIFT-01 in part | npm test 266/266; lint 0 errors; UI runs in the dev app at 1353×706     | Q4 at the shop                | Phase B (DISC-01) |
+| Date       | Phase    | Completed IDs                                                                        | Tests / evidence                                                          | Blockers / decisions          | Next step                      |
+| ---------- | -------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------- | ------------------------------ |
+| 2026-10-21 | Planning | PLAN-01, PLAN-02, PLAN-05                                                            | Audit in the plan §3; reference images stored, receipt redacted for git   | DISC-01 approved; Q2–Q10 open | Phase A                        |
+| 2026-10-21 | A        | ANALYTICS-01, SCALE-01, USER-01, NAV-01, NAV-02; POS-01, EXP-02 and SHIFT-01 in part | npm test 266/266; lint 0 errors; UI runs in the dev app at 1353×706       | Q4 at the shop                | Phase B (DISC-01)              |
+| 2026-10-21 | B        | DISC-01                                                                              | npm test 270/270; manualDiscount.test.js 4/4; UI in the dev app           | —                             | Phase C                        |
+| 2026-10-21 | C        | PRINT-01 (software)                                                                  | npm test 273/273; printPreview.test.mjs; preview PNGs in reference-images | HW-02 at the shop             | Phase D (money model; Q2, Q10) |
