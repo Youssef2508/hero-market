@@ -657,3 +657,10 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Data lifecycle:**
   - The columns are in tables already backed up; tested by a backup → restore round trip.
   - Sales are not part of the import/export template, so neither is affected.
+
+## D-059 Owner answers for the money and data phases (2026-10-21)
+
+- **Expense visibility (EXP-01):** a user without "all expenses" sees only the expenses they created, in any of their shifts. Never another user's, never the owner's. Enforced in the service queries.
+- **Treasury below zero (CASH-01 / TREAS-01):** allowed. Shown clearly as negative (red), and every movement is logged.
+- **Supplier invoice notice (SUP-01):** its amount is what the cashier says was paid to the supplier. It is information only: no money, stock, price or balance changes.
+- **Scheduled backup retention (BACKUP-01):** 14 daily copies plus 8 weekly copies. Enabling the schedule waits for the measured impact on checkout (Q6).

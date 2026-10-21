@@ -1,77 +1,67 @@
-# Owner feedback: living task tracker
-
-Written for the developer and the next work session. It is the canonical status of every requirement in `HeroMarket_Owner_Feedback_Specification.md`. The plan, audit and dependency graph are in [OWNER_FEEDBACK_IMPLEMENTATION_PLAN.md](OWNER_FEEDBACK_IMPLEMENTATION_PLAN.md).
-
-**Status values:** Not started · In progress · Done with evidence · Blocked — owner decision required · Pending physical hardware.
-
-A task is "Done" only with tests, regression evidence and documentation (spec §11). Branch: `feature/owner-feedback` (version 1.5.0). Nothing is merged, tagged or published.
-
-## Summary
-
-| ID           | Name                                                      | Phase           | Status                                                                       | Migration             |
+Not started (Q5 answered; Q6 after measuring) | ID | Name | Phase | Status | Migration |
 | ------------ | --------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------- | --------------------- |
-| PLAN-01      | Inspect repository, docs, flows                           | —               | Done with evidence (plan §2–3)                                               | —                     |
-| PLAN-02      | Dependency graph, conflicts                               | —               | Done with evidence (plan §5, §1: D-038)                                      | —                     |
-| PLAN-03      | Inventory of visible controls                             | G               | Not started (UX-01)                                                          | —                     |
-| PLAN-04      | Permission matrix, ledger map                             | G               | In progress (plan §4; matrix in G)                                           | —                     |
-| PLAN-05      | Migration and data-lifecycle implications                 | —               | Done with evidence (plan §6–7)                                               | —                     |
-| ANALYTICS-01 | Report date filters                                       | A               | Done with evidence                                                           | none                  |
-| SCALE-01     | Scale barcode, check digit                                | A               | Done with evidence (Q4 confirmation at the shop)                             | none (settings field) |
-| POS-01       | Keyboard, 0.5, Esc confirm, sign-out                      | A               | In progress (0.5, Esc, sign-out done; list keyboard audit in UX-01)          | none                  |
-| USER-01      | Flexible password characters                              | A               | Done with evidence                                                           | none                  |
-| EXP-02       | Optional note (categories in D)                           | A / D           | In progress (optional note done; categories in D)                            | none / 0016           |
-| NAV-01       | Remove "جرد الدرج" menu entry                             | A               | Done with evidence                                                           | none                  |
-| NAV-02       | Remove cheques screen                                     | A               | Done with evidence (UI hidden, data kept; Q7 for reports)                    | none                  |
-| SHIFT-01     | "الورديات" screen                                         | A (rename) / D  | In progress (renamed; live details in D)                                     | 0016                  |
-| DISC-01      | Manual fixed invoice discount                             | B               | Done with evidence (approved 2026-10-21; installer Case B test with phase H) | 0015                  |
-| PRINT-01     | Arabic RTL receipt and shift report                       | C               | Done with evidence (software); HW-02 pending                                 | none                  |
-| CASH-01      | Drawer ↔ treasury                                         | D               | Not started                                                                  | 0016                  |
-| TREAS-01     | Treasury page and ledger                                  | D               | Not started                                                                  | 0016                  |
-| PAY-01       | Payment methods, blind close                              | D               | Not started                                                                  | 0016                  |
-| PAY-02       | Change a sale's payment method                            | D               | Not started                                                                  | 0016                  |
-| EXP-01       | Expense visibility                                        | D               | Blocked — owner decision (Q2)                                                | 0016                  |
-| EXP-03       | Admin expense without shift                               | D               | Not started                                                                  | 0016                  |
-| CUST-02      | Debt payments without shift                               | D               | Not started                                                                  | 0016                  |
-| SHIFT-02     | Shift-close report                                        | D               | Not started                                                                  | 0016                  |
-| SUP-01       | Supplier invoice notice                                   | E               | Blocked — owner decision (Q3) for the amount's meaning                       | 0017                  |
-| SUP-02       | Purchase sale price, discount, posting                    | E               | Not started (Q9 for cost allocation)                                         | 0017                  |
-| SUP-03       | Supplier opening balance, contact edit                    | E               | Not started                                                                  | 0017                  |
-| SUP-04       | Notice vs draft vs posted                                 | E               | Not started                                                                  | 0017                  |
-| INV-01       | Packages and loose units                                  | E               | In progress (exists; confirmation and acceptance tests missing)              | none                  |
-| CUST-01      | Customer code                                             | F               | Not started                                                                  | 0018                  |
-| PROD-01      | Edit barcode                                              | F               | Not started                                                                  | 0018                  |
-| PROD-02      | Stock valuation                                           | F               | Not started                                                                  | none                  |
-| WASTE-01     | Product search in waste                                   | F               | Not started                                                                  | none                  |
-| STOCK-01     | "حركات المخزون" page                                      | F               | Not started                                                                  | none                  |
-| DASH-01      | Dashboard snapshots                                       | F               | Not started                                                                  | none                  |
-| DATA-01      | Export in the import template                             | G               | Not started                                                                  | none                  |
-| ROLE-01      | Import/export permissions                                 | G               | Not started                                                                  | none (catalogue)      |
-| ROLE-02      | Backend permission audit, matrix                          | G               | Not started                                                                  | —                     |
-| UX-01        | Visible-control audit                                     | G               | Not started                                                                  | —                     |
-| POS-02       | Receipt modes, reprints                                   | G               | Not started                                                                  | none                  |
-| USER-02      | Admin password reset                                      | G               | In progress (exists, D-046; verify, add re-authentication)                   | none                  |
-| BACKUP-01    | Scheduled midnight backup                                 | G               | Blocked — owner decision (Q5 retention, Q6 after measurement)                | none                  |
-| BACKUP-02    | Lifecycle regression gate                                 | every phase     | In progress                                                                  | —                     |
-| QA-01…06     | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress                                                                  | —                     |
-| HW-01        | Physical scanner                                          | H               | Pending physical hardware                                                    | —                     |
-| HW-02        | Physical receipt printer (sale + shift close)             | H               | Pending physical hardware                                                    | —                     |
-| DOC-01       | Canonical docs                                            | every phase     | In progress                                                                  | —                     |
-| REL-01       | Release notes, risk register                              | H               | Not started                                                                  | —                     |
+| PLAN-01 | Inspect repository, docs, flows | — | Done with evidence (plan §2–3) | — |
+| PLAN-02 | Dependency graph, conflicts | — | Done with evidence (plan §5, §1: D-038) | — |
+| PLAN-03 | Inventory of visible controls | G | Not started (UX-01) | — |
+| PLAN-04 | Permission matrix, ledger map | G | In progress (plan §4; matrix in G) | — |
+| PLAN-05 | Migration and data-lifecycle implications | — | Done with evidence (plan §6–7) | — |
+| ANALYTICS-01 | Report date filters | A | Done with evidence | none |
+| SCALE-01 | Scale barcode, check digit | A | Done with evidence (Q4 confirmation at the shop) | none (settings field) |
+| POS-01 | Keyboard, 0.5, Esc confirm, sign-out | A | In progress (0.5, Esc, sign-out done; list keyboard audit in UX-01) | none |
+| USER-01 | Flexible password characters | A | Done with evidence | none |
+| EXP-02 | Optional note (categories in D) | A / D | In progress (optional note done; categories in D) | none / 0016 |
+| NAV-01 | Remove "جرد الدرج" menu entry | A | Done with evidence | none |
+| NAV-02 | Remove cheques screen | A | Done with evidence (UI hidden, data kept; Q7 for reports) | none |
+| SHIFT-01 | "الورديات" screen | A (rename) / D | In progress (renamed; live details in D) | 0016 |
+| DISC-01 | Manual fixed invoice discount | B | Done with evidence (approved 2026-10-21; installer Case B test with phase H) | 0015 |
+| PRINT-01 | Arabic RTL receipt and shift report | C | Done with evidence (software); HW-02 pending | none |
+| CASH-01 | Drawer ↔ treasury | D | Not started | 0016 |
+| TREAS-01 | Treasury page and ledger | D | Not started | 0016 |
+| PAY-01 | Payment methods, blind close | D | Not started | 0016 |
+| PAY-02 | Change a sale's payment method | D | Not started | 0016 |
+| EXP-01 | Expense visibility | D | Blocked — owner decision (Q2) | 0016 |
+| EXP-03 | Admin expense without shift | D | Not started | 0016 |
+| CUST-02 | Debt payments without shift | D | Not started | 0016 |
+| SHIFT-02 | Shift-close report | D | Not started | 0016 |
+| SUP-01 | Supplier invoice notice | E | Blocked — owner decision (Q3) for the amount's meaning | 0017 |
+| SUP-02 | Purchase sale price, discount, posting | E | Not started (Q9 for cost allocation) | 0017 |
+| SUP-03 | Supplier opening balance, contact edit | E | Not started | 0017 |
+| SUP-04 | Notice vs draft vs posted | E | Not started | 0017 |
+| INV-01 | Packages and loose units | E | In progress (exists; confirmation and acceptance tests missing) | none |
+| CUST-01 | Customer code | F | Not started | 0018 |
+| PROD-01 | Edit barcode | F | Not started | 0018 |
+| PROD-02 | Stock valuation | F | Not started | none |
+| WASTE-01 | Product search in waste | F | Not started | none |
+| STOCK-01 | "حركات المخزون" page | F | Not started | none |
+| DASH-01 | Dashboard snapshots | F | Not started | none |
+| DATA-01 | Export in the import template | G | Not started | none |
+| ROLE-01 | Import/export permissions | G | Not started | none (catalogue) |
+| ROLE-02 | Backend permission audit, matrix | G | Not started | — |
+| UX-01 | Visible-control audit | G | Not started | — |
+| POS-02 | Receipt modes, reprints | G | Not started | none |
+| USER-02 | Admin password reset | G | In progress (exists, D-046; verify, add re-authentication) | none |
+| BACKUP-01 | Scheduled midnight backup | G | Blocked — owner decision (Q5 retention, Q6 after measurement) | none |
+| BACKUP-02 | Lifecycle regression gate | every phase | In progress | — |
+| QA-01…06 | Test layers, regression, upgrades, restore, clean install | every phase / H | In progress | — |
+| HW-01 | Physical scanner | H | Pending physical hardware | — |
+| HW-02 | Physical receipt printer (sale + shift close) | H | Pending physical hardware | — |
+| DOC-01 | Canonical docs | every phase | In progress | — |
+| REL-01 | Release notes, risk register | H | Not started | — |
 
 ## Owner decisions
 
-| #   | Question                                                                                                                                                                                                            | Default used until answered                                                                           | Blocks                             |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| —   | **Manual invoice discount (DISC-01)**                                                                                                                                                                               | **Answered 2026-10-21: approved**, own permission, not given to cashiers by default. Never ask again. | —                                  |
-| Q2  | Expense visibility for non-admin users: only expenses **they created**, or every expense of **their own shift**?                                                                                                    | None (current behaviour unchanged until answered)                                                     | EXP-01                             |
-| Q3  | Supplier notice amount: invoice total, amount already paid, or "amount needing attention"? It is informational either way.                                                                                          | —                                                                                                     | SUP-01                             |
-| Q4  | Scale format: the sample is a valid EAN-13 (check digit 7 verified). Is the product code in HeroMarket `2000001` (prefix + 5 digits)? Do other labels use the same layout (prefix 20, 5-digit code, 5-digit grams)? | Both `2000001` and `00001` are accepted as the product code                                           | SCALE-01 (final confirmation only) |
-| Q5  | Backup retention (e.g. 14 daily + 8 weekly)?                                                                                                                                                                        | —                                                                                                     | BACKUP-01                          |
-| Q6  | Enable the midnight backup right away, after the measured impact is reported?                                                                                                                                       | —                                                                                                     | BACKUP-01                          |
-| Q7  | After removing the cheques and drawer-audit screens, should old records stay visible in history reports?                                                                                                            | Data kept; old records stay in the database and the activity log                                      | NAV-02 history only                |
-| Q8  | Release: skip publishing 1.4.0 and publish 1.5.0 when ready, or publish 1.4.0 first?                                                                                                                                | Work continues as 1.5.0                                                                               | REL-01                             |
-| Q9  | Supplier invoice discount: spread over the lines in proportion to line value, lowering each line's cost (moving average)?                                                                                           | Proportional (largest remainder, whole piastres), like the automatic cart discount                    | SUP-02                             |
-| Q10 | Treasury below zero: allowed and shown in red, or refused? (Negative stock is allowed; nothing is documented for money.)                                                                                            | —                                                                                                     | CASH-01 / TREAS-01                 |
+| #   | Question                                                                                                                                                                                                            | Default used until answered                                                                                     | Blocks                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| —   | **Manual invoice discount (DISC-01)**                                                                                                                                                                               | **Answered 2026-10-21: approved**, own permission, not given to cashiers by default. Never ask again.           | —                                  |
+| Q2  | Expense visibility for non-admin users: only expenses **they created**, or every expense of **their own shift**?                                                                                                    | **Answered 2026-10-21: only expenses the user created (any of their shifts); nobody else's, never the owner's** | —                                  |
+| Q3  | Supplier notice amount: invoice total, amount already paid, or "amount needing attention"? It is informational either way.                                                                                          | **Answered 2026-10-21: the amount the cashier says was paid to the supplier; informational only**               | —                                  |
+| Q4  | Scale format: the sample is a valid EAN-13 (check digit 7 verified). Is the product code in HeroMarket `2000001` (prefix + 5 digits)? Do other labels use the same layout (prefix 20, 5-digit code, 5-digit grams)? | Both `2000001` and `00001` are accepted as the product code                                                     | SCALE-01 (final confirmation only) |
+| Q5  | Backup retention (e.g. 14 daily + 8 weekly)?                                                                                                                                                                        | **Answered 2026-10-21: 14 daily + 8 weekly copies**                                                             | —                                  |
+| Q6  | Enable the midnight backup right away, after the measured impact is reported?                                                                                                                                       | —                                                                                                               | BACKUP-01                          |
+| Q7  | After removing the cheques and drawer-audit screens, should old records stay visible in history reports?                                                                                                            | Data kept; old records stay in the database and the activity log                                                | NAV-02 history only                |
+| Q8  | Release: skip publishing 1.4.0 and publish 1.5.0 when ready, or publish 1.4.0 first?                                                                                                                                | Work continues as 1.5.0                                                                                         | REL-01                             |
+| Q9  | Supplier invoice discount: spread over the lines in proportion to line value, lowering each line's cost (moving average)?                                                                                           | Proportional (largest remainder, whole piastres), like the automatic cart discount                              | SUP-02                             |
+| Q10 | Treasury below zero: allowed and shown in red, or refused? (Negative stock is allowed; nothing is documented for money.)                                                                                            | **Answered 2026-10-21: allowed, shown in red, every movement logged**                                           | —                                  |
 
 ## Task details
 
