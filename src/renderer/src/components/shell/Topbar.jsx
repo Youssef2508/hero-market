@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ClipboardCheck, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
+import { ChevronDown, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
 import { Kbd } from '../ui'
 import { formatClock } from '../../lib/time'
 
@@ -100,7 +100,6 @@ export default function Topbar({
   currentShift,
   onOpenShift,
   onCloseShift,
-  onAudit,
   onLock,
   onChangePassword
 }) {
@@ -141,16 +140,6 @@ export default function Topbar({
               <span className="dot" aria-hidden="true" />
               وردية <span className="num">#{currentShift.id}</span>
             </span>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={onAudit}
-              aria-label="جرد الدرج"
-              title="جرد الخزنة والدرج دورياً للتأكد من الموازنة"
-            >
-              <ClipboardCheck size={16} aria-hidden="true" />
-              <span className="hide-sm">جرد الدرج</span>
-            </button>
             <button
               type="button"
               className="btn btn-warning-soft btn-sm"

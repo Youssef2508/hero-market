@@ -388,8 +388,13 @@ export function usePOSController({
         setTimeout(() => setToastMessage(null), 4000)
       }
     } catch (err) {
+      // The service explains why a scan cannot be used (a stopped product, an invalid scale
+      // label, an unknown scale code…): show it, and never add anything (SCALE-01).
       console.error('Barcode lookup error:', err)
       playSound('error')
+      setBarcodeInput('')
+      setToastMessage({ text: err.message, type: 'error' })
+      setTimeout(() => setToastMessage(null), 5000)
     }
   }
 

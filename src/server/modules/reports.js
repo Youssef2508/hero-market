@@ -17,14 +17,17 @@ const rangeSchema = {
 const rows = async (db, sql, params = []) => (await db.query(sql, params)).rows
 
 /** Shift ids whose start falls on/after the start of the day `days` days ago (legacy "period" rule). */
-async function shiftIdsSince(db, days) {
-  return (
-    await rows(
-      db,
-      'SELECT id FROM shifts WHERE start_time >= (CURRENT_DATE - $1::int)::timestamp ORDER BY id',
-      [days]
-    )
-  ).map((r) => r.id)
+/**
+ * Start of a reporting period, in the store's local time (timestamps are stored as local time).
+ * Periods count calendar days including today: today = from 00:00 today; weekly = today and the
+ * 6 days before; monthly = today and the 29 days before; all = no start (null).
+ * Owner feedback ANALYTICS-01: records are selected by THEIR OWN time (sale, expense, damage,
+ * drawer movement), never by the start of the shift they belong to – a shift left open for days
+ * used to put all its sales in every period, and "today" used to start yesterday.
+ */
+function periodStartSql(period) {
+  if (period === 'all') return null
+  return `(CURRENT_DATE - ${(PERIOD_DAYS[period] || 7) - 1})::timestamp`
 }
 
 module.exports = function reportsModule(app) {
@@ -51,71 +54,55 @@ module.exports = function reportsModule(app) {
     },
     handler: async (ctx, { period = 'weekly' }) => {
       const db = ctx.pool
-      let ids = null
-      if (period !== 'all') {
-        ids = await shiftIdsSince(db, PERIOD_DAYS[period] || 7)
-        if (!ids.length) {
-          return {
-            totalSales: 0,
-            netProfit: 0,
-            totalExpenses: 0,
-            invoiceCount: 0,
-            debtSales: 0,
-            outstandingDebt: 0,
-            netCashFlow: 0
-          }
-        }
-      }
-      const where = (col) => (ids ? `WHERE ${col} = ANY($1::int[])` : '')
-      const p = ids ? [ids] : []
+      const start = periodStartSql(period)
+      const since = (col) => (start ? `WHERE ${col} >= ${start}` : '')
       const s = (
         await rows(
           db,
           `SELECT SUM(total_amount) AS total, COUNT(*) AS count,
                   SUM(CASE WHEN payment_type = 'آجل' THEN total_amount ELSE 0 END) AS debt
-           FROM sales ${where('shift_id')}`,
-          p
+           FROM sales ${since('timestamp')}`
         )
       )[0]
       const profit = (
         await rows(
           db,
           `SELECT SUM(${PROFIT}) AS profit FROM sale_items si JOIN sales s ON si.sale_id = s.id
-           JOIN products p ON si.product_barcode = p.barcode ${where('s.shift_id')}`,
-          p
+           JOIN products p ON si.product_barcode = p.barcode ${since('s.timestamp')}`
         )
       )[0].profit
       const damaged = (
         await rows(
           db,
-          `SELECT SUM(quantity * cost_price) AS t FROM damaged_goods ${where('shift_id')}`,
-          p
+          `SELECT SUM(quantity * cost_price) AS t FROM damaged_goods ${since('timestamp')}`
         )
       )[0].t
       const expenses = (
-        await rows(db, `SELECT SUM(amount) AS t FROM expenses ${where('shift_id')}`, p)
+        await rows(db, `SELECT SUM(amount) AS t FROM expenses ${since('timestamp')}`)
       )[0].t
       const safe = (
         await rows(
           db,
           `SELECT SUM(CASE WHEN type = 'inflow' THEN amount ELSE 0 END) AS inflows,
                   SUM(CASE WHEN type = 'outflow' THEN amount ELSE 0 END) AS outflows
-           FROM safe_ledger ${where('shift_id')}`,
-          p
+           FROM safe_ledger ${since('timestamp')}`
         )
       )[0]
+      // Owed by customers now (a balance, not a period figure).
       const outstanding = (await rows(db, 'SELECT SUM(debt_balance) AS t FROM clients'))[0].t
-      const totalSales = s.total || 0
-      const debtSales = s.debt || 0
-      const totalExpenses = expenses || 0
+      const totalSales = Number(s.total) || 0
+      const debtSales = Number(s.debt) || 0
+      const totalExpenses = Number(expenses) || 0
       return {
+        period,
         totalSales,
-        netProfit: (profit || 0) - (damaged || 0) - totalExpenses,
+        netProfit: (Number(profit) || 0) - (Number(damaged) || 0) - totalExpenses,
         totalExpenses,
-        invoiceCount: s.count || 0,
+        invoiceCount: Number(s.count) || 0,
         debtSales,
-        outstandingDebt: outstanding || 0,
-        netCashFlow: totalSales - debtSales + (safe.inflows || 0) - (safe.outflows || 0)
+        outstandingDebt: Number(outstanding) || 0,
+        netCashFlow:
+          totalSales - debtSales + (Number(safe.inflows) || 0) - (Number(safe.outflows) || 0)
       }
     }
   })
@@ -150,34 +137,26 @@ module.exports = function reportsModule(app) {
     },
     handler: async (ctx, { period = 'weekly' }) => {
       const db = ctx.pool
-      const ids = await shiftIdsSince(db, PERIOD_DAYS[period] || 7)
+      const start = periodStartSql(period)
       const slowBase = `SELECT p.barcode, p.name, p.unit, p.retail_price AS price, p.cost_price AS cost, p.stock_qty AS stock, p.reorder_limit AS reorder_limit
                         FROM products p WHERE p.stock_qty > 0`
-      if (!ids.length) {
-        return {
-          top: [],
-          slow: await rows(db, `${slowBase} ORDER BY p.stock_qty DESC, p.barcode LIMIT 50`)
-        }
-      }
       const top = await rows(
         db,
         `SELECT si.product_barcode AS barcode, p.name AS name, p.unit AS unit, p.retail_price AS price, p.cost_price AS cost,
                 p.stock_qty AS stock, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS total_qty_sold, SUM(si.total_price - si.line_discount - si.cart_discount) AS total_revenue,
                 COUNT(DISTINCT CASE WHEN (si.quantity - si.returned_qty) > 0 THEN si.sale_id END) AS times_ordered
          FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-         WHERE s.shift_id = ANY($1::int[])
+         WHERE s.timestamp >= ${start}
          GROUP BY si.product_barcode, p.barcode
          HAVING SUM((si.quantity - si.returned_qty) * si.unit_factor) > 0
-         ORDER BY total_qty_sold DESC, si.product_barcode LIMIT 30`,
-        [ids]
+         ORDER BY total_qty_sold DESC, si.product_barcode LIMIT 30`
       )
       const slow = await rows(
         db,
         `${slowBase} AND p.barcode NOT IN (
            SELECT DISTINCT si.product_barcode FROM sale_items si JOIN sales s ON si.sale_id = s.id
-           WHERE s.shift_id = ANY($1::int[]) AND (si.quantity - si.returned_qty) > 0)
-         ORDER BY p.stock_qty DESC, p.barcode LIMIT 50`,
-        [ids]
+           WHERE s.timestamp >= ${start} AND (si.quantity - si.returned_qty) > 0)
+         ORDER BY p.stock_qty DESC, p.barcode LIMIT 50`
       )
       return { top, slow }
     }
@@ -194,62 +173,64 @@ module.exports = function reportsModule(app) {
         db,
         `SELECT s.id, s.start_time, s.end_time, s.initial_cash, s.expected_end_cash, s.actual_end_cash, s.difference, s.status, u.username
          FROM shifts s JOIN users u ON s.user_id = u.id
-         WHERE s.start_time >= $1::timestamp AND s.start_time <= $2::timestamp ORDER BY s.id ASC`,
+         WHERE s.start_time <= $2::timestamp AND COALESCE(s.end_time, LOCALTIMESTAMP) >= $1::timestamp
+         ORDER BY s.id ASC`,
         [from, to]
       )
       if (!shifts.length) return { shifts: [] }
-      const ids = [shifts.map((s) => s.id)]
+      // ANALYTICS-01: sales, expenses, damage and drawer movements are those dated in the range
+      // (a shift overlapping the range contributes only its records inside it).
+      const ids = [from, to]
       const one = async (sql) => (await rows(db, sql, ids))[0]
+      const IN = (col) => `${col} BETWEEN $1::timestamp AND $2::timestamp`
       return {
         shifts,
         salesSum:
           await one(`SELECT SUM(total_amount) AS total, COUNT(*) AS count, AVG(total_amount) AS avg_amount, MAX(total_amount) AS max_amount,
                                     SUM(CASE WHEN payment_type = 'آجل' THEN total_amount ELSE 0 END) AS debt,
                                     SUM(CASE WHEN payment_type != 'آجل' THEN total_amount ELSE 0 END) AS cash
-                             FROM sales WHERE shift_id = ANY($1::int[])`),
+                             FROM sales WHERE ${IN('timestamp')}`),
         profit:
           await one(`SELECT SUM(${PROFIT}) AS profit FROM sale_items si JOIN sales s ON si.sale_id = s.id
-                           JOIN products p ON si.product_barcode = p.barcode WHERE s.shift_id = ANY($1::int[])`),
+                           JOIN products p ON si.product_barcode = p.barcode WHERE ${IN('s.timestamp')}`),
         damaged: await one(
-          `SELECT SUM(quantity * cost_price) AS total_cost FROM damaged_goods WHERE shift_id = ANY($1::int[])`
+          `SELECT SUM(quantity * cost_price) AS total_cost FROM damaged_goods WHERE ${IN('timestamp')}`
         ),
-        expenses: await one(
-          `SELECT SUM(amount) AS total FROM expenses WHERE shift_id = ANY($1::int[])`
-        ),
+        expenses: await one(`SELECT SUM(amount) AS total FROM expenses WHERE ${IN('timestamp')}`),
         returns:
           await one(`SELECT SUM(CASE WHEN type = 'outflow' AND description LIKE 'مرتجع%' THEN amount ELSE 0 END) AS returns_total,
                                    COUNT(CASE WHEN type = 'outflow' AND description LIKE 'مرتجع%' THEN 1 END) AS returns_count
-                            FROM safe_ledger WHERE shift_id = ANY($1::int[])`),
+                            FROM safe_ledger WHERE ${IN('timestamp')}`),
         safe: await one(`SELECT SUM(CASE WHEN type = 'inflow' THEN amount ELSE 0 END) AS inflows,
                                 SUM(CASE WHEN type = 'outflow' THEN amount ELSE 0 END) AS outflows
-                         FROM safe_ledger WHERE shift_id = ANY($1::int[])`),
+                         FROM safe_ledger WHERE ${IN('timestamp')}`),
         perShiftSales: await rows(
           db,
           `SELECT shift_id, SUM(total_amount) AS sales, COUNT(*) AS invoices, SUM(CASE WHEN payment_type = 'آجل' THEN total_amount ELSE 0 END) AS debt
-           FROM sales WHERE shift_id = ANY($1::int[]) GROUP BY shift_id`,
+           FROM sales WHERE ${IN('timestamp')} GROUP BY shift_id`,
           ids
         ),
         perShiftProfit: await rows(
           db,
           `SELECT s.shift_id, SUM(${PROFIT}) AS profit FROM sale_items si JOIN sales s ON si.sale_id = s.id
-           JOIN products p ON si.product_barcode = p.barcode WHERE s.shift_id = ANY($1::int[]) GROUP BY s.shift_id`,
+           JOIN products p ON si.product_barcode = p.barcode WHERE ${IN('s.timestamp')} GROUP BY s.shift_id`,
           ids
         ),
         perShiftExpenses: await rows(
           db,
-          `SELECT shift_id, SUM(amount) AS expenses FROM expenses WHERE shift_id = ANY($1::int[]) GROUP BY shift_id`,
+          `SELECT shift_id, SUM(amount) AS expenses FROM expenses WHERE ${IN('timestamp')} GROUP BY shift_id`,
           ids
         ),
         hourly: await rows(
           db,
           `SELECT EXTRACT(HOUR FROM timestamp)::int AS hour, COUNT(*) AS invoice_count, SUM(total_amount) AS total_sales, AVG(total_amount) AS avg_sale
-           FROM sales WHERE shift_id = ANY($1::int[]) GROUP BY 1 ORDER BY 1 ASC`,
+           FROM sales WHERE ${IN('timestamp')} GROUP BY 1 ORDER BY 1 ASC`,
           ids
         ),
         daily: await rows(
           db,
           `SELECT to_char(timestamp, 'YYYY-MM-DD') AS day, COUNT(*) AS invoice_count, SUM(total_amount) AS total_sales
-           FROM sales WHERE shift_id = ANY($1::int[]) GROUP BY 1 ORDER BY 1 ASC`,
+           FROM sales WHERE ${IN('timestamp')} GROUP BY 1 ORDER BY 1 ASC`,
           ids
         ),
         top: await rows(
@@ -257,12 +238,12 @@ module.exports = function reportsModule(app) {
           `SELECT si.product_barcode, p.name AS product_name, SUM((si.quantity - si.returned_qty) * si.unit_factor) AS qty_sold, SUM(si.total_price - si.line_discount - si.cart_discount) AS revenue,
                   SUM(${PROFIT}) AS profit
            FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-           WHERE s.shift_id = ANY($1::int[]) GROUP BY si.product_barcode, p.barcode ORDER BY qty_sold DESC, si.product_barcode LIMIT 10`,
+           WHERE ${IN('s.timestamp')} GROUP BY si.product_barcode, p.barcode ORDER BY qty_sold DESC, si.product_barcode LIMIT 10`,
           ids
         ),
         payments: await rows(
           db,
-          `SELECT payment_type, COUNT(*) AS count, SUM(total_amount) AS total FROM sales WHERE shift_id = ANY($1::int[]) GROUP BY payment_type ORDER BY payment_type`,
+          `SELECT payment_type, COUNT(*) AS count, SUM(total_amount) AS total FROM sales WHERE ${IN('timestamp')} GROUP BY payment_type ORDER BY payment_type`,
           ids
         )
       }

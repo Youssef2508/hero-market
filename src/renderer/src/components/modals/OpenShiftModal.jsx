@@ -11,6 +11,7 @@ const REASONS = {
 const OpenShiftModal = ({
   openShiftModal,
   setOpenShiftModal,
+  onSignOut,
   currentUser,
   startingCash,
   setStartingCash,
@@ -150,6 +151,19 @@ const OpenShiftModal = ({
               onClick={() => setOpenShiftModal(false)}
             >
               لاحقاً
+            </button>
+          )}
+          {required && onSignOut && (
+            // A required shift cannot be skipped, but the user can always sign out (POS-01).
+            <button
+              type="button"
+              className="btn btn-secondary btn-lg"
+              onClick={() => {
+                setOpenShiftModal(false)
+                onSignOut()
+              }}
+            >
+              تسجيل الخروج
             </button>
           )}
           <button type="submit" className="btn btn-primary btn-lg btn-block">

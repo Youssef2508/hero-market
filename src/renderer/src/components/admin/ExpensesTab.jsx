@@ -184,11 +184,10 @@ export default function ExpensesTab({
                 </select>
               </label>
               <label className="field">
-                <span className="field-label">البيان والوصف *</span>
+                <span className="field-label">البيان والوصف (اختياري)</span>
                 <textarea
-                  required
                   className="input"
-                  placeholder="اكتب تفاصيل المصروف هنا..."
+                  placeholder="تفاصيل المصروف إن وجدت..."
                   rows="3"
                   value={newExpenseForm.description}
                   onChange={(e) =>

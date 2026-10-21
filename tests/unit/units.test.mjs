@@ -8,7 +8,8 @@ const {
   unitPrice,
   parseScaleLabel,
   normalizeScaleLabels,
-  DEFAULT_SCALE
+  DEFAULT_SCALE,
+  ean13CheckDigit
 } = createRequire(import.meta.url)('../../src/server/inventory/units.js')
 
 test('count products: whole base units; packaging fractions allowed when they make whole pieces', () => {
@@ -47,21 +48,25 @@ test('prices: base keeps the exact price; a unit uses its own price or base × f
 test('scale labels: off by default; when enabled, default layout, unknown prefixes, invalid settings', () => {
   // The store weighs manually (owner, 2026-10-15): labels are ignored unless enabled.
   assert.equal(DEFAULT_SCALE.enabled, false)
-  assert.equal(parseScaleLabel(DEFAULT_SCALE, '2000777002503'), null)
+  assert.equal(parseScaleLabel(DEFAULT_SCALE, '2000777002502'), null)
   const ON = { ...DEFAULT_SCALE, enabled: true }
-  assert.deepEqual(parseScaleLabel(ON, '2000777002503'), {
+  assert.deepEqual(parseScaleLabel(ON, '2000777002502'), {
+    prefix: '20',
     code: '00777',
+    fullCode: '2000777',
     kind: 'weight',
     value: 0.25
   })
-  assert.deepEqual(parseScaleLabel(ON, '2200777045004'), {
+  assert.deepEqual(parseScaleLabel(ON, '2200777045008'), {
+    prefix: '22',
     code: '00777',
+    fullCode: '2200777',
     kind: 'price',
     value: 45
   })
   assert.equal(parseScaleLabel(ON, '6223001876366'), null)
   assert.equal(parseScaleLabel(ON, '200077700250'), null) // 12 digits
-  assert.equal(parseScaleLabel({ ...ON, enabled: false }, '2000777002503'), null)
+  assert.equal(parseScaleLabel({ ...ON, enabled: false }, '2000777002502'), null)
   assert.throws(() => normalizeScaleLabels('{bad'))
   assert.throws(() => normalizeScaleLabels(JSON.stringify({ ...DEFAULT_SCALE, codeStart: 12 })))
   assert.throws(() =>
@@ -71,6 +76,48 @@ test('scale labels: off by default; when enabled, default layout, unknown prefix
     ...DEFAULT_SCALE,
     prefixes: { 20: 'weight', 21: 'weight', 22: 'price', 25: 'weight' }
   })
+})
+
+test("the owner's scale label 2000001001257 (SCALE-01): 0.125 kg of product 2000001, EAN-13 checked", () => {
+  const ON = { ...DEFAULT_SCALE, enabled: true }
+  // Check digit by hand: 2·1+0·3+0·1+0·3+0·1+0·3+1·1+0·3+0·1+1·3+2·1+5·3 = 23 → (10 − 3) mod 10 = 7.
+  assert.equal(ean13CheckDigit('200000100125'), 7)
+  assert.deepEqual(parseScaleLabel(ON, '2000001001257'), {
+    prefix: '20',
+    code: '00001',
+    fullCode: '2000001',
+    kind: 'weight',
+    value: 0.125
+  })
+  // 0.125 kg × 20.00 EGP/kg = 2.50 EGP, as printed on the label.
+  assert.equal(Math.round(0.125 * 20 * 100) / 100, 2.5)
+  // Any other last digit: refused, never read as a weight.
+  for (const d of '012345689')
+    assert.deepEqual(parseScaleLabel(ON, '200000100125' + d), {
+      error: 'check_digit',
+      prefix: '20'
+    })
+  // Zero weight (valid check digit): refused.
+  assert.deepEqual(parseScaleLabel(ON, '2000001000007'), {
+    error: 'zero_value',
+    prefix: '20',
+    kind: 'weight'
+  })
+  // Maximum of a 5-digit gram field: 99.999 kg.
+  const max = '20000019999' + '9'
+  assert.equal(parseScaleLabel(ON, max + ean13CheckDigit(max)).value, 99.999)
+  // A normal product barcode with another prefix is not a label.
+  assert.equal(parseScaleLabel(ON, '6221234567890'), null)
+  // Scales without a check digit: the last digit is not checked.
+  assert.equal(parseScaleLabel({ ...ON, checkDigit: 'none' }, '2000001001250').value, 0.125)
+  // Settings saved before SCALE-01 (no checkDigit) are EAN-13 for 13 digits.
+  const old = JSON.parse(normalizeScaleLabels(JSON.stringify({ ...ON, checkDigit: undefined })))
+  assert.equal(old.checkDigit, 'ean13')
+  assert.throws(() =>
+    normalizeScaleLabels(
+      JSON.stringify({ ...ON, length: 12, codeStart: 2, valueStart: 7, checkDigit: 'ean13' })
+    )
+  )
 })
 
 test('kinds the owner adds: their own decimals for quantities, factors and stock (migration 0014)', () => {

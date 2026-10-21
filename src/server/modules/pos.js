@@ -151,13 +151,40 @@ module.exports = function posModule(app) {
           cfg = null
         }
         scale = parseScaleLabel(cfg, raw)
+        // A code shaped like a label of these settings is explained, never silently "not found".
+        if (scale && scale.error === 'check_digit')
+          throw badRequest(
+            `ملصق الميزان (${raw}) غير صالح: رقم التحقق خاطئ. أعد مسحه أو اكتبه بدقة.`,
+            { scale: 'check_digit' }
+          )
+        if (scale && scale.error === 'zero_value')
+          throw badRequest(
+            `ملصق الميزان (${raw}) يحمل ${scale.kind === 'weight' ? 'وزناً' : 'سعراً'} صفراً.`,
+            {
+              scale: 'zero_value'
+            }
+          )
         if (scale) {
           const c = scale.code
+          // The product may be registered under the code digits (00001 / 1) or under the label's
+          // digits up to the code (2000001, as the owner registers them).
+          const candidates = [...new Set([scale.fullCode, c, c.replace(/^0+/, '')].filter(Boolean))]
           product = (
-            await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1', [
-              [...new Set([c, c.replace(/^0+/, '')].filter(Boolean))]
-            ])
+            await db.query(
+              'SELECT * FROM products WHERE barcode = ANY($1::text[]) ORDER BY array_position($1::text[], barcode) LIMIT 1',
+              [candidates]
+            )
           ).rows[0]
+          if (!product)
+            throw notFound(
+              `لا يوجد صنف مسجل بكود الميزان ${scale.fullCode} (${c}). سجّل الصنف بهذا الكود أولاً.`,
+              { scale: 'unknown_product', code: scale.fullCode }
+            )
+          if (scale.kind === 'weight' && (await kindRule(db, product.unit_kind)).decimals === 0)
+            throw badRequest(
+              `الصنف "${product.name}" يباع بالعدد، والملصق يحمل وزناً. عدّل طريقة قياس الصنف إلى "بالوزن".`,
+              { scale: 'kind_mismatch' }
+            )
           if (product) {
             unit = baseUnit(product)
             const price = unitPrice(product, unit)

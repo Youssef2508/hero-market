@@ -26,8 +26,9 @@ export function useExpensesManager({
 
   const handleAddExpense = async (e) => {
     if (e) e.preventDefault()
-    if (!newExpenseForm.amount || !newExpenseForm.description) {
-      triggerCustomAlert('يرجى ملء مبلغ المصروف والوصف!')
+    // The note is optional (owner feedback EXP-02).
+    if (!newExpenseForm.amount) {
+      triggerCustomAlert('يرجى إدخال مبلغ المصروف!')
       return
     }
     const amountVal = parseFloat(newExpenseForm.amount) || 0

@@ -56,6 +56,9 @@ export function useKeyboardShortcuts({
           }
           break
         case 'Escape':
+          // Esc belongs to an open window (its own cancel), never to "clear the invoice" behind
+          // it; on the till it asks before clearing (POS-01).
+          if (document.querySelector('.modal-overlay')) break
           e.preventDefault()
           triggerClearCart()
           break

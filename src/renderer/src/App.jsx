@@ -528,6 +528,17 @@ function App() {
   }
 
   // Global keyboard shortcuts
+  // Esc and the "تفريغ" button ask first; a cancelled clear keeps the invoice exactly (POS-01).
+  const confirmClearCart = () => {
+    if (!cart.length) return
+    triggerCustomConfirm(
+      `سيتم حذف كل أصناف الفاتورة الحالية (${cart.length} صنف). هل تريد تفريغها؟`,
+      triggerClearCart,
+      null,
+      'تفريغ الفاتورة'
+    )
+  }
+
   useKeyboardShortcuts({
     isLocked,
     customAlert,
@@ -536,7 +547,7 @@ function App() {
     handleCheckout,
     searchInputRef,
     qtyInputRefs,
-    triggerClearCart,
+    triggerClearCart: confirmClearCart,
     cart,
     triggerDeleteItem
   })
@@ -649,7 +660,6 @@ function App() {
         currentShift={currentShift}
         onOpenShift={() => setOpenShiftModal('optional')}
         onCloseShift={() => setCloseShiftModal(true)}
-        onAudit={triggerAuditCheck}
         onLock={handleLock}
         onChangePassword={() => setShowChangePassword(true)}
         version={packageInfo.version}
@@ -680,7 +690,7 @@ function App() {
         ) : (
           <CheckoutTerminal
             cart={cart}
-            triggerClearCart={triggerClearCart}
+            triggerClearCart={confirmClearCart}
             addByBarcode={addProductByBarcode}
             onReturn={
               can(currentUser, 'sales.return_request') || can(currentUser, 'sales.return')
@@ -747,6 +757,7 @@ function App() {
       <AppModals
         openShiftModal={openShiftModal}
         setOpenShiftModal={setOpenShiftModal}
+        onSignOut={handleLock}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}

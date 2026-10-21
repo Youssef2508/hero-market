@@ -11,13 +11,28 @@ const {
   verifyRecoveryCode
 } = require('../../src/server/auth/password')
 
-test('password rules: length, letters and digits, not common, not the username', () => {
-  for (const good of ['Store-2026', 'كلمة سر 77', 'abc12345', 'Ahmed-till-1'])
+test('password rules: length, any characters, not guessable, not common, not the username', () => {
+  // USER-01 (D-058): letters only, digits only and symbols are allowed, as long as the password
+  // is not trivially guessable. ("onlyletters" used to be refused for having no digit.)
+  for (const good of [
+    'Store-2026',
+    'كلمة سر 77',
+    'abc12345',
+    'Ahmed-till-1',
+    'onlyletters',
+    'كلمةسريةطويلة',
+    '73915482',
+    '!@#$%^&*',
+    'Mo#$%^&*pass'
+  ])
     assert.equal(passwordProblem(good, 'cashier'), '', good)
   const bad = [
     ['short1', /8 أحرف/],
-    ['onlyletters', /حروف وأرقام/],
-    ['1234567890', /حروف وأرقام/],
+    ['aaaaaaab', /4 رموز مختلفة/],
+    ['abababab', /4 رموز مختلفة/],
+    ['abcdefgh', /متتالية/],
+    ['87654321', /متتالية/],
+    ['1234567890', /شائعة/],
     ['password1', /شائعة/],
     ['Admin123', /شائعة/],
     [' Store-2026', /مسافة/],

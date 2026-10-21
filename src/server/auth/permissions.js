@@ -39,7 +39,7 @@ const PERMISSIONS = [
   {
     key: 'shifts.view_all',
     module: 'shifts',
-    label: 'سجل الورديات',
+    label: 'الورديات',
     description: 'عرض جميع الورديات وجرد الأدراج'
   },
   {
@@ -162,8 +162,10 @@ const PERMISSIONS = [
   {
     key: 'checks.manage',
     module: 'finance',
-    label: 'الشيكات',
-    description: 'تسجيل الشيكات وتحديث حالتها'
+    // The cheques screen is hidden (owner feedback NAV-02); the key stays so stored roles and the
+    // history in checks_register remain valid.
+    label: 'الشيكات (الشاشة مخفية)',
+    description: 'الشاشة لم تعد في القائمة؛ السجلات القديمة محفوظة'
   },
   {
     key: 'expenses.manage',

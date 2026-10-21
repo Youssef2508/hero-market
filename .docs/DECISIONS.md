@@ -623,3 +623,17 @@ Format: context → decision → reason → consequences (→ alternatives).
   - One audit entry records the counts.
 - **Not done, on purpose:** updating existing products or customers from a file. Prices change through the product screens. A barcode or phone already in the store is reported instead.
 - **Libraries:** `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (MIT). They are pinned dev dependencies, bundled into the screens, and add no audit findings.
+
+## D-058 Passwords accept any characters (owner feedback USER-01, 2026-10-21)
+
+- **Why:** "letters and digits together" (D-046) refused normal passwords that use only letters, only digits, or symbols.
+- **Rule now:**
+  - 8–128 characters of any kind;
+  - at least 4 different characters;
+  - not a plain run (abcdefgh, 87654321);
+  - not on the common-password list;
+  - not containing the username;
+  - no leading or trailing space.
+- This follows NIST SP 800-63B: no composition rules; refuse guessable passwords instead.
+- **Unchanged:** scrypt hashes; no normalisation (the stored password is compared exactly); temporary passwords and recovery codes.
+- **Existing accounts:** no change; their passwords keep working.

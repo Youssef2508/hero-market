@@ -292,7 +292,7 @@ function SetupForm({ onSetupDone }) {
         className={hint ? 'field-error' : 'field-hint'}
         aria-live="polite"
       >
-        {hint || '8 أحرف على الأقل، حروف وأرقام معاً، ولا تحتوي على اسم المستخدم.'}
+        {hint || '8 رموز على الأقل (حروف أو أرقام أو علامات)، ولا تحتوي على اسم المستخدم.'}
       </p>
       {error && (
         <p className="field-error" role="alert">

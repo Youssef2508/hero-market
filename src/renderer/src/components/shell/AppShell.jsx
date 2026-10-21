@@ -33,7 +33,6 @@ export default function AppShell({
   currentShift,
   onOpenShift,
   onCloseShift,
-  onAudit,
   onLock,
   onChangePassword,
   version,
@@ -74,7 +73,6 @@ export default function AppShell({
           currentShift={currentShift}
           onOpenShift={onOpenShift}
           onCloseShift={onCloseShift}
-          onAudit={onAudit}
           onLock={onLock}
           onChangePassword={onChangePassword}
         />

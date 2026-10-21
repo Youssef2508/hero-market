@@ -22,7 +22,6 @@ import {
   ReceiptText,
   Users,
   Truck,
-  Landmark,
   HandCoins,
   Clock,
   UserCog,
@@ -206,19 +205,6 @@ export const NAV_GROUPS = [
         }
       },
       {
-        id: 'checks',
-        permission: ['checks.manage'],
-        label: 'الشيكات',
-        icon: Landmark,
-        view: 'admin',
-        tab: 'checks',
-        description: 'الشيكات الصادرة والواردة وتواريخ الاستحقاق.',
-        onEnter: (c) => {
-          c.fetchChecksList()
-          c.fetchChecksDueToday()
-        }
-      },
-      {
         id: 'expenses',
         permission: ['expenses.manage'],
         label: 'المصروفات',
@@ -237,11 +223,11 @@ export const NAV_GROUPS = [
       {
         id: 'shifts',
         permission: ['shifts.view_all'],
-        label: 'سجل الورديات',
+        label: 'الورديات',
         icon: Clock,
         view: 'admin',
         tab: 'shifts',
-        description: 'الورديات المغلقة والعجز والزيادة وجرد الدرج.',
+        description: 'الورديات المغلقة والعجز والزيادة.',
         onEnter: (c) => c.fetchShiftsHistory()
       },
       {

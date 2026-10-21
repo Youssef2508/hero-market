@@ -169,7 +169,9 @@ test('change password: verifies the current one, applies the rules, signs out ot
     svc.call('auth.changePassword', { currentPassword, newPassword }, a)
   assert.equal((await change('Wrong-pass-1', 'Cashier-pass-9')).status, 400)
   assert.equal((await change('Cashier-pass-1', 'short1')).status, 400, 'too short')
-  assert.equal((await change('Cashier-pass-1', 'onlyletters')).status, 400, 'letters only')
+  // USER-01 (D-058): letters-only passwords are now allowed; guessable ones are still refused.
+  assert.equal((await change('Cashier-pass-1', 'abcdefgh')).status, 400, 'a plain run')
+  assert.equal((await change('Cashier-pass-1', 'aaaaaaab')).status, 400, 'too few characters')
   assert.equal((await change('Cashier-pass-1', 'legacy_hash-1')).status, 400, 'contains username')
   assert.equal((await change('Cashier-pass-1', 'Cashier-pass-9')).status, 200)
   assert.equal((await svc.call('auth.me', {}, a)).status, 200, 'this terminal stays signed in')

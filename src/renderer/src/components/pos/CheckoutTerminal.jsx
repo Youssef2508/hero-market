@@ -34,6 +34,7 @@ import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
 import { kindInfo } from '../../lib/measureKinds'
+import { qtyFromText } from '../../lib/qtyText'
 
 // Payment types are business values written to sales.payment_type – do not rename.
 const PAYMENT_METHODS = [
@@ -122,6 +123,41 @@ function ShortagesButton({ dbStats, onPrint, onPdf }) {
         </div>
       )}
     </div>
+  )
+}
+
+// Quantity box of a cart line (POS-01). The typed text is kept while typing, so "0", "0." and
+// "0.5" can be typed (the box used to snap back to the cart value at "0"). A valid quantity reaches
+// the cart at once; on leaving the box, "0" removes the line (as before) and anything invalid goes
+// back to the last valid quantity.
+function QtyInput({ item, inputRef, onQty, onZero }) {
+  const [text, setText] = useState(String(item.qty))
+  const focused = useRef(false)
+  // The cart changed from elsewhere (stepper, another scan): show it unless the user is typing.
+  useEffect(() => {
+    if (!focused.current) setText(String(item.qty))
+  }, [item.qty])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className="qty-input num"
+      value={text}
+      ref={inputRef}
+      onFocus={() => (focused.current = true)}
+      onChange={(e) => {
+        setText(e.target.value)
+        const { value } = qtyFromText(e.target.value)
+        if (value !== null) onQty(value)
+      }}
+      onBlur={() => {
+        focused.current = false
+        const { value, zero } = qtyFromText(text)
+        if (zero) onZero()
+        else if (value === null) setText(String(item.qty))
+      }}
+      aria-label={`كمية ${item.name}`}
+    />
   )
 }
 
@@ -604,21 +640,11 @@ function CheckoutTerminal({
                           >
                             <Plus size={14} />
                           </button>
-                          <input
-                            type="number"
-                            className="qty-input num"
-                            value={item.qty}
-                            ref={(el) => (qtyInputRefs.current[index] = el)}
-                            onChange={(e) => handleQtyChangeAttempt(item.key, e.target.value)}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value)
-                              if (isNaN(val) || val <= 0) {
-                                triggerDeleteItem(item.key)
-                              }
-                            }}
-                            min="0.001"
-                            step="any"
-                            aria-label={`كمية ${item.name}`}
+                          <QtyInput
+                            item={item}
+                            inputRef={(el) => (qtyInputRefs.current[index] = el)}
+                            onQty={(v) => handleQtyChangeAttempt(item.key, v)}
+                            onZero={() => triggerDeleteItem(item.key)}
                           />
                           <button
                             type="button"

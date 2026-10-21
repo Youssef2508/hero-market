@@ -17,6 +17,7 @@ import CustomConfirmModal from './CustomConfirmModal'
 export default function AppModals({
   openShiftModal,
   setOpenShiftModal,
+  onSignOut,
   currentUser,
   startingCash,
   setStartingCash,
@@ -110,6 +111,7 @@ export default function AppModals({
       <OpenShiftModal
         openShiftModal={openShiftModal}
         setOpenShiftModal={setOpenShiftModal}
+        onSignOut={onSignOut}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}

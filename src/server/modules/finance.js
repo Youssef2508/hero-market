@@ -417,11 +417,12 @@ module.exports = function financeModule(app) {
     permission: 'expenses.manage',
     schema: {
       type: 'object',
-      required: ['amount', 'description'],
+      // The note is optional (owner feedback EXP-02): amount and category are enough.
+      required: ['amount'],
       properties: {
         amount: { type: 'number', exclusiveMinimum: 0 },
         category: str(80),
-        description: { type: 'string', minLength: 1, maxLength: 1000 },
+        description: str(1000),
         currentShiftId: { type: ['integer', 'null'] }
       }
     },
@@ -432,11 +433,15 @@ module.exports = function financeModule(app) {
         const category = e.category || 'عام'
         await db.query(
           `INSERT INTO expenses (shift_id, amount, category, description, timestamp) VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0))`,
-          [shift.id, e.amount, category, e.description]
+          [shift.id, e.amount, category, (e.description || '').trim()]
         )
         await db.query(
           `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-          [shift.id, e.amount, `مصروفات - تصنيف: ${category} - ${e.description}`]
+          [
+            shift.id,
+            e.amount,
+            `مصروفات - تصنيف: ${category}${(e.description || '').trim() ? ` - ${e.description.trim()}` : ''}`
+          ]
         )
         await ctx.audit(
           db,
