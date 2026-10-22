@@ -67,7 +67,9 @@ async function buildMatrix() {
   lines.push(`| Permission | Name | ${roles.map((r) => r.name).join(' | ')} |`)
   lines.push(`| --- | --- | ${roles.map(() => ':-:').join(' | ')} |`)
   for (const p of PERMISSIONS)
-    lines.push(`| \`${p.key}\` | ${p.label} | ${roles.map((r) => yes(r, p.key)).join(' | ')} |`)
+    lines.push(
+      `| \`${p.key}\` | ${p.label}${p.hidden ? ' (hidden in the roles screen)' : ''} | ${roles.map((r) => yes(r, p.key)).join(' | ')} |`
+    )
   lines.push('')
   lines.push('## Operations and the permission each requires')
   lines.push('')

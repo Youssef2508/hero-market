@@ -264,7 +264,8 @@ module.exports = function adminModule(app) {
   app.operation({
     name: 'roles.catalog',
     anyPermission: ['roles.manage', 'users.manage'],
-    handler: async () => PERMISSIONS
+    // Hidden permissions (unused Momkn and wallet tills, D-078) are not offered in the roles screen.
+    handler: async () => PERMISSIONS.filter((p) => !p.hidden)
   })
 
   app.operation({

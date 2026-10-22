@@ -944,3 +944,22 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Bar charts share their width instead of scrolling (24 hours fit).
   - The sweep now opens the first row of every list: all 29 screens, closed and opened, at 1366 and 1024 px, show no sideways scrolling.
   - A purchase entered without an invoice number is named by its own number in the ledger, the drawer and the log ("#12", not "#").
+
+## D-078 The visible-control inventory (UX-01, 2026-10-22)
+
+- **`.docs/UI_INVENTORY.md`** covers:
+  - every screen in the menu: permission, purpose, main actions and their effects, tests;
+  - every window and its effect;
+  - every key;
+  - the checks done: right to left, keyboard only, no sideways scrolling, feedback, empty and loading states;
+  - the open points for the owner.
+- **Kept current:** a test fails when a menu screen is missing from it.
+- **No dead or decorative control was found among the visible ones.** The audit raised three questions for the owner, and nothing is removed without an answer:
+  - the two permissions marked «غير مستخدمة» in the roles screen (Momkn and wallet tills, stopped in D-063);
+  - whether «المزامنة السحابية» stays visible while the shop does not use the cloud;
+  - whether three overlapping report screens are kept.
+- **Invisible leftovers of the old Momkn tills** (state passed between components, server operations kept so old shifts stay readable) are not controls and stay as they are.
+- **The owner's answers (2026-10-22):**
+  - the two unused permissions are hidden from the roles screen (`hidden: true` in the catalogue; `roles.catalog` leaves them out; the keys stay valid);
+  - «المزامنة السحابية» stays visible;
+  - «الأداء والأرباح» is merged into the dashboard's period statistics (new period «الكل», profit margin, cash flow); «التقارير المتقدمة» is kept.

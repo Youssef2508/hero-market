@@ -42,7 +42,9 @@ const PERMISSIONS = [
     module: 'shifts',
     // Momkn and wallet-service tills are not used by the store (owner, 2026-10-21, D-063).
     label: 'أرصدة مكن والمحافظ (غير مستخدمة)',
-    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة'
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة',
+    // Not shown in the roles screen (owner, 2026-10-22, D-078); the key stays valid.
+    hidden: true
   },
   {
     key: 'shifts.view_all',
@@ -68,7 +70,8 @@ const PERMISSIONS = [
     key: 'tills.manage',
     module: 'tills',
     label: 'حركات مكن والمحافظ (غير مستخدمة)',
-    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة'
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة',
+    hidden: true
   },
   // Sales back office
   {

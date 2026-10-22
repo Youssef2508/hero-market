@@ -6,7 +6,8 @@ import {
   HandCoins,
   Truck,
   Wallet,
-  Banknote
+  Banknote,
+  Coins
 } from 'lucide-react'
 import { StatCard } from '../ui'
 import { api } from '../../lib/api'
@@ -29,6 +30,8 @@ function rangeOf(period, today = new Date()) {
     return [iso(s), iso(t)]
   }
   if (period === 'month') return [iso(new Date(t.getFullYear(), t.getMonth(), 1)), iso(t)]
+  // Everything (D-078): the service starts at the store's first record.
+  if (period === 'all') return ['2000-01-01', iso(t)]
   return [iso(new Date(t.getFullYear(), 0, 1)), iso(t)]
 }
 
@@ -37,6 +40,7 @@ const PERIODS = [
   ['week', 'هذا الأسبوع'],
   ['month', 'هذا الشهر'],
   ['year', 'هذه السنة'],
+  ['all', 'الكل'],
   ['custom', 'فترة مخصصة']
 ]
 const METHOD_LABELS = {
@@ -134,7 +138,7 @@ export default function DashboardPeriod() {
   useEffect(() => {
     let stopped = false
     if (!from || !to) return undefined
-    api('reports.dashboard', { from, to })
+    api('reports.dashboard', { from, to, all: period === 'all' })
       .then((d) => {
         if (!stopped) {
           setData(d)
@@ -145,7 +149,7 @@ export default function DashboardPeriod() {
     return () => {
       stopped = true
     }
-  }, [from, to])
+  }, [from, to, period])
 
   const t = data?.totals
   return (
@@ -251,11 +255,21 @@ export default function DashboardPeriod() {
               tone={t.netProfit < 0 ? 'danger' : 'success'}
               label="صافي الربح"
               value={m(t.netProfit)}
-              meta={
+              meta={[
+                t.sales > 0 ? `هامش الربح ${((t.netProfit / t.sales) * 100).toFixed(0)}%` : '',
                 t.purchaseDiscounts
                   ? `بعد المصروفات والتوالف، ويشمل خصم مشتريات ${m(t.purchaseDiscounts)}`
                   : 'بعد خصم المصروفات والتوالف'
-              }
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            />
+            <StatCard
+              icon={Coins}
+              tone={t.cashFlow < 0 ? 'danger' : 'info'}
+              label="السيولة النقدية"
+              value={m(t.cashFlow)}
+              meta="المبيعات المدفوعة فوراً وحركات الدرج الداخلة مطروحاً منها الخارجة"
             />
             <StatCard
               icon={Banknote}

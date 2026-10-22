@@ -17,7 +17,6 @@ import { canOpenTab } from '../shell/navigation'
 import { can } from '../../lib/api'
 
 // Back-office screens load on first use, so the cashier screen starts without them (G-19).
-const StatsTab = lazy(() => import('./StatsTab'))
 const InventoryTab = lazy(() => import('./InventoryTab'))
 const ShiftsTab = lazy(() => import('./ShiftsTab'))
 const SalesTab = lazy(() => import('./SalesTab'))
@@ -94,7 +93,7 @@ function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNav
             tone="accent"
             label="إجمالي المبيعات"
             value={`${formatMoney(pa.totalSales)} ج.م`}
-            onClick={() => go('stats')}
+            onClick={() => go('advanced-stats')}
           />
           <StatCard
             icon={ChartColumn}
@@ -102,7 +101,7 @@ function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNav
             label="صافي الربح"
             value={`${formatMoney(pa.netProfit)} ج.م`}
             meta="بعد خصم المصروفات والتوالف"
-            onClick={() => go('stats')}
+            onClick={() => go('advanced-stats')}
           />
           <StatCard
             icon={ReceiptText}
@@ -217,7 +216,6 @@ export default function AdminDashboard(props) {
         }
       >
         {adminTab === 'menu' && <Overview {...props} />}
-        {adminTab === 'stats' && <StatsTab {...props} />}
         {adminTab === 'inventory' && <InventoryTab {...props} />}
         {adminTab === 'shifts' && (
           <ShiftsTab

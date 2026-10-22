@@ -112,6 +112,20 @@ test('a range follows each record by its own date, across the year boundary', as
   assert.equal(d.topProducts[0].barcode, 'D2')
 })
 
+test('«الكل» starts at the first record; a chosen range keeps its days; cash flow (D-078)', async (t) => {
+  if (!requireDb(t)) return
+  const all = ok(
+    await svc.call('reports.dashboard', { from: '2000-01-01', to: '2026-01-31', all: true }, owner)
+  )
+  assert.equal(all.from, '2025-12-31')
+  assert.equal(all.totals.sales, 90)
+  // Without «الكل» the range is the one asked for.
+  assert.equal(ok(await dash('2000-01-01', '2026-01-31')).from, '2000-01-01')
+  // Cash flow: a sale paid at once counts; a collection is drawer money in.
+  assert.equal(ok(await dash('2025-12-31', '2025-12-31')).totals.cashFlow, 10)
+  assert.equal(ok(await dash('2026-01-20', '2026-01-20')).totals.cashFlow, 30)
+})
+
 test('a year shows monthly buckets; an empty period is zero, not missing', async (t) => {
   if (!requireDb(t)) return
   const y = ok(await dash('2026-01-01', '2026-12-31'))

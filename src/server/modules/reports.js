@@ -63,10 +63,26 @@ module.exports = function reportsModule(app) {
   app.operation({
     name: 'reports.dashboard',
     permission: 'reports.view',
-    schema: { type: 'object', required: ['from', 'to'], properties: { from: DAY, to: DAY } },
-    handler: async (ctx, { from, to }) => {
+    schema: {
+      type: 'object',
+      required: ['from', 'to'],
+      properties: { from: DAY, to: DAY, all: { type: 'boolean' } }
+    },
+    handler: async (ctx, { from, to, all }) => {
       if (from > to) [from, to] = [to, from]
       const db = ctx.pool
+      // "الكل" (D-078) begins at the store's first record, so the charts do not span empty years.
+      // A chosen range keeps its own days. The answer says which range was used.
+      if (all) {
+        const first = (
+          await rows(
+            db,
+            `SELECT to_char(LEAST((SELECT min(timestamp) FROM sales), (SELECT min(timestamp) FROM expenses),
+                                   (SELECT min(timestamp) FROM supplier_purchases))::date, 'YYYY-MM-DD') AS d`
+          )
+        )[0].d
+        if (from < (first || to)) from = first && first <= to ? first : to
+      }
       const p = [from, to]
       const inRange = (col) => `${col} >= $1::date AND ${col} < $2::date + 1`
       const days = (await rows(db, 'SELECT ($2::date - $1::date + 1) AS n', p))[0].n
@@ -111,6 +127,16 @@ module.exports = function reportsModule(app) {
       const purchaseReturns = await one(
         `SELECT COALESCE(SUM(credit_value), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_purchase_returns WHERE ${inRange('created_at')}`
       )
+      // Cash flow of the period (from «الأداء والأرباح», merged here, D-078): sales paid at once
+      // plus the drawers' other money in, less their money out.
+      const cashFlow = (
+        await one(
+          `SELECT ((SELECT COALESCE(SUM(total_amount), 0) FROM sales
+                     WHERE payment_type NOT IN ('آجل', 'دفع جزئي') AND ${inRange('timestamp')})
+                 + (SELECT COALESCE(SUM(CASE WHEN type = 'inflow' THEN amount ELSE -amount END), 0)
+                      FROM safe_ledger WHERE ${inRange('timestamp')}))::float8 AS v`
+        )
+      ).v
       const collections = (
         await one(
           `SELECT (SELECT COALESCE(SUM(amount), 0) FROM safe_ledger WHERE kind = 'customer_payment' AND ${inRange('timestamp')})
@@ -189,7 +215,8 @@ module.exports = function reportsModule(app) {
           purchaseReturns: r2(purchaseReturns.v),
           purchaseReturnCount: purchaseReturns.n,
           purchaseDiscounts: r2(purchaseGain),
-          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses) + Number(purchaseGain))
+          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses) + Number(purchaseGain)),
+          cashFlow: r2(cashFlow)
         },
         salesByMethod,
         series: keys.map((k) => ({

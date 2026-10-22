@@ -12,7 +12,6 @@ import {
   ScanBarcode,
   Wallet,
   LayoutDashboard,
-  ChartColumn,
   ChartLine,
   Award,
   Trophy,
@@ -96,16 +95,7 @@ export const NAV_GROUPS = [
     id: 'reports',
     label: 'التقارير',
     items: [
-      {
-        id: 'stats',
-        permission: ['reports.view'],
-        label: 'الأداء والأرباح',
-        icon: ChartColumn,
-        view: 'admin',
-        tab: 'stats',
-        description: 'الإيرادات والأرباح والملخص المالي للفترة.',
-        onEnter: (c) => c.fetchAnalytics()
-      },
+      // «الأداء والأرباح» is merged into the dashboard's period statistics (owner, 2026-10-22, D-078).
       {
         id: 'advanced-stats',
         permission: ['reports.view'],
