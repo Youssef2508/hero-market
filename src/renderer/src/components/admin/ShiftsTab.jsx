@@ -339,7 +339,9 @@ function ShiftDetailsPage({ shiftId, onBack, onOpenInvoice, triggerCustomAlert }
   const print = async () => {
     if (!window.api?.printer?.printReport) return
     try {
-      if (r.actual || open) await window.api.printer.printReport('close', { report: r })
+      // A closed shift printed from its details is a copy of the saved close (POS-02, D-077).
+      if (r.actual || open)
+        await window.api.printer.printReport('close', { report: r, copy: !open })
       else
         await window.api.printer.printReport('shift', {
           shift: { ...shift, username: data.cashier },

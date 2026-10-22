@@ -12,12 +12,17 @@ const text = (v, max = 48) =>
     .slice(0, max)
 const money = (v) => `${(Number(v) || 0).toFixed(2)} ج.م`
 
-function frame(title, { store = {}, paper = '80mm', shift = {}, printedAt } = {}) {
+// A reprint says so (POS-02, D-077), like a reprinted sale receipt.
+const COPY = '[C][B]*** نسخة معاد طباعتها ***'
+
+function frame(title, { store = {}, paper = '80mm', shift = {}, printedAt, copy = false } = {}) {
   const sep = '-'.repeat(paper === '58mm' ? 32 : 48)
   const head = []
   if (store.name) head.push(`[C]${text(store.name)}`)
   if (store.branch) head.push(`[C]${text(store.branch)}`)
-  head.push(`[C][BIG]${title}`, `[C]الوردية #${text(shift.id ?? '—', 12)}`, sep)
+  head.push(`[C][BIG]${title}`)
+  if (copy) head.push(COPY)
+  head.push(`[C]الوردية #${text(shift.id ?? '—', 12)}`, sep)
   if (shift.username) head.push(`الكاشير|${text(shift.username, 30)}`)
   // Date-times are wider than the value column: one full line each.
   if (shift.start_time) head.push(`[R]بداية الوردية: ${text(shift.start_time, 30)}`)
@@ -254,9 +259,58 @@ export function buildWalletsReportLines(r, opts = {}) {
   ]
 }
 
+/**
+ * A recorded supplier invoice (POS-02, D-077), from its saved purchase (suppliers.purchaseDetail):
+ * lines, gross, invoice discount, net, paid, still owed and returns. Printing it never records
+ * anything; it is always a copy of what was saved.
+ */
+export function buildPurchaseLines(d, opts = {}) {
+  const p = d.purchase || {}
+  const sep = '-'.repeat(opts.paper === '58mm' ? 32 : 48)
+  const store = opts.store || {}
+  const lines = []
+  if (store.name) lines.push(`[C]${text(store.name)}`)
+  if (store.branch) lines.push(`[C]${text(store.branch)}`)
+  lines.push(
+    '[C][BIG]فاتورة شراء',
+    COPY,
+    `[C]رقم ${text(p.invoice_ref || p.id, 30)}`,
+    sep,
+    `المورد|${text(p.supplier_name, 30)}`,
+    `[R]التاريخ: ${text(p.timestamp, 30)}`,
+    sep
+  )
+  for (const l of d.items || []) {
+    lines.push(`[R]${text(l.name, 40)}`)
+    lines.push(
+      `${Number(l.qty)} ${text(l.unit_name || '', 12)} × ${(Number(l.unit_cost) || 0).toFixed(2)}|${money(l.line_total)}`
+    )
+    if (Number(l.returned) > 0) lines.push(`[R][N]  أُرجع منها ${Number(l.returned)}`)
+  }
+  const gross = Number(p.gross ?? p.total_amount) || 0
+  lines.push(sep, `إجمالي الأصناف|${money(gross)}`)
+  if (Number(p.discount) > 0) lines.push(`خصم الفاتورة|${money(p.discount)}`)
+  lines.push(
+    `[B]صافي الفاتورة|${money(p.total_amount)}`,
+    `المدفوع عند الشراء|${money(p.paid_amount)}`,
+    `المتبقي عند الشراء|${money(p.remaining)}`
+  )
+  const returns = d.returns || []
+  if (returns.length) {
+    const credit = returns.reduce((a, r) => a + (Number(r.credit_value) || 0), 0)
+    lines.push(sep, `مرتجعات (${returns.length})|${money(credit)}`)
+  }
+  lines.push(sep)
+  if (opts.printedAt) lines.push(`[C][N]طُبع في ${text(opts.printedAt, 30)}`)
+  lines.push('[C][N]HeroMarket POS', '', '')
+  return lines
+}
+
 export const REPORTS = {
   shift: buildShiftReportLines,
-  close: (r, opts) => buildCloseReportLines(r.report || r, opts),
+  // A saved close printed again carries the copy mark (copy: true).
+  close: (r, opts) => buildCloseReportLines(r.report || r, { ...opts, copy: !!r.copy }),
+  purchase: buildPurchaseLines,
   momkn: buildMomknReportLines,
   wallets: buildWalletsReportLines
 }

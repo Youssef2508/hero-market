@@ -17,7 +17,8 @@ export default function CloseReportModal({ data, onDone, title, doneLabel = 'ØªÙ
     if (!window.api?.printer?.printReport) return
     setPrinting(true)
     try {
-      await window.api.printer.printReport('close', { report: r })
+      // Printed again from the saved close: marked as a copy (POS-02, D-077).
+      await window.api.printer.printReport('close', { report: r, copy: true })
     } finally {
       setPrinting(false)
     }

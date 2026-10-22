@@ -10,14 +10,16 @@ import {
   MapPin,
   UserRound,
   HandCoins,
-  Pencil
+  Pencil,
+  Printer,
+  PackageMinus
 } from 'lucide-react'
 import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
 import { fixedDestination } from '../../lib/destination'
-import { can } from '../../lib/api'
+import { api, can } from '../../lib/api'
 import { rowKeys } from '../../lib/keyboard'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
@@ -148,6 +150,17 @@ export default function SuppliersTab({
   const [cancelling, setCancelling] = useState(null)
   const [returning, setReturning] = useState(null)
   const [editing, setEditing] = useState(false)
+  // A recorded supplier invoice printed again from what was saved (POS-02, D-077); nothing is
+  // recorded by printing.
+  const printPurchase = async (p) => {
+    if (!window.api?.printer?.printReport) return
+    try {
+      const detail = await api('suppliers.purchaseDetail', { purchaseId: p.id })
+      await window.api.printer.printReport('purchase', detail)
+    } catch (err) {
+      triggerCustomAlert?.('تعذّرت الطباعة: ' + err.message)
+    }
+  }
   const canManage = can(currentUser, 'suppliers.manage')
   const [repayTo, setRepayTo] = useState('')
   const [repayMethod, setRepayMethod] = useState('cash')
@@ -447,17 +460,16 @@ export default function SuppliersTab({
                   <p className="cell-muted text-center">لا توجد فواتير</p>
                 ) : (
                   <div className="table-wrap">
+                    {/* Five columns so the table fits the supplier's page without sideways
+                        scrolling (owner, 2026-10-22): date and payment type under the invoice,
+                        the discount and returns under the net. */}
                     <table className="table table-compact">
                       <thead>
                         <tr>
-                          <th>التاريخ</th>
-                          <th>رقم الفاتورة</th>
-                          <th className="num">الإجمالي</th>
-                          <th className="num">الخصم</th>
+                          <th>الفاتورة</th>
+                          <th className="num">الصافي</th>
                           <th className="num">المدفوع</th>
                           <th className="num">المتبقي</th>
-                          <th>نوع الدفع</th>
-                          <th className="num">المرتجع</th>
                           {canManage && (
                             <th>
                               <span className="visually-hidden">إجراءات</span>
@@ -468,15 +480,23 @@ export default function SuppliersTab({
                       <tbody>
                         {supplierPurchases.map((p) => (
                           <tr key={p.id}>
-                            <td className="nowrap cell-muted">
-                              <Timestamp value={p.timestamp} />
-                            </td>
                             <td>
-                              <span className="ltr-id">{p.invoice_ref || '—'}</span>
+                              <span className="ltr-id">{p.invoice_ref || `#${p.id}`}</span>
+                              <div className="cell-muted">
+                                <Timestamp value={p.timestamp} />
+                              </div>
+                              <span className="badge">{p.payment_type}</span>
                             </td>
-                            <td className="num">{formatMoney(p.total_amount)}</td>
-                            <td className="num cell-muted">
-                              {Number(p.discount) > 0 ? formatMoney(p.discount) : '—'}
+                            <td className="num">
+                              {formatMoney(p.total_amount)}
+                              {Number(p.discount) > 0 && (
+                                <div className="cell-muted">خصم {formatMoney(p.discount)}</div>
+                              )}
+                              {Number(p.returned_value) > 0 && (
+                                <div className="cell-muted">
+                                  مرتجع {formatMoney(p.returned_value)}
+                                </div>
+                              )}
                             </td>
                             <td className="num">{formatMoney(p.paid_amount)}</td>
                             <td
@@ -484,23 +504,30 @@ export default function SuppliersTab({
                             >
                               {formatMoney(p.remaining)}
                             </td>
-                            <td>
-                              <span className="badge">{p.payment_type}</span>
-                            </td>
-                            <td className="num cell-muted">
-                              {Number(p.returned_value) > 0 ? formatMoney(p.returned_value) : '—'}
-                            </td>
                             {canManage && (
                               <td>
-                                {p.item_count > 0 && (
+                                <div className="row-actions">
                                   <button
                                     type="button"
-                                    className="btn btn-sm btn-secondary"
-                                    onClick={() => setReturning(p)}
+                                    className="icon-btn"
+                                    aria-label={`طباعة فاتورة الشراء ${p.invoice_ref || p.id}`}
+                                    title="طباعة الفاتورة (نسخة)"
+                                    onClick={() => printPurchase(p)}
                                   >
-                                    مرتجع
+                                    <Printer size={15} aria-hidden="true" />
                                   </button>
-                                )}
+                                  {p.item_count > 0 && (
+                                    <button
+                                      type="button"
+                                      className="icon-btn"
+                                      aria-label={`مرتجع من فاتورة الشراء ${p.invoice_ref || p.id}`}
+                                      title="مرتجع مشتريات"
+                                      onClick={() => setReturning(p)}
+                                    >
+                                      <PackageMinus size={15} aria-hidden="true" />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             )}
                           </tr>

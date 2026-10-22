@@ -1911,3 +1911,24 @@ button.hero-chip:hover {
   background: var(--chart-1);
   border-radius: 5px;
 }
+
+/* Bar charts share the width they have instead of scrolling sideways (owner, 2026-10-22): with
+   many bars (24 hours) each gets narrower; values and labels shrink or are cut with a tooltip. */
+.vbar-chart {
+  overflow-x: hidden;
+  gap: 2px;
+}
+.vbar-chart .vbar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.vbar-chart .vbar-track {
+  width: min(30px, 100%);
+}
+.vbar-chart .vbar-value,
+.vbar-chart .vbar-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}

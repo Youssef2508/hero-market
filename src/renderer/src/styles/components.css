@@ -1686,3 +1686,11 @@ label.btn.is-disabled {
     padding: 6px 6px;
   }
 }
+
+/* Small icon actions at the end of a table row */
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}

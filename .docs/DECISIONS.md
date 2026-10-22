@@ -929,3 +929,18 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Not changed:** a new account's first password does not expire, since staff accounts are often prepared before the person starts.
 - **The window:** it opens fresh each time, so a typed password never stays.
 - **Tests:** `auth.test.js` covers the refused resets (2 logged), the 72-hour expiry, sign-in and set-password both refused after expiry, and a new reset working.
+
+## D-077 Reprints from saved documents, marked as copies (POS-02, 2026-10-22)
+
+- **Already in place:** the print / no-print choice at the till (F1 prints, F2 does not, D-065, shown beside the buttons); sale invoice reprint from `sales.reprintData` with «*** نسخة معاد طباعتها ***»; the closing report reprint from the saved close.
+- **Added:**
+  - **Supplier invoices:** a print button on each recorded purchase in the supplier's list, built from `suppliers.purchaseDetail`. It shows the lines (with what was returned), gross, invoice discount, net, paid and still owed at purchase, and the returns' credit. It always carries the copy mark.
+  - **Closing reports printed again** (from the report window or the shift details) carry the copy mark; the automatic print at the close does not.
+- **Each document keeps its own layout:** sale receipts use the receipt designer's template; closing reports and supplier invoices use the report layouts (`shared/reportLines.mjs`).
+- **Printing records nothing:** `tests/service/reprints.test.js` reprints a sale, a supplier invoice and a closing report three times each, and every table's content fingerprint is unchanged (no second sale, stock movement, supplier posting or close). `tests/unit/reprints.test.mjs` checks the layouts and the copy marks.
+- **Physical printing** is part of HW-02 at the shop.
+- **2026-10-22, owner: the supplier's purchases table still scrolled sideways.** The earlier sweep had measured each screen only as it opens; the supplier, customer, invoice and cashier pages appear only after a row is opened.
+  - The purchases table now has 5 columns: invoice (date and payment type under it); net (discount and returns under it); paid; owed; icon actions for print and return.
+  - Bar charts share their width instead of scrolling (24 hours fit).
+  - The sweep now opens the first row of every list: all 29 screens, closed and opened, at 1366 and 1024 px, show no sideways scrolling.
+  - A purchase entered without an invoice number is named by its own number in the ledger, the drawer and the log ("#12", not "#").

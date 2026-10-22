@@ -218,7 +218,7 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       unitCost: round4(i.unitCost / unit.factor),
       refType: 'purchase',
       refId: purchaseId,
-      reason: `فاتورة شراء #${ref} من ${s.name}`
+      reason: `فاتورة شراء #${ref || purchaseId} من ${s.name}`
     })
   }
   if (payable && remaining > 0) {
@@ -228,7 +228,7 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     ])
     await db.query(
       `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'purchase', $2, $3, LOCALTIMESTAMP(0))`,
-      [s.id, remaining, `فاتورة شراء #${ref} - متبقي آجل`]
+      [s.id, remaining, `فاتورة شراء #${ref || purchaseId} - متبقي آجل`]
     )
   }
   if (drawer && paid > 0) {
@@ -236,7 +236,7 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       shiftId: shift.id,
       type: 'outflow',
       amount: paid,
-      description: `دفعة لمورد: ${s.name} - فاتورة #${ref}`,
+      description: `دفعة لمورد: ${s.name} - فاتورة #${ref || purchaseId}`,
       kind: 'supplier_payment'
     })
   }
@@ -258,7 +258,7 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   await ctx.audit(
     db,
     'supplier_purchase',
-    `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`,
+    `فاتورة شراء #${ref || purchaseId} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`,
     { purchaseId, gross, discount, net: total, paid }
   )
   const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
