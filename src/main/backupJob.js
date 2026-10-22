@@ -12,6 +12,10 @@
 // SHA-256 written next to it, and only then renamed to its final name (never over an existing
 // file). The first good copy of an ISO week is also kept as that week's copy. Pruning keeps the
 // newest 14 daily and 8 weekly verified copies and never removes the newest good one.
+//
+// After a shift close (owner, 2026-10-22, D-074): the same job with { afterClose: true } writes a
+// "close" copy every time (no once-a-day check), verified the same way, into the same folder; the
+// newest 20 are kept. The till never asks anyone: it starts the on-demand task (closeTaskXml).
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
@@ -19,17 +23,19 @@ import zlib from 'zlib'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 
-const KEEP = { daily: 14, weekly: 8 }
+const KEEP = { daily: 14, weekly: 8, close: 20 }
 const EXT = '.json.gz'
-const NAME = /^HeroMarket-(daily|weekly)-(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})\.json\.gz$/
+const NAME =
+  /^HeroMarket-(daily|weekly|close)-(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})?\.json\.gz$/
 // Tables a good copy must contain (the shop's own records).
 const REQUIRED_TABLES = ['products', 'sales', 'sale_items', 'shifts', 'stock_movements', 'users']
 
 const pad = (n) => String(n).padStart(2, '0')
 
-/** "HeroMarket-daily-2026-10-22_0000.json.gz" (local date and time). */
+/** "HeroMarket-daily-2026-10-22_0000.json.gz" (local date and time); close copies with seconds. */
 function backupName(kind, d) {
-  return `HeroMarket-${kind}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${EXT}`
+  const sec = kind === 'close' ? pad(d.getSeconds()) : ''
+  return `HeroMarket-${kind}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${sec}${EXT}`
 }
 
 function parseName(file) {
@@ -38,7 +44,7 @@ function parseName(file) {
   return {
     kind: m[1],
     day: `${m[2]}-${m[3]}-${m[4]}`,
-    stamp: `${m[2]}${m[3]}${m[4]}${m[5]}${m[6]}`
+    stamp: `${m[2]}${m[3]}${m[4]}${m[5]}${m[6]}${m[7] || '00'}`
   }
 }
 
@@ -89,7 +95,7 @@ function plan(copies, now) {
  */
 function prunable(copies, keep = KEEP) {
   const out = []
-  for (const kind of ['daily', 'weekly']) {
+  for (const kind of ['daily', 'weekly', 'close']) {
     const list = copies.filter((c) => c.kind === kind)
     out.push(...list.slice(Math.max(1, keep[kind])))
   }
@@ -158,7 +164,8 @@ async function runBackup({
   schema,
   now = new Date(),
   statusFile,
-  log = () => {}
+  log = () => {},
+  afterClose = false
 }) {
   const started = Date.now()
   const status = { at: now.toISOString(), result: 'failed', files: [] }
@@ -184,13 +191,14 @@ async function runBackup({
     // Leftovers of an interrupted run are never valid copies.
     for (const f of fs.readdirSync(dir)) if (f.endsWith('.partial')) fs.rmSync(path.join(dir, f))
 
-    const need = plan(listCopies(dir), now)
+    // After a close: always one new copy, never the daily or weekly ones.
+    const need = afterClose ? { daily: true, weekly: false } : plan(listCopies(dir), now)
     if (!need.daily) {
       status.result = 'skipped'
       status.reason = "today's copy already exists"
       return status
     }
-    const name = backupName('daily', now)
+    const name = backupName(afterClose ? 'close' : 'daily', now)
     const final = path.join(dir, name)
     if (fs.existsSync(final)) throw new Error(`${name} already exists; it is never overwritten`)
     const partial = `${final}.partial`
@@ -315,8 +323,36 @@ function taskXml(exePath, { start = '2026-01-01T00:00:00' } = {}) {
 `
 }
 
+/**
+ * The after-close task (D-074): started on demand by the till after each shift close; no schedule.
+ * It runs as the system account like the nightly task, so the copy lands in the locked folder. Its
+ * security descriptor lets Windows users read and run it (start it), nothing else.
+ */
+function closeTaskXml(exePath) {
+  return taskXml(exePath)
+    .replace(
+      /<Description>[^<]*<\/Description>/,
+      '<Description>HeroMarket: automatic database backup after each shift close (keeps the newest 20).</Description>\n' +
+        '    <SecurityDescriptor>D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)</SecurityDescriptor>'
+    )
+    .replace(/\s*<Triggers>[\s\S]*?<\/Triggers>/, '')
+    .replace(
+      '<StartWhenAvailable>true</StartWhenAvailable>',
+      '<StartWhenAvailable>false</StartWhenAvailable>'
+    )
+    .replace(
+      '<ExecutionTimeLimit>PT2H</ExecutionTimeLimit>',
+      '<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>'
+    )
+    .replace(
+      '<Arguments>--scheduled-backup</Arguments>',
+      '<Arguments>--scheduled-backup --after-close</Arguments>'
+    )
+}
+
 export {
   KEEP,
+  closeTaskXml,
   REQUIRED_TABLES,
   backupName,
   parseName,

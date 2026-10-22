@@ -2,7 +2,7 @@
 // operation and pass data; there is no SQL channel anymore.
 import { ipcMain, dialog } from 'electron'
 import { readCopy } from './backupJob'
-import { scheduledDir } from './scheduledBackup'
+import { scheduledDir, startCloseBackup } from './scheduledBackup'
 import { join } from 'path'
 import fs from 'fs'
 import { describeRoot } from './tlsPin'
@@ -101,6 +101,9 @@ export function registerDataIpc({
   })
 
   // The nightly backup's last result (logsackup-status.json): shown on the backup screen.
+  // After a shift close (D-074): the automatic copy, started without asking anyone.
+  ipcMain.handle('backup:afterClose', async () => startCloseBackup())
+
   ipcMain.handle('backup:nightlyStatus', async () => {
     try {
       const s = JSON.parse(fs.readFileSync(join(storeDir(), 'logs', 'backup-status.json'), 'utf8'))

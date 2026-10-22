@@ -112,7 +112,7 @@ if (scheduledBackup) {
   app.whenReady().then(async () => {
     let code = 1
     try {
-      code = await runScheduledBackup()
+      code = await runScheduledBackup({ afterClose: process.argv.includes('--after-close') })
     } catch (e) {
       console.error('[backup] failed:', e.message)
     }

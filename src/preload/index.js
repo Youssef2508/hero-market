@@ -16,7 +16,8 @@ const api = {
   db: {
     backup: () => ipcRenderer.invoke('backup:save'),
     restore: () => ipcRenderer.invoke('backup:restore'),
-    nightlyStatus: () => ipcRenderer.invoke('backup:nightlyStatus')
+    nightlyStatus: () => ipcRenderer.invoke('backup:nightlyStatus'),
+    afterClose: () => ipcRenderer.invoke('backup:afterClose')
   },
   printer: {
     // Legacy HTML sale receipts (reprint of old invoices)

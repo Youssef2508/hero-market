@@ -15,11 +15,13 @@ import os from 'os'
 import pg from 'pg'
 import { storeDir } from './userDataPath'
 import { readConfig } from './backend'
-import { runBackup, taskXml } from './backupJob'
+import { runBackup, taskXml, closeTaskXml } from './backupJob'
 import { systemTool } from './winTools'
 import { execFile } from 'child_process'
 
 export const TASK_NAME = 'HeroMarket\\HeroMarket Backup'
+// After each shift close (D-074): started on demand by the till, never on a schedule.
+export const CLOSE_TASK_NAME = 'HeroMarket\\HeroMarket Backup After Close'
 const SID = { system: '*S-1-5-18', admins: '*S-1-5-32-544', users: '*S-1-5-32-545' }
 
 const nodeRequire = createRequire(import.meta.url)
@@ -45,8 +47,11 @@ function backupLog(line) {
   }
 }
 
-/** One scheduled run. Exit code: 0 done or skipped, 1 failed (the reason is in backup.log). */
-export async function runScheduledBackup() {
+/**
+ * One scheduled run. Exit code: 0 done or skipped, 1 failed (the reason is in backup.log).
+ * afterClose: the copy after a shift close (always written; its own status file).
+ */
+export async function runScheduledBackup({ afterClose = false } = {}) {
   const cfg = readConfig()
   const local = cfg && cfg.mode === 'local' ? cfg.local : null
   if (!local || !local.port || !local.user) {
@@ -69,8 +74,13 @@ export async function runScheduledBackup() {
       dir: scheduledDir(),
       exportData: () => exportSnapshot(pool),
       schema: listMigrations().map((m) => m.version),
-      statusFile: join(storeDir(), 'logs', 'backup-status.json'),
-      log: backupLog
+      statusFile: join(
+        storeDir(),
+        'logs',
+        afterClose ? 'backup-close-status.json' : 'backup-status.json'
+      ),
+      log: backupLog,
+      afterClose
     })
     if (status.result === 'skipped') backupLog(`backup: skipped (${status.reason})`)
     return status.result === 'failed' ? 1 : 0
@@ -116,9 +126,51 @@ export async function registerBackupTask({ log = () => {} } = {}) {
   } finally {
     fs.rmSync(xmlFile, { force: true })
   }
+  // The after-close task (D-074): same program and folder, started by the till, no schedule.
+  const closeXml = join(os.tmpdir(), `heromarket-close-backup-task-${process.pid}.xml`)
+  fs.writeFileSync(
+    closeXml,
+    Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from(closeTaskXml(process.execPath), 'utf16le')
+    ])
+  )
+  try {
+    const r = await exec(systemTool('schtasks.exe'), [
+      '/Create',
+      '/TN',
+      CLOSE_TASK_NAME,
+      '/XML',
+      closeXml,
+      '/F'
+    ])
+    if (r.code !== 0) throw new Error(`after-close backup task: ${r.output.trim()}`)
+    log('after-close backup task registered:', CLOSE_TASK_NAME)
+  } finally {
+    fs.rmSync(closeXml, { force: true })
+  }
 }
 
-/** Uninstall: the task goes; the copies stay (they are the store's data). */
+/** Uninstall: the tasks go; the copies stay (they are the store's data). */
 export async function removeBackupTask() {
   await exec(systemTool('schtasks.exe'), ['/Delete', '/TN', TASK_NAME, '/F'])
+  await exec(systemTool('schtasks.exe'), ['/Delete', '/TN', CLOSE_TASK_NAME, '/F'])
+}
+
+/**
+ * After a shift close (D-074): start the on-demand task, which writes the copy as the system
+ * account into the locked folder. Nobody is asked and the till does not wait; the result is in
+ * backup.log and backup-close-status.json. Returns { started } or { started: false, reason }.
+ */
+export async function startCloseBackup() {
+  if (!app.isPackaged) {
+    backupLog('backup after close: skipped (development build, no backup task)')
+    return { started: false, reason: 'development build' }
+  }
+  const r = await exec(systemTool('schtasks.exe'), ['/Run', '/TN', CLOSE_TASK_NAME])
+  if (r.code !== 0) {
+    backupLog(`backup after close: could not start the task: ${r.output.trim()}`)
+    return { started: false, reason: r.output.trim() }
+  }
+  return { started: true }
 }

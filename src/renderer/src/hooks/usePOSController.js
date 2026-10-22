@@ -62,7 +62,6 @@ export function usePOSController({
   fetchClientStats,
   fetchAdminData,
   triggerCustomAlert,
-  triggerCustomConfirm,
   setCurrentView,
   appSettings,
   onLoggedIn
@@ -252,6 +251,9 @@ export function usePOSController({
           closeRef.current = null
           setCloseShiftModal(false)
           if (closed.report) setCloseReport({ report: closed.report, shift: closed.shift })
+          // The automatic backup after a close (D-074): started without asking or waiting; its
+          // result is in the backup log and on the backup screen.
+          window.api?.db?.afterClose?.().catch(() => {})
 
           // Trigger print report automatically!
           if (window.api?.printer?.printReport) {
@@ -293,45 +295,9 @@ export function usePOSController({
         }
       }
 
-      // Prompt for database backup
-      triggerCustomConfirm(
-        'هل تريد أخذ نسخة احتياطية من قاعدة البيانات الآن قبل إغلاق الوردية؟',
-        async () => {
-          if (window.api && window.api.db && window.api.db.backup) {
-            const backupRes = await window.api.db.backup()
-            if (backupRes && backupRes.success) {
-              triggerCustomAlert(
-                `تم حفظ النسخة الاحتياطية بنجاح في:\n${backupRes.filePath}`,
-                'نجاح النسخ الاحتياطي',
-                async () => {
-                  await finalizeShiftClose()
-                }
-              )
-            } else if (backupRes && backupRes.error && backupRes.error !== 'User cancelled') {
-              triggerCustomAlert(
-                `فشل حفظ النسخة الاحتياطية: ${backupRes.error}`,
-                'فشل النسخ الاحتياطي',
-                async () => {
-                  await finalizeShiftClose()
-                }
-              )
-            } else {
-              await finalizeShiftClose()
-            }
-          } else {
-            triggerCustomAlert(
-              'خاصية النسخ الاحتياطي غير متوفرة في هذه البيئة.',
-              'تنبيه',
-              async () => {
-                await finalizeShiftClose()
-              }
-            )
-          }
-        },
-        async () => {
-          await finalizeShiftClose()
-        }
-      )
+      // No question to the cashier (owner, 2026-10-22, D-074): the close goes straight through,
+      // and the backup after it is automatic (see afterClose).
+      await finalizeShiftClose()
     } catch (e) {
       console.error('Failed to close shift:', e)
       playSound('error')

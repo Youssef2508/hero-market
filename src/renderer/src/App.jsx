@@ -285,7 +285,6 @@ function App() {
     fetchClientStats: () => adminController.fetchClientStats(),
     fetchAdminData: () => adminController.fetchAdminData(),
     triggerCustomAlert,
-    triggerCustomConfirm,
     appSettings,
     onLoggedIn: (user) => onLoggedIn(user)
   })

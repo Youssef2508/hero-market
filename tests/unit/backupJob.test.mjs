@@ -15,7 +15,9 @@ import {
   prunable,
   runBackup,
   readCopy,
-  taskXml
+  taskXml,
+  closeTaskXml,
+  KEEP
 } from '../../src/main/backupJob.js'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'hm-bk-'))
@@ -49,7 +51,7 @@ test('names show the kind, the local date and time; weeks are ISO weeks', () => 
   assert.deepEqual(parseName('HeroMarket-weekly-2026-10-22_0003.json.gz'), {
     kind: 'weekly',
     day: '2026-10-22',
-    stamp: '202610220003'
+    stamp: '20261022000300' // seconds included (00 for daily and weekly), D-074
   })
   assert.equal(parseName('notes.txt'), null)
   assert.equal(isoWeek(at(2026, 10, 22)), '2026-W43')
@@ -160,4 +162,50 @@ test('the scheduled task runs nightly at midnight as the system account and catc
   assert.match(xml, /<Arguments>--scheduled-backup<\/Arguments>/)
   assert.match(xml, /<Command>C:\\Program Files\\HeroMarket-POS\\HeroMarket-POS.exe<\/Command>/)
   assert.equal(plan([], at(2026, 10, 22)).daily, true)
+})
+
+// After a shift close (owner, 2026-10-22, D-074): a copy every time, verified the same way, without
+// anyone being asked; it never stands in for the nightly daily or weekly copy.
+test('after a close: a new verified copy every time, never a daily or weekly one', async () => {
+  const dir = tmp()
+  const night = await run(dir, at(2026, 10, 22, 0, 0))
+  assert.equal(night.result, 'done')
+  const first = await run(dir, at(2026, 10, 22, 15, 30, 5), { afterClose: true })
+  const second = await run(dir, at(2026, 10, 22, 23, 10, 42), { afterClose: true })
+  assert.deepEqual([first.result, second.result], ['done', 'done'])
+  const kinds = listCopies(dir).map((c) => c.kind)
+  assert.equal(kinds.filter((k) => k === 'close').length, 2)
+  assert.equal(kinds.filter((k) => k === 'daily').length, 1, 'the nightly copy is untouched')
+  assert.equal(first.files[0].file, 'HeroMarket-close-2026-10-22_153000.json.gz')
+  assert.ok(fs.existsSync(path.join(dir, first.files[0].file + '.sha256')))
+  assert.equal(readCopy(path.join(dir, second.files[0].file)).tables.sales.rows.length, 3)
+  // The nightly run the same day still finds its daily copy: nothing more.
+  assert.equal((await run(dir, at(2026, 10, 22, 23, 59))).result, 'skipped')
+})
+
+test('after-close copies keep the newest 20; daily and weekly copies are not affected', async () => {
+  const dir = tmp()
+  await run(dir, at(2026, 10, 1, 0, 0))
+  for (let i = 0; i < 25; i++) await run(dir, at(2026, 10, 2, 8, i), { afterClose: true })
+  const copies = listCopies(dir)
+  assert.equal(copies.filter((c) => c.kind === 'close').length, KEEP.close)
+  assert.equal(KEEP.close, 20)
+  assert.equal(copies.filter((c) => c.kind === 'daily').length, 1)
+  assert.equal(copies.filter((c) => c.kind === 'weekly').length, 1)
+  // The oldest close copies went, the newest stayed.
+  assert.ok(copies.some((c) => c.file === 'HeroMarket-close-2026-10-02_082400.json.gz'))
+  assert.ok(!copies.some((c) => c.file === 'HeroMarket-close-2026-10-02_080000.json.gz'))
+})
+
+test('the after-close task: on demand only, the system account, Windows users may start it', () => {
+  const x = closeTaskXml('C:/Program Files/HeroMarket/HeroMarket-POS.exe')
+  assert.ok(!x.includes('<Triggers>'), 'no schedule')
+  for (const part of [
+    '<UserId>S-1-5-18</UserId>',
+    '<SecurityDescriptor>D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)</SecurityDescriptor>',
+    '<Arguments>--scheduled-backup --after-close</Arguments>',
+    '<StartWhenAvailable>false</StartWhenAvailable>',
+    '<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>'
+  ])
+    assert.ok(x.includes(part), part)
 })

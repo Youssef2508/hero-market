@@ -884,3 +884,19 @@ Format: context → decision → reason → consequences (→ alternatives).
   - the close window showed no expected figure and no fill button;
   - a close with a 201,127.30 shortage was accepted;
   - the report after it showed expected, actual and «عجز» per method.
+
+## D-074 The backup after a shift close is automatic (owner, 2026-10-22)
+
+- **Owner's rule:** no question to the cashier. If the system makes a backup after a close, it does so automatically.
+- **Removed:** the prompt «هل تريد أخذ نسخة احتياطية من قاعدة البيانات الآن قبل إغلاق الوردية؟» and its save dialog. The close goes straight through.
+- **Added:** after every successful close, the till starts the on-demand task «HeroMarket Backup After Close» and does not wait.
+  - The task runs the nightly job as the system account in its after-close mode: one new verified copy each time, in the same locked folder (users can read the copies, not delete them).
+  - The newest 20 close copies are kept. The nightly daily and weekly copies, their schedule, catch-up, retention and checks are unchanged.
+  - Windows users may start the task, but not change it.
+  - The installer registers the task next to the nightly one and removes both on uninstall.
+  - A development build logs that it skipped.
+- **Evidence:**
+  - unit tests (a close copy every time, never a daily or weekly one; retention 20; the task definition);
+  - Windows Sandbox C1 with test build 1.5.0-test.2: installed, started twice with normal user rights, two verified copies written as SYSTEM, deletion as a normal user refused.
+  - The close itself was checked in the running app.
+- **Updates:** an installed 1.5.0 gets the new task when its installer runs (the service setup step registers both tasks).
