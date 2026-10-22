@@ -231,7 +231,12 @@ export default function SalesTab({
                 </div>
                 <div>
                   <dt>العميل</dt>
-                  <dd>{selectedSale.client_name || 'عميل نقدي'}</dd>
+                  <dd>
+                    {selectedSale.client_name || 'عميل نقدي'}
+                    {selectedSale.client_code && (
+                      <span className="ltr-id cell-muted"> {selectedSale.client_code}</span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>طريقة الدفع</dt>

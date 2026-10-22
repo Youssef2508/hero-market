@@ -1,4 +1,4 @@
-# Owner feedback: living task tracker
+| CUST-01 |undefined|undefined| Done with evidence (codes C00001…, never recycled or changed, on invoices, searchable; D-072) | 0022 || WASTE-01 |undefined|undefined| Done with evidence (product search and packages in the damaged-goods window; D-071) | none || STOCK-01 |undefined|undefined| Done with evidence (حركات المخزون: same rows as each product's history, filters, traceable; D-071) | none || DASH-01 |undefined|undefined| Done with evidence (period dashboard D-065; four live snapshots with links, D-071) | none || PROD-02 |undefined|undefined| Done with evidence (stock value at cost and selling price, rules stated, filters on rows and totals, reconciliation; D-071) | none |# Owner feedback: living task tracker
 
 Written for the developer and the next work session. It is the canonical status of every requirement in `HeroMarket_Owner_Feedback_Specification.md`. The plan, audit and dependency graph are in [OWNER_FEEDBACK_IMPLEMENTATION_PLAN.md](OWNER_FEEDBACK_IMPLEMENTATION_PLAN.md).
 
@@ -279,6 +279,21 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - **Pending:** HW-02, the shop's thermal printer (sale receipt and shift report). The preview uses the same code but not the printer's driver or fonts.
 
 ### Phases D–H
+
+### Phase F (2026-10-22, D-071, D-072, migration 0022)
+
+- **«قيمة المخزون»:** stock value at cost and at selling price, from one stated rule (base units; negative stock as 0; no cost counted; stopped products optional). The filters change rows and totals together, and the screen reports a ledger reconciliation.
+- **Dashboard «الوضع الآن»:** stock at cost and at selling price, owed to suppliers, owed by customers. The figures are live and each opens its screen. Permission `reports.valuation`.
+- **«حركات المخزون»:** every movement, from the same rows as each product's history, filtered and traceable; a sale opens its invoice.
+- **Damaged goods:** search by name or barcode by keyboard, and packages.
+- **Customer codes:** C00001…, never recycled or changed, kept on invoices, searchable at the till.
+- **Tests:** `stockReports.test.js` (5), `damagedUnits.test.js` (2), `customerCodes.test.js` (5, including the 0022 backfill over existing data).
+- **Running app:**
+  - snapshots and their link;
+  - value filters (negative, weighed) on rows and totals;
+  - movements with a sale opening its invoice by Enter;
+  - no sideways scrolling at 1366 and 1024 px;
+  - damaged goods found by part of a name with the keyboard only, with a carton = 24 pieces.
 
 ### SUP-03 (2026-10-22, D-070): supplier opening balance and contact
 

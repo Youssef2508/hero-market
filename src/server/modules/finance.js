@@ -888,6 +888,8 @@ module.exports = function financeModule(app) {
       properties: {
         barcode: { type: 'string', minLength: 1, maxLength: 64 },
         quantity: { type: 'number', exclusiveMinimum: 0 },
+        // A package of the product (WASTE-01, D-071): quantity in that unit (2 cartons).
+        unitId: { type: ['integer', 'null'] },
         reason: str(80),
         currentShiftId: { type: ['integer', 'null'] }
       }
@@ -897,13 +899,22 @@ module.exports = function financeModule(app) {
         const barcode = d.barcode.trim()
         const p = (
           await db.query(
-            'SELECT name, stock_qty, cost_price, unit_kind FROM products WHERE barcode = $1 FOR UPDATE',
+            'SELECT barcode, name, unit, stock_qty, cost_price, unit_kind FROM products WHERE barcode = $1 FOR UPDATE',
             [barcode]
           )
         ).rows[0]
         if (!p) throw notFound('لم يتم العثور على هذا المنتج في المخزن!')
-        // Damaged goods are recorded in the base unit (whole pieces, or kg/l with 3 decimals).
-        toBaseQty(await kindRule(db, p.unit_kind), d.quantity, 1, p.name)
+        // Damaged goods are recorded in the base unit (whole pieces, or kg/l with 3 decimals); a
+        // package is converted by its factor, as in sales and purchases.
+        const unit = await loadUnit(db, p, d.unitId ?? null, { purpose: 'stock' })
+        const { baseQty } = toBaseQty(
+          await kindRule(db, p.unit_kind),
+          d.quantity,
+          unit.factor,
+          p.name
+        )
+        const entered = d.quantity
+        d = { ...d, quantity: baseQty }
         // Negative stock is allowed (owner decision); the negative-stock report shows the result.
         const shift = await ownOpenShift(db, ctx, d.currentShiftId)
         const damagedId = (
@@ -929,7 +940,7 @@ module.exports = function financeModule(app) {
         await ctx.audit(
           db,
           'damaged_create',
-          `تسجيل هالك ${d.quantity} من "${p.name}" (${d.reason || ''})`
+          `تسجيل هالك ${unit.factor > 1 ? `${entered} ${unit.name} (= ${d.quantity} ${p.unit || ''})` : d.quantity} من "${p.name}" (${d.reason || ''})`
         )
       })
   })

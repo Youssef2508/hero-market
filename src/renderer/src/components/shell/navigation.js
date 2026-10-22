@@ -16,6 +16,8 @@ import {
   ChartLine,
   Award,
   Trophy,
+  Boxes,
+  ArrowLeftRight,
   Package,
   ClipboardList,
   PackageX,
@@ -131,6 +133,16 @@ export const NAV_GROUPS = [
         tab: 'bestsellers',
         description: 'الأصناف الأكثر مبيعاً والأصناف الراكدة.',
         onEnter: (c) => c.fetchBestSellers(c.bsPeriod)
+      },
+      {
+        // PROD-02 (D-071): owner money figures, granted per role.
+        id: 'stockvalue',
+        permission: ['reports.valuation'],
+        label: 'قيمة المخزون',
+        icon: Boxes,
+        view: 'admin',
+        tab: 'stockvalue',
+        description: 'قيمة المخزون بسعر الشراء وبسعر البيع، مع الأصناف بالسالب وبدون تكلفة.'
       }
     ]
   },
@@ -150,6 +162,16 @@ export const NAV_GROUPS = [
           c.setAdminSearch('')
           c.fetchInventoryPage(1, '')
         }
+      },
+      {
+        // STOCK-01 (D-071): every movement, the same rows as each product's history.
+        id: 'movements',
+        permission: ['products.view'],
+        label: 'حركات المخزون',
+        icon: ArrowLeftRight,
+        view: 'admin',
+        tab: 'movements',
+        description: 'كل حركات المخزون: شراء وبيع ومرتجع وجرد وهالك، بالصنف والنوع والتاريخ.'
       },
       {
         id: 'categories',

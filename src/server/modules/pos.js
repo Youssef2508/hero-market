@@ -324,8 +324,10 @@ module.exports = function posModule(app) {
         await ctx.pool.query(
           `SELECT c.*, ${ADDRESSES} AS addresses FROM clients c
             WHERE c.name ILIKE '%' || $1 || '%' ESCAPE '\\' OR c.phone ILIKE '%' || $1 || '%' ESCAPE '\\'
-               OR c.phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY c.name, c.id LIMIT 8`,
-          [t]
+               OR c.phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' OR c.code ILIKE '%' || $1 || '%' ESCAPE '\\'
+            ORDER BY (c.code = upper(trim($2))) DESC, c.name, c.id LIMIT 8`,
+          // CUST-01: by name, phone or customer code; the exact code first.
+          [t, term]
         )
       ).rows
     }
@@ -761,8 +763,9 @@ module.exports = function posModule(app) {
               : 0
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address, manual_discount)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13, $14) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address, manual_discount, client_code)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13, $14,
+                     (SELECT code FROM clients WHERE id = $8)) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,

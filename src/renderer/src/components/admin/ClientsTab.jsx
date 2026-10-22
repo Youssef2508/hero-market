@@ -171,7 +171,7 @@ export default function ClientsTab({
               <input
                 type="text"
                 className="input"
-                placeholder="ابحث بالاسم أو رقم الهاتف"
+                placeholder="ابحث بالاسم أو رقم الهاتف أو كود العميل"
                 value={clientsSearch}
                 onChange={(e) => {
                   setClientsSearch(e.target.value)
@@ -209,7 +209,14 @@ export default function ClientsTab({
                         className={c && c.id === cl.id ? 'is-selected' : ''}
                         {...rowKeys(() => selectAdminClientForProfile(cl))}
                       >
-                        <td className="cell-strong">{cl.name}</td>
+                        <td className="cell-strong">
+                          {cl.name}
+                          {cl.code && (
+                            <div className="cell-muted">
+                              <span className="ltr-id">{cl.code}</span>
+                            </div>
+                          )}
+                        </td>
                         <td className="num cell-muted nowrap">
                           {cl.phone || '—'}
                           {cl.phone2 && <span className="cell-sub">{cl.phone2}</span>}
@@ -245,7 +252,9 @@ export default function ClientsTab({
                     .charAt(0)}
                 </span>
                 <div>
-                  <h2 className="card-title">{c.name}</h2>
+                  <h2 className="card-title">
+                    {c.name} {c.code && <span className="ltr-id cell-muted">{c.code}</span>}
+                  </h2>
                   <div className="card-subtitle">
                     عضو منذ <span className="ltr">{c.created_at || 'غير محدد'}</span>
                   </div>

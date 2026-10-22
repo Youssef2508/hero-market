@@ -256,6 +256,14 @@ const PERMISSIONS = [
     description: 'إنشاء نسخة احتياطية واستعادتها'
   },
   {
+    // PROD-02 / DASH-01 (D-071): stock value at cost and at selling price, and what suppliers
+    // and customers are owed – owner money figures, granted per role by an administrator.
+    key: 'reports.valuation',
+    module: 'reports',
+    label: 'قيمة المخزون والأرصدة',
+    description: 'قيمة المخزون بسعر الشراء وبسعر البيع، والمستحق للموردين وعلى العملاء'
+  },
+  {
     // Separate from export (ROLE-01, D-067): importing writes new products, customers, suppliers
     // and opening balances; it never changes existing records or history.
     key: 'data.import',
@@ -317,6 +325,7 @@ const MANAGEMENT = ALL.filter(
       'data.import',
       'data.export',
       'suppliers.opening',
+      'reports.valuation',
       // Discounts are the administrator's alone (owner, 2026-10-15).
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).

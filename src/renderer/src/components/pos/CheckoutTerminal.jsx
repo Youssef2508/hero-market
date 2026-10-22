@@ -900,7 +900,7 @@ function CheckoutTerminal({
                 <input
                   type="text"
                   className="input"
-                  placeholder="اسم العميل"
+                  placeholder="اسم العميل أو رقمه أو كوده"
                   value={clientName}
                   onChange={(e) => handleClientNameChange(e.target.value)}
                   aria-label="اسم العميل"
@@ -976,7 +976,9 @@ function CheckoutTerminal({
                       className="dropdown-item client-result"
                       onClick={() => selectClient(c)}
                     >
-                      <span className="client-result-name">{c.name}</span>
+                      <span className="client-result-name">
+                        {c.name} {c.code && <span className="ltr-id cell-muted">{c.code}</span>}
+                      </span>
                       <span className="client-result-meta">
                         {c.phone && <span className="num">{c.phone}</span>}
                         {c.debt_balance > 0 && (

@@ -5,7 +5,7 @@ import { api } from '../../lib/api'
 // Search field + scrollable list of every product (1.4.0, purchase invoice). It filters by name or
 // barcode as you type and loads more as the list is scrolled. A click (or ↑/↓ then Enter) adds the
 // product. A scanner still works: a barcode followed by Enter is looked up exactly.
-const ProductPicker = ({ added, onPick, onType }) => {
+const ProductPicker = ({ added, onPick, onType, label = 'بحث عن صنف مستلم' }) => {
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
   const [list, setList] = useState({ query: null, rows: [], total: 0, page: 0 })
@@ -14,6 +14,8 @@ const ProductPicker = ({ added, onPick, onType }) => {
   const wrap = useRef(null)
   const input = useRef(null)
   const request = useRef(0)
+  // Set while the field takes the focus back after a pick: the list stays closed.
+  const quiet = useRef(false)
   const query = text.trim()
 
   const load = async (q, page) => {
@@ -54,8 +56,12 @@ const ProductPicker = ({ added, onPick, onType }) => {
     if (await onPick(barcode, row)) {
       setText('')
       setActive(-1)
+      // The list closes once a product is taken; typing opens it again.
+      setOpen(false)
+      quiet.current = true
     }
     input.current?.focus()
+    quiet.current = false
   }
 
   const onScroll = (e) => {
@@ -111,11 +117,11 @@ const ProductPicker = ({ added, onPick, onType }) => {
             setOpen(true)
             onType?.()
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => !quiet.current && setOpen(true)}
           onClick={() => setOpen(true)}
           onKeyDown={onKeyDown}
           placeholder="ابحث باسم الصنف أو الباركود، أو امسح الباركود"
-          aria-label="بحث عن صنف مستلم"
+          aria-label={label}
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}

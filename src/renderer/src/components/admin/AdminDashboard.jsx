@@ -14,6 +14,7 @@ import { StatCard, EmptyState } from '../ui'
 import { visibleGroups } from '../shell/navigation'
 import { formatMoney } from '../../lib/utils'
 import { canOpenTab } from '../shell/navigation'
+import { can } from '../../lib/api'
 
 // Back-office screens load on first use, so the cashier screen starts without them (G-19).
 const StatsTab = lazy(() => import('./StatsTab'))
@@ -28,6 +29,9 @@ const TreasuryTab = lazy(() => import('./TreasuryTab'))
 const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
 const BestSellersTab = lazy(() => import('./BestSellersTab'))
+const StockValueTab = lazy(() => import('./StockValueTab'))
+const StockMovementsTab = lazy(() => import('./StockMovementsTab'))
+const Snapshots = lazy(() => import('./Snapshots'))
 const BackupTab = lazy(() => import('./BackupTab'))
 const ImportTab = lazy(() => import('./ImportTab'))
 const ReorderingTab = lazy(() => import('./ReorderingTab'))
@@ -131,6 +135,9 @@ function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNav
         </div>
       </section>
 
+      {/* The owner's four figures now (DASH-01, D-071), with their permission only. */}
+      {can(currentUser, 'reports.valuation') && <Snapshots go={go} />}
+
       {/* Period statistics and charts (owner, 2026-10-21, D-065); the quick actions stay below. */}
       <DashboardPeriod />
 
@@ -175,6 +182,16 @@ function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNav
  */
 export default function AdminDashboard(props) {
   const { adminTab, currentUser } = props
+  // The invoices screen with that invoice open; a missing or forbidden one says so.
+  const openInvoice = async (saleId) => {
+    if (!props.selectSaleForDetail) return
+    const shown = await props.selectSaleForDetail({ id: saleId })
+    if (shown === false) {
+      props.triggerCustomAlert?.('تعذّر فتح الفاتورة (غير موجودة أو بدون صلاحية).')
+      return
+    }
+    props.setAdminTab('sales')
+  }
 
   // Each tab requires its permission (same list as the sidebar); the service enforces it again.
   if (adminTab !== 'tills' && !canOpenTab(currentUser, adminTab)) {
@@ -207,16 +224,7 @@ export default function AdminDashboard(props) {
             currentUser={currentUser}
             currentShift={props.currentShift}
             onOpenShift={props.onOpenShift}
-            onOpenInvoice={async (saleId) => {
-              // The invoices screen with that invoice open; a missing or forbidden one says so.
-              if (!props.selectSaleForDetail) return
-              const shown = await props.selectSaleForDetail({ id: saleId })
-              if (shown === false) {
-                props.triggerCustomAlert?.('تعذّر فتح الفاتورة (غير موجودة أو بدون صلاحية).')
-                return
-              }
-              props.setAdminTab('sales')
-            }}
+            onOpenInvoice={openInvoice}
             triggerCustomAlert={props.triggerCustomAlert}
           />
         )}
@@ -232,6 +240,15 @@ export default function AdminDashboard(props) {
         )}
         {adminTab === 'expenses' && <ExpensesTab {...props} />}
         {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
+        {adminTab === 'stockvalue' && (
+          <StockValueTab triggerCustomAlert={props.triggerCustomAlert} />
+        )}
+        {adminTab === 'movements' && (
+          <StockMovementsTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            onOpenInvoice={openInvoice}
+          />
+        )}
         {adminTab === 'users' && <UsersTab {...props} />}
         {adminTab === 'roles' && (
           <RolesTab

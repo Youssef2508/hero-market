@@ -3,6 +3,7 @@ import { api } from '../../lib/api'
 import { PackageX, Trash2, Plus, Layers, Banknote, X } from 'lucide-react'
 import { EmptyState, StatCard, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import ProductPicker from '../modals/ProductPicker'
 
 // Reason values are stored in damaged_goods.reason – keep them unchanged.
 const REASONS = ['انتهاء صلاحية', 'تلف / كسر', 'عيب مصنعي', 'سرقة / فقدان', 'أخرى']
@@ -22,6 +23,9 @@ export default function DamagedGoodsTab({
   const [resolvedProductName, setResolvedProductName] = useState('')
   const [resolvedProductStock, setResolvedProductStock] = useState(null)
   const [productMissing, setProductMissing] = useState(false)
+  // The product's units (base + packages, WASTE-01): a damaged carton is entered as 1 carton.
+  const [units, setUnits] = useState([])
+  const [baseUnit, setBaseUnit] = useState('')
 
   // Resolve product info as the barcode is typed/scanned (unchanged lookup).
   useEffect(() => {
@@ -44,10 +48,17 @@ export default function DamagedGoodsTab({
             setResolvedProductName(res[0].name)
             setResolvedProductStock(res[0].stock_qty)
             setProductMissing(false)
+            setBaseUnit(res[0].unit || '')
+            const extra = await api('productUnits.get', { barcode: res[0].barcode })
+              .then((r) => r.units)
+              .catch(() => [])
+            if (active)
+              setUnits(extra.map((u) => ({ id: u.id, name: u.name, factor: Number(u.factor) })))
           } else {
             setResolvedProductName('الصنف غير موجود')
             setResolvedProductStock(null)
             setProductMissing(true)
+            setUnits([])
           }
         }
       } catch (e) {
@@ -205,24 +216,19 @@ export default function DamagedGoodsTab({
               <X size={18} />
             </button>
             <div className="modal-body">
-              <label className="field">
-                <span className="field-label">باركود الصنف</span>
-                <input
-                  type="text"
-                  required
-                  className="input mono-input"
-                  value={newDamagedForm.barcode}
-                  onChange={(e) =>
-                    setNewDamagedForm({ ...newDamagedForm, barcode: e.target.value })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      document.getElementById('damaged-quantity-input')?.focus()
-                    }
+              <div className="field">
+                <span className="field-label">الصنف</span>
+                {/* WASTE-01 (D-071): the same search as purchases – name or barcode, ↑ ↓ Enter,
+                    a scanned barcode is looked up exactly. */}
+                <ProductPicker
+                  added={[]}
+                  onPick={(barcode) => {
+                    setNewDamagedForm({ ...newDamagedForm, barcode, unitId: null })
+                    setTimeout(() => document.getElementById('damaged-quantity-input')?.focus(), 0)
+                    return true
                   }}
-                  placeholder="امسح الباركود أو اكتبه هنا"
-                  autoFocus
+                  onType={() => {}}
+                  label="بحث عن الصنف التالف"
                 />
                 {newDamagedForm.barcode && (
                   <span className={`field-resolve ${productMissing ? 'is-missing' : ''}`}>
@@ -234,7 +240,7 @@ export default function DamagedGoodsTab({
                     )}
                   </span>
                 )}
-              </label>
+              </div>
               <div className="form-grid">
                 <label className="field">
                   <span className="field-label">الكمية التالفة</span>
@@ -250,6 +256,36 @@ export default function DamagedGoodsTab({
                     }
                     placeholder="عدد الوحدات أو الوزن"
                   />
+                  {units.length > 0 && (
+                    <select
+                      className="input"
+                      aria-label="وحدة الكمية التالفة"
+                      value={newDamagedForm.unitId ?? ''}
+                      onChange={(e) =>
+                        setNewDamagedForm({
+                          ...newDamagedForm,
+                          unitId: e.target.value ? Number(e.target.value) : null
+                        })
+                      }
+                      style={{ marginTop: 4 }}
+                    >
+                      <option value="">{baseUnit || 'الوحدة الأساسية'}</option>
+                      {units.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.factor})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {(() => {
+                    const u = units.find((x) => x.id === newDamagedForm.unitId)
+                    const q = parseFloat(newDamagedForm.quantity)
+                    return u && q > 0 ? (
+                      <span className="cell-muted">
+                        = {Math.round(q * u.factor * 1000) / 1000} {baseUnit} من المخزون
+                      </span>
+                    ) : null
+                  })()}
                 </label>
                 <label className="field">
                   <span className="field-label">سبب التلف</span>

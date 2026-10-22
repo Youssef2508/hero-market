@@ -163,8 +163,10 @@ module.exports = function customersModule(app) {
       if (!search) return (await ctx.pool.query('SELECT * FROM clients ORDER BY name ASC, id')).rows
       return (
         await ctx.pool.query(
-          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY name ASC, id`,
-          [likeEscape(search)]
+          // CUST-01: also by customer code; the exact code first.
+          `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' OR code ILIKE '%' || $1 || '%' ESCAPE '\\'
+            ORDER BY (code = upper(trim($2))) DESC, name ASC, id`,
+          [likeEscape(search), search]
         )
       ).rows
     }

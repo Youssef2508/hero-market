@@ -69,7 +69,13 @@ test('0016 keeps every figure of existing shifts and fills the new columns from 
     // drawerFigures of 1.5.0 needs safe_ledger.method; before the migration, compare the stored rows.
     const before = await keep()
     await migrate(pool, { logger: quiet })
-    assert.deepEqual(await keep(), before, 'existing rows unchanged')
+    // Every column that existed keeps its value; columns added by later migrations (for example
+    // sales.client_code, 0022) are new, not changes, so the rows are compared on the old columns.
+    const after = await keep()
+    const onOld = (rows, old) =>
+      rows.map((r, i) => Object.fromEntries(Object.keys(old[i] || {}).map((k) => [k, r[k]])))
+    for (const k of Object.keys(before)) after[k] = onOld(after[k], before[k])
+    assert.deepEqual(after, before, 'existing rows unchanged')
     const [closed, open] = await fig()
     assert.equal(closed.expected, 200 + 150 - 20, 'closed shift: same drawer formula as before')
     assert.equal(open.expected, 100 + 60 - 5)
