@@ -7,6 +7,7 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('fs')
+const path = require('path')
 const { requireDb, freshDatabase, startService, createUser, login } = require('./helpers')
 const { SYSTEM_ROLES } = require('../../src/server/auth/permissions')
 const { buildMatrix, SIGNED_IN, PUBLIC, OUT } = require('../../scripts/permission-matrix')
@@ -97,7 +98,10 @@ test('owner-only money views stay with administrators by default', () => {
     assert.ok(roleOf('store_admin').permissions.includes(p), `store_admin keeps ${p}`)
 })
 
-test('the permission matrix in .docs is the code’s current state', async () => {
+test('the permission matrix in .docs is the code’s current state', async (t) => {
+  // The container images leave the documentation out (.dockerignore); the check runs wherever the
+  // repository is checked out in full (development, the Linux and Windows CI jobs).
+  if (!fs.existsSync(path.dirname(OUT))) return t.skip('no .docs folder in this image')
   const expected = await buildMatrix()
   const actual = fs.readFileSync(OUT, 'utf8')
   assert.equal(actual, expected, 'regenerate it: node scripts/permission-matrix.js')
