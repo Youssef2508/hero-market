@@ -168,3 +168,24 @@ One transaction, once per request (`cancel_ref`); the invoice is kept with statu
 
 - The original payment stays in its shift's history. A closed shift's saved close and count are never rewritten: money returned later is recorded where it arrives now.
 - Tested with exact balances in `tests/service/supplierCancel.test.js` (6 tests).
+
+## 12. Purchase invoice discount and purchase returns (D-066, migration 0020)
+
+**Discount.** For a purchase with lines L (Σ line value = gross G) and discount D:
+
+- net N = G − D = `total_amount`; payable += N − paid; the drawer or treasury pays at most N;
+- stock and moving average use the line costs (G), never N;
+- purchase gain of the period = Σ D (purchases dated in it) − Σ (gross_value − credit_value) of purchase returns dated in it; net profit = sales profit − damaged − expenses + purchase gain.
+
+**Return** of quantities q from lines of a purchase:
+
+| Item                                   | Value                                                                             |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| Return value V                         | Σ q × line unit cost                                                              |
+| Supplier credit C                      | V × N ÷ G (V when no discount); never more than N less earlier credits            |
+| Stock                                  | − q × unit factor, at the line cost per base unit                                 |
+| Moving average with stock s, average a | (s·a − q·c) ÷ (s − q); kept when nothing is left or it would be negative          |
+| Payable                                | − C (`supplier_ledger` `return`)                                                  |
+| Money received now R ≤ C               | inflow `supplier_refund` by its method, shift or treasury; payable + R (`refund`) |
+
+Tested with exact balances in `tests/service/purchaseDiscountReturns.test.js` (10 tests).

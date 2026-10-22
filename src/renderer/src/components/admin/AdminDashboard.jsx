@@ -255,7 +255,12 @@ export default function AdminDashboard(props) {
         {adminTab === 'discounts' && <DiscountsTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'clients' && <ClientsTab {...props} />}
         {adminTab === 'backup' && <BackupTab />}
-        {adminTab === 'import' && <ImportTab triggerCustomAlert={props.triggerCustomAlert} />}
+        {adminTab === 'import' && (
+          <ImportTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            currentUser={props.currentUser}
+          />
+        )}
         {adminTab === 'categories' && (
           <CategoriesTab
             triggerCustomAlert={props.triggerCustomAlert}

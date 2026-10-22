@@ -248,6 +248,21 @@ const PERMISSIONS = [
     description: 'إنشاء نسخة احتياطية واستعادتها'
   },
   {
+    // Separate from export (ROLE-01, D-067): importing writes new products, customers, suppliers
+    // and opening balances; it never changes existing records or history.
+    key: 'data.import',
+    module: 'admin',
+    label: 'استيراد البيانات',
+    description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket)'
+  },
+  {
+    // Reading only (DATA-01, D-067); separate from import.
+    key: 'data.export',
+    module: 'admin',
+    label: 'تصدير البيانات',
+    description: 'تصدير الأصناف والعملاء والموردين في ملف Excel بقالب الاستيراد نفسه'
+  },
+  {
     key: 'users.manage',
     module: 'admin',
     label: 'إدارة المستخدمين',
@@ -290,6 +305,9 @@ const MANAGEMENT = ALL.filter(
       'system.reset',
       'shifts.multi_till',
       'tills.manage',
+      // Bulk data in and out: administrators by default; the owner assigns them (D-067).
+      'data.import',
+      'data.export',
       // Discounts are the administrator's alone (owner, 2026-10-15).
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).

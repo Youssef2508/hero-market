@@ -8,6 +8,9 @@
 //       s ≤ 0 (none or negative) → a' = c
 //     Units sold while stock was zero or negative were costed at the average of that moment and are
 //     not revalued afterwards; the receipt that covers them sets the average to its own cost.
+//   * A purchase return (D-066) sends q units back at the cost they were bought at, c:
+//       s − q > 0 → a' = (s·a − q·c) / (s − q)   (the stock's value falls by exactly q·c)
+//       otherwise, or if that would be negative, the average is kept.
 //   * Sales leave at the current average (recorded on the sale line); returns, damaged goods,
 //     counts and adjustments move at the current average and do not change it.
 
@@ -30,6 +33,16 @@ function movingAverage(stockBefore, avgBefore, qty, cost) {
   if (!(c >= 0)) throw new Error('receipt cost must not be negative')
   if (s <= 0) return roundCost(c)
   return roundCost((s * a + q * c) / (s + q))
+}
+
+/** Moving-average cost after sending `qty` back to the supplier at `cost` (see the rule above). */
+function averageAfterReturn(stockBefore, avgBefore, qty, cost) {
+  const s = Number(stockBefore) || 0
+  const a = Number(avgBefore) || 0
+  const left = s - Number(qty)
+  if (!(left > 0)) return roundCost(a)
+  const v = (s * a - Number(qty) * Number(cost)) / left
+  return v >= 0 ? roundCost(v) : roundCost(a)
 }
 
 /**
@@ -80,6 +93,28 @@ async function receiveStock(db, ctx, { barcode, qty, unitCost, refType, refId, r
   return { ...mv, averageCost: avg }
 }
 
+/** Send stock back to its supplier at the cost it was bought at (purchase return, D-066). */
+async function returnToSupplier(db, ctx, { barcode, qty, unitCost, refId, reason }) {
+  const p = (
+    await db.query('SELECT stock_qty, cost_price FROM products WHERE barcode = $1 FOR UPDATE', [
+      barcode
+    ])
+  ).rows[0]
+  if (!p) throw notFound(`الصنف (${barcode}) غير مسجل.`)
+  const avg = averageAfterReturn(p.stock_qty, p.cost_price, qty, unitCost)
+  await db.query('UPDATE products SET cost_price = $2 WHERE barcode = $1', [barcode, avg])
+  const mv = await postMovement(db, ctx, {
+    barcode,
+    qty: -qty,
+    kind: 'purchase_return',
+    unitCost,
+    refType: 'purchase_return',
+    refId,
+    reason
+  })
+  return { ...mv, averageCost: avg }
+}
+
 /**
  * Bring stock to `target` as a count or manual adjustment. `base` is the stock the user saw when
  * they started (form opened, count started): the movement is target − base, so sales recorded in
@@ -121,8 +156,10 @@ async function verifyLedger(db) {
 
 module.exports = {
   movingAverage,
+  averageAfterReturn,
   postMovement,
   receiveStock,
+  returnToSupplier,
   adjustTo,
   verifyLedger,
   roundCost,

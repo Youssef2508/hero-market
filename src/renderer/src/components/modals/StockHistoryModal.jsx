@@ -12,7 +12,8 @@ const KIND_LABELS = {
   adjustment: 'تسوية يدوية',
   count: 'جرد',
   damaged: 'هالك',
-  damaged_reversal: 'إلغاء هالك'
+  damaged_reversal: 'إلغاء هالك',
+  purchase_return: 'مرتجع مشتريات'
 }
 
 const REF_LABELS = {

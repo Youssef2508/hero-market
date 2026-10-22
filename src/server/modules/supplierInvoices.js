@@ -304,6 +304,7 @@ module.exports = function supplierInvoicesModule(app) {
         invoiceId: { type: 'integer' },
         invoiceRef: { type: ['string', 'null'], maxLength: 80 },
         notes: { type: ['string', 'null'], maxLength: 500 },
+        discount: { type: 'number', minimum: 0 },
         items: {
           type: 'array',
           minItems: 1,
@@ -334,9 +335,14 @@ module.exports = function supplierInvoicesModule(app) {
             `الفاتورة المبدئية #${inv.id} أُكملت من قبل (فاتورة الشراء #${inv.purchase_id}).`
           )
         }
-        const final = round2(
+        // The detailed invoice: its lines, less an optional invoice-level discount (D-066).
+        const gross = round2(
           b.items.reduce((a, i) => a + round2(Number(i.qty) * Number(i.unitCost)), 0)
         )
+        const discount = round2(b.discount || 0)
+        if (discount > gross) throw badRequest('الخصم أكبر من إجمالي الأصناف.')
+        const final = round2(gross - discount)
+        if (!(final > 0)) throw badRequest('صافي الفاتورة يجب أن يكون أكبر من صفر.')
         const paid = Number(inv.paid)
         const invoiceRef = (b.invoiceRef || inv.invoice_ref || '').trim() || `P${inv.id}`
         // Stock and cost only: the payment and the payable were recorded at stage A.
@@ -346,6 +352,7 @@ module.exports = function supplierInvoicesModule(app) {
           {
             supplierId: inv.supplier_id,
             total_amount: final,
+            discount,
             paid_amount: paid,
             invoice_ref: invoiceRef,
             payment_type: MODES[inv.payment_mode],

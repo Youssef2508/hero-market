@@ -257,6 +257,39 @@ const AddPurchaseModal = ({
               />
             )}
           </div>
+          {/* Optional invoice-level discount (D-066): lowers what the supplier is owed; the lines
+              keep their prices, so no product cost or price changes. */}
+          <div className="form-group">
+            <label htmlFor="purchase-discount">خصم الفاتورة (ج.م، اختياري)</label>
+            <input
+              id="purchase-discount"
+              type="number"
+              className="form-input"
+              min="0"
+              step="0.01"
+              value={newPurchaseForm.discount ?? ''}
+              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, discount: e.target.value }))}
+              placeholder="0.00"
+            />
+          </div>
+          {parseFloat(newPurchaseForm.discount) > 0 && (
+            <div className="form-group">
+              <label>صافي الفاتورة المستحق للمورد (ج.م)</label>
+              <output className="form-input num" aria-live="polite">
+                {formatMoney(
+                  Math.round(
+                    ((items.length ? itemsTotal : parseFloat(newPurchaseForm.total_amount) || 0) -
+                      parseFloat(newPurchaseForm.discount)) *
+                      100
+                  ) / 100
+                )}
+              </output>
+              <p className="field-hint">
+                الخصم على الفاتورة كلها: لا يغيّر تكلفة الأصناف ولا أسعارها، ويظهر في التقارير كخصم
+                مشتريات مكتسب.
+              </p>
+            </div>
+          )}
           {!convertingPending && (
             <>
               <div className="form-group">

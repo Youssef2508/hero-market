@@ -21,6 +21,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     paid_amount: '',
     payment_type: 'آجل',
     notes: '',
+    discount: '',
     items: []
   })
   const [supplierRepayAmount, setSupplierRepayAmount] = useState('')
@@ -55,6 +56,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       paid_amount: '',
       payment_type: 'آجل',
       notes: '',
+      discount: '',
       items: []
     })
     setConvertingPending({ ...inv, clientRef: newClientRef() })
@@ -109,14 +111,21 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       triggerCustomAlert('أدخل كمية صحيحة لكل صنف مستلم.')
       return
     }
-    const total = items.length
+    const gross = items.length
       ? Math.round(
           items.reduce((a, l) => a + Math.round(l.qty * l.unitCost * 100) / 100, 0) * 100
         ) / 100
       : parseFloat(newPurchaseForm.total_amount) || 0
+    // Optional invoice-level discount (D-066): the supplier is owed the net.
+    const discount = Math.round((parseFloat(newPurchaseForm.discount) || 0) * 100) / 100
+    const total = Math.round((gross - discount) * 100) / 100
     const paid = parseFloat(newPurchaseForm.paid_amount) || 0
-    if (total <= 0) {
+    if (gross <= 0) {
       triggerCustomAlert('يرجى إدخال مبلغ الفاتورة!')
+      return
+    }
+    if (discount < 0 || total <= 0) {
+      triggerCustomAlert('الخصم يجب أن يكون أقل من إجمالي الفاتورة.')
       return
     }
     try {
@@ -124,6 +133,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         supplierId: selectedSupplier.id,
         invoice_ref: newPurchaseForm.invoice_ref || '',
         total_amount: total,
+        discount,
         paid_amount: paid,
         payment_type: newPurchaseForm.payment_type,
         notes: newPurchaseForm.notes || '',
@@ -137,6 +147,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         paid_amount: '',
         payment_type: 'آجل',
         notes: '',
+        discount: '',
         items: []
       })
       if (updated) await fetchSupplierProfile(updated)
@@ -162,6 +173,7 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         invoiceId: convertingPending.id,
         invoiceRef: newPurchaseForm.invoice_ref || null,
         notes: newPurchaseForm.notes || null,
+        discount: Math.round((parseFloat(newPurchaseForm.discount) || 0) * 100) / 100,
         items,
         clientRef: convertingPending.clientRef
       })

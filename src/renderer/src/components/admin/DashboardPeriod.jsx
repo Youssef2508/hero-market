@@ -235,18 +235,27 @@ export default function DashboardPeriod() {
               tone="neutral"
               label="المشتريات"
               value={m(t.purchases)}
-              meta={
+              meta={[
                 t.pendingCount
                   ? `+ ${t.pendingCount} فاتورة مبدئية بانتظار الأصناف (${m(t.pendingPurchases)})`
-                  : `${t.purchaseCount} فاتورة`
-              }
+                  : `${t.purchaseCount} فاتورة`,
+                t.purchaseReturnCount
+                  ? `مرتجع ${m(t.purchaseReturns)} (${t.purchaseReturnCount})`
+                  : ''
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             />
             <StatCard
               icon={Wallet}
               tone={t.netProfit < 0 ? 'danger' : 'success'}
               label="صافي الربح"
               value={m(t.netProfit)}
-              meta="بعد خصم المصروفات والتوالف"
+              meta={
+                t.purchaseDiscounts
+                  ? `بعد المصروفات والتوالف، ويشمل خصم مشتريات ${m(t.purchaseDiscounts)}`
+                  : 'بعد خصم المصروفات والتوالف'
+              }
             />
             <StatCard
               icon={Banknote}

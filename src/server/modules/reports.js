@@ -16,6 +16,16 @@ const rangeSchema = {
 
 const rows = async (db, sql, params = []) => (await db.query(sql, params)).rows
 
+/**
+ * Invoice discounts earned on purchases (owner, 2026-10-22, D-066): product costs stay at the
+ * lines' prices, so the discount is a gain of the purchase's date, less the part a purchase return
+ * gives back (a return credits the supplier only the net of its lines). `purchaseCond` and
+ * `returnCond` select the period on supplier_purchases.timestamp and the returns' created_at.
+ */
+const purchaseGainSql = (purchaseCond, returnCond) =>
+  `SELECT ((SELECT COALESCE(SUM(discount), 0) FROM supplier_purchases ${purchaseCond})
+          - (SELECT COALESCE(SUM(gross_value - credit_value), 0) FROM supplier_purchase_returns ${returnCond}))::float8 AS v`
+
 /** Shift ids whose start falls on/after the start of the day `days` days ago (legacy "period" rule). */
 /**
  * Start of a reporting period, in the store's local time (timestamps are stored as local time).
@@ -93,6 +103,14 @@ module.exports = function reportsModule(app) {
         `SELECT COALESCE(SUM(total), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_pending_invoices
           WHERE status = 'pending' AND ${inRange('created_at')}`
       )
+      const purchaseGain = (
+        await one(
+          purchaseGainSql(`WHERE ${inRange('timestamp')}`, `WHERE ${inRange('created_at')}`)
+        )
+      ).v
+      const purchaseReturns = await one(
+        `SELECT COALESCE(SUM(credit_value), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_purchase_returns WHERE ${inRange('created_at')}`
+      )
       const collections = (
         await one(
           `SELECT (SELECT COALESCE(SUM(amount), 0) FROM safe_ledger WHERE kind = 'customer_payment' AND ${inRange('timestamp')})
@@ -168,7 +186,10 @@ module.exports = function reportsModule(app) {
           pendingPurchases: r2(pending.v),
           pendingCount: pending.n,
           collections: r2(collections),
-          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses))
+          purchaseReturns: r2(purchaseReturns.v),
+          purchaseReturnCount: purchaseReturns.n,
+          purchaseDiscounts: r2(purchaseGain),
+          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses) + Number(purchaseGain))
         },
         salesByMethod,
         series: keys.map((k) => ({
@@ -226,6 +247,9 @@ module.exports = function reportsModule(app) {
            FROM safe_ledger ${since('timestamp')}`
         )
       )[0]
+      const purchaseGain = (
+        await rows(db, purchaseGainSql(since('timestamp'), since('created_at')))
+      )[0].v
       // Owed by customers now (a balance, not a period figure).
       const outstanding = (await rows(db, 'SELECT SUM(debt_balance) AS t FROM clients'))[0].t
       const totalSales = Number(s.total) || 0
@@ -234,7 +258,12 @@ module.exports = function reportsModule(app) {
       return {
         period,
         totalSales,
-        netProfit: (Number(profit) || 0) - (Number(damaged) || 0) - totalExpenses,
+        netProfit:
+          (Number(profit) || 0) -
+          (Number(damaged) || 0) -
+          totalExpenses +
+          (Number(purchaseGain) || 0),
+        purchaseDiscounts: Number(purchaseGain) || 0,
         totalExpenses,
         invoiceCount: Number(s.count) || 0,
         debtSales,
@@ -335,6 +364,9 @@ module.exports = function reportsModule(app) {
           `SELECT SUM(quantity * cost_price) AS total_cost FROM damaged_goods WHERE ${IN('timestamp')}`
         ),
         expenses: await one(`SELECT SUM(amount) AS total FROM expenses WHERE ${IN('timestamp')}`),
+        purchaseDiscounts: await one(
+          purchaseGainSql(`WHERE ${IN('timestamp')}`, `WHERE ${IN('created_at')}`)
+        ),
         returns:
           await one(`SELECT SUM(CASE WHEN type = 'outflow' AND description LIKE 'مرتجع%' THEN amount ELSE 0 END) AS returns_total,
                                    COUNT(CASE WHEN type = 'outflow' AND description LIKE 'مرتجع%' THEN 1 END) AS returns_count

@@ -179,3 +179,74 @@ test('0018 classifies existing shift movements from their texts and keeps every 
     fs.rmSync(tmp, { recursive: true, force: true })
   }
 })
+
+test('0020 keeps existing purchases as they were: no discount, same totals, returnable lines', async (t) => {
+  if (!requireDb(t)) return
+  const fresh = await freshDatabase()
+  const pool = createPool(fresh.url, { max: 2 })
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-mig20-'))
+  try {
+    for (const m of listMigrations().filter((x) => Number(x.version) < 20))
+      fs.copyFileSync(
+        path.join(__dirname, '../../src/server/db/migrations', `${m.name}.sql`),
+        path.join(tmp, `${m.name}.sql`)
+      )
+    await migrate(pool, { dir: tmp, logger: quiet })
+    const c = await pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query("SELECT set_config('hm.bulk_load', 'on', true)")
+      await c.query(`INSERT INTO suppliers (id, name, debt_balance) VALUES (1, 'س', 300)`)
+      await c.query(
+        `INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, unit) VALUES ('P1', 'أ', 0, 5, 0, 'قطعة')`
+      )
+      await c.query(`INSERT INTO supplier_purchases (id, supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp)
+        VALUES (1, 1, 'R1', 300, 0, 300, 'آجل', '2026-10-01 09:00')`)
+      // A line from before units: no unit factor recorded.
+      await c.query(
+        `INSERT INTO supplier_purchase_items (id, purchase_id, product_barcode, qty, unit_cost, line_total) VALUES (1, 1, 'P1', 100, 3, 300)`
+      )
+      await c.query(
+        `INSERT INTO stock_movements (product_barcode, qty, kind, unit_cost, ref_type, ref_id) VALUES ('P1', 100, 'purchase', 3, 'purchase', 1)`
+      )
+      await c.query('COMMIT')
+    } finally {
+      c.release()
+    }
+    const rows = async () =>
+      (
+        await pool.query(
+          'SELECT id, total_amount::text, paid_amount::text, remaining::text FROM supplier_purchases'
+        )
+      ).rows
+    const before = await rows()
+    await migrate(pool, { logger: quiet })
+    assert.deepEqual(await rows(), before, 'amounts unchanged')
+    const p = (await pool.query('SELECT gross_amount, discount::float8 d FROM supplier_purchases'))
+      .rows[0]
+    assert.deepEqual([p.gross_amount, p.d], [null, 0], 'no discount on old invoices')
+    // The old line can be returned: its value is credited in full (no discount, factor 1).
+    const { startService, createUser, login } = require('./helpers')
+    const svc = await startService(fresh.url)
+    try {
+      await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
+      const owner = await login(svc, '8642')
+      const r = await svc.call(
+        'suppliers.returnPurchase',
+        { purchaseId: 1, items: [{ purchaseItemId: 1, qty: 10 }], clientRef: 'mig20-return-1' },
+        owner
+      )
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual([r.body.grossValue, r.body.credit], [30, 30])
+      const s = (await pool.query("SELECT stock_qty::float8 s FROM products WHERE barcode = 'P1'"))
+        .rows[0].s
+      assert.equal(s, 90)
+    } finally {
+      await svc.close()
+    }
+  } finally {
+    await pool.end()
+    await fresh.dispose()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})

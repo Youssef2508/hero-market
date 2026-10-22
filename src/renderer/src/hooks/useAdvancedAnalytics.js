@@ -100,7 +100,9 @@ export function useAdvancedAnalytics() {
 
       const damagedRes = [report.damaged]
       const damagedCost = damagedRes[0]?.total_cost || 0
-      const netProfit = netProfitRaw - damagedCost
+      // Invoice discounts earned on purchases (D-066).
+      const purchaseDiscounts = Number(report.purchaseDiscounts?.v) || 0
+      const netProfit = netProfitRaw - damagedCost + purchaseDiscounts
 
       const expRes = [report.expenses]
       const totalExpenses = expRes[0]?.total || 0
@@ -128,7 +130,8 @@ export function useAdvancedAnalytics() {
         netCashFlow,
         maxInvoice,
         returnCount,
-        damagedCost
+        damagedCost,
+        purchaseDiscounts
       })
 
       const perShiftSales = report.perShiftSales || []

@@ -37,7 +37,12 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId]))
     .rows[0]
   if (!s) throw notFound('المورد غير موجود.')
+  // total_amount is what the invoice is owed for: its lines' value (gross) less an optional
+  // invoice-level discount (SUP-02, D-066). The lines keep their prices, so product costs are not
+  // changed by the discount; reports count it as a purchase gain.
   const total = p.total_amount
+  const discount = round2(p.discount || 0)
+  const gross = round2(total + discount)
   const paid = p.paid_amount || 0
   const remaining = total - paid
   const ref = p.invoice_ref || ''
@@ -54,9 +59,11 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   }))
   if (items.length) {
     const sum = round2(items.reduce((a, i) => a + i.lineTotal, 0))
-    if (Math.abs(sum - total) > 0.005)
+    if (Math.abs(sum - gross) > 0.005)
       throw badRequest(
-        `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
+        discount > 0
+          ? `إجمالي الأصناف (${sum.toFixed(2)}) − الخصم (${discount.toFixed(2)}) لا يساوي صافي الفاتورة (${Number(total).toFixed(2)}).`
+          : `إجمالي الأصناف (${sum.toFixed(2)}) لا يساوي قيمة الفاتورة (${Number(total).toFixed(2)}).`
       )
     if (new Set(items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)).size !== items.length)
       throw badRequest('الصنف مكرر في فاتورة الشراء.')
@@ -70,11 +77,15 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     const missing = items.find((i) => !known.has(i.barcode))
     if (missing) throw notFound(`الصنف (${missing.barcode}) غير مسجل.`)
   }
+  if (paid > total + 0.005)
+    throw badRequest(
+      `المدفوع (${Number(paid).toFixed(2)}) أكبر من صافي الفاتورة (${Number(total).toFixed(2)}).`
+    )
   const purchaseId = (
     await db.query(
-      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7) RETURNING id`,
-      [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '']
+      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount)
+         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9) RETURNING id`,
+      [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '', gross, discount]
     )
   ).rows[0].id
   // Lock the products in a stable order (concurrent sales lock the same rows).
@@ -134,7 +145,8 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   await ctx.audit(
     db,
     'supplier_purchase',
-    `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`
+    `فاتورة شراء #${ref} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`,
+    { purchaseId, gross, discount, net: total, paid }
   )
   const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
   return { ...supplier, purchaseId, receivedItems: items.length }
@@ -177,7 +189,9 @@ module.exports = function financeModule(app) {
       ).rows,
       purchases: (
         await ctx.pool.query(
-          'SELECT * FROM supplier_purchases WHERE supplier_id = $1 ORDER BY id DESC',
+          `SELECT sp.*, (SELECT COUNT(*) FROM supplier_purchase_items i WHERE i.purchase_id = sp.id)::int AS item_count,
+                  (SELECT COALESCE(SUM(credit_value), 0) FROM supplier_purchase_returns r WHERE r.purchase_id = sp.id)::float8 AS returned_value
+             FROM supplier_purchases sp WHERE sp.supplier_id = $1 ORDER BY sp.id DESC`,
           [supplierId]
         )
       ).rows,
@@ -225,7 +239,9 @@ module.exports = function financeModule(app) {
       properties: {
         supplierId: { type: 'integer' },
         invoice_ref: str(80),
+        // Net owed (lines − discount). The discount is optional and invoice-level (D-066).
         total_amount: { type: 'number', exclusiveMinimum: 0 },
+        discount: { type: 'number', minimum: 0 },
         paid_amount: { type: 'number', minimum: 0 },
         payment_type: str(40),
         notes: str(1000),

@@ -13,6 +13,7 @@ module.exports = [
   require('./tills'),
   require('./money'),
   require('./supplierInvoices'),
+  require('./purchaseReturns'),
   require('./admin'),
   require('./settings'),
   require('./backup'),

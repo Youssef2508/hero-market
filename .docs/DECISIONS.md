@@ -762,3 +762,29 @@ Format: context → decision → reason → consequences (→ alternatives).
   - on the shift details they are buttons: a click or Enter opens the invoice in الفواتير والمرتجعات;
   - identifiers in tables are isolated left to right (`.ltr-id`), so "INV-39" and "#12" no longer flip or misalign in right-to-left cells.
 - **Stat cards:** a long amount is shown smaller until it fits its card, measured at any window width, instead of being cut to "12,350.26 …".
+
+## D-066 Purchase invoice discount and purchase returns (owner, 2026-10-22, migration 0020)
+
+- **Invoice discount (SUP-02, revised by the owner).** An optional amount on the whole invoice, zero by default.
+  - The supplier is owed the net: lines − discount. The payable, payments, purchase totals and the audit use the net, once.
+  - Never allocated to lines. Product purchase prices, moving-average costs, selling prices and package prices do not change.
+  - **Owner's answer (asked because profit would otherwise be understated):** the discount is a separate gain, "خصم مشتريات مكتسب", on the purchase's date. Net profit in the dashboard, the performance screen and the advanced reports adds it.
+  - Stored: `supplier_purchases.gross_amount` and `discount`; `total_amount` stays the net. Old invoices: gross empty, discount 0.
+  - Also on completing a preliminary invoice.
+- **Purchase returns.** Separate from cancelling a preliminary invoice. Goods of a recorded purchase go back, in parts, never more than bought (per line, in the line's unit).
+  - Stock leaves at the cost the line was bought at; the moving average falls back by exactly that value (FINANCIAL_RECONCILIATION §12).
+  - **Owner's answer:** the supplier is credited the lines' value × net ÷ gross, so a discount is never credited twice. The part of the discount given back reduces the purchase gain.
+  - The payable falls by the credit; below zero the supplier owes the store.
+  - Money is recorded only when the supplier hands it back now, by its method, in the current shift or the treasury (`supplier_refund`). The rest stays owed by the supplier.
+  - Goods already sold cannot go back (refused). One transaction; a request id makes a retry return the first result.
+  - Permission `suppliers.manage` (granted per role by an administrator). Audit with the lines, values and refund.
+- **Open:** the spec's line selling price that updates the product on posting (original SUP-02) is not built. The owner's revision says the purchase must not change prices automatically, so it waits for the owner.
+
+## D-067 HeroMarket data workflow: export, templates, permissions, backup audit (owner, 2026-10-22)
+
+- **No importer for the other POS.** The shop's data comes through HeroMarket's own Excel template. The plan's go-live and visit documents say so.
+- **Export (DATA-01):** the template's sheets and headers, filled from one read-only snapshot. The file is read back and checked before it is saved. Details and exclusions: DATA_IMPORT_EXPORT.md.
+- **Template version 2:** optional package columns on products (name, units per package, barcode, selling, wholesale and purchase price), checked like the units window. A version marker; newer files are refused, old files import unchanged. Optional fields stay optional.
+- **Permissions (ROLE-01):** `data.import` and `data.export`, separate. Administrators by default; a supervisor or any other role gets them only when an administrator grants them. The import screen shows each part only to its holders. Owner's rule (2026-10-22): anything sensitive is granted by an administrator, per role.
+- **Backup audit:** every schema table is backed up or listed with its reason; a store using every feature restores row for row with equal balances and stock and keeps working; a failing restore changes nothing.
+- **Compatibility rule:** every later data-model change goes through the checklist in DATA_IMPORT_EXPORT.md §6 (migration, backup, template/import/export, reconciliation).

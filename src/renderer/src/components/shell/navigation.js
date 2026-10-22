@@ -314,13 +314,14 @@ export const NAV_GROUPS = [
       },
       {
         id: 'import',
-        // The service requires products, customers and suppliers management together.
-        permission: ['products.manage'],
-        label: 'استيراد البيانات',
+        // Separate permissions for import and export (ROLE-01, D-067); the screen shows each part
+        // to whoever holds it.
+        permission: ['data.import', 'data.export'],
+        label: 'استيراد وتصدير البيانات',
         icon: FileSpreadsheet,
         view: 'admin',
         tab: 'import',
-        description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket).'
+        description: 'استيراد وتصدير الأصناف والعملاء والموردين بملف Excel (قالب HeroMarket).'
       },
       {
         // Read-only archive of the cheques kept from before cheques were removed (D-060).

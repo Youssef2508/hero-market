@@ -20,6 +20,7 @@ import { can } from '../../lib/api'
 import { rowKeys } from '../../lib/keyboard'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
+import PurchaseReturnModal from '../modals/PurchaseReturnModal'
 
 const MODE_LABELS = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جزئي' }
 
@@ -102,6 +103,16 @@ function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
   )
 }
 
+// Supplier ledger row types: label and badge.
+const LEDGER_TYPES = {
+  payment: ['سداد', 'badge-success'],
+  opening: ['رصيد افتتاحي', 'badge-info'],
+  adjustment: ['تسوية', 'badge-info'],
+  return: ['مرتجع مشتريات', 'badge-info'],
+  refund: ['مبلغ أعاده المورد', 'badge-success'],
+  purchase: ['شراء', 'badge-danger']
+}
+
 /**
  * Suppliers & purchases. Data and mutations come from useSuppliersManager.
  */
@@ -131,6 +142,8 @@ export default function SuppliersTab({
 }) {
   const [pendingOpen, setPendingOpen] = useState(false)
   const [cancelling, setCancelling] = useState(null)
+  const [returning, setReturning] = useState(null)
+  const canManage = can(currentUser, 'suppliers.manage')
   const [repayTo, setRepayTo] = useState('')
   const [repayMethod, setRepayMethod] = useState('cash')
   const [sortField, setSortField] = useState('name')
@@ -169,6 +182,16 @@ export default function SuppliersTab({
         onConvert={startConvertPending}
         onCancel={setCancelling}
       />
+      {returning && (
+        <PurchaseReturnModal
+          purchase={returning}
+          currentUser={currentUser}
+          currentShift={currentShift}
+          onClose={() => setReturning(null)}
+          onDone={(supplier) => fetchSupplierProfile(supplier || selectedSupplier)}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {cancelling && (
         <CancelPendingModal
           invoice={cancelling}
@@ -401,9 +424,16 @@ export default function SuppliersTab({
                           <th>التاريخ</th>
                           <th>رقم الفاتورة</th>
                           <th className="num">الإجمالي</th>
+                          <th className="num">الخصم</th>
                           <th className="num">المدفوع</th>
                           <th className="num">المتبقي</th>
                           <th>نوع الدفع</th>
+                          <th className="num">المرتجع</th>
+                          {canManage && (
+                            <th>
+                              <span className="visually-hidden">إجراءات</span>
+                            </th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -412,8 +442,13 @@ export default function SuppliersTab({
                             <td className="nowrap cell-muted">
                               <Timestamp value={p.timestamp} />
                             </td>
-                            <td>{p.invoice_ref || '—'}</td>
+                            <td>
+                              <span className="ltr-id">{p.invoice_ref || '—'}</span>
+                            </td>
                             <td className="num">{formatMoney(p.total_amount)}</td>
+                            <td className="num cell-muted">
+                              {Number(p.discount) > 0 ? formatMoney(p.discount) : '—'}
+                            </td>
                             <td className="num">{formatMoney(p.paid_amount)}</td>
                             <td
                               className={`num money-strong ${(p.remaining || 0) > 0 ? 'text-danger' : 'text-success'}`}
@@ -423,6 +458,22 @@ export default function SuppliersTab({
                             <td>
                               <span className="badge">{p.payment_type}</span>
                             </td>
+                            <td className="num cell-muted">
+                              {Number(p.returned_value) > 0 ? formatMoney(p.returned_value) : '—'}
+                            </td>
+                            {canManage && (
+                              <td>
+                                {p.item_count > 0 && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-secondary"
+                                    onClick={() => setReturning(p)}
+                                  >
+                                    مرتجع
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -461,15 +512,9 @@ export default function SuppliersTab({
                             </td>
                             <td>
                               <span
-                                className={`badge ${l.type === 'payment' ? 'badge-success' : l.type === 'opening' || l.type === 'adjustment' ? 'badge-info' : 'badge-danger'}`}
+                                className={`badge ${LEDGER_TYPES[l.type]?.[1] || 'badge-danger'}`}
                               >
-                                {l.type === 'payment'
-                                  ? 'سداد'
-                                  : l.type === 'opening'
-                                    ? 'رصيد افتتاحي'
-                                    : l.type === 'adjustment'
-                                      ? 'تسوية'
-                                      : 'شراء'}
+                                {LEDGER_TYPES[l.type]?.[0] || 'شراء'}
                               </span>
                             </td>
                             <td className="num money-strong">{formatMoney(l.amount)}</td>

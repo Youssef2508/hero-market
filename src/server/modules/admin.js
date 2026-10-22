@@ -412,6 +412,8 @@ module.exports = function adminModule(app) {
         const tables = [
           'sale_payment_corrections',
           'supplier_pending_invoices',
+          'supplier_purchase_return_items',
+          'supplier_purchase_returns',
           'supplier_purchase_items',
           'sale_items',
           'sales',
