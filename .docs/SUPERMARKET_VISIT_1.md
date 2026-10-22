@@ -1,14 +1,16 @@
 # HeroMarket at the supermarket, visit 1: collect what we need (install nothing)
 
+> **History (2026-10-22).** The shop visit is done: the shop runs HeroMarket 1.4.0 with its data, and the scanner, printer and workflows were tested there. There is no further visit. The owner upgrades to 1.5.0 himself: [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). This checklist is kept as the record of that visit.
+
 Written for you, the person visiting the shop. Print it, or open `START-HERE.html` from the USB folder, and tick each box. It takes about 30 minutes.
 
 **Why a first visit:** the supermarket runs another company's POS program, not an older HeroMarket. Before installing anything we need to know:
 
-- which program it is and how its data can be taken out;
+- which program it is (for reference only: its data is not imported by a special tool);
 - what printer and scanner it uses;
 - what Windows the PC has.
 
-With that, at home, HeroMarket can import the shop's products, customers and balances. Printing and scanning can be set up and tried in advance, and the installation day becomes a short, checked visit.
+The shop's products, customers and balances come in through HeroMarket's own Excel template (owner, 2026-10-22: no importer for the other program). Printing and scanning can be set up and tried in advance, and the installation day becomes a short, checked visit.
 
 **On this visit you install nothing and change nothing on the shop PC.** The shop keeps selling with its current program.
 
@@ -16,8 +18,8 @@ With that, at home, HeroMarket can import the shop's products, customers and bal
 
 ## A. At home, before you go
 
-- [ ] **1. Copy this folder to a USB stick:** `D:\Youssef\Brands\HeroMarket-USB\HeroMarket-visit-1-collect-info`. Use a stick with 2 GB free, in case the owner gives you an export or a backup of his data.
-- [ ] **2. Ask the owner for permission** to look at the PC and, if he agrees, to take a copy or export of his data (products, customers, suppliers). It is his business data; it is used only to prepare HeroMarket.
+- [ ] **1. Copy this folder to a USB stick:** `D:\Youssef\Brands\HeroMarket-USB\HeroMarket-visit-1-collect-info`. Use a stick with 2 GB free.
+- [ ] **2. Ask the owner for permission** to look at the PC. Do not copy the other program's data or database: it is not needed.
 - [ ] **3. Charge your phone:** you will take photos.
 
 ## B. At the shop (about 30 minutes)
@@ -30,12 +32,8 @@ With that, at home, HeroMarket can import the shop's products, customers and bal
   - the main sales screen;
   - the product list screen, with a few products visible;
   - the customers screen, if it has one.
-- [ ] **6. The shop's data.** The simplest way is the **HeroMarket data template** (`HeroMarket-data-template.xlsx` in this folder; the same file comes from HeroMarket → الإدارة → استيراد البيانات → تنزيل القالب). The owner fills its sheets الأصناف, العملاء, الموردون, or copies them from his program's export, and sends it back. HeroMarket imports it after checking every row.
-      If he prefers, look with him for an **Export / تصدير** to Excel or CSV, or a **Backup / نسخة احتياطية** function, and save the result to the USB stick. Best, in this order:
-  1. **Products:** barcode, name, purchase price, selling price, wholesale price, stock, unit, category.
-  2. **Customers:** name, phone, address, balance owed.
-  3. **Suppliers:** name, phone, balance.
-  - If there is no export, a backup made by the program itself is the next best thing. If neither exists, note it; the database file found in step 4 is the fallback. Do **not** copy that file yourself while the program is open: tell me first.
+- [ ] **6. The shop's data.** The data goes in the **HeroMarket data template** (`HeroMarket-data-template.xlsx` in this folder; the same file comes from HeroMarket → الإدارة → استيراد وتصدير البيانات → تنزيل القالب). The owner fills its sheets الأصناف, العملاء, الموردون, and sends it back. HeroMarket imports it after checking every row.
+      The template is the only route for the data (owner, 2026-10-22). Fill it from the other program's screens or an export the owner already has; no special importer is built, and no export file is needed from that program.
 - [ ] **7. Receipt printer:** take photos of:
   - the label under or behind the printer (model);
   - a receipt printed by the current program, front and full length;

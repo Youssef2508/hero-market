@@ -38,6 +38,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
             name: u.name,
             factor: String(Number(u.factor)),
             retail_price: u.retail_price === null ? '' : String(Number(u.retail_price)),
+            purchase_cost: u.purchase_cost === null ? '' : String(Number(u.purchase_cost)),
             sellable: u.sellable,
             purchasable: u.purchasable,
             codes: u.barcodes.join(' ')
@@ -66,6 +67,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
           name: u.name.trim(),
           factor: parseFloat(u.factor),
           retail_price: u.retail_price === '' ? null : parseFloat(u.retail_price),
+          purchase_cost: u.purchase_cost === '' ? null : parseFloat(u.purchase_cost),
           sellable: u.sellable,
           purchasable: u.purchasable,
           barcodes: splitCodes(u.codes)
@@ -83,7 +85,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
   return (
     <div className="modal-overlay">
       <form
-        className="modal-content modal-wide modal-scroll"
+        className="modal-content modal-xl modal-scroll"
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-units-title"
@@ -115,7 +117,8 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
           <p className="cell-muted">
             {KIND_HINT[kind] ||
               `المعامل بال${kindInfo(kind).unit || 'وحدة الأساسية'} (${decimals === 0 ? 'عدد صحيح' : `حتى ${decimals} خانات عشرية`}).`}{' '}
-            السعر الفارغ = سعر الوحدة الأساسية × المعامل.
+            سعر بيع العبوة يكتبه المالك (لا يُحسب تلقائياً). سعر شراء العبوة اختياري ويظهر تلقائياً
+            في فاتورة الشراء. المخزون كمية واحدة بالوحدة الأساسية: بيع عبوة يخصم المعامل منها.
           </p>
 
           {units === null ? (
@@ -124,12 +127,23 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
               جاري التحميل...
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table fit-table">
+              <colgroup>
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '25%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>اسم الوحدة</th>
                   <th>المعامل</th>
-                  <th>سعر البيع</th>
+                  <th>سعر بيع العبوة</th>
+                  <th>سعر شراء العبوة</th>
                   <th>الباركودات</th>
                   <th>بيع</th>
                   <th>شراء</th>
@@ -149,7 +163,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.name}
                           onChange={(e) => update(i, { name: e.target.value })}
                           aria-label="اسم الوحدة"
-                          style={{ width: 110 }}
                         />
                       </td>
                       <td>
@@ -162,7 +175,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.factor}
                           onChange={(e) => update(i, { factor: e.target.value })}
                           aria-label={`معامل ${u.name}`}
-                          style={{ width: 80 }}
                         />
                       </td>
                       <td>
@@ -171,11 +183,26 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           className="input num"
                           min="0"
                           step="0.01"
+                          required={u.sellable}
                           value={u.retail_price}
                           onChange={(e) => update(i, { retail_price: e.target.value })}
-                          placeholder={derived !== null ? formatMoney(derived) : ''}
-                          aria-label={`سعر ${u.name}`}
-                          style={{ width: 90 }}
+                          title={
+                            derived !== null
+                              ? `للمقارنة: سعر القطعة × المعامل = ${formatMoney(derived)}`
+                              : undefined
+                          }
+                          aria-label={`سعر بيع ${u.name}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="input num"
+                          min="0"
+                          step="0.01"
+                          value={u.purchase_cost}
+                          onChange={(e) => update(i, { purchase_cost: e.target.value })}
+                          aria-label={`سعر شراء ${u.name}`}
                         />
                       </td>
                       <td>
@@ -185,7 +212,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.codes}
                           onChange={(e) => update(i, { codes: e.target.value })}
                           aria-label={`باركودات ${u.name}`}
-                          style={{ width: 150 }}
                         />
                       </td>
                       <td>
@@ -231,6 +257,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                   name: '',
                   factor: '',
                   retail_price: '',
+                  purchase_cost: '',
                   sellable: true,
                   purchasable: true,
                   codes: ''

@@ -1,6 +1,6 @@
 # Updating HeroMarket at the supermarket (every release after 1.4.0)
 
-Written for you, the developer, and for whoever installs updates at the shop. It describes what exists in 1.4.0 and what was tested. Anything not done yet is marked.
+Written for you, the developer, and for whoever installs updates at the shop. It describes the update mechanism since 1.4.0 and what was tested (1.5.0: §9). The shop owner's own step-by-step upgrade from 1.4.0 to 1.5.0 is [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). Anything not done yet is marked.
 
 ## 1. What kind of update system this is
 
@@ -10,7 +10,7 @@ Written for you, the developer, and for whoever installs updates at the shop. It
 - **One installer does everything, as administrator:**
   1. It refuses to start while HeroMarket is open on any Windows account.
   2. It stops the database service.
-  3. It makes a **verified copy** of the database (`C:\ProgramData\HeroMarket\backups\pre-install`, the newest 3 kept).
+  3. It makes a **verified copy** of the database (`C:\ProgramData\HeroMarket\backups\pre-install`, the newest 3 kept, plus the newest copy of each of the last 3 data versions, so the copy from before a database update is never pushed out by later installer runs).
   4. It replaces the program files.
   5. It updates the database if needed (Case B), checks it, and **puts the copy back by itself if anything is wrong**.
   6. It writes the result to `logs\update-history.jsonl` and `logs\setup.log`.
@@ -92,21 +92,21 @@ Written for you, the developer, and for whoever installs updates at the shop. It
 - **Case A release:** reinstall the previous version's installer. The database fits both versions.
 - **Case B release:** the previous program will **not** open the updated database. That is deliberate, so it cannot damage it. Either:
   - **(preferred)** wait for a fixed new version; or
-  - **go back to the copy taken just before the update.** This loses everything recorded since the update, so first save a backup (النسخ الاحتياطي) and write down the sales made since then. Then:
-    1. Run the **previous version's** installer. It installs the previous program, then reports that the data belongs to a newer version and stops (exit code 3). That is expected: the data is untouched.
-    2. As administrator (right-click Command Prompt → Run as administrator), run the previous program's restore command:
+  - **go back to the copy taken just before the update.** This loses everything recorded since the update, so first save a backup (النسخ الاحتياطي) and write down the sales made since then. **Restore first, with the newer program still installed; install the previous version after.** Then:
+    1. Close HeroMarket on every Windows account.
+    2. As administrator (right-click Command Prompt → Run as administrator), run the restore command of the program installed now, naming the version to go back to (here 1.4.0):
 
        ```
-       "C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --restore-pre-install
+       "C:\Program Files\HeroMarket-POS\HeroMarket-POS.exe" --restore-pre-install=1.4.0
        ```
 
-       It picks the newest copy whose data **belongs to the installed (previous) version**, checks it against its manifest, sets the current database aside (`pgdata.replaced-<time>`), puts the copy back and restarts the service.
+       It picks the newest copy whose data **belongs to that version**, checks it against its manifest, sets the current database aside (`pgdata.replaced-<time>`), puts the copy back and restarts the service. The program installed now then refuses to open (its setup does not match the data): that is expected.
 
-    3. Open HeroMarket. It opens on the data as it was before the update.
+    3. Run the **previous version's** installer. Its setup finds the data at its own version (Case A) and HeroMarket opens on the data as it was before the update.
 
-    Tested in Windows Sandbox: 1.4.0 → test version with a migration → 1.4.0 installer refused → restore → 1.4.0 opens with every record.
+    **Why this order:** every installer run takes a copy and removes old ones by its own rule. From 1.5.0 on, the newest copy of each of the last 3 data versions is always kept. 1.4.0 keeps only the newest 3 copies of any kind, so running the 1.4.0 installer first can remove the only copy of the 1.4.0 data. That happened in the 1.5.0 Sandbox check after four installer runs.
 
-  - A specific copy can be named: `--restore-pre-install=<folder name in backups\pre-install>`. If no copy matches, the command lists the copies with the version of their data.
+  - Instead of a version, a specific copy can be named: `--restore-pre-install=<folder name in backups\pre-install>`. Without a name or version, the newest copy of the installed version's own data is used. If no copy matches, the command lists the copies with the version of their data.
 
 **Never** delete `pgdata`, a copy in `backups\pre-install`, or a `pgdata.failed-…` / `pgdata.replaced-…` folder before the developer has confirmed the shop works.
 
@@ -147,3 +147,30 @@ Previous version can open the database after this update: yes (A) / no (B: resto
 
 - **Tested on the owner's laptop (2026-10-16):** a Case A update of 1.4.0 over an earlier 1.4.0 build. A verified copy was taken first; every record was identical before and after; the history said "ok".
 - **Not tested:** an update on the supermarket's real PC (that happens with the first real release), and a Case B update on a real PC.
+
+## 9. What was tested in 1.5.0 (release candidate, 2026-10-22)
+
+- **Windows Sandbox** (clean Windows 10, no network), never released. Builds:
+  - the 1.4.0 installer of candidate 7515377 (schema 0014, the same as `main`);
+  - the 1.5.0 candidate (migrations 0015–0023);
+  - a test-only `1.5.1-test.1`, whose migration 0024 adds a column and then fails on purpose.
+- **Starting point:** HeroMarket 1.3 with a copy of the 1.3 data (9 products, 2 customers, 4 users), then 1.4.0 over it. Sample money records were added to the 1.4.0 store before the update: a closed shift with a cash, a Visa and an on-account sale, a sale line, an expense and two drawer movements, a supplier with a part-paid purchase and its ledger, and a damaged item.
+- **Every figure was compared before and after each step:** row counts, stock, customer and supplier balances, each shift's amounts, sales and line totals, the drawer, expenses, purchases and the supplier ledger.
+
+  | Scenario                                                                          | Result                                                                                                                                                                              |
+  | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Case B: 1.4.0 with the sample records → 1.5.0                                     | Migrations 0015–0023 applied; every figure identical; customer codes C00001…; the old purchase has no discount; history "case B, ok"; both backup tasks registered; program opens   |
+  | Installer started while HeroMarket is open                                        | Refused, exit 4, history unchanged                                                                                                                                                  |
+  | Case A: 1.5.0 over 1.5.0                                                          | Every figure identical; history "case A, ok"; program opens                                                                                                                         |
+  | Case B with a failing migration (1.5.1-test.1)                                    | Exit 3; every figure identical; the test column absent; history "restored" with the reason; the program refuses until fixed; the 1.5.0 installer brings everything back             |
+  | Older 1.4.0 installer over the 1.5.0 data                                         | Refused (exit 3), every figure identical; history "refused: database_newer"; the program explains it                                                                                |
+  | Going back, as first documented (1.4.0 installer, then its restore)               | **Failed:** the 1.4.0 installer's own pruning had removed the only copy of the 1.4.0 data. Fixed in 1.5.0 and §6 rewritten (D-079)                                                  |
+  | Going back, new order: `--restore-pre-install=1.4.0` with 1.5.0, then 1.4.0 setup | The copy of the 1.4.0 data was still there after three later installer runs; restore exit 0; every 1.4.0 figure, schema 0014; then the 1.4.0 installer: "case A, ok", program opens |
+
+- **The final installer** (SHA-256 `9f8e506c…`, commit `f05eb99`), from the shop's own 1.4.0 build (the visit stick, SHA-256 `960bc572…`) with the sample records:
+  - an update that fails over 1.4.0 (`1.5.1-test.1`, exit 3) put the data back, every figure identical, and the 1.4.0 installer brought everything back ("case A, ok");
+  - the update to 1.5.0: Case B, migrations 0015–0023, every figure identical, both backup tasks registered, program opens;
+  - the backups: see NIGHTLY_BACKUP.md.
+- **Builds:** the refusal checks (installer open, older installer) ran with the candidate built before the D-079 fix; that fix changes only how copies are kept and chosen. Every other row ran with the final candidate.
+- **Earlier, with test build 1.5.0-test.2 (D-074):** the after-close backup task runs as the system account when started with normal user rights; a normal user cannot delete a copy.
+- **Not observed:** the update on the shop PC itself. The owner runs it ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md)); the installer checks every record and total and puts the copy back on any problem.

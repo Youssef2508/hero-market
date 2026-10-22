@@ -5,6 +5,20 @@
 // The owner fills one workbook with three sheets: الأصناف, العملاء, الموردون. Headers are matched
 // by name (order does not matter, extra columns are ignored), so a sheet copied from another
 // program works as long as the header row has these names.
+//
+// The export (DATA-01, D-067) writes the same sheets and headers, so an exported file can be
+// reviewed, edited and imported again. Compatibility rule: a column is only ever added as
+// optional; required columns are never added, renamed or removed without raising
+// TEMPLATE_VERSION, and a file of a newer version than this program is refused. Files without a
+// version (1.4.0 templates) are version 1 and import unchanged.
+//
+// Whenever a feature adds, removes or renames a product, customer or supplier field, check its
+// place here (template, export and import validation in modules/storeImport.js) and in the
+// round-trip test (tests/service/dataExport.test.js).
+
+/** Version of the template; written in the instructions sheet of templates and exports. */
+export const TEMPLATE_VERSION = 2
+export const VERSION_LABEL = 'إصدار القالب'
 
 export const SHEETS = {
   products: {
@@ -44,6 +58,33 @@ export const SHEETS = {
         header: 'حد الطلب',
         number: true,
         hint: 'ينبّه عندما يقل المخزون عنه.'
+      },
+      // One package (carton, box…) of the product, all optional (INV-01, version 2). Stock stays
+      // in the product's own unit; the package is sold and bought by its own barcode and price.
+      {
+        key: 'pack_name',
+        header: 'اسم العبوة',
+        hint: 'اختياري: كرتونة، علبة… اتركه فارغاً للصنف بلا عبوة.'
+      },
+      {
+        key: 'pack_factor',
+        header: 'عدد الوحدات في العبوة',
+        number: true,
+        hint: 'مطلوب مع اسم العبوة. عدد صحيح للأصناف بالعدد (مثلاً 10).'
+      },
+      { key: 'pack_barcode', header: 'باركود العبوة', hint: 'اختياري. باركود العبوة كاملة.' },
+      {
+        key: 'pack_price',
+        header: 'سعر بيع العبوة',
+        number: true,
+        hint: 'مطلوب مع اسم العبوة: سعر العبوة كاملة (لا يُحسب تلقائياً).'
+      },
+      { key: 'pack_wholesale', header: 'سعر جملة العبوة', number: true, hint: 'اختياري.' },
+      {
+        key: 'pack_cost',
+        header: 'سعر شراء العبوة',
+        number: true,
+        hint: 'اختياري: يظهر تلقائياً في فاتورة الشراء.'
       }
     ]
   },
@@ -75,7 +116,7 @@ export const SHEETS = {
         header: 'المبلغ المستحق للمورد',
         number: true,
         signed: true,
-        hint: 'ما على المحل للمورد.'
+        hint: 'ما على المحل للمورد (رصيد افتتاحي). بالسالب إذا كان المورد مديناً للمحل.'
       }
     ]
   }
@@ -156,8 +197,22 @@ function findHeader(data, def) {
  * Each row keeps `row`, its line number in the sheet, for messages. Empty rows are skipped.
  */
 export function readWorkbook(sheets) {
-  const out = { products: [], customers: [], suppliers: [], errors: [], found: [] }
+  const out = { products: [], customers: [], suppliers: [], errors: [], found: [], version: 1 }
   const byName = new Map((sheets || []).map((s) => [looseText(s.sheet), s.data || []]))
+  for (const row of byName.get(looseText('تعليمات')) || []) {
+    if (looseText(row?.[0]) !== looseText(VERSION_LABEL)) continue
+    const v = cellNumber(row[1]).value
+    if (v) out.version = v
+    break
+  }
+  if (out.version > TEMPLATE_VERSION) {
+    out.errors.push({
+      sheet: 'تعليمات',
+      row: 0,
+      message: `الملف من إصدار أحدث للقالب (${out.version}) من هذا البرنامج (${TEMPLATE_VERSION}). حدّث البرنامج أولاً.`
+    })
+    return out
+  }
   for (const [kind, def] of Object.entries(SHEETS)) {
     // The sheet with the expected name, or else any sheet whose header row fits.
     let data = byName.get(looseText(def.name))
@@ -234,13 +289,27 @@ export function readWorkbook(sheets) {
 }
 
 // Columns typed as text so Excel keeps leading zeros and long numbers (barcodes, phones).
-const TEXT_KEYS = new Set(['barcode', 'phone', 'phone2'])
+const kindOf = (def) => Object.keys(SHEETS).find((k) => SHEETS[k] === def)
+
+const TEXT_KEYS = new Set(['barcode', 'phone', 'phone2', 'pack_barcode'])
 
 /**
  * The template workbook for write-excel-file: an instructions sheet, then one sheet per kind
  * with its header row and `rows` empty, pre-formatted rows.
  */
 export function templateSheets({ rows = 500 } = {}) {
+  return buildSheets(null, { rows })
+}
+
+/**
+ * The export (DATA-01): the template's sheets filled with `data` ({ products, customers,
+ * suppliers }, rows keyed like the columns). `note` is written in the instructions sheet.
+ */
+export function exportSheets(data, { note = '' } = {}) {
+  return buildSheets(data, { note })
+}
+
+function buildSheets(data, { rows = 500, note = '' }) {
   const head = (text) => ({
     value: text,
     fontWeight: 'bold',
@@ -249,7 +318,15 @@ export function templateSheets({ rows = 500 } = {}) {
   })
   const sheets = []
   const help = [
-    [{ value: 'قالب بيانات HeroMarket', fontWeight: 'bold', fontSize: 16 }],
+    [
+      {
+        value: data ? 'بيانات HeroMarket (تصدير)' : 'قالب بيانات HeroMarket',
+        fontWeight: 'bold',
+        fontSize: 16
+      }
+    ],
+    [VERSION_LABEL, TEMPLATE_VERSION],
+    ...(note ? [[note]] : []),
     [''],
     ['املأ الأوراق: الأصناف، العملاء، الموردون. يمكن ترك أي ورقة فارغة.'],
     ['صف واحد لكل صنف أو عميل أو مورد. لا تغيّر أسماء الأعمدة في الصف الأول.'],
@@ -272,6 +349,9 @@ export function templateSheets({ rows = 500 } = {}) {
   ])
   help.push(['العملاء: محمد أحمد | 01001234567 | | شارع النصر 12 | 350'])
   help.push(['الموردون: شركة الألبان المتحدة | 0223456789 | المنطقة الصناعية | أ. سامي | 1200'])
+  help.push([
+    'الأصناف (بعبوة): 6221234567890 | هوهوز | 10 | 8 | | 95 | قطعة | بالعدد | حلويات | 20 | علبة | 10 | 6221234567999 | 90 | | 80'
+  ])
   sheets.push({
     sheet: 'تعليمات',
     data: help,
@@ -283,9 +363,20 @@ export function templateSheets({ rows = 500 } = {}) {
     const empty = def.columns.map((c) =>
       TEXT_KEYS.has(c.key) ? { value: '', type: String, format: '@' } : null
     )
+    const cell = (c, v) =>
+      v === null || v === undefined || v === ''
+        ? TEXT_KEYS.has(c.key)
+          ? { value: '', type: String, format: '@' }
+          : null
+        : c.number
+          ? { value: Number(v), type: Number }
+          : { value: String(v), type: String, ...(TEXT_KEYS.has(c.key) ? { format: '@' } : {}) }
+    const body = data
+      ? (data[kindOf(def)] || []).map((r) => def.columns.map((c) => cell(c, r[c.key])))
+      : Array.from({ length: rows }, () => empty)
     sheets.push({
       sheet: def.name,
-      data: [header, ...Array.from({ length: rows }, () => empty)],
+      data: [header, ...body],
       columns: def.columns.map((c) => ({
         width: c.key === 'name' ? 34 : c.header.length > 14 ? 26 : 16
       })),

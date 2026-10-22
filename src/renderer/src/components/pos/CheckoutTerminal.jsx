@@ -7,6 +7,7 @@ import {
   Plus,
   X,
   Banknote,
+  CreditCard,
   Smartphone,
   ArrowLeftRight,
   BookOpen,
@@ -34,11 +35,16 @@ import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
 import { api } from '../../lib/api'
 import { kindInfo } from '../../lib/measureKinds'
+import { qtyFromText } from '../../lib/qtyText'
+import ManualDiscountModal from './ManualDiscountModal'
 
-// Payment types are business values written to sales.payment_type – do not rename.
+// Payment types are business values written to sales.payment_type – do not rename. The payment
+// methods are cash, Visa, wallet and InstaPay (owner, 2026-10-21, D-061); آجل and دفع جزئي put the
+// unpaid part on the customer's account.
 const PAYMENT_METHODS = [
   { value: 'نقدي', label: 'نقدي', icon: Banknote },
-  { value: 'فودافون كاش', label: 'فودافون كاش', icon: Smartphone },
+  { value: 'فيزا', label: 'فيزا', icon: CreditCard },
+  { value: 'محفظة', label: 'محفظة', icon: Smartphone },
   { value: 'انستا باي', label: 'انستا باي', icon: ArrowLeftRight },
   { value: 'آجل', label: 'آجل', icon: BookOpen, needsClient: true },
   { value: 'دفع جزئي', label: 'دفع جزئي', icon: Split, needsClient: true }
@@ -125,6 +131,41 @@ function ShortagesButton({ dbStats, onPrint, onPdf }) {
   )
 }
 
+// Quantity box of a cart line (POS-01). The typed text is kept while typing, so "0", "0." and
+// "0.5" can be typed (the box used to snap back to the cart value at "0"). A valid quantity reaches
+// the cart at once; on leaving the box, "0" removes the line (as before) and anything invalid goes
+// back to the last valid quantity.
+function QtyInput({ item, inputRef, onQty, onZero }) {
+  const [text, setText] = useState(String(item.qty))
+  const focused = useRef(false)
+  // The cart changed from elsewhere (stepper, another scan): show it unless the user is typing.
+  useEffect(() => {
+    if (!focused.current) setText(String(item.qty))
+  }, [item.qty])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className="qty-input num"
+      value={text}
+      ref={inputRef}
+      onFocus={() => (focused.current = true)}
+      onChange={(e) => {
+        setText(e.target.value)
+        const { value } = qtyFromText(e.target.value)
+        if (value !== null) onQty(value)
+      }}
+      onBlur={() => {
+        focused.current = false
+        const { value, zero } = qtyFromText(text)
+        if (zero) onZero()
+        else if (value === null) setText(String(item.qty))
+      }}
+      aria-label={`كمية ${item.name}`}
+    />
+  )
+}
+
 function CheckoutTerminal({
   cart,
   triggerClearCart,
@@ -140,6 +181,10 @@ function CheckoutTerminal({
   cartSubtotal,
   discount,
   appliedDiscounts = [],
+  canManualDiscount = false,
+  manualDiscount = null,
+  setManualDiscount,
+  afterRules = 0,
   paidAmount,
   setPaidAmount,
   changeRemaining,
@@ -157,6 +202,8 @@ function CheckoutTerminal({
   clientSearchResults,
   selectClient,
   paymentType,
+  upfrontMethod,
+  setUpfrontMethod,
   setPaymentType,
   cartTotal,
   handleCheckout,
@@ -247,6 +294,8 @@ function CheckoutTerminal({
         : { warn: false, text: 'سيُحفظ العنوان الجديد للعميل ليظهر في الطلبات القادمة.' }
   // Category browsing panel (1.4.0). F6 opens/closes it; the cart stays as it is.
   const [browsing, setBrowsing] = useState(false)
+  // Manual invoice discount window (D-057).
+  const [manualOpen, setManualOpen] = useState(false)
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'F6' && !document.querySelector('.modal-overlay')) {
@@ -451,7 +500,7 @@ function CheckoutTerminal({
                   صنف
                 </span>
                 <span aria-hidden="true">
-                  <Kbd>F2</Kbd>
+                  <Kbd>F7</Kbd>
                 </span>
               </span>
             </div>
@@ -564,7 +613,7 @@ function CheckoutTerminal({
                   <ShoppingBasket size={30} />
                 </span>
                 <strong>الفاتورة فارغة</strong>
-                <span>امسح باركود الصنف، أو ابحث بالاسم بالضغط على F2.</span>
+                <span>امسح باركود الصنف، أو ابحث بالاسم بالضغط على F7.</span>
               </div>
             ) : (
               <table className="cart-table">
@@ -604,21 +653,11 @@ function CheckoutTerminal({
                           >
                             <Plus size={14} />
                           </button>
-                          <input
-                            type="number"
-                            className="qty-input num"
-                            value={item.qty}
-                            ref={(el) => (qtyInputRefs.current[index] = el)}
-                            onChange={(e) => handleQtyChangeAttempt(item.key, e.target.value)}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value)
-                              if (isNaN(val) || val <= 0) {
-                                triggerDeleteItem(item.key)
-                              }
-                            }}
-                            min="0.001"
-                            step="any"
-                            aria-label={`كمية ${item.name}`}
+                          <QtyInput
+                            item={item}
+                            inputRef={(el) => (qtyInputRefs.current[index] = el)}
+                            onQty={(v) => handleQtyChangeAttempt(item.key, v)}
+                            onZero={() => triggerDeleteItem(item.key)}
                           />
                           <button
                             type="button"
@@ -689,10 +728,13 @@ function CheckoutTerminal({
 
           <footer className="pos-hints" aria-label="اختصارات لوحة المفاتيح">
             <span>
-              <Kbd>F1</Kbd> دفع
+              <Kbd>F1</Kbd> دفع وطباعة
             </span>
             <span>
-              <Kbd>F2</Kbd> بحث
+              <Kbd>F2</Kbd> دفع بدون طباعة
+            </span>
+            <span>
+              <Kbd>F7</Kbd> بحث
             </span>
             <span>
               <Kbd>F3</Kbd> كمية أول صنف
@@ -723,10 +765,15 @@ function CheckoutTerminal({
               <dt>إجمالي الأصناف</dt>
               <dd className="money">{money(cartSubtotal)}</dd>
             </div>
-            {/* Automatic discounts from the administrator's rules (no manual discount). */}
+            {/* Automatic discounts (administrator rules) and the manual one (D-057), as priced
+                by the service. */}
             {appliedDiscounts.map((d) => (
-              <div key={d.ruleId}>
-                <dt>خصم: {d.name}</dt>
+              <div key={`${d.scope}-${d.ruleId ?? 'manual'}`}>
+                <dt>
+                  {d.scope === 'manual'
+                    ? `خصم يدوي${manualDiscount?.reason ? `: ${manualDiscount.reason}` : ''}`
+                    : `خصم: ${d.name}`}
+                </dt>
                 <dd className="money text-danger">− {money(d.amount)}</dd>
               </div>
             ))}
@@ -743,6 +790,37 @@ function CheckoutTerminal({
               </div>
             )}
           </dl>
+          {canManualDiscount && cart.length > 0 && (
+            <div className="manual-discount-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setManualOpen(true)}
+              >
+                {manualDiscount ? 'تعديل الخصم اليدوي' : 'خصم يدوي'}
+              </button>
+              {manualDiscount && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setManualDiscount(null)}
+                >
+                  إلغاء الخصم اليدوي
+                </button>
+              )}
+            </div>
+          )}
+          {manualOpen && (
+            <ManualDiscountModal
+              current={manualDiscount}
+              maxAmount={afterRules}
+              onApply={(m) => {
+                setManualDiscount(m)
+                setManualOpen(false)
+              }}
+              onClose={() => setManualOpen(false)}
+            />
+          )}
         </div>
 
         <div className="checkout-body">
@@ -790,10 +868,25 @@ function CheckoutTerminal({
           </div>
 
           {paymentType === 'دفع جزئي' && (
-            <p className="checkout-note">
-              <Info size={14} aria-hidden="true" />
-              المبلغ المدفوع يُسجَّل مقدماً، والمتبقي من الفاتورة يُضاف لحساب العميل.
-            </p>
+            <>
+              <p className="checkout-note">
+                <Info size={14} aria-hidden="true" />
+                المبلغ المدفوع يُسجَّل مقدماً، والمتبقي من الفاتورة يُضاف لحساب العميل.
+              </p>
+              <label className="field">
+                <span className="field-label">طريقة دفع المقدَّم</span>
+                <select
+                  className="input"
+                  value={upfrontMethod || 'cash'}
+                  onChange={(e) => setUpfrontMethod?.(e.target.value)}
+                >
+                  <option value="cash">نقدي</option>
+                  <option value="visa">فيزا</option>
+                  <option value="wallet">محفظة</option>
+                  <option value="instapay">انستا باي</option>
+                </select>
+              </label>
+            </>
           )}
 
           <div className="customer">
@@ -807,7 +900,7 @@ function CheckoutTerminal({
                 <input
                   type="text"
                   className="input"
-                  placeholder="اسم العميل"
+                  placeholder="اسم العميل أو رقمه أو كوده"
                   value={clientName}
                   onChange={(e) => handleClientNameChange(e.target.value)}
                   aria-label="اسم العميل"
@@ -883,7 +976,9 @@ function CheckoutTerminal({
                       className="dropdown-item client-result"
                       onClick={() => selectClient(c)}
                     >
-                      <span className="client-result-name">{c.name}</span>
+                      <span className="client-result-name">
+                        {c.name} {c.code && <span className="ltr-id cell-muted">{c.code}</span>}
+                      </span>
                       <span className="client-result-meta">
                         {c.phone && <span className="num">{c.phone}</span>}
                         {c.debt_balance > 0 && (

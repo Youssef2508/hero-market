@@ -28,7 +28,6 @@ export function usePOSController({
   vfcashStartCash,
   setCloseShiftModal,
   actualEndCash,
-  setApprovalRequest,
   rawHandleLock,
 
   cart,
@@ -37,6 +36,8 @@ export function usePOSController({
   paidAmount,
   setPaidAmount,
   paymentType,
+  upfrontMethod,
+  setUpfrontMethod,
   setPaymentType,
   clientName,
   setClientName,
@@ -61,7 +62,6 @@ export function usePOSController({
   fetchClientStats,
   fetchAdminData,
   triggerCustomAlert,
-  triggerCustomConfirm,
   setCurrentView,
   appSettings,
   onLoggedIn
@@ -83,12 +83,18 @@ export function usePOSController({
   const [selectedClient, setSelectedClient] = useState(null)
   // Automatic discounts (administrator rules) priced by the service for the current cart.
   const [appliedDiscounts, setAppliedDiscounts] = useState([])
+  // Manual fixed invoice discount (D-057): { amount, reason } or null; priced by the service too.
+  const [manualDiscount, setManualDiscount] = useState(null)
+  // Total after the automatic rules (the most a manual discount can be), from the last preview.
+  const [afterRules, setAfterRules] = useState(0)
   const pricingSeqRef = useRef(0)
   const refreshPricing = async () => {
     const seq = ++pricingSeqRef.current
     if (cart.length === 0) {
       setDiscount(0)
       setAppliedDiscounts([])
+      setAfterRules(0)
+      setManualDiscount(null)
       return
     }
     try {
@@ -97,20 +103,29 @@ export function usePOSController({
           barcode: item.barcode,
           unitId: item.unitId ?? null,
           qty: item.qty
-        }))
+        })),
+        manualDiscount: manualDiscount || undefined
       })
       if (seq !== pricingSeqRef.current) return // a newer cart is being priced
       setDiscount(r.discount)
       setAppliedDiscounts(r.applied)
-    } catch {
-      // Pricing problems (e.g. an invalid quantity) surface at checkout with their message.
+      setAfterRules(r.afterRules ?? r.afterDiscount)
+    } catch (err) {
+      if (seq !== pricingSeqRef.current) return
+      // The cart shrank below the manual discount (or the permission was withdrawn): drop it and
+      // say so; the next preview prices the cart without it.
+      if (manualDiscount) {
+        setManualDiscount(null)
+        triggerCustomAlert(`أُلغي الخصم اليدوي: ${err.message}`, 'الخصم اليدوي')
+      }
+      // Other pricing problems (e.g. an invalid quantity) surface at checkout with their message.
     }
   }
   useEffect(() => {
     const t = setTimeout(refreshPricing, 120)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart])
+  }, [cart, manualDiscount])
   const [clientSearchResults, setClientSearchResults] = useState([])
 
   const handleLock = () => {
@@ -132,8 +147,15 @@ export function usePOSController({
   }
 
   // Signed in on the lock screen (auth.login / auth.setPassword / auth.recover answer).
+  // One request id per close: a retry after a lost answer returns the saved close (PAY-01).
+  const closeRef = useRef(null)
+  // The saved close report, shown after the close is confirmed and saved (SHIFT-02).
+  const [closeReport, setCloseReport] = useState(null)
+
   const completeSignIn = (res) => {
     const user = res.user
+    // A close report belongs to the user who closed: never shown to the next one.
+    setCloseReport(null)
     setCurrentUser(user)
     if (onLoggedIn) onLoggedIn(user)
     setIsLocked(false) // Unlock the screen layout
@@ -204,38 +226,38 @@ export function usePOSController({
   }
 
   // Close Active Shift
-  const handleConfirmCloseShift = async () => {
+  const handleConfirmCloseShift = async (opts) => {
     const actual = parseFloat(actualEndCash) || 0
     if (isNaN(actual) || actual < 0) {
       triggerCustomAlert('الرجاء إدخال مبلغ صحيح.')
       return
     }
+    const counted = opts?.actual || { visa: 0, wallet: 0, instapay: 0 }
+    if (!closeRef.current) closeRef.current = newClientRef()
+    const closeBody = {
+      shiftId: currentShift.id,
+      actualCash: actual,
+      actual: counted,
+      clientRef: closeRef.current
+    }
 
     try {
       const afterClose = async (closed) => {
         try {
-          const live = closed.live || {}
           const shiftRow = closed.shift || currentShift
+          // The close is saved: the dialog goes and the saved report shows at once; printing
+          // follows (a missing printer can take seconds to report and never undoes the close).
+          playSound('chime')
+          closeRef.current = null
+          setCloseShiftModal(false)
+          if (closed.report) setCloseReport({ report: closed.report, shift: closed.shift })
+          // The automatic backup after a close (D-074): started without asking or waiting; its
+          // result is in the backup log and on the backup screen.
+          window.api?.db?.afterClose?.().catch(() => {})
 
           // Trigger print report automatically!
           if (window.api?.printer?.printReport) {
             try {
-              const momknSummary = {
-                expectedDigitalBalance:
-                  (shiftRow.momkn_start_balance || 0) + (Number(live.momkn_digital_impact) || 0),
-                totalCashImpact: Number(live.momkn_cash_impact) || 0,
-                totalCommission: Number(live.momkn_commission) || 0,
-                startBalance: shiftRow.momkn_start_balance || 0
-              }
-              const mobileMoneySummary = {
-                expectedVfcashDigitalBalance:
-                  (shiftRow.vfcash_start_balance || 0) + (Number(live.vfcash_digital_impact) || 0),
-                expectedInstapayDigitalBalance: Number(live.instapay_digital_impact) || 0,
-                expectedBankDigitalBalance: Number(live.bank_digital_impact) || 0,
-                totalCashImpact: Number(live.mm_cash_impact) || 0,
-                totalCommission: Number(live.mm_commission) || 0,
-                startBalance: shiftRow.vfcash_start_balance || 0
-              }
               await window.api.printer.printReport('shift', {
                 shift: { ...shiftRow, username: currentUser?.username },
                 cashSales: closed.figures.cashSales,
@@ -244,17 +266,17 @@ export function usePOSController({
                 expected: closed.expected,
                 actual: closed.actual,
                 difference: closed.difference,
-                momkn: momknSummary,
-                wallets: mobileMoneySummary
+                manualDiscounts: closed.live?.manualDiscounts,
+                // The saved close (SHIFT-02): the printed report is exactly what was confirmed.
+                report: closed.report
               })
             } catch (printErr) {
               console.error('Failed to print grand shift report:', printErr)
             }
           }
 
-          playSound('chime')
-          handleLock()
-          setCloseShiftModal(false)
+          // Signing out follows when the report is dismissed (a close without one signs out now).
+          if (!closed.report) handleLock()
         } catch (e) {
           console.error('Failed after closing the shift:', e)
         }
@@ -262,77 +284,20 @@ export function usePOSController({
 
       const finalizeShiftClose = async () => {
         try {
-          // The service computes the expected drawer cash with the legacy formula and closes the shift.
-          const closed = await api('shifts.close', { shiftId: currentShift.id, actualCash: actual })
+          // The service computes the expected amounts and always closes the shift, whatever the
+          // difference (owner, 2026-10-22, D-073); the report that follows shows it.
+          const closed = await api('shifts.close', closeBody)
           await afterClose(closed)
         } catch (e) {
-          if (e.code === 'approval_required') {
-            // Difference above EGP 50: a supervisor acknowledges it (owner decision 2026-10-14).
-            const d = e.details || {}
-            playSound('error')
-            setApprovalRequest({
-              title: 'فرق في إغلاق الوردية',
-              summary: `الفرق ${Number(d.difference).toFixed(2)} ج.م (المتوقع ${Number(d.expected).toFixed(2)}، الفعلي ${Number(d.actual).toFixed(2)}) يتجاوز 50 ج.م ويحتاج إلى اعتماد المشرف.`,
-              noteLabel: 'سبب الفرق (اختياري)',
-              noteRequired: false,
-              onSubmit: async (approver, note) => {
-                const closed = await api('shifts.close', {
-                  shiftId: currentShift.id,
-                  actualCash: actual,
-                  approver,
-                  note: note || undefined
-                })
-                setApprovalRequest(null)
-                await afterClose(closed)
-              }
-            })
-            return
-          }
           console.error('Failed to close shift:', e)
           playSound('error')
           triggerCustomAlert('فشل إغلاق الوردية: ' + e.message)
         }
       }
 
-      // Prompt for database backup
-      triggerCustomConfirm(
-        'هل تريد أخذ نسخة احتياطية من قاعدة البيانات الآن قبل إغلاق الوردية؟',
-        async () => {
-          if (window.api && window.api.db && window.api.db.backup) {
-            const backupRes = await window.api.db.backup()
-            if (backupRes && backupRes.success) {
-              triggerCustomAlert(
-                `تم حفظ النسخة الاحتياطية بنجاح في:\n${backupRes.filePath}`,
-                'نجاح النسخ الاحتياطي',
-                async () => {
-                  await finalizeShiftClose()
-                }
-              )
-            } else if (backupRes && backupRes.error && backupRes.error !== 'User cancelled') {
-              triggerCustomAlert(
-                `فشل حفظ النسخة الاحتياطية: ${backupRes.error}`,
-                'فشل النسخ الاحتياطي',
-                async () => {
-                  await finalizeShiftClose()
-                }
-              )
-            } else {
-              await finalizeShiftClose()
-            }
-          } else {
-            triggerCustomAlert(
-              'خاصية النسخ الاحتياطي غير متوفرة في هذه البيئة.',
-              'تنبيه',
-              async () => {
-                await finalizeShiftClose()
-              }
-            )
-          }
-        },
-        async () => {
-          await finalizeShiftClose()
-        }
-      )
+      // No question to the cashier (owner, 2026-10-22, D-074): the close goes straight through,
+      // and the backup after it is automatic (see afterClose).
+      await finalizeShiftClose()
     } catch (e) {
       console.error('Failed to close shift:', e)
       playSound('error')
@@ -388,8 +353,13 @@ export function usePOSController({
         setTimeout(() => setToastMessage(null), 4000)
       }
     } catch (err) {
+      // The service explains why a scan cannot be used (a stopped product, an invalid scale
+      // label, an unknown scale code…): show it, and never add anything (SCALE-01).
       console.error('Barcode lookup error:', err)
       playSound('error')
+      setBarcodeInput('')
+      setToastMessage({ text: err.message, type: 'error' })
+      setTimeout(() => setToastMessage(null), 5000)
     }
   }
 
@@ -460,7 +430,11 @@ export function usePOSController({
   // An attempt whose outcome is unknown (reply lost) is retried under the same key (lib/checkoutRetry).
   const checkoutPendingRef = useRef(null)
   const unresolvedCheckoutRef = useRef(null)
-  const handleCheckout = async (openedShift = null) => {
+  // F2 (owner, 2026-10-21, D-065): the same checkout, without printing; kept across "open a shift
+  // first" so the sale finishes as it was asked.
+  const pendingPrintRef = useRef(null)
+  const handleCheckout = async (openedShift = null, { print } = {}) => {
+    const printThis = print === undefined ? (pendingPrintRef.current ?? !noPrint) : print
     // The button passes its click event; only a shift object from handleStartShift counts.
     const shiftNow = openedShift?.status === 'open' ? openedShift : currentShift
     if (cart.length === 0) {
@@ -472,6 +446,7 @@ export function usePOSController({
     if (!shiftNow || !shiftNow.id || shiftNow.status !== 'open') {
       // A user allowed to work without a shift (the owner) is asked to open one now.
       if (currentUser?.permissions?.includes('shifts.operate')) {
+        pendingPrintRef.current = printThis
         setStartingCash(String(appSettings?.default_opening_cash ?? '200'))
         setOpenShiftModal('sale')
         return
@@ -483,6 +458,7 @@ export function usePOSController({
       )
       return
     }
+    pendingPrintRef.current = null
     if (checkoutPendingRef.current) return
     checkoutPendingRef.current = true
     let attempt = null
@@ -498,8 +474,10 @@ export function usePOSController({
         })),
         // The total shown to the customer; the service refuses the sale if its own differs.
         expectedTotal: cartTotal,
+        manualDiscount: manualDiscount || undefined,
         paymentType,
         paidAmount: paidAmount ? parseFloat(paidAmount) || 0 : null,
+        upfrontMethod: paymentType === 'دفع جزئي' ? upfrontMethod || 'cash' : undefined,
         appliedCredit: parseFloat(appliedCredit) || 0,
         depositChange: parseFloat(depositChange) || 0,
         isDelivery: !!isDelivery,
@@ -540,7 +518,7 @@ export function usePOSController({
       const timePart = ltrText(formatClock(new Date()))
       const paidShown = paidAmount ? parseFloat(paidAmount) || cartTotal : cartTotal
 
-      if (!noPrint && window.api && window.api.printer && window.api.printer.printSale) {
+      if (printThis && window.api && window.api.printer && window.api.printer.printSale) {
         window.api.printer
           .printSale(
             {
@@ -607,6 +585,7 @@ export function usePOSController({
       setTimeout(() => setToastMessage(null), notSaved.length ? 7000 : 3000)
       setCart([])
       setDiscount(0)
+      setManualDiscount(null)
       setAppliedCredit(0)
       setDepositChange('')
       setPaidAmount('')
@@ -618,6 +597,7 @@ export function usePOSController({
       setSelectedClient(null)
       setClientSearchResults([])
       setPaymentType('نقدي')
+      if (setUpfrontMethod) setUpfrontMethod('cash')
       try {
         if (fetchStats) fetchStats()
         if (fetchClientsList) fetchClientsList()
@@ -768,11 +748,19 @@ export function usePOSController({
   }
 
   return {
+    manualDiscount,
+    setManualDiscount,
+    afterRules,
     appliedDiscounts,
     addProductByBarcode,
     completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
+    closeReport,
+    dismissCloseReport: () => {
+      setCloseReport(null)
+      handleLock()
+    },
     handleLock,
     barcodeInput,
     setBarcodeInput,

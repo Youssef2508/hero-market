@@ -27,6 +27,23 @@ const EditProductModal = ({
           onSubmit={handleEditProduct}
           style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
         >
+          {/* PROD-01: the barcode can be corrected; the product keeps its stock and history. */}
+          <div className="form-group">
+            <label>الباركود *</label>
+            <input
+              type="text"
+              className="form-input num"
+              value={editProduct.new_barcode ?? editProduct.barcode}
+              maxLength={64}
+              onChange={(e) => setEditProduct((prev) => ({ ...prev, new_barcode: e.target.value }))}
+              required
+            />
+            {(editProduct.new_barcode ?? editProduct.barcode).trim() !== editProduct.barcode && (
+              <span className="field-hint">
+                سيتغير باركود الصنف من {editProduct.barcode}؛ يبقى مخزونه وسجل مبيعاته كما هو.
+              </span>
+            )}
+          </div>
           <div className="form-group">
             <label>اسم الصنف *</label>
             <input

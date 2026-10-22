@@ -1671,3 +1671,264 @@ button.hero-chip:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── الورديات (owner, 2026-10-21, D-063): list and full details page ───────────────────────── */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.page-subtitle {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.shift-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.shift-filters .field {
+  min-width: 200px;
+}
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--info);
+  font: inherit;
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+.text-end {
+  text-align: end;
+}
+.shift-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.shift-pill.is-open,
+.shift-pill.tone-cash {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+.shift-pill.tone-visa {
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+.shift-pill.tone-instapay {
+  background: var(--purple-soft);
+  color: var(--purple-text);
+}
+.shift-pill.tone-wallet,
+.shift-pill.tone-account {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+.shift-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.shift-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+}
+.shift-kpi span {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.shift-kpi strong {
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+}
+.shift-kpi.tone-blue strong {
+  color: var(--info);
+}
+.shift-kpi.tone-green strong {
+  color: var(--success);
+}
+.shift-kpi.tone-red strong {
+  color: var(--danger);
+}
+.method-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--success-border);
+  border-radius: 10px;
+  background: var(--success-soft);
+  color: var(--success-text);
+  font: inherit;
+  cursor: pointer;
+}
+.method-chip.is-all {
+  border-color: transparent;
+  background: var(--sidebar-bg);
+  color: var(--on-solid);
+}
+.method-chip.is-all .cell-muted {
+  color: var(--sidebar-text);
+}
+.method-chip.tone-visa {
+  border-color: var(--info-border);
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+.method-chip.tone-instapay {
+  border-color: transparent;
+  background: var(--purple-soft);
+  color: var(--purple-text);
+}
+.method-chip.tone-wallet,
+.method-chip.tone-account {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+.method-chip.is-active {
+  box-shadow: var(--focus-ring);
+}
+.method-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.method-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+}
+.method-tile span {
+  font-size: var(--fs-sm);
+}
+.method-tile strong {
+  font-variant-numeric: tabular-nums;
+}
+.method-tile.tone-cash {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+.method-tile.tone-visa {
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+.method-tile.tone-instapay {
+  background: var(--purple-soft);
+  color: var(--purple-text);
+}
+.method-tile.tone-wallet {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+.shift-info {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+.shift-info span {
+  color: var(--text-muted);
+}
+@media (max-width: 900px) {
+  .shift-kpis,
+  .method-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shift-info {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dashboard period charts (D-065): plain SVG in the chart tokens. */
+.dash-chart svg {
+  width: 100%;
+  height: auto;
+}
+.dash-axis {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+.dash-legend {
+  display: flex;
+  gap: 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.dash-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.dash-share {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.dash-share li {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.dash-share-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-share-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.dash-share-bar {
+  display: block;
+  height: 100%;
+  background: var(--chart-1);
+  border-radius: 5px;
+}
+
+/* Bar charts share the width they have instead of scrolling sideways (owner, 2026-10-22): with
+   many bars (24 hours) each gets narrower; values and labels shrink or are cut with a tooltip. */
+.vbar-chart {
+  overflow-x: hidden;
+  gap: 2px;
+}
+.vbar-chart .vbar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.vbar-chart .vbar-track {
+  width: min(30px, 100%);
+}
+.vbar-chart .vbar-value,
+.vbar-chart .vbar-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}

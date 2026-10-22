@@ -67,7 +67,8 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
         baseBarcodes: ['CAKE-ALT'],
         units: [
           { name: 'كرتونة', factor: 24, retail_price: 60, barcodes: ['CAKE-CTN'] },
-          { name: 'علبة 6', factor: 6, retail_price: null, purchasable: false, barcodes: [] }
+          // D-065: the owner enters the package price (here the same 3 × 6); none is derived.
+          { name: 'علبة 6', factor: 6, retail_price: 18, purchasable: false, barcodes: [] }
         ]
       },
       admin
@@ -84,7 +85,7 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
   )
   cartonId = u.units.find((x) => x.name === 'كرتونة').id
 
-  // Scans: carton barcode → carton unit; extra barcode → base unit; derived price = 3 × 6.
+  // Scans: carton barcode → carton unit; extra barcode → base unit; the box at its own 18.
   const c = ok(await svc.call('pos.resolve', { code: 'CAKE-CTN' }, admin))
   assert.deepEqual(
     [c.product.barcode, c.unit.name, c.unit.factor, c.unit.price],
@@ -107,16 +108,19 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
     assert.ok([400, 409].includes(r.status), JSON.stringify(r.body))
     if (re) assert.match(r.body.error.message, re)
   }
-  await bad([{ name: 'كسر', factor: 2.5 }], /عدداً صحيحاً/)
+  // Each case has a price (D-065), so only the rule it is about refuses it.
+  await bad([{ name: 'كسر', factor: 2.5, retail_price: 1 }], /عدداً صحيحاً/)
   await bad(
     [
-      { name: 'كرتونة', factor: 24 },
-      { name: 'كرتونة', factor: 12 }
+      { name: 'كرتونة', factor: 24, retail_price: 1 },
+      { name: 'كرتونة', factor: 12, retail_price: 1 }
     ],
     /مكرر/
   )
-  await bad([{ name: 'واحد', factor: 1 }], /مطابقة/)
-  await bad([{ name: 'سرقة', factor: 2, barcodes: ['WATER'] }], /مستخدم بالفعل/)
+  await bad([{ name: 'واحد', factor: 1, retail_price: 1 }], /مطابقة/)
+  await bad([{ name: 'سرقة', factor: 2, retail_price: 1, barcodes: ['WATER'] }], /مستخدم بالفعل/)
+  // A sellable package without the owner's price is refused (no derived price, D-065).
+  await bad([{ name: 'علبة بلا سعر', factor: 4 }], /اكتب سعر بيع/)
   // A new product cannot take an existing extra barcode.
   const clash = await svc.call(
     'products.create',
@@ -204,11 +208,14 @@ test('weighed product: 200 g, 250 g, 1.25 kg at a per-kilogram price; 3 decimals
   }
   assert.equal(await stock('CHZ'), Math.round((start - 2.45) * 1000) / 1000)
   assert.equal((await checkout([{ barcode: 'CHZ', qty: 0.2505, unitPrice: 180 }])).status, 400)
-  // A "half kilo" unit with a derived price.
+  // A "half kilo" unit at the price the owner enters (D-065).
   ok(
     await svc.call(
       'productUnits.save',
-      { barcode: 'CHZ', units: [{ name: 'نصف كيلو', factor: 0.5, barcodes: ['CHZ-HALF'] }] },
+      {
+        barcode: 'CHZ',
+        units: [{ name: 'نصف كيلو', factor: 0.5, retail_price: 90, barcodes: ['CHZ-HALF'] }]
+      },
       admin
     )
   )
@@ -222,7 +229,7 @@ test('weighed product: 200 g, 250 g, 1.25 kg at a per-kilogram price; 3 decimals
 test('scale labels follow the store settings (weight and price), including custom prefixes', async (t) => {
   if (!requireDb(t)) return
   // Off by default (manual weighing): a label is not resolved until the owner enables labels.
-  assert.equal(ok(await svc.call('pos.resolve', { code: '2000777002503' }, admin)), null)
+  assert.equal(ok(await svc.call('pos.resolve', { code: '2000777002502' }, admin)), null)
   const initial = JSON.parse((await svc.call('settings.get', {}, admin)).body.settings.scale_labels)
   ok(
     await svc.call(
@@ -231,19 +238,19 @@ test('scale labels follow the store settings (weight and price), including custo
       admin
     )
   )
-  // Default layout: 20 + code 00777 + 00250 g + check digit → 0.250 kg
-  const w = ok(await svc.call('pos.resolve', { code: '2000777002503' }, admin))
+  // Default layout: 20 + code 00777 + 00250 g + EAN-13 check digit → 0.250 kg
+  const w = ok(await svc.call('pos.resolve', { code: '2000777002502' }, admin))
   assert.deepEqual([w.product.barcode, w.qty, w.unit.id], ['00777', 0.25, null])
   // 22 + code + 04500 (45.00 EGP) → 45 / 180 = 0.25 kg
-  const p = ok(await svc.call('pos.resolve', { code: '2200777045004' }, admin))
+  const p = ok(await svc.call('pos.resolve', { code: '2200777045008' }, admin))
   assert.equal(p.qty, 0.25)
   // Unknown prefix: no product.
-  assert.equal(ok(await svc.call('pos.resolve', { code: '2900777002503' }, admin)), null)
+  assert.equal(ok(await svc.call('pos.resolve', { code: '2900777002505' }, admin)), null)
   // The owner adds prefix 29 for weight.
   const cfg = JSON.parse((await svc.call('settings.get', {}, admin)).body.settings.scale_labels)
   cfg.prefixes['29'] = 'weight'
   ok(await svc.call('settings.update', { values: { scale_labels: JSON.stringify(cfg) } }, admin))
-  assert.equal(ok(await svc.call('pos.resolve', { code: '2900777001257' }, admin)).qty, 0.125)
+  assert.equal(ok(await svc.call('pos.resolve', { code: '2900777001256' }, admin)).qty, 0.125)
   // Invalid settings are refused.
   const bad = await svc.call(
     'settings.update',
@@ -251,6 +258,67 @@ test('scale labels follow the store settings (weight and price), including custo
     admin
   )
   assert.equal(bad.status, 400)
+})
+
+test("the owner's tomato label 2000001001257 sells 0.125 kg for 2.50; bad labels add nothing (SCALE-01)", async (t) => {
+  if (!requireDb(t)) return
+  // Labels on (the previous test enabled them); tomatoes registered under the label's code.
+  ok(
+    await svc.call(
+      'products.create',
+      {
+        barcode: '2000001',
+        name: 'طماطم',
+        retail_price: 20,
+        cost_price: 12,
+        unit: 'كجم',
+        unit_kind: 'weight',
+        stock_qty: 10
+      },
+      admin
+    )
+  )
+  const r = ok(await svc.call('pos.resolve', { code: '2000001001257' }, admin))
+  assert.deepEqual(
+    [r.product.barcode, r.qty, r.unit.id, r.unit.price],
+    ['2000001', 0.125, null, 20]
+  )
+  const sale = ok(await checkout([{ barcode: '2000001', qty: r.qty, unitPrice: 20 }]))
+  assert.equal(Number(sale.total), 2.5)
+  assert.equal(await stock('2000001'), 9.875)
+  const mv = await one(
+    "SELECT qty FROM stock_movements WHERE product_barcode = '2000001' AND kind = 'sale' ORDER BY id DESC LIMIT 1"
+  )
+  assert.equal(Number(mv.qty), -0.125)
+  // Return the 0.125 kg: stock back to 10.
+  const line = await one('SELECT id FROM sale_items WHERE sale_id = $1', [sale.saleId])
+  ok(await svc.call('sales.returnItem', { saleItemId: line.id, quantity: 0.125 }, admin))
+  assert.equal(await stock('2000001'), 10)
+
+  // A wrong check digit is explained and adds nothing.
+  const bad = await svc.call('pos.resolve', { code: '2000001001250' }, admin)
+  assert.equal(bad.status, 400)
+  assert.match(bad.body.error.message, /رقم التحقق/)
+  // A valid label of an unregistered code: explained (not a silent "not found").
+  const unknown = await svc.call('pos.resolve', { code: '2000009001259' }, admin)
+  assert.equal(unknown.status, 404)
+  assert.match(unknown.body.error.message, /2000009/)
+  // A weight label on a product sold by the piece is refused.
+  ok(
+    await svc.call(
+      'products.create',
+      { barcode: '2000002', name: 'علبة', retail_price: 5, unit_kind: 'count' },
+      admin
+    )
+  )
+  const mismatch = await svc.call('pos.resolve', { code: '2000002001256' }, admin)
+  assert.equal(mismatch.status, 400)
+  assert.match(mismatch.body.error.message, /يباع بالعدد/)
+  // Zero weight: refused.
+  const zero = await svc.call('pos.resolve', { code: '2000001000007' }, admin)
+  assert.equal(zero.status, 400)
+  // A normal product barcode still resolves as before.
+  assert.equal(ok(await svc.call('pos.resolve', { code: '2000001' }, admin)).qty, null)
 })
 
 test('purchase by the carton: stock and moving average per piece; line keeps the carton snapshot', async (t) => {

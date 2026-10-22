@@ -24,8 +24,15 @@ import crypto from 'crypto'
 import pg from 'pg'
 import { storeDir, serviceName, perUserConfigFile } from './userDataPath'
 import { runPgTool, choosePort, toolError, DB_NAME } from './localDatabase'
-import { copyAndVerify, snapshotDataDir, pruneSnapshots, verifySnapshot } from './upgradeSnapshot'
+import {
+  copyAndVerify,
+  snapshotDataDir,
+  pruneSnapshots,
+  verifySnapshot,
+  pickRestoreCopy
+} from './upgradeSnapshot'
 import { systemTool } from './winTools'
+import { registerBackupTask, removeBackupTask } from './scheduledBackup'
 
 const APP_ROLE = 'hm_app'
 const NEW_SUPERUSER = 'hm_admin'
@@ -241,8 +248,9 @@ export async function setupService() {
     throw new Error(`the store's database is missing from ${p.data}; nothing was created`)
   }
 
-  // 1. A verified copy of an existing database before anything changes (the newest 3 are kept).
-  //    It records which version the data belongs to, for a later rollback (--restore-pre-install).
+  // 1. A verified copy of an existing database before anything changes (the newest 3 are kept,
+  //    and the newest copy of each of the last 3 data versions). It records which version the data
+  //    belongs to, for a later rollback (--restore-pre-install).
   const fromVersion = cfg?.local?.setupVersion || (hasCluster ? 'before-1.4.0-service' : null)
   let snap = null
   if (hasCluster) {
@@ -256,7 +264,7 @@ export async function setupService() {
         2
       )
     )
-    pruneSnapshots(dir)
+    pruneSnapshots(dir, undefined, (n) => readJson(join(dir, n, 'update.json'))?.fromVersion)
     log('verified copy of the database:', snap)
   }
 
@@ -459,6 +467,13 @@ export async function setupService() {
 
   // 7. The app's configuration (readable by Windows users: no superuser credentials in it).
   writeConfig(app.getVersion())
+  // 8. The nightly backup (BACKUP-01). A store that works without it is better than no store: a
+  // failure here is logged and shown by the backup status, and the next setup tries again.
+  try {
+    await registerBackupTask({ log })
+  } catch (e) {
+    log('WARNING nightly backup task not registered:', e.message)
+  }
   log('setup complete')
 }
 
@@ -586,13 +601,12 @@ export async function restorePreInstall(which) {
   const versionOf = (n) => (readJson(join(dir, n, 'update.json')) || {}).fromVersion || null
   // Default: the newest copy whose data belongs to the version installed now (an attempt to install
   // an older version over newer data also takes a copy, of that newer data, which is not wanted).
-  const pick = which
-    ? all.find((n) => n === which)
-    : [...all].reverse().find((n) => versionOf(n) === app.getVersion())
+  // A version names the newest copy of that version's data (going back: UPDATE_GUIDE.md §6).
+  const pick = pickRestoreCopy(all, versionOf, which, app.getVersion())
   if (!pick) {
     const list = all.map((n) => `${n} (data of ${versionOf(n) || 'unknown'})`).join(', ')
     throw new Error(
-      `no verified copy ${which || `with data of version ${app.getVersion()}`} in ${dir}. Copies: ${list || 'none'}. Name one with --restore-pre-install=<name>.`
+      `no verified copy ${which || `with data of version ${app.getVersion()}`} in ${dir}. Copies: ${list || 'none'}. Name one with --restore-pre-install=<name or version>.`
     )
   }
   const snap = join(dir, pick)
@@ -618,6 +632,8 @@ export async function removeService() {
   await stopService(name)
   if ((await serviceState(name)) !== 'missing')
     await runPgTool('pg_ctl', ['unregister', '-N', name])
+  // The nightly task goes with the program; the backup copies stay with the store's data.
+  await removeBackupTask()
 }
 
 // The server code is CommonJS under the app's src/server folder (as in backend.js).

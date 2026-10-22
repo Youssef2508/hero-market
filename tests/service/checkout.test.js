@@ -8,11 +8,10 @@ const {
   startService,
   createUser,
   login,
-  seedProducts,
-  passwordFor
+  seedProducts
 } = require('./helpers')
 
-let db, svc, cashier, inventoryUser, shift
+let db, svc, cashier, inventoryUser, admin, shift
 const ref = () => crypto.randomUUID()
 const q = async (sql, params) => (await svc.pool.query(sql, params)).rows
 
@@ -23,6 +22,7 @@ before(async () => {
   await createUser(svc, { username: 'cashier1', pin: '1111', roleKey: 'cashier' })
   await createUser(svc, { username: 'stock1', pin: '2222', roleKey: 'inventory' })
   await createUser(svc, { username: 'super1', pin: '3333', roleKey: 'manager' })
+  await createUser(svc, { username: 'owner1', pin: '4444', roleKey: 'super_admin' })
   await seedProducts(
     svc,
     `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, category) VALUES
@@ -32,6 +32,7 @@ before(async () => {
   )
   cashier = await login(svc, '1111')
   inventoryUser = await login(svc, '2222')
+  admin = await login(svc, '4444')
   shift = (await svc.call('shifts.open', { startingCash: 200 }, cashier)).body
 })
 after(async () => {
@@ -333,7 +334,9 @@ test('concurrent checkouts of the same product: every sale recorded once, stock 
 
 test('drawer audit and close use the legacy formulas; selling on a closed shift is refused', async (t) => {
   if (!requireDb(t)) return
-  const preview = (await svc.call('shifts.auditPreview', { shiftId: shift.id }, cashier)).body
+  // The cashier may not see the expected drawer (blind close, PAY-01); the owner reads it.
+  assert.equal((await svc.call('shifts.auditPreview', { shiftId: shift.id }, cashier)).status, 403)
+  const preview = (await svc.call('shifts.auditPreview', { shiftId: shift.id }, admin)).body
   const cashSales = (
     await q(
       `SELECT SUM(COALESCE(NULLIF(original_amount, 0) - discount, total_amount))::float AS s FROM sales WHERE shift_id = $1 AND payment_type = 'نقدي'`,
@@ -345,6 +348,7 @@ test('drawer audit and close use the legacy formulas; selling on a closed shift 
     await svc.call('shifts.audit', { shiftId: shift.id, actualCash: preview.expected - 5 }, cashier)
   ).body
   assert.ok(audit.id > 0, 'audit id returned (deficit reason can be saved)')
+  assert.equal(audit.expected, undefined, 'the blind count does not reveal the expected amount')
   assert.equal(
     (await svc.call('shifts.auditNote', { auditId: audit.id, notes: 'عجز فكة' }, cashier)).status,
     200
@@ -353,25 +357,9 @@ test('drawer audit and close use the legacy formulas; selling on a closed shift 
     (await q('SELECT notes FROM shift_audits WHERE id = $1', [audit.id]))[0].notes,
     'عجز فكة'
   )
-  // The count differs from the expected cash by more than EGP 50: a supervisor must acknowledge it
-  // (phase 3); without one the shift stays open.
-  const unacknowledged = await svc.call(
-    'shifts.close',
-    { shiftId: shift.id, actualCash: 300 },
-    cashier
-  )
-  assert.equal(unacknowledged.status, 403)
-  assert.equal(unacknowledged.body.error.code, 'approval_required')
-  assert.equal((await q('SELECT status FROM shifts WHERE id = $1', [shift.id]))[0].status, 'open')
-  const closed = await svc.call(
-    'shifts.close',
-    {
-      shiftId: shift.id,
-      actualCash: 300,
-      approver: { username: 'super1', password: passwordFor('3333') }
-    },
-    cashier
-  )
+  // The count differs from the expected cash by more than EGP 50: it closes at once, the
+  // difference is saved (owner, 2026-10-22, D-073).
+  const closed = await svc.call('shifts.close', { shiftId: shift.id, actualCash: 300 }, cashier)
   assert.equal(closed.status, 200)
   assert.equal(Math.round(closed.body.expected * 100), Math.round((200 + cashSales) * 100))
   const r = await svc.call(

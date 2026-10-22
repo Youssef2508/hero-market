@@ -3,6 +3,9 @@ import { Search, Printer, Undo2, ReceiptText, X } from 'lucide-react'
 import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { splitStamp } from '../../lib/time'
+import { can } from '../../lib/api'
+import { rowKeys } from '../../lib/keyboard'
+import ChangePaymentModal from './ChangePaymentModal'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 
@@ -24,7 +27,12 @@ function Stamp({ value }) {
 /**
  * Invoices & returns. Data and mutations come from useSalesManager.
  */
+// The four payment methods (D-061); on-account invoices keep their type.
+const METHOD_TYPES = ['نقدي', 'فيزا', 'محفظة', 'فودافون كاش', 'انستا باي']
+
 export default function SalesTab({
+  currentUser,
+  triggerCustomAlert,
   salesSearch,
   setSalesSearch,
   salesHistory,
@@ -41,9 +49,22 @@ export default function SalesTab({
   itemsPerPage,
   handleReprintSale
 }) {
+  const [changingPayment, setChangingPayment] = useState(false)
+  // PAY-02: holders of sales.change_payment, also after the shift closed (D-065: a reclassification,
+  // no money moves); the service also refuses an invoice with a return.
+  const canChangePayment =
+    selectedSale &&
+    can(currentUser, 'sales.change_payment') &&
+    METHOD_TYPES.includes(selectedSale.payment_type)
   const [activeReturnItem, setActiveReturnItem] = useState(null)
   const [returnQty, setReturnQty] = useState('')
   const [returnErrorMsg, setReturnErrorMsg] = useState('')
+
+  const afterPaymentChange = async () => {
+    setChangingPayment(false)
+    await fetchSalesHistory(salesSearch, salesSortField, salesSortAsc, salesPage)
+    await selectSaleForDetail({ ...selectedSale })
+  }
 
   const handleSortClick = (field) => {
     const isAsc = salesSortField === field ? !salesSortAsc : true
@@ -126,11 +147,11 @@ export default function SalesTab({
                     <tr
                       key={s.id}
                       className={selectedSale?.id === s.id ? 'is-selected' : ''}
-                      onClick={() => selectSaleForDetail(s)}
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && selectSaleForDetail(s)}
+                      {...rowKeys(() => selectSaleForDetail(s))}
                     >
-                      <td className="cell-strong num">#{displayNo(s.id)}</td>
+                      <td className="cell-strong">
+                        <span className="ltr-id">#{displayNo(s.id)}</span>
+                      </td>
                       <td className="num cell-muted">
                         <Stamp value={s.timestamp} />
                       </td>
@@ -210,18 +231,50 @@ export default function SalesTab({
                 </div>
                 <div>
                   <dt>العميل</dt>
-                  <dd>{selectedSale.client_name || 'عميل نقدي'}</dd>
+                  <dd>
+                    {selectedSale.client_name || 'عميل نقدي'}
+                    {selectedSale.client_code && (
+                      <span className="ltr-id cell-muted"> {selectedSale.client_code}</span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>طريقة الدفع</dt>
                   <dd>
                     <span className="badge">{selectedSale.payment_type}</span>
+                    {canChangePayment && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setChangingPayment(true)}
+                      >
+                        تغيير
+                      </button>
+                    )}
+                    {(selectedSale.corrections || []).map((c, i) => (
+                      <div key={i} className="cell-muted">
+                        غُيّرت من {c.from_type} إلى {c.to_type} بواسطة {c.username}
+                        {c.reason ? `: ${c.reason}` : ''}
+                      </div>
+                    ))}
                   </dd>
                 </div>
                 <div>
                   <dt>الخصم</dt>
                   <dd className="num">{formatMoney(selectedSale.discount)} ج.م</dd>
                 </div>
+                {(selectedSale.discounts || [])
+                  .filter((d) => d.scope === 'manual')
+                  .map((d, i) => (
+                    <div key={`m${i}`} className="span-2">
+                      <dt>خصم يدوي</dt>
+                      <dd>
+                        <span className="num">{formatMoney(d.amount)} ج.م</span>
+                        {d.reason ? ` — ${d.reason}` : ''}
+                        {d.username ? ` (${d.username})` : ''}
+                      </dd>
+                    </div>
+                  ))}
                 <div>
                   <dt>الإجمالي الصافي</dt>
                   <dd className={`money-strong ${fullyReturned ? 'text-danger' : 'text-accent'}`}>
@@ -332,6 +385,7 @@ export default function SalesTab({
       {activeReturnItem && (
         <div className="modal-overlay" style={{ zIndex: 99999 }}>
           <form
+            data-enter-step
             className="modal-content tone-warning"
             role="dialog"
             aria-modal="true"
@@ -394,6 +448,14 @@ export default function SalesTab({
             </div>
           </form>
         </div>
+      )}
+      {changingPayment && selectedSale && (
+        <ChangePaymentModal
+          sale={selectedSale}
+          onDone={afterPaymentChange}
+          onClose={() => setChangingPayment(false)}
+          triggerCustomAlert={triggerCustomAlert}
+        />
       )}
     </div>
   )

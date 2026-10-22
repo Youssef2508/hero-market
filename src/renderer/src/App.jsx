@@ -27,10 +27,12 @@ import TillsManagerTab from './components/admin/TillsManagerTab'
 
 // Import Modals Components
 import AppModals from './components/modals/AppModals'
+import CloseReportModal from './components/modals/CloseReportModal'
 import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePasswordModal from './components/modals/ChangePasswordModal'
 import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
 import { ALL_NAV_ITEMS } from './components/shell/navigation'
+import { startupPhaseFor } from './lib/startupPhase'
 
 function App() {
   // Refs
@@ -139,6 +141,8 @@ function App() {
   const {
     cart,
     setCart,
+    upfrontMethod,
+    setUpfrontMethod,
     discount,
     setDiscount,
     paidAmount,
@@ -190,12 +194,17 @@ function App() {
     completeSignIn,
     handleStartShift,
     handleConfirmCloseShift,
+    closeReport,
+    dismissCloseReport,
     handleLock,
     barcodeInput,
     setBarcodeInput,
     handleBarcodeSubmit,
     addProductByBarcode,
     appliedDiscounts,
+    manualDiscount,
+    setManualDiscount,
+    afterRules,
     searchInput,
     setSearchInput,
     handleSearchChange,
@@ -238,7 +247,6 @@ function App() {
     setCloseShiftModal,
     actualEndCash,
     setActualEndCash,
-    setApprovalRequest,
     rawHandleLock,
     cart,
     setCart,
@@ -246,6 +254,8 @@ function App() {
     setDiscount,
     paidAmount,
     setPaidAmount,
+    upfrontMethod,
+    setUpfrontMethod,
     paymentType,
     setPaymentType,
     clientName,
@@ -275,7 +285,6 @@ function App() {
     fetchClientStats: () => adminController.fetchClientStats(),
     fetchAdminData: () => adminController.fetchAdminData(),
     triggerCustomAlert,
-    triggerCustomConfirm,
     appSettings,
     onLoggedIn: (user) => onLoggedIn(user)
   })
@@ -337,10 +346,18 @@ function App() {
   const triggerAuditCheck = async () => {
     if (!currentShift) return
     try {
-      // Same formula as before, computed by the service (shifts.auditPreview).
-      const { expected, breakdown } = await api('shifts.auditPreview', { shiftId: currentShift.id })
-      setAuditExpectedCash(expected)
-      setAuditBreakdown(breakdown)
+      // Same formula as before, computed by the service (shifts.auditPreview). A blind count
+      // (no shifts.view_expected, PAY-01) shows only the input: the service refuses the figures.
+      if (can(currentUser, 'shifts.view_expected')) {
+        const { expected, breakdown } = await api('shifts.auditPreview', {
+          shiftId: currentShift.id
+        })
+        setAuditExpectedCash(expected)
+        setAuditBreakdown(breakdown)
+      } else {
+        setAuditExpectedCash(null)
+        setAuditBreakdown(null)
+      }
       setAuditActualCash('')
       setAuditNotes('')
       setShowAuditModal(true)
@@ -461,9 +478,7 @@ function App() {
       const st = window.api?.backend ? await window.api.backend.status() : { ready: false }
       setBackendInfo(st)
       if (!st.ready) {
-        // An installed shop whose own database cannot open gets an explanation and a retry, never
-        // the connection settings (choosing another mode would not repair it).
-        setStartupPhase(st.installedStore && st.errorCode ? 'store_problem' : 'connect')
+        setStartupPhase(startupPhaseFor(st))
         return
       }
       const auth = await api('auth.status')
@@ -517,17 +532,27 @@ function App() {
   }, [appSettings])
 
   // Data the shell needs right after a login (previously loaded at mount, before login).
-  const onLoggedIn = (user) => {
+  const onLoggedIn = () => {
     loadAppSettings()
     loadMeasureKinds()
     api('sync.state')
       .then((r) => setRecoveryPending(!!r.recoveryPending))
       .catch(() => {})
     adminController.fetchStats()
-    if (user.permissions.includes('checks.manage')) adminController.fetchChecksDueToday()
   }
 
   // Global keyboard shortcuts
+  // Esc and the "تفريغ" button ask first; a cancelled clear keeps the invoice exactly (POS-01).
+  const confirmClearCart = () => {
+    if (!cart.length) return
+    triggerCustomConfirm(
+      `سيتم حذف كل أصناف الفاتورة الحالية (${cart.length} صنف). هل تريد تفريغها؟`,
+      triggerClearCart,
+      null,
+      'تفريغ الفاتورة'
+    )
+  }
+
   useKeyboardShortcuts({
     isLocked,
     customAlert,
@@ -536,7 +561,7 @@ function App() {
     handleCheckout,
     searchInputRef,
     qtyInputRefs,
-    triggerClearCart,
+    triggerClearCart: confirmClearCart,
     cart,
     triggerDeleteItem
   })
@@ -649,7 +674,6 @@ function App() {
         currentShift={currentShift}
         onOpenShift={() => setOpenShiftModal('optional')}
         onCloseShift={() => setCloseShiftModal(true)}
-        onAudit={triggerAuditCheck}
         onLock={handleLock}
         onChangePassword={() => setShowChangePassword(true)}
         version={packageInfo.version}
@@ -666,6 +690,7 @@ function App() {
             handleReprintSale={handleReprintSale}
             onNavigate={handleNavigate}
             onSettingsChanged={loadAppSettings}
+            onOpenShift={() => setOpenShiftModal('optional')}
             {...adminController}
           />
         ) : currentView === 'tills' ? (
@@ -680,7 +705,7 @@ function App() {
         ) : (
           <CheckoutTerminal
             cart={cart}
-            triggerClearCart={triggerClearCart}
+            triggerClearCart={confirmClearCart}
             addByBarcode={addProductByBarcode}
             onReturn={
               can(currentUser, 'sales.return_request') || can(currentUser, 'sales.return')
@@ -697,6 +722,10 @@ function App() {
             cartSubtotal={cartSubtotal}
             discount={discount}
             appliedDiscounts={appliedDiscounts}
+            canManualDiscount={can(currentUser, 'pos.manual_discount')}
+            manualDiscount={manualDiscount}
+            setManualDiscount={setManualDiscount}
+            afterRules={afterRules}
             paidAmount={paidAmount}
             setPaidAmount={setPaidAmount}
             changeRemaining={changeDue}
@@ -715,6 +744,8 @@ function App() {
             selectClient={selectClient}
             paymentType={paymentType}
             setPaymentType={setPaymentType}
+            upfrontMethod={upfrontMethod}
+            setUpfrontMethod={setUpfrontMethod}
             cartTotal={cartTotal}
             depositChange={depositChange}
             setDepositChange={setDepositChange}
@@ -744,9 +775,11 @@ function App() {
         )}
       </AppShell>
 
+      <CloseReportModal data={closeReport} onDone={dismissCloseReport} />
       <AppModals
         openShiftModal={openShiftModal}
         setOpenShiftModal={setOpenShiftModal}
+        onSignOut={handleLock}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}
@@ -820,31 +853,39 @@ function App() {
             </div>
 
             <div className="modal-body">
-              <div className="audit-summary">
-                <dl className="kv">
-                  {auditRows
-                    .filter((r) => r.sign === '' || r.value > 0)
-                    .map((r) => (
-                      <div key={r.label} style={{ display: 'contents' }}>
-                        <dt>{r.label}</dt>
-                        <dd className={r.tone ? `text-${r.tone}` : ''}>
-                          {r.sign} {r.value.toFixed(2)} ج.م
-                        </dd>
-                      </div>
-                    ))}
-                </dl>
-                <div className="audit-expected">
-                  <span>صافي الكاش المتوقع بالدرج</span>
-                  <strong className="money">{(auditExpectedCash || 0).toFixed(2)} ج.م</strong>
+              {auditExpectedCash === null ? (
+                <div className="notice">
+                  <span>
+                    عُدّ النقدية الموجودة في الدرج واكتبها. لا يظهر المبلغ المتوقع أثناء الوردية.
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-accent-soft btn-sm btn-block"
-                  onClick={() => setAuditActualCash((auditExpectedCash || 0).toFixed(2))}
-                >
-                  تعبئة المبلغ المتوقع تلقائياً
-                </button>
-              </div>
+              ) : (
+                <div className="audit-summary">
+                  <dl className="kv">
+                    {auditRows
+                      .filter((r) => r.sign === '' || r.value > 0)
+                      .map((r) => (
+                        <div key={r.label} style={{ display: 'contents' }}>
+                          <dt>{r.label}</dt>
+                          <dd className={r.tone ? `text-${r.tone}` : ''}>
+                            {r.sign} {r.value.toFixed(2)} ج.م
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                  <div className="audit-expected">
+                    <span>صافي الكاش المتوقع بالدرج</span>
+                    <strong className="money">{(auditExpectedCash || 0).toFixed(2)} ج.م</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-accent-soft btn-sm btn-block"
+                    onClick={() => setAuditActualCash((auditExpectedCash || 0).toFixed(2))}
+                  >
+                    تعبئة المبلغ المتوقع تلقائياً
+                  </button>
+                </div>
+              )}
 
               <label className="field">
                 <span className="field-label">المبلغ النقدي الفعلي في الدرج حالياً (ج.م) *</span>

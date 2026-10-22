@@ -22,6 +22,10 @@ import {
 import { api } from '../../lib/api'
 import { EmptyState, SortableTh, StatCard, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import PaymentDestination from './PaymentDestination'
+import PaymentMethodSelect from './PaymentMethodSelect'
+import { fixedDestination } from '../../lib/destination'
+import { rowKeys } from '../../lib/keyboard'
 
 const displayNo = (id) => ((id - 1) % 10000) + 1
 const PERIODS = [
@@ -35,6 +39,8 @@ const PERIODS = [
  * Customers & accounts. Data and mutations come from useClientsManager.
  */
 export default function ClientsTab({
+  currentUser,
+  currentShift,
   highestPointsCustomer,
   bestCustomerOfMonth,
   monthlyClientsReport,
@@ -60,6 +66,8 @@ export default function ClientsTab({
   clientPeriodFilter,
   changeClientPeriodFilter
 }) {
+  const [repayTo, setRepayTo] = useState('')
+  const [repayMethod, setRepayMethod] = useState('cash')
   const [activeInvoice, setActiveInvoice] = useState(null)
   const [activeInvoiceItems, setActiveInvoiceItems] = useState([])
   const [clientsSortField, setClientsSortField] = useState('name')
@@ -163,7 +171,7 @@ export default function ClientsTab({
               <input
                 type="text"
                 className="input"
-                placeholder="ابحث بالاسم أو رقم الهاتف"
+                placeholder="ابحث بالاسم أو رقم الهاتف أو كود العميل"
                 value={clientsSearch}
                 onChange={(e) => {
                   setClientsSearch(e.target.value)
@@ -199,11 +207,16 @@ export default function ClientsTab({
                       <tr
                         key={cl.id}
                         className={c && c.id === cl.id ? 'is-selected' : ''}
-                        onClick={() => selectAdminClientForProfile(cl)}
-                        tabIndex={0}
-                        onKeyDown={(e) => e.key === 'Enter' && selectAdminClientForProfile(cl)}
+                        {...rowKeys(() => selectAdminClientForProfile(cl))}
                       >
-                        <td className="cell-strong">{cl.name}</td>
+                        <td className="cell-strong">
+                          {cl.name}
+                          {cl.code && (
+                            <div className="cell-muted">
+                              <span className="ltr-id">{cl.code}</span>
+                            </div>
+                          )}
+                        </td>
                         <td className="num cell-muted nowrap">
                           {cl.phone || '—'}
                           {cl.phone2 && <span className="cell-sub">{cl.phone2}</span>}
@@ -239,7 +252,9 @@ export default function ClientsTab({
                     .charAt(0)}
                 </span>
                 <div>
-                  <h2 className="card-title">{c.name}</h2>
+                  <h2 className="card-title">
+                    {c.name} {c.code && <span className="ltr-id cell-muted">{c.code}</span>}
+                  </h2>
                   <div className="card-subtitle">
                     عضو منذ <span className="ltr">{c.created_at || 'غير محدد'}</span>
                   </div>
@@ -333,12 +348,24 @@ export default function ClientsTab({
 
               {c.debt_balance > 0 && (
                 <form
+                  data-enter-step
                   className="repay-form"
                   onSubmit={(e) => {
                     e.preventDefault()
-                    handleRepayment()
+                    handleRepayment(
+                      fixedDestination(currentUser, currentShift) || repayTo,
+                      repayMethod
+                    )
                   }}
                 >
+                  <PaymentDestination
+                    currentUser={currentUser}
+                    currentShift={currentShift}
+                    value={repayTo}
+                    onChange={setRepayTo}
+                    name="client-repay-destination"
+                  />
+                  <PaymentMethodSelect value={repayMethod} onChange={setRepayMethod} />
                   <label className="field" style={{ flex: 1 }}>
                     <span className="field-label">سداد مديونية (ج.م)</span>
                     <input
@@ -536,7 +563,7 @@ export default function ClientsTab({
                     </thead>
                     <tbody>
                       {monthlyClientsReport.slice(0, 5).map((client, idx) => (
-                        <tr key={client.id} onClick={() => selectAdminClientForProfile(client)}>
+                        <tr key={client.id} {...rowKeys(() => selectAdminClientForProfile(client))}>
                           <td>
                             <span className={`rank rank-${idx + 1}`}>{idx + 1}</span>
                           </td>

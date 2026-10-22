@@ -1,6 +1,6 @@
 {
   "name": "heromarket-pos",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "HeroMarket POS – supermarket point of sale and management system (Electron + React)",
   "main": "./out/main/index.js",
   "author": "HeroMarket",

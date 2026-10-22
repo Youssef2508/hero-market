@@ -157,7 +157,17 @@ const DEFAULT_SCALE = {
   valueLength: 5,
   prefixes: { 20: 'weight', 21: 'weight', 25: 'weight', 22: 'price' },
   weightDivisor: 1000,
-  priceDivisor: 100
+  priceDivisor: 100,
+  // Last digit of a 13-digit label is an EAN-13 check digit (verified on the owner's label
+  // 2000001001257, owner feedback SCALE-01). 'none' for scales that print no check digit.
+  checkDigit: 'ean13'
+}
+
+/** EAN-13 check digit of the first 12 digits (GS1: weights 1,3,1,3… from the left). */
+function ean13CheckDigit(digits12) {
+  let sum = 0
+  for (let i = 0; i < 12; i++) sum += Number(digits12[i]) * (i % 2 ? 3 : 1)
+  return (10 - (sum % 10)) % 10
 }
 
 /** Validate scale-label settings (JSON text) and return the normalised JSON text. */
@@ -185,6 +195,12 @@ function normalizeScaleLabels(raw) {
     priceDivisor: int(v.priceDivisor, 1, 100000, 'مقسوم السعر'),
     prefixes: {}
   }
+  // Settings saved before SCALE-01 have no checkDigit: 13-digit labels are EAN-13.
+  const check = v.checkDigit ?? (out.length === 13 ? 'ean13' : 'none')
+  if (!['ean13', 'none'].includes(check)) throw badRequest('نوع رقم التحقق غير صالح.')
+  if (check === 'ean13' && out.length !== 13)
+    throw badRequest('رقم التحقق EAN-13 يحتاج ملصقاً من 13 رقماً.')
+  out.checkDigit = check
   if (out.codeStart + out.codeLength > out.length || out.valueStart + out.valueLength > out.length)
     throw badRequest('مواضع الكود أو القيمة تتجاوز طول الملصق.')
   for (const [p, kind] of Object.entries(v.prefixes || {})) {
@@ -195,20 +211,37 @@ function normalizeScaleLabels(raw) {
   return JSON.stringify(out)
 }
 
-/** Parse a scale label. Returns { code, kind: 'weight'|'price', value } or null. */
+/**
+ * Parse a scale label (owner feedback SCALE-01).
+ * Returns null when the code is not a scale label of these settings (wrong length, non-digits,
+ * prefix not configured, labels off), so normal barcodes are never read as labels. A code that
+ * IS a label of these settings but cannot be used returns { error: 'check_digit' | 'zero_value' }.
+ * Otherwise { prefix, code, fullCode, kind: 'weight'|'price', value }: `code` is the product-code
+ * digits (e.g. 00001) and `fullCode` the digits up to the end of the code (e.g. 2000001) – a
+ * product may be registered under either.
+ */
 function parseScaleLabel(settings, raw) {
   const s = settings || DEFAULT_SCALE
   const code = String(raw || '').trim()
   if (!s.enabled || code.length !== s.length || !/^\d+$/.test(code)) return null
   const prefix = Object.keys(s.prefixes).find((p) => code.startsWith(p))
   if (!prefix) return null
+  const check = s.checkDigit ?? (s.length === 13 ? 'ean13' : 'none')
+  if (check === 'ean13' && ean13CheckDigit(code.slice(0, 12)) !== Number(code[12]))
+    return { error: 'check_digit', prefix }
   const kind = s.prefixes[prefix]
   const productCode = code.substr(s.codeStart, s.codeLength)
   const value =
     Number(code.substr(s.valueStart, s.valueLength)) /
     (kind === 'weight' ? s.weightDivisor : s.priceDivisor)
-  if (!(value > 0)) return null
-  return { code: productCode, kind, value }
+  if (!(value > 0)) return { error: 'zero_value', prefix, kind }
+  return {
+    prefix,
+    code: productCode,
+    fullCode: code.slice(0, s.codeStart + s.codeLength),
+    kind,
+    value
+  }
 }
 
 module.exports = {
@@ -226,5 +259,6 @@ module.exports = {
   loadUnit,
   DEFAULT_SCALE,
   normalizeScaleLabels,
-  parseScaleLabel
+  parseScaleLabel,
+  ean13CheckDigit
 }

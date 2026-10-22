@@ -1,5 +1,7 @@
 # Trying HeroMarket 1.4.0 on your own laptop (before the shop)
 
+> **History (2026-10-22).** The shop visit is done: the shop runs HeroMarket 1.4.0 with its data, and the scanner, printer and workflows were tested there. There is no further visit. The owner upgrades to 1.5.0 himself: [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). This trial guide is for 1.4.0 and kept as history.
+
 Written for the shop owner. The trial changes nothing at the shop.
 
 ## What you receive

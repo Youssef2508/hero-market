@@ -1,30 +1,62 @@
 import { useState, useEffect } from 'react'
-import { LogOut, Calculator, Package, Smartphone, Wallet } from 'lucide-react'
+import { LogOut, Calculator } from 'lucide-react'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 
-const FLOAT_AMOUNT = 200 // عهدة الفكة الثابتة
-
 const m = (n) => formatMoney(n)
 
-function Row({ label, value, tone, sign = '' }) {
+// Both dialogs show the service's drawer figure (shifts.liveSummary → drawer), the same value that
+// shifts.close saves and prints (K-24 option 1). They never compute their own formula.
+// Users without shifts.view_expected get the blind dialog (owner feedback PAY-01): only the counted
+// amounts, nothing that reveals or lets them derive the expected ones; the service refuses those.
+
+const CASHLESS = [
+  { key: 'visa', label: 'فيزا (إجمالي ماكينة الفيزا)' },
+  { key: 'wallet', label: 'المحفظة' },
+  { key: 'instapay', label: 'انستا باي' }
+]
+
+/**
+ * Counted Visa, wallet and InstaPay amounts (every close sends them), and the total of the four
+ * counted amounts (owner, 2026-10-21, D-064). Only what the user typed is added: nothing expected.
+ */
+function CashlessCount({ values, onChange, cash }) {
+  const total = (Number(cash) || 0) + Object.values(countedOf(values)).reduce((a, b) => a + b, 0)
   return (
     <>
-      <dt>{label}</dt>
-      <dd className={tone ? `text-${tone}` : ''}>
-        {sign}
-        {sign ? ' ' : ''}
-        {value} ج.م
-      </dd>
+      <div className="two-col">
+        {CASHLESS.map((c) => (
+          <label className="field" key={c.key}>
+            <span className="field-label">{c.label} (ج.م)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input input-money"
+              value={values[c.key]}
+              placeholder="0.00"
+              onChange={(e) => onChange({ ...values, [c.key]: e.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="audit-expected">
+        <span>إجمالي المبالغ الفعلية (نقدي + فيزا + محفظة + انستا باي)</span>
+        <strong className="money">{m(total)} ج.م</strong>
+      </div>
     </>
   )
 }
 
-// Both dialogs show the service's drawer figure (shifts.liveSummary → drawer), the same value that
-// shifts.close saves and prints (K-24 option 1). They never compute their own formula.
+const emptyCount = { visa: '', wallet: '', instapay: '' }
+const countedOf = (v) => ({
+  visa: Number(v.visa) || 0,
+  wallet: Number(v.wallet) || 0,
+  instapay: Number(v.instapay) || 0
+})
 
-// Simple close dialog (cashier / manager).
-const SimpleCloseShiftModal = ({
+// Blind close: what the cashier counted, then confirm. The figures come after the close is saved.
+const BlindCloseShiftModal = ({
   closeShiftModal,
   currentShift,
   actualEndCash,
@@ -32,47 +64,137 @@ const SimpleCloseShiftModal = ({
   setCloseShiftModal,
   handleConfirmCloseShift
 }) => {
-  const [expected, setExpected] = useState(null)
-  const [withFloat, setWithFloat] = useState(true)
-  const [loading, setLoading] = useState(false)
+  const [count, setCount] = useState(emptyCount)
+  const [busy, setBusy] = useState(false)
+  if (!closeShiftModal) return null
+  return (
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
+      <form
+        data-enter-step
+        className="modal-content tone-warning"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="close-shift-blind-title"
+        style={{ width: 520 }}
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (busy) return
+          setBusy(true)
+          try {
+            await handleConfirmCloseShift({ actual: countedOf(count) })
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <div className="modal-header">
+          <span className="modal-icon" aria-hidden="true">
+            <LogOut size={24} />
+          </span>
+          <h2 id="close-shift-blind-title">تسوية وإنهاء الوردية</h2>
+          <p>
+            الوردية <span className="num">#{currentShift?.id}</span>
+          </p>
+        </div>
+        <div className="modal-body">
+          <div className="notice">
+            <Calculator size={16} aria-hidden="true" />
+            <span>
+              عُدّ النقدية الموجودة في الدرج كلها، واكتب إجمالي كل طريقة دفع كما هو في الماكينة أو
+              التطبيق. تظهر المقارنة والتقرير بعد تأكيد الإغلاق.
+            </span>
+          </div>
+          <label className="field">
+            <span className="field-label">النقدية الموجودة في الدرج (ج.م) *</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input input-lg input-money"
+              value={actualEndCash}
+              placeholder="0.00"
+              required
+              onChange={(e) => setActualEndCash(e.target.value)}
+              autoFocus
+            />
+          </label>
+          <CashlessCount values={count} onChange={setCount} cash={actualEndCash} />
+        </div>
+        <div className="modal-footer">
+          <button
+            data-modal-close
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setCount(emptyCount)
+              setCloseShiftModal(false)
+            }}
+          >
+            إلغاء
+          </button>
+          <button type="submit" className="btn btn-danger" style={{ flex: 1 }} disabled={busy}>
+            {busy ? 'جاري الإغلاق…' : 'تأكيد المبالغ وإنهاء الوردية'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+// Owner close (shifts.view_expected): the expected amount of each payment method, from the service
+// (shifts.liveSummary → methods, the formula shifts.close saves), next to the counted amounts.
+const METHOD_ROWS = [
+  ['cash', 'نقدي (الدرج)'],
+  ['visa', 'فيزا'],
+  ['wallet', 'محفظة'],
+  ['instapay', 'انستا باي']
+]
+
+const OwnerCloseShiftModal = ({
+  closeShiftModal,
+  currentShift,
+  actualEndCash,
+  setActualEndCash,
+  setCloseShiftModal,
+  handleConfirmCloseShift
+}) => {
+  const [methods, setMethods] = useState(null)
+  const [count, setCount] = useState(emptyCount)
 
   useEffect(() => {
-    if (!closeShiftModal || !currentShift) {
-      setExpected(null)
-      return
-    }
-    const fetchSimple = () => {
+    if (!closeShiftModal || !currentShift) return undefined
+    const load = () =>
       api('shifts.liveSummary', { shiftId: currentShift.id })
-        .then((r) => [r])
-        .then((rows) => {
-          if (rows && rows[0]) {
-            setExpected(Number(rows[0].drawer.expected))
-          }
-          setLoading(false)
-        })
-        .catch(() => setLoading(false))
-    }
-    fetchSimple()
-    const interval = setInterval(fetchSimple, 1000)
+        .then((r) => setMethods(r.methods))
+        .catch(() => setMethods(null))
+    load()
+    const interval = setInterval(load, 3000)
     return () => clearInterval(interval)
   }, [closeShiftModal, currentShift])
 
   if (!closeShiftModal) return null
-
-  const handover =
-    expected !== null ? Math.max(0, withFloat ? expected - FLOAT_AMOUNT : expected) : null
+  const fill = () => {
+    if (!methods) return
+    setActualEndCash(methods.cash.expected.toFixed(2))
+    setCount({
+      visa: methods.visa.expected.toFixed(2),
+      wallet: methods.wallet.expected.toFixed(2),
+      instapay: methods.instapay.expected.toFixed(2)
+    })
+  }
 
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <form
-        className="modal-content tone-warning"
+        data-enter-step
+        className="modal-content modal-scroll tone-warning"
         role="dialog"
         aria-modal="true"
         aria-labelledby="close-shift-title"
-        style={{ width: 480 }}
+        style={{ width: 560 }}
         onSubmit={(e) => {
           e.preventDefault()
-          handleConfirmCloseShift(null)
+          handleConfirmCloseShift({ actual: countedOf(count) })
         }}
       >
         <div className="modal-header">
@@ -89,65 +211,46 @@ const SimpleCloseShiftModal = ({
           <section className="till-section tone-success">
             <h3 className="till-section-title">
               <Calculator size={16} aria-hidden="true" />
-              حساب الدرج التلقائي
+              المتوقع حسب طريقة الدفع
             </h3>
-            {loading && expected === null ? (
-              <div className="loading-state">جاري الحساب...</div>
-            ) : expected !== null ? (
+            {methods ? (
               <>
                 <dl className="kv">
-                  <dt>المتوقع في الدرج</dt>
-                  <dd>{m(expected)} ج.م</dd>
-                  <dt>
-                    <label className="check-row">
-                      <input
-                        type="checkbox"
-                        checked={withFloat}
-                        onChange={(e) => setWithFloat(e.target.checked)}
-                      />
-                      عهدة الفكة (تبقى {FLOAT_AMOUNT} ج.م)
-                    </label>
-                  </dt>
-                  <dd className={withFloat ? 'text-warning' : 'cell-muted strike'}>
-                    − {m(FLOAT_AMOUNT)} ج.م
-                  </dd>
-                  <dt className="fw-bold">مبلغ التوريد للمالك</dt>
-                  <dd className="text-success" style={{ fontSize: 'var(--fs-xl)' }}>
-                    {handover !== null ? m(handover) : '—'} ج.م
-                  </dd>
+                  {METHOD_ROWS.map(([k, label]) => (
+                    <div key={k} style={{ display: 'contents' }}>
+                      <dt>{label}</dt>
+                      <dd>{m(methods[k].expected)} ج.م</dd>
+                    </div>
+                  ))}
                 </dl>
                 <button
                   type="button"
                   className="btn btn-accent-soft btn-sm btn-block"
-                  onClick={() => setActualEndCash(expected.toFixed(2))}
+                  onClick={fill}
                 >
-                  تعبئة المبلغ المتوقع ({m(expected)} ج.م)
+                  تعبئة المبالغ المتوقعة
                 </button>
               </>
             ) : (
-              <div className="cell-muted">تعذّر حساب المتوقع</div>
+              <div className="loading-state">جاري الحساب...</div>
             )}
           </section>
 
-          <div className="notice">
-            <Package size={16} aria-hidden="true" />
-            <span>
-              <strong>نظام التوريد:</strong> ضع مبلغ التوريد في ظرف وسلّمه للمالك. تبقى{' '}
-              <strong>{FLOAT_AMOUNT} ج.م</strong> فكة في الدرج للوردية التالية.
-            </span>
-          </div>
-
           <label className="field">
-            <span className="field-label">المبلغ الفعلي الموجود بالدرج حالياً (ج.م)</span>
+            <span className="field-label">النقدية الموجودة في الدرج (ج.م) *</span>
             <input
               type="number"
+              min="0"
+              step="0.01"
               className="input input-lg input-money"
               value={actualEndCash}
               placeholder="0.00"
+              required
               onChange={(e) => setActualEndCash(e.target.value)}
               autoFocus
             />
           </label>
+          <CashlessCount values={count} onChange={setCount} cash={actualEndCash} />
         </div>
 
         <div className="modal-footer">
@@ -168,295 +271,9 @@ const SimpleCloseShiftModal = ({
   )
 }
 
-// Advanced multi-till close dialog (admin), matched to the tills screen.
-const AdvancedCloseShiftModal = ({
-  closeShiftModal,
-  currentShift,
-  actualEndCash,
-  setActualEndCash,
-  setCloseShiftModal,
-  handleConfirmCloseShift
-}) => {
-  const [data, setData] = useState({
-    initialCash: 0,
-    expected: 0,
-    cashSales: 0,
-    nonCashSales: 0,
-    inflow: 0,
-    returnsOutflow: 0,
-    supplierOutflow: 0,
-    generalOutflow: 0,
-    momknDigitalImpact: 0,
-    momknCashImpact: 0,
-    momknCommission: 0,
-    mmDigitalImpact: 0,
-    mmCashImpact: 0,
-    mmCommission: 0,
-    vfcashDigitalImpact: 0,
-    instapayDigitalImpact: 0,
-    bankDigitalImpact: 0
-  })
-  const [withFloat, setWithFloat] = useState(false)
-  const [floatAmount, setFloatAmount] = useState('200')
-
-  useEffect(() => {
-    if (!closeShiftModal || !currentShift) {
-      return
-    }
-    const fetchLiveDetails = () => {
-      api('shifts.liveSummary', { shiftId: currentShift.id })
-        .then((r) => [r])
-        .then((rows) => {
-          if (rows && rows[0]) {
-            const r = rows[0]
-            const d = r.drawer
-            setData({
-              initialCash: Number(d.initialCash) || 0,
-              expected: Number(d.expected) || 0,
-              cashSales: Number(d.cashSales) || 0,
-              nonCashSales: Number(d.nonCashSales) || 0,
-              inflow: Number(d.inflow) || 0,
-              returnsOutflow: Number(d.returns) || 0,
-              supplierOutflow: Number(d.supplier) || 0,
-              generalOutflow: Number(d.expenses) || 0,
-              momknDigitalImpact: Number(r.momkn_digital_impact) || 0,
-              momknCashImpact: Number(r.momkn_cash_impact) || 0,
-              momknCommission: Number(r.momkn_commission) || 0,
-              mmDigitalImpact: Number(r.mm_digital_impact) || 0,
-              mmCashImpact: Number(r.mm_cash_impact) || 0,
-              mmCommission: Number(r.mm_commission) || 0,
-              vfcashDigitalImpact: Number(r.vfcash_digital_impact) || 0,
-              instapayDigitalImpact: Number(r.instapay_digital_impact) || 0,
-              bankDigitalImpact: Number(r.bank_digital_impact) || 0
-            })
-          }
-        })
-        .catch(() => {})
-    }
-    fetchLiveDetails()
-    const interval = setInterval(fetchLiveDetails, 1000)
-    return () => clearInterval(interval)
-  }, [closeShiftModal, currentShift])
-
-  if (!closeShiftModal) return null
-
-  const momknStartBalance = Number(currentShift?.momkn_start_balance) || 0
-  const momknStartCash = Number(currentShift?.momkn_start_cash) || 0
-  const vfcashStartBalance = Number(currentShift?.vfcash_start_balance) || 0
-  const vfcashStartCash = Number(currentShift?.vfcash_start_cash) || 0
-
-  const supermarketExpectedDrawer = data.expected
-
-  const momknExpectedDigital = momknStartBalance + data.momknDigitalImpact
-  const momknExpectedDrawer = momknStartCash + data.momknCashImpact
-
-  const vfcashExpectedDigital = vfcashStartBalance + data.vfcashDigitalImpact
-  const vfcashExpectedDrawer = vfcashStartCash + data.mmCashImpact
-
-  const grandTotalCash = supermarketExpectedDrawer + momknExpectedDrawer + vfcashExpectedDrawer
-
-  const parsedFloat = withFloat ? parseFloat(floatAmount) || 0 : 0
-  const handoverAmount = Math.max(0, supermarketExpectedDrawer - parsedFloat)
-
-  const handleConfirm = () => {
-    handleConfirmCloseShift({
-      supermarketExpected: supermarketExpectedDrawer,
-      momknExpected: momknExpectedDrawer,
-      vfcashExpected: vfcashExpectedDrawer,
-      grandTotalExpected: grandTotalCash,
-      handoverAmount: handoverAmount,
-      withFloat: withFloat,
-      floatAmount: parsedFloat
-    })
-  }
-
-  return (
-    <div className="modal-overlay" style={{ zIndex: 99999 }}>
-      <form
-        className="modal-content modal-wide modal-scroll tone-warning"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="close-shift-adv-title"
-        onSubmit={(e) => {
-          e.preventDefault()
-          handleConfirm()
-        }}
-      >
-        <div className="modal-header">
-          <span className="modal-icon" aria-hidden="true">
-            <LogOut size={24} />
-          </span>
-          <h2 id="close-shift-adv-title">تسوية وتقفيل الوردية — الخزائن الثلاث</h2>
-          <p>
-            الوردية رقم <strong className="num">#{currentShift?.id}</strong>
-          </p>
-        </div>
-
-        <div className="modal-body">
-          <section className="till-section tone-info">
-            <h3 className="till-section-title">
-              <Calculator size={16} aria-hidden="true" />
-              1. درج السوبر ماركت الرئيسي (نقدي)
-            </h3>
-            <dl className="kv">
-              <Row label="كاش الفكة الافتتاحي" value={m(data.initialCash)} />
-              <Row label="مبيعات نقدية" value={m(data.cashSales)} sign="+" tone="success" />
-              <Row
-                label="تحصيلات ومقدمات نقدية (داخل)"
-                value={m(data.inflow)}
-                sign="+"
-                tone="success"
-              />
-              <Row
-                label="مرتجعات مدفوعة من الدرج"
-                value={m(data.returnsOutflow)}
-                sign="−"
-                tone="danger"
-              />
-              <Row
-                label="مدفوعات وصرف لموردين"
-                value={m(data.supplierOutflow)}
-                sign="−"
-                tone="danger"
-              />
-              <Row
-                label="مصاريف ونثريات وإيجار"
-                value={m(data.generalOutflow)}
-                sign="−"
-                tone="danger"
-              />
-            </dl>
-            {data.nonCashSales > 0 && (
-              <p className="cell-muted">
-                مبيعات آجل وتحويلات ودفع جزئي ({m(data.nonCashSales)} ج.م) لا تدخل الدرج؛ مقدّم
-                الدفع الجزئي محسوب ضمن التحصيلات.
-              </p>
-            )}
-            <div className="audit-expected">
-              <span>صافي الكاش المتوقع بالدرج</span>
-              <strong className="money">{m(supermarketExpectedDrawer)} ج.م</strong>
-            </div>
-          </section>
-
-          <section className="till-section">
-            <h3 className="till-section-title">
-              <Package size={16} aria-hidden="true" />
-              حاسبة التوريد وترك الفكة للوردية القادمة
-            </h3>
-            <div className="row row-wrap">
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={withFloat}
-                  onChange={(e) => setWithFloat(e.target.checked)}
-                />
-                خصم عهدة فكة
-              </label>
-              <input
-                type="number"
-                className="input num"
-                style={{ width: 110, minHeight: 34 }}
-                value={floatAmount}
-                onChange={(e) => setFloatAmount(e.target.value)}
-                disabled={!withFloat}
-                aria-label="مبلغ عهدة الفكة"
-              />
-              <span className="cell-muted">ج.م</span>
-              <span className="spacer" />
-              <strong className="text-success">صافي التوريد للمالك: {m(handoverAmount)} ج.م</strong>
-            </div>
-          </section>
-
-          <div className="two-col">
-            <section className="till-section tone-info">
-              <h3 className="till-section-title">
-                <Smartphone size={16} aria-hidden="true" />
-                2. ماكينة ممكن
-              </h3>
-              <dl className="kv">
-                <Row label="الرصيد الرقمي المتوقع" value={m(momknExpectedDigital)} />
-                <Row label="كاش الدرج (التأثير)" value={m(data.momknCashImpact)} sign="+" />
-                <Row label="إجمالي كاش الدرج" value={m(momknExpectedDrawer)} />
-                <Row label="العمولات" value={m(data.momknCommission)} />
-              </dl>
-            </section>
-            <section className="till-section tone-success">
-              <h3 className="till-section-title">
-                <Wallet size={16} aria-hidden="true" />
-                3. المحافظ والتحويلات
-              </h3>
-              <dl className="kv">
-                <Row label="محفظة فودافون المتوقعة" value={m(vfcashExpectedDigital)} />
-                <Row label="انستا باي" value={m(data.instapayDigitalImpact)} />
-                <Row label="تحويل بنكي" value={m(data.bankDigitalImpact)} />
-                <Row label="كاش المحافظ (التأثير)" value={m(data.mmCashImpact)} sign="+" />
-                <Row label="إجمالي كاش الدرج" value={m(vfcashExpectedDrawer)} />
-                <Row label="العمولات" value={m(data.mmCommission)} />
-              </dl>
-            </section>
-          </div>
-
-          <section className="grand-total">
-            <div>
-              <span>إجمالي الكاش الورقي المتوقع (شامل الماكينات والخدمات)</span>
-              <strong className="money">{m(grandTotalCash)} ج.م</strong>
-            </div>
-            <div className="row">
-              <button
-                type="button"
-                className="btn btn-sm btn-secondary"
-                onClick={() => setActualEndCash(supermarketExpectedDrawer.toFixed(2))}
-              >
-                تطبيق السوبر ماركت فقط ({m(supermarketExpectedDrawer)})
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-accent-soft"
-                onClick={() => setActualEndCash(grandTotalCash.toFixed(2))}
-              >
-                تطبيق الكاش الإجمالي ({m(grandTotalCash)})
-              </button>
-            </div>
-          </section>
-
-          <label className="field">
-            <span className="field-label">
-              المبلغ الفعلي المسلَّم من الكاشير بالدرج حالياً (ج.م) *
-            </span>
-            <input
-              type="number"
-              className="input input-lg input-money"
-              value={actualEndCash}
-              onChange={(e) => setActualEndCash(e.target.value)}
-              placeholder="0.00"
-              autoFocus
-            />
-          </label>
-        </div>
-
-        <div className="modal-footer">
-          <button
-            data-modal-close
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setCloseShiftModal(false)}
-          >
-            إلغاء
-          </button>
-          <button type="submit" className="btn btn-danger" style={{ flex: 1 }}>
-            تأكيد وتقفيل الوردية
-          </button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
 export default function CloseShiftModal(props) {
   const { currentUser } = props
-  // Multi-till close (drawer + Momkn + wallets): the permission the service checks for multi-till data.
-  if (can(currentUser, 'shifts.multi_till')) {
-    return <AdvancedCloseShiftModal {...props} />
-  }
-  return <SimpleCloseShiftModal {...props} />
+  // Expected amounts are the owner's until the close is confirmed (PAY-01).
+  if (!can(currentUser, 'shifts.view_expected')) return <BlindCloseShiftModal {...props} />
+  return <OwnerCloseShiftModal {...props} />
 }

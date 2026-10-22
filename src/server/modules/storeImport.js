@@ -10,11 +10,16 @@
 // line "رصيد افتتاحي". A product without a barcode gets an internal code (HM000001…), found by
 // name or category at the till. Existing records are never changed: a barcode or phone number
 // already in the store is reported, not overwritten.
+//
+// Template version 2 (D-067): a product row may carry one package (name, units per package, its
+// barcode, selling, wholesale and purchase prices), checked by the same rules as the units
+// window (whole factor for counted products, its own selling price, unique barcode).
+// Permission data.import (ROLE-01), separate from data.export.
 const path = require('path')
 const { pathToFileURL } = require('url')
 const { badRequest } = require('../errors')
 const { postMovement } = require('../inventory/stock')
-const { checkStockValue } = require('../inventory/units')
+const { checkStockValue, validateFactor } = require('../inventory/units')
 
 const shared = {}
 async function lib(name) {
@@ -35,7 +40,7 @@ const list = (max) => ({ type: 'array', maxItems: max, items: rowSchema })
 module.exports = function storeImportModule(app) {
   app.operation({
     name: 'storeImport.apply',
-    permission: ['products.manage', 'customers.manage', 'suppliers.manage'],
+    permission: 'data.import',
     bodyLimit: 64 * 1024 * 1024,
     schema: {
       type: 'object',
@@ -121,10 +126,71 @@ module.exports = function storeImportModule(app) {
               fail(P, p.row, `الكمية (${stock}): ${e.message}`)
             }
           }
+          // The package, all fields optional together (version 2).
+          const packName = text(p.pack_name, 40)
+          const packBarcode = text(p.pack_barcode, 64)
+          const packAny =
+            packName ||
+            packBarcode ||
+            [p.pack_factor, p.pack_price, p.pack_wholesale, p.pack_cost].some(
+              (v) => num(v) !== null
+            )
+          let pack = null
+          if (packAny) {
+            if (!packName) fail(P, p.row, 'اكتب اسم العبوة (أو امسح بيانات العبوة).')
+            else if (looseText(packName) === looseText(p.unit))
+              fail(P, p.row, `اسم العبوة "${packName}" هو نفس وحدة الصنف.`)
+            let factor = null
+            if (num(p.pack_factor) === null) fail(P, p.row, 'عدد الوحدات في العبوة مطلوب.')
+            else if (kind) {
+              try {
+                factor = validateFactor(
+                  { key: kind.key, decimals: Number(kind.decimals) },
+                  num(p.pack_factor)
+                )
+                if (factor === 1) {
+                  fail(P, p.row, 'عدد الوحدات في العبوة يجب أن يكون أكبر من 1.')
+                  factor = null
+                }
+              } catch (e) {
+                fail(P, p.row, e.message)
+              }
+            }
+            const price = num(p.pack_price)
+            if (price === null) fail(P, p.row, 'سعر بيع العبوة مطلوب (سعر العبوة كاملة).')
+            for (const [k, label] of [
+              ['pack_price', 'سعر بيع العبوة'],
+              ['pack_wholesale', 'سعر جملة العبوة'],
+              ['pack_cost', 'سعر شراء العبوة']
+            ])
+              if (num(p[k]) !== null && !(num(p[k]) >= 0))
+                fail(P, p.row, `${label} لا يكون بالسالب.`)
+            if (packBarcode) {
+              if (/\s/.test(packBarcode))
+                fail(P, p.row, `باركود العبوة (${packBarcode}) به مسافات.`)
+              else if (packBarcode === barcode) fail(P, p.row, 'باركود العبوة هو نفس باركود الصنف.')
+              else if (codes.has(packBarcode))
+                fail(
+                  P,
+                  p.row,
+                  `الباركود (${packBarcode}) مكرر في الملف (الصف ${codes.get(packBarcode)}).`
+                )
+              else codes.set(packBarcode, p.row)
+            }
+            pack = {
+              name: packName,
+              factor,
+              barcode: packBarcode,
+              price,
+              wholesale: num(p.pack_wholesale),
+              cost: num(p.pack_cost)
+            }
+          }
           cleanProducts.push({
             row: p.row,
             barcode,
             name,
+            pack,
             retail: retail ?? 0,
             cost: num(p.cost_price) ?? 0,
             wholesale: num(p.wholesale_price) ?? 0,
@@ -203,6 +269,7 @@ module.exports = function storeImportModule(app) {
         const summary = {
           products: cleanProducts.length,
           withoutBarcode: cleanProducts.filter((p) => !p.barcode).length,
+          packages: cleanProducts.filter((p) => p.pack).length,
           stockLines: cleanProducts.filter((p) => p.stock).length,
           newCategories: [
             ...new Set(
@@ -279,6 +346,20 @@ module.exports = function storeImportModule(app) {
               cat.name
             ]
           )
+          if (p.pack) {
+            const unitId = (
+              await db.query(
+                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable, purchase_cost)
+                 VALUES ($1, $2, $3, $4, $5, true, true, $6) RETURNING id`,
+                [barcode, p.pack.name, p.pack.factor, p.pack.price, p.pack.wholesale, p.pack.cost]
+              )
+            ).rows[0].id
+            if (p.pack.barcode)
+              await db.query(
+                'INSERT INTO product_barcodes (barcode, product_barcode, unit_id) VALUES ($1, $2, $3)',
+                [p.pack.barcode, barcode, unitId]
+              )
+          }
           if (p.stock)
             await postMovement(db, ctx, {
               barcode,
@@ -334,6 +415,75 @@ module.exports = function storeImportModule(app) {
         )
         return { ok: true, errors: [], summary, written: true }
       })
+    }
+  })
+
+  // Export in the import template's layout (DATA-01, D-067): active products with their stock,
+  // current cost and one package; customers and suppliers with their current balances. Read
+  // only, in one snapshot; the screen writes the workbook and checks it by reading it back.
+  // Not exported (see .docs/DATA_IMPORT_EXPORT.md): history (sales, purchases, shifts, money),
+  // users and passwords, settings, inactive products, a product's extra barcodes and any package
+  // beyond its largest one – the backup keeps all of these. The counts of what was left out are
+  // returned so the screen can say so.
+  app.operation({
+    name: 'storeExport.data',
+    permission: 'data.export',
+    handler: async (ctx) => {
+      const { TEMPLATE_VERSION } = await lib('storeImport')
+      const client = await ctx.pool.connect()
+      try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        const q = async (sql) => (await client.query(sql)).rows
+        const products = await q(
+          `SELECT p.barcode, p.name, p.retail_price::float8 AS retail_price, p.cost_price::float8 AS cost_price,
+                  p.wholesale_price::float8 AS wholesale_price, p.stock_qty::float8 AS stock_qty, p.unit,
+                  COALESCE(k.name, p.unit_kind) AS unit_kind, COALESCE(c.name, p.category, '') AS category,
+                  p.reorder_limit::float8 AS reorder_limit,
+                  u.name AS pack_name, u.factor::float8 AS pack_factor,
+                  (SELECT MIN(b.barcode) FROM product_barcodes b WHERE b.unit_id = u.id) AS pack_barcode,
+                  u.retail_price::float8 AS pack_price, u.wholesale_price::float8 AS pack_wholesale,
+                  u.purchase_cost::float8 AS pack_cost
+             FROM products p
+             LEFT JOIN measure_kinds k ON k.key = p.unit_kind
+             LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN LATERAL (SELECT * FROM product_units x WHERE x.product_barcode = p.barcode AND x.is_active
+                                 ORDER BY x.factor DESC, x.id LIMIT 1) u ON true
+            WHERE p.is_active IS NOT FALSE
+            ORDER BY p.barcode`
+        )
+        const customers = await q(
+          `SELECT c.name, c.phone, c.phone2,
+                  COALESCE((SELECT a.address FROM client_addresses a WHERE a.client_id = c.id AND a.is_default), c.address, '') AS address,
+                  c.debt_balance::float8 AS balance
+             FROM clients c ORDER BY c.id`
+        )
+        const suppliers = await q(
+          `SELECT name, phone, address, contact_person, debt_balance::float8 AS balance
+             FROM suppliers ORDER BY id`
+        )
+        const left = (
+          await q(
+            `SELECT (SELECT COUNT(*) FROM products WHERE is_active IS FALSE)::int AS inactive_products,
+                    (SELECT COUNT(*) FROM (SELECT product_barcode FROM product_units WHERE is_active
+                                            GROUP BY product_barcode HAVING COUNT(*) > 1) x)::int AS products_with_more_packages,
+                    (SELECT COUNT(*) FROM product_barcodes WHERE unit_id IS NULL)::int AS extra_barcodes`
+          )
+        )[0]
+        const stamp = (await q("SELECT to_char(LOCALTIMESTAMP, 'YYYY-MM-DD HH24:MI') AS t"))[0].t
+        await client.query('COMMIT')
+        await ctx.audit(
+          ctx.pool,
+          'data_export',
+          `تصدير البيانات: ${products.length} صنف، ${customers.length} عميل، ${suppliers.length} مورد`,
+          { products: products.length, customers: customers.length, suppliers: suppliers.length }
+        )
+        return { version: TEMPLATE_VERSION, createdAt: stamp, products, customers, suppliers, left }
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw e
+      } finally {
+        client.release()
+      }
     }
   })
 }

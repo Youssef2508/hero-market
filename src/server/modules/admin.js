@@ -8,7 +8,7 @@
 //  - every change is audited; permission changes take effect on the next request (no caching).
 const { badRequest, conflict, forbidden, notFound } = require('../errors')
 const { PERMISSIONS, KEYS } = require('../auth/permissions')
-const { hashPassword, newTemporaryPassword } = require('../auth/password')
+const { hashPassword, newTemporaryPassword, verifyPassword } = require('../auth/password')
 const { activeSuperAdmins, permissionsForRole } = require('../auth/access')
 const { helpers: authHelpers } = require('./auth')
 
@@ -120,6 +120,8 @@ module.exports = function adminModule(app) {
         // Replace the user's password with a temporary one (forgotten password, new staff member).
         resetPassword: { type: 'boolean' },
         password: { type: 'string', maxLength: 128 },
+        // The administrator's own password, required for a reset (USER-02, D-076).
+        actorPassword: { type: 'string', maxLength: 128 },
         roleId: { type: 'integer' },
         isActive: { type: 'boolean' }
       }
@@ -164,11 +166,23 @@ module.exports = function adminModule(app) {
         let temporary = null
         if (u.resetPassword) {
           if (isSelf) throw forbidden('لتغيير كلمة مرورك استخدم "تغيير كلمة المرور".')
+          // Re-authentication: whoever resets another user's password types their own first.
+          const me = (
+            await db.query('SELECT password_scrypt FROM users WHERE id = $1', [ctx.user.id])
+          ).rows[0]
+          if (!me?.password_scrypt || !verifyPassword(u.actorPassword || '', me.password_scrypt)) {
+            await ctx.audit(
+              ctx.pool,
+              'password_reset_refused',
+              `رفض إعادة تعيين كلمة مرور "${before.username}": كلمة مرور المدير غير صحيحة`
+            )
+            throw forbidden('كلمة مرورك غير صحيحة؛ لم تتم إعادة التعيين.')
+          }
           temporary = temporaryPassword(u.password, username)
           // The old password and any PIN stop working; the user's sessions end.
           await db.query(
             `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
-                    password_hash = NULL WHERE id = $2`,
+                    password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours' WHERE id = $2`,
             [hashPassword(temporary), u.id]
           )
           await db.query(
@@ -250,7 +264,8 @@ module.exports = function adminModule(app) {
   app.operation({
     name: 'roles.catalog',
     anyPermission: ['roles.manage', 'users.manage'],
-    handler: async () => PERMISSIONS
+    // Hidden permissions (unused Momkn and wallet tills, D-078) are not offered in the roles screen.
+    handler: async () => PERMISSIONS.filter((p) => !p.hidden)
   })
 
   app.operation({
@@ -410,6 +425,10 @@ module.exports = function adminModule(app) {
     handler: async (ctx) =>
       ctx.tx(async (db) => {
         const tables = [
+          'sale_payment_corrections',
+          'supplier_pending_invoices',
+          'supplier_purchase_return_items',
+          'supplier_purchase_returns',
           'supplier_purchase_items',
           'sale_items',
           'sales',
@@ -425,13 +444,15 @@ module.exports = function adminModule(app) {
           'shift_audits',
           'momkn_transactions',
           'mobile_money_transactions',
+          'shift_closings',
+          'treasury_ledger',
           'shifts'
         ]
         // Clears closed shifts with their money movements on purpose (migration 0011).
         await db.query("SELECT set_config('hm.bulk_load', 'on', true)")
         for (const t of tables) await db.query(`DELETE FROM ${t}`)
         // Same as clearing sqlite_sequence: ids start again at 1.
-        for (const t of tables)
+        for (const t of tables.filter((x) => x !== 'shift_closings'))
           await db.query(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), 1, false)`)
         // Stock history restarts too: negative stock becomes 0 (legacy behaviour) and the remaining
         // stock becomes a fresh opening balance.

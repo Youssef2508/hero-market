@@ -43,11 +43,12 @@ export function useDamagedGoodsManager({
       await api('damaged.create', {
         barcode: trimmedBarcode,
         quantity: qtyVal,
+        unitId: newDamagedForm.unitId ?? null,
         reason: newDamagedForm.reason,
         currentShiftId: currentShift ? currentShift.id : null
       })
       setShowAddDamagedModal(false)
-      setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية' })
+      setNewDamagedForm({ barcode: '', quantity: '', reason: 'انتهاء صلاحية', unitId: null })
 
       await fetchDamagedGoods()
       if (fetchAdminData) await fetchAdminData()

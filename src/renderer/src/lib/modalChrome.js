@@ -11,9 +11,126 @@
 //
 // Windows without a marked button stay as they are: they cannot be dismissed this way (for example
 // opening a shift when it is required, or the recovery notice).
+//
+// Keyboard (owner, 2026-10-21, D-065): Esc closes the top window the same way (unless the window
+// used Esc itself, for example to close a list inside it); Tab and Shift+Tab stay inside the top
+// window; a window that opens takes the focus (its first field, else its cancel button, never a
+// confirm button) and gives it back to where it was when it closes. The arrow keys move between
+// its buttons (owner, 2026-10-22).
 
 const dirty = new WeakSet()
 let asking = false
+const openers = new Map()
+const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
+let lastOutside = null
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),' +
+  'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+
+function topOverlay() {
+  let top = null
+  let topZ = -Infinity
+  for (const o of document.querySelectorAll('.modal-overlay')) {
+    if (!o.getClientRects().length) continue
+    const z = Number(getComputedStyle(o).zIndex) || 0
+    if (z >= topZ) [top, topZ] = [o, z]
+  }
+  return top
+}
+
+function focusablesIn(overlay) {
+  return [...overlay.querySelectorAll(FOCUSABLE)].filter(
+    (el) => el.getClientRects().length && el.closest('.modal-overlay') === overlay
+  )
+}
+
+function focusInto(overlay) {
+  if (!overlay.isConnected || overlay.contains(document.activeElement)) return
+  const all = focusablesIn(overlay)
+  const target =
+    all.find((el) => el.matches('input:not([readonly]),select,textarea')) ||
+    all.find((el) => el.matches('[data-modal-close]')) ||
+    all.find((el) => !el.matches('.modal-close')) ||
+    all[0]
+  target?.focus()
+}
+
+function trackFocus() {
+  for (const o of document.querySelectorAll('.modal-overlay:not([data-modal-chrome])')) {
+    if (openers.has(o)) continue
+    // A field with autoFocus already took the focus inside: the opener is the last one outside.
+    const from = o.contains(document.activeElement) ? lastOutside : document.activeElement
+    openers.set(o, from && !o.contains(from) ? from : null)
+    // After React's own autoFocus, which wins.
+    requestAnimationFrame(() => focusInto(o))
+  }
+  for (const [o, from] of openers) {
+    if (o.isConnected) continue
+    openers.delete(o)
+    const lost = !document.activeElement || document.activeElement === document.body
+    if (lost && from?.isConnected) from.focus()
+  }
+}
+
+function onKeyDown(e) {
+  if (asking) return
+  if (e.key === 'Tab' && !e.ctrlKey && !e.altKey) {
+    const top = topOverlay()
+    if (!top) return
+    const list = focusablesIn(top)
+    if (!list.length) return e.preventDefault()
+    const i = list.indexOf(document.activeElement)
+    const wrapTo =
+      i === -1
+        ? e.shiftKey
+          ? list.at(-1)
+          : list[0]
+        : !e.shiftKey && i === list.length - 1
+          ? list[0]
+          : e.shiftKey && i === 0
+            ? list.at(-1)
+            : null
+    if (wrapTo) {
+      e.preventDefault()
+      wrapTo.focus()
+    }
+  } else if (ARROWS.has(e.key) && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+    // Arrows move between a window's buttons and checkboxes (owner, 2026-10-22). Text and number
+    // fields, lists, dropdowns, radio groups and tabs keep their own arrows.
+    const top = topOverlay()
+    const el = document.activeElement
+    if (!top || !el || !top.contains(el) || e.defaultPrevented) return
+    const movable =
+      el.matches('button, a[href], input[type=checkbox]') &&
+      !el.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
+    if (!movable) return
+    // Only among buttons and checkboxes: an arrow never lands in a text field (which keeps its own).
+    const list = focusablesIn(top).filter(
+      (x) =>
+        !x.matches('.modal-close') &&
+        x.matches('button, a[href], input[type=checkbox]') &&
+        !x.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
+    )
+    const i = list.indexOf(el)
+    if (i === -1) return
+    // Right to left: ← and ↓ go forward, → and ↑ go back.
+    const rtl = getComputedStyle(top).direction === 'rtl'
+    const forward = e.key === 'ArrowDown' || (rtl ? e.key === 'ArrowLeft' : e.key === 'ArrowRight')
+    const next = list[(i + (forward ? 1 : -1) + list.length) % list.length]
+    if (next && next !== el) {
+      e.preventDefault()
+      next.focus()
+    }
+  } else if (e.key === 'Escape') {
+    const top = topOverlay()
+    if (!top || top.matches('[data-modal-chrome]')) return
+    // After the window's own handlers: a window (or a list in it) that used Esc keeps it.
+    setTimeout(() => {
+      if (!e.defaultPrevented && top.isConnected && topOverlay() === top) requestClose(top)
+    }, 0)
+  }
+}
 
 function closerOf(overlay) {
   const content = overlay.querySelector(':scope > .modal-content')
@@ -112,10 +229,20 @@ export function installModalChrome() {
   if (window.__heroModalChrome) return
   window.__heroModalChrome = true
 
-  const scan = () =>
+  const scan = () => {
     document.querySelectorAll('.modal-overlay:not([data-modal-chrome])').forEach(addCloseButton)
+    trackFocus()
+  }
   new MutationObserver(scan).observe(document.body, { childList: true, subtree: true })
   scan()
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      if (e.target instanceof Element && !e.target.closest('.modal-overlay')) lastOutside = e.target
+    },
+    true
+  )
 
   document.addEventListener('input', markDirty, true)
   document.addEventListener('change', markDirty, true)

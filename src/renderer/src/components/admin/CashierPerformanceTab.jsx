@@ -22,6 +22,7 @@ import { VBarChart } from '../ui/charts'
 import { CHART_COLORS } from '../ui/chartColors'
 import { formatMoney } from '../../lib/utils'
 import { formatHour } from '../../lib/time'
+import { rowKeys } from '../../lib/keyboard'
 
 const fmt = (n) => formatMoney(n)
 const fmtI = (n) => Math.round(n || 0).toLocaleString('en-US')
@@ -238,7 +239,9 @@ function DrilldownView({ cashier, drilldown, loading, onBack }) {
               <tbody>
                 {drilldown.shifts.map((sh) => (
                   <tr key={sh.shift_id}>
-                    <td className="num cell-muted">#{sh.shift_id}</td>
+                    <td className="cell-muted">
+                      <span className="ltr-id">#{sh.shift_id}</span>
+                    </td>
                     <td className="num nowrap cell-muted">{sh.start_time?.slice(0, 16) || '—'}</td>
                     <td className="num nowrap cell-muted">{sh.end_time?.slice(0, 16) || '—'}</td>
                     <td className="num">{sh.duration ? `${sh.duration}س` : '—'}</td>
@@ -531,7 +534,7 @@ export default function CashierPerformanceTab() {
                 </thead>
                 <tbody>
                   {cashiers.map((c, i) => (
-                    <tr key={c.user_id} onClick={() => handleSelectCashier(c)}>
+                    <tr key={c.user_id} {...rowKeys(() => handleSelectCashier(c))}>
                       <td>
                         <span className={`rank rank-${i + 1}`}>{i + 1}</span>
                       </td>

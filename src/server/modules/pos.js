@@ -25,8 +25,9 @@ const { readAll } = require('./settings')
 const { priceCart, activeRules } = require('../pricing/discounts')
 const { ADDRESSES } = require('./customers').helpers
 
-const PAYMENT_TYPES = ['نقدي', 'فودافون كاش', 'انستا باي', 'آجل', 'دفع جزئي']
-const CREDIT_TYPES = ['آجل', 'دفع جزئي']
+// Cash, Visa, wallet, InstaPay; on account (D-061). The list and its mapping: money/methods.js.
+const { PAYMENT_TYPES, CREDIT_TYPES, METHODS, LABELS, storedType } = require('../money/methods')
+const { addMovement } = require('../money/shiftLedger')
 const CASH_TENDER_TYPES = ['نقدي', 'دفع جزئي']
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
@@ -37,6 +38,38 @@ async function summarizeSale(db, saleId) {
     [saleId]
   )
   return rows[0]
+}
+
+// Manual fixed invoice discount (owner decision 2026-10-21, D-057).
+const manualSchema = {
+  type: ['object', 'null'],
+  properties: {
+    amount: { type: 'number', minimum: 0 },
+    reason: { type: 'string', maxLength: 200 }
+  }
+}
+
+/**
+ * The manual discount of a request, checked before any pricing: the permission (enforced here, a
+ * refusal is logged) and whole piastres. No reason is asked (owner, 2026-10-21, D-063); one may
+ * still be sent. Returns null when there is none.
+ */
+async function manualDiscountOf(ctx, m) {
+  const amount = m ? Number(m.amount) || 0 : 0
+  if (!(amount > 0)) return null
+  if (!ctx.can('pos.manual_discount')) {
+    await ctx.audit(
+      ctx.pool,
+      'manual_discount_refused',
+      `محاولة خصم يدوي ${amount.toFixed(2)} ج.م بدون صلاحية`,
+      { amount }
+    )
+    throw forbidden('الخصم اليدوي يتطلب صلاحية "خصم يدوي على الفاتورة".')
+  }
+  if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6)
+    throw badRequest('الخصم اليدوي بالقروش الكاملة (رقمان بعد العلامة على الأكثر).')
+  const reason = String(m.reason || '').trim() || null
+  return { amount: round2(amount), reason }
 }
 
 /**
@@ -151,13 +184,40 @@ module.exports = function posModule(app) {
           cfg = null
         }
         scale = parseScaleLabel(cfg, raw)
+        // A code shaped like a label of these settings is explained, never silently "not found".
+        if (scale && scale.error === 'check_digit')
+          throw badRequest(
+            `ملصق الميزان (${raw}) غير صالح: رقم التحقق خاطئ. أعد مسحه أو اكتبه بدقة.`,
+            { scale: 'check_digit' }
+          )
+        if (scale && scale.error === 'zero_value')
+          throw badRequest(
+            `ملصق الميزان (${raw}) يحمل ${scale.kind === 'weight' ? 'وزناً' : 'سعراً'} صفراً.`,
+            {
+              scale: 'zero_value'
+            }
+          )
         if (scale) {
           const c = scale.code
+          // The product may be registered under the code digits (00001 / 1) or under the label's
+          // digits up to the code (2000001, as the owner registers them).
+          const candidates = [...new Set([scale.fullCode, c, c.replace(/^0+/, '')].filter(Boolean))]
           product = (
-            await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1', [
-              [...new Set([c, c.replace(/^0+/, '')].filter(Boolean))]
-            ])
+            await db.query(
+              'SELECT * FROM products WHERE barcode = ANY($1::text[]) ORDER BY array_position($1::text[], barcode) LIMIT 1',
+              [candidates]
+            )
           ).rows[0]
+          if (!product)
+            throw notFound(
+              `لا يوجد صنف مسجل بكود الميزان ${scale.fullCode} (${c}). سجّل الصنف بهذا الكود أولاً.`,
+              { scale: 'unknown_product', code: scale.fullCode }
+            )
+          if (scale.kind === 'weight' && (await kindRule(db, product.unit_kind)).decimals === 0)
+            throw badRequest(
+              `الصنف "${product.name}" يباع بالعدد، والملصق يحمل وزناً. عدّل طريقة قياس الصنف إلى "بالوزن".`,
+              { scale: 'kind_mismatch' }
+            )
           if (product) {
             unit = baseUnit(product)
             const price = unitPrice(product, unit)
@@ -264,8 +324,10 @@ module.exports = function posModule(app) {
         await ctx.pool.query(
           `SELECT c.*, ${ADDRESSES} AS addresses FROM clients c
             WHERE c.name ILIKE '%' || $1 || '%' ESCAPE '\\' OR c.phone ILIKE '%' || $1 || '%' ESCAPE '\\'
-               OR c.phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' ORDER BY c.name, c.id LIMIT 8`,
-          [t]
+               OR c.phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' OR c.code ILIKE '%' || $1 || '%' ESCAPE '\\'
+            ORDER BY (c.code = upper(trim($2))) DESC, c.name, c.id LIMIT 8`,
+          // CUST-01: by name, phone or customer code; the exact code first.
+          [t, term]
         )
       ).rows
     }
@@ -358,10 +420,12 @@ module.exports = function posModule(app) {
               unitPrice: { type: 'number' }
             }
           }
-        }
+        },
+        manualDiscount: manualSchema
       }
     },
     handler: async (ctx, b) => {
+      const manual = await manualDiscountOf(ctx, b.manualDiscount)
       if (!b.items.length)
         return { lines: [], subTotal: 0, discount: 0, afterDiscount: 0, applied: [] }
       const barcodes = [...new Set(b.items.map((i) => i.barcode))]
@@ -373,7 +437,8 @@ module.exports = function posModule(app) {
       const lines = await buildLines(db, b.items, products)
       const pricing = priceCart(
         lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
-        await activeRules(db, barcodes)
+        await activeRules(db, barcodes),
+        { manualAmount: manual ? manual.amount : 0 }
       )
       return {
         lines: pricing.lines.map((pl, i) => ({
@@ -387,6 +452,8 @@ module.exports = function posModule(app) {
         })),
         subTotal: pricing.subTotal,
         discount: pricing.discount,
+        manualDiscount: pricing.manualDiscount,
+        afterRules: pricing.afterRules,
         afterDiscount: pricing.afterDiscount,
         applied: pricing.applied
       }
@@ -418,13 +485,17 @@ module.exports = function posModule(app) {
             }
           }
         },
-        // Manual discounts no longer exist (owner, 2026-10-15): only 0 is accepted.
+        // The old free "discount" field stays refused (D-044); a manual discount is the separate,
+        // permission-checked manualDiscount (D-057).
         discount: { type: 'number', minimum: 0 },
+        manualDiscount: manualSchema,
         // The total the till showed (after automatic discounts and applied credit). If the
         // service computes another total (a rule or price changed), the sale is refused.
         expectedTotal: { type: 'number' },
         paymentType: { type: 'string', enum: PAYMENT_TYPES },
         paidAmount: { type: ['number', 'null'], minimum: 0 },
+        // دفع جزئي (D-064): how the part paid at once was paid; cash unless stated.
+        upfrontMethod: { type: 'string', enum: METHODS },
         appliedCredit: { type: 'number', minimum: 0 },
         depositChange: { type: 'number', minimum: 0 },
         isDelivery: { type: 'boolean' },
@@ -441,13 +512,16 @@ module.exports = function posModule(app) {
         }
       }
     },
-    handler: async (ctx, b) => {
+    handler: async (ctx, request) => {
+      // A till queued before 1.5.0 may still send فودافون كاش: it is stored as محفظة.
+      const b = { ...request, paymentType: storedType(request.paymentType) }
       const credit = Number(b.appliedCredit || 0)
       if (CREDIT_TYPES.includes(b.paymentType) && !ctx.can('pos.credit'))
         throw forbidden('البيع الآجل يتطلب صلاحية.')
       // No operator can grant a discount: discounts come only from the administrator's rules.
       if (Number(b.discount || 0) > 0)
         throw forbidden('الخصومات تُطبَّق تلقائياً حسب قواعد الإدارة؛ لا يمكن إدخال خصم يدوي.')
+      const manual = await manualDiscountOf(ctx, b.manualDiscount)
       // One line per product unit (a carton and loose packets of one product are two lines).
       const lineKeys = b.items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)
       if (new Set(lineKeys).size !== lineKeys.length) throw badRequest('الصنف مكرر في الفاتورة.')
@@ -482,10 +556,12 @@ module.exports = function posModule(app) {
         const products = new Map(prodRows.map((p) => [p.barcode, p]))
         const lines = await buildLines(db, b.items, products)
         const subTotal = round2(lines.reduce((s, l) => s + l.total, 0))
-        // Automatic discounts, evaluated here from the rules in force (never from the till).
+        // Automatic discounts, evaluated here from the rules in force (never from the till), then
+        // the manual amount (D-057).
         const pricing = priceCart(
           lines.map((l, i) => ({ key: i, barcode: l.barcode, gross: l.total, baseQty: l.baseQty })),
-          await activeRules(db, barcodes)
+          await activeRules(db, barcodes),
+          { manualAmount: manual ? manual.amount : 0 }
         )
         const discount = pricing.discount
 
@@ -687,8 +763,9 @@ module.exports = function posModule(app) {
               : 0
         const sale = (
           await db.query(
-            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address)
-             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13) RETURNING id, timestamp`,
+            `INSERT INTO sales (shift_id, user_id, timestamp, total_amount, original_amount, discount, payment_type, client_name, client_id, client_ref, pricing_version, on_account_open, credit_open, is_delivery, delivery_address, manual_discount, client_code)
+             VALUES ($1, $2, LOCALTIMESTAMP(0), $3, $4, $5, $6, $7, $8, $9, 2, $10, $11, $12, $13, $14,
+                     (SELECT code FROM clients WHERE id = $8)) RETURNING id, timestamp`,
             [
               shift.id,
               ctx.user.id,
@@ -702,7 +779,8 @@ module.exports = function posModule(app) {
               onAccount,
               clientId ? credit : 0,
               !!b.isDelivery,
-              deliveryAddress
+              deliveryAddress,
+              pricing.manualDiscount
             ]
           )
         ).rows[0]
@@ -738,11 +816,30 @@ module.exports = function posModule(app) {
         }
 
         for (const a of pricing.applied) {
+          const isManual = a.scope === 'manual'
           await db.query(
-            'INSERT INTO sale_discounts (sale_id, rule_id, scope, name, value_type, value, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [saleId, a.ruleId, a.scope, a.name, a.valueType, a.value, a.amount]
+            `INSERT INTO sale_discounts (sale_id, rule_id, scope, name, value_type, value, amount, user_id, reason, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${isManual ? 'LOCALTIMESTAMP(0)' : 'NULL'})`,
+            [
+              saleId,
+              a.ruleId,
+              a.scope,
+              a.name,
+              a.valueType,
+              a.value,
+              a.amount,
+              isManual ? ctx.user.id : null,
+              isManual ? manual.reason : null
+            ]
           )
         }
+        if (manual)
+          await ctx.audit(
+            db,
+            'manual_discount',
+            `خصم يدوي ${manual.amount.toFixed(2)} ج.م على الفاتورة #${saleId}${manual.reason ? `: ${manual.reason}` : ''}`,
+            { saleId, amount: manual.amount, reason: manual.reason }
+          )
 
         if (clientId) {
           await db.query('UPDATE clients SET points = points + $1 WHERE id = $2', [
@@ -771,10 +868,18 @@ module.exports = function posModule(app) {
               await ledger('sale', remaining, `متبقي بيع دفع جزئي فاتورة رقم #${saleId}`)
             }
             if (upfront > 0) {
-              await db.query(
-                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
-                [shift.id, upfront, `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`]
-              )
+              const m = b.upfrontMethod || 'cash'
+              await addMovement(db, {
+                shiftId: shift.id,
+                type: 'inflow',
+                amount: upfront,
+                description:
+                  m === 'cash'
+                    ? `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`
+                    : `مقدم بيع دفع جزئي (${LABELS[m]}) فاتورة رقم #${saleId}`,
+                method: m,
+                kind: 'sale_upfront'
+              })
             }
           }
           if (credit > 0) {
@@ -793,10 +898,13 @@ module.exports = function posModule(app) {
             // K-36: the kept change is cash that stays in the drawer. Wallet payments never
             // reach the drawer, so only cash tenders record it.
             if (CASH_TENDER_TYPES.includes(b.paymentType)) {
-              await db.query(
-                `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'inflow', $2, $3, LOCALTIMESTAMP(0))`,
-                [shift.id, deposit, `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`]
-              )
+              await addMovement(db, {
+                shiftId: shift.id,
+                type: 'inflow',
+                amount: deposit,
+                description: `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`,
+                kind: 'kept_change'
+              })
             }
           }
         }
@@ -810,6 +918,7 @@ module.exports = function posModule(app) {
           timestamp: sale.timestamp,
           subTotal,
           discount,
+          manualDiscount: pricing.manualDiscount,
           discounts: pricing.applied,
           lines: lines.map((l, i) => ({
             ...l,

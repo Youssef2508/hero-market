@@ -169,7 +169,9 @@ test('change password: verifies the current one, applies the rules, signs out ot
     svc.call('auth.changePassword', { currentPassword, newPassword }, a)
   assert.equal((await change('Wrong-pass-1', 'Cashier-pass-9')).status, 400)
   assert.equal((await change('Cashier-pass-1', 'short1')).status, 400, 'too short')
-  assert.equal((await change('Cashier-pass-1', 'onlyletters')).status, 400, 'letters only')
+  // USER-01 (D-058): letters-only passwords are now allowed; guessable ones are still refused.
+  assert.equal((await change('Cashier-pass-1', 'abcdefgh')).status, 400, 'a plain run')
+  assert.equal((await change('Cashier-pass-1', 'aaaaaaab')).status, 400, 'too few characters')
   assert.equal((await change('Cashier-pass-1', 'legacy_hash-1')).status, 400, 'contains username')
   assert.equal((await change('Cashier-pass-1', 'Cashier-pass-9')).status, 200)
   assert.equal((await svc.call('auth.me', {}, a)).status, 200, 'this terminal stays signed in')
@@ -183,11 +185,34 @@ test('administrator reset: a temporary password that must be changed; the old on
   const owner = (await login('owner', OWNER_PW)).body.token
   const user = (await q("SELECT id, role_id FROM users WHERE username = 'legacy_plain'"))[0]
   const session = (await login('legacy_plain', 'Manager-pass-1')).body.token
-  const r = await svc.call(
-    'users.update',
-    { id: user.id, username: 'legacy_plain', roleId: user.role_id, resetPassword: true },
-    owner
+  // USER-02 (D-076): the administrator confirms with their own password; without it (or with a
+  // wrong one) nothing changes and the refusal is logged.
+  const reset = (actorPassword) =>
+    svc.call(
+      'users.update',
+      {
+        id: user.id,
+        username: 'legacy_plain',
+        roleId: user.role_id,
+        resetPassword: true,
+        ...(actorPassword ? { actorPassword } : {})
+      },
+      owner
+    )
+  for (const wrong of [undefined, 'Not-the-owner-9']) {
+    const refused = await reset(wrong)
+    assert.equal(refused.status, 403)
+    assert.equal((await svc.call('auth.me', {}, session)).status, 200, 'nothing changed')
+  }
+  assert.equal(
+    (
+      await q(
+        "SELECT COUNT(*)::int n FROM system_logs WHERE action_type = 'password_reset_refused'"
+      )
+    )[0].n,
+    2
   )
+  const r = await reset(OWNER_PW)
   assert.equal(r.status, 200)
   const temporary = r.body.temporaryPassword
   assert.ok(temporary && temporary.length >= 8)
@@ -332,4 +357,72 @@ test('networked server: first-run setup needs the one-time code from the server 
     await net.close()
     await db2.dispose()
   }
+})
+
+// USER-02 (D-076): a reset's temporary password works for 72 hours; after that it is refused with
+// its own message (only to whoever typed it right) and a new reset is needed.
+test('a temporary password from a reset expires after 72 hours', async (t) => {
+  if (!requireDb(t)) return
+  // The recovery and local-reset tests before this one changed the owner's password.
+  const OWNER_NOW = 'Shop-after-reset-1'
+  const owner = (await login('owner', OWNER_NOW)).body.token
+  const roleId = (await q("SELECT id FROM roles WHERE key = 'cashier'"))[0].id
+  const made = await svc.call('users.create', { username: 'expiry_user', roleId }, owner)
+  assert.equal(made.status, 200, JSON.stringify(made.body))
+  const user = {
+    id: made.body.id ?? (await q("SELECT id FROM users WHERE username = 'expiry_user'"))[0].id,
+    role_id: roleId
+  }
+  const reset = async () =>
+    (
+      await svc.call(
+        'users.update',
+        {
+          id: user.id,
+          username: 'expiry_user',
+          roleId: user.role_id,
+          resetPassword: true,
+          actorPassword: OWNER_NOW
+        },
+        owner
+      )
+    ).body.temporaryPassword ?? assert.fail('reset refused')
+  const temporary = await reset()
+  const hours = (
+    await q(
+      "SELECT round(extract(epoch FROM temp_password_expires_at - LOCALTIMESTAMP) / 3600) h FROM users WHERE username = 'expiry_user'"
+    )
+  )[0].h
+  assert.equal(Number(hours), 72)
+  await q(
+    "UPDATE users SET temp_password_expires_at = LOCALTIMESTAMP - interval '1 minute' WHERE username = 'expiry_user'"
+  )
+  const expired = await login('expiry_user', temporary)
+  assert.equal(expired.status, 401)
+  assert.match(expired.body.error.message, /انتهت صلاحية كلمة المرور المؤقتة/)
+  const viaSet = await svc.call('auth.setPassword', {
+    username: 'expiry_user',
+    currentPassword: temporary,
+    newPassword: 'Fresh-start-77'
+  })
+  assert.equal(viaSet.status, 401, 'cannot be used to choose a password either')
+  // A wrong password still gets the ordinary answer (nothing about the account's state).
+  assert.doesNotMatch((await login('expiry_user', 'Wrong-pass-77')).body.error.message, /انتهت/)
+  // A new reset works, and choosing a password clears the expiry.
+  const again = await reset()
+  assert.equal(
+    (
+      await svc.call('auth.setPassword', {
+        username: 'expiry_user',
+        currentPassword: again,
+        newPassword: 'Fresh-start-77'
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (await q("SELECT temp_password_expires_at FROM users WHERE username = 'expiry_user'"))[0]
+      .temp_password_expires_at,
+    null
+  )
 })

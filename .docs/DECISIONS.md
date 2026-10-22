@@ -623,3 +623,368 @@ Format: context → decision → reason → consequences (→ alternatives).
   - One audit entry records the counts.
 - **Not done, on purpose:** updating existing products or customers from a file. Prices change through the product screens. A barcode or phone already in the store is reported instead.
 - **Libraries:** `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (MIT). They are pinned dev dependencies, bundled into the screens, and add no audit findings.
+
+## D-058 Passwords accept any characters (owner feedback USER-01, 2026-10-21)
+
+- **Why:** "letters and digits together" (D-046) refused normal passwords that use only letters, only digits, or symbols.
+- **Rule now:**
+  - 8–128 characters of any kind;
+  - at least 4 different characters;
+  - not a plain run (abcdefgh, 87654321);
+  - not on the common-password list;
+  - not containing the username;
+  - no leading or trailing space.
+- This follows NIST SP 800-63B: no composition rules; refuse guessable passwords instead.
+- **Unchanged:** scrypt hashes; no normalisation (the stored password is compared exactly); temporary passwords and recovery codes.
+- **Existing accounts:** no change; their passwords keep working.
+
+## D-057 Manual fixed invoice discount for authorised users (owner decision 2026-10-21, DISC-01)
+
+- **Decision:** approved by the owner; supersedes D-044's "no operator discounts" **for holders of the new permission only**.
+  - Permission `pos.manual_discount` ("خصم يدوي على الفاتورة").
+  - By default only `super_admin` and `store_admin` hold it. It is not in the manager defaults and is never given to cashiers automatically; the owner assigns it to roles.
+- **Use:** a fixed EGP amount off the current sale invoice, with a reason (3–200 characters). Example: a yogurt pack whose EGP 2 promotion was missed at receiving. It never changes the product's price or stock.
+- **Pricing (`pricing/discounts.js` rule 6):**
+  - It applies after the automatic rules, on the total after them, and must not exceed it; amounts are in whole piastres.
+  - It is spread over the lines by largest remainder and kept in each line's `cart_discount` share. So line nets, returns (refund = drop in the line's net) and profit need no new formula.
+  - Customer credit applies after it.
+- **Enforcement:**
+  - `pos.price` and `pos.checkout` check the permission on the server. A refusal is 403 and written to the activity log (`manual_discount_refused`).
+  - The old free `discount` field stays refused for everyone.
+- **Records (migration 0015, schema only):**
+  - `sales.manual_discount` holds the invoice's total; `sale_discounts` keeps a `manual` row with the amount, reason, user and time; there is one activity-log entry per discount.
+  - These records feed invoice details (`sales.detail`, reprint data), the shift figures (`shifts.liveSummary.manualDiscounts`: count, total, invoices with user and amount), and the shift-close report section "الخصومات اليدوية".
+- **Data lifecycle:**
+  - The columns are in tables already backed up; tested by a backup → restore round trip.
+  - Sales are not part of the import/export template, so neither is affected.
+
+## D-059 Owner answers for the money and data phases (2026-10-21)
+
+- **Expense visibility (EXP-01):** a user without "all expenses" sees only the expenses they created, in any of their shifts. Never another user's, never the owner's. Enforced in the service queries.
+- **Treasury below zero (CASH-01 / TREAS-01):** allowed. Shown clearly as negative (red), and every movement is logged.
+- **Supplier invoice notice (SUP-01):** its amount is what the cashier says was paid to the supplier. It is information only: no money, stock, price or balance changes.
+- **Scheduled backup retention (BACKUP-01):** 14 daily copies plus 8 weekly copies. Enabling the schedule waits for the measured impact on checkout (Q6).
+
+## D-060 Owner answers: scale format, midnight backup, cheques, version, supplier discount (2026-10-21)
+
+- **Scale labels (SCALE-01, Q4):** every label has one layout. Product code = the first 7 digits (`2000001`). Weight = the next 5 digits in grams (`00125` = 0.125 kg). Last digit = EAN-13 check digit, validated. The physical scan at the shop stays a hardware check (HW-01).
+- **Midnight backup (BACKUP-01, Q6):** approved without further confirmation, and replaces the "waits for measurement" note in D-059.
+  - It runs every day at 00:00 local time, with no UI, even when nobody is signed in.
+  - After a missed midnight, it runs one catch-up backup.
+  - Copies go to `%ProgramData%\HeroMarket\backups`, timestamped and named daily or weekly. Retention is 14 daily + 8 weekly.
+  - Each new copy is verified before pruning. The only good copy is never deleted, and a good copy is never overwritten.
+  - It must not block checkout: the impact is measured, and a lower-impact method is used where needed.
+- **Cheques (NAV-02, Q7):** removed from navigation and workflows. Historical records are kept; deleting a record or dropping a table needs a separate approval. Any archive view is for authorised administrators only. Cheque processing is not reintroduced.
+- **Version (Q8):** this work ships as 1.5.0, and 1.4.0 is not published first. Merging, tagging, publishing and deploying each still need explicit approval.
+- **Supplier invoice discount (SUP-02, Q9):** spread over the lines in proportion to their pre-discount values. Rounding is largest remainder in whole piastres, so the shares sum exactly to the discount.
+
+## D-061 Payment methods: Cash, Visa, Wallet, InstaPay (2026-10-21)
+
+- **Owner note:** the only payment methods are Cash, Visa, Wallet and InstaPay.
+- **Mapping:**
+  - فودافون كاش becomes Wallet (محفظة).
+  - Visa is added.
+  - Stored sales are not rewritten; reports group them by method.
+- **Interpretation, pending the owner's confirmation:**
+  - On account (آجل) and partial payment are not methods. They are an unpaid balance on the customer's account.
+  - They stay, so existing credit sales and debts are not broken.
+
+## D-062 Money model: treasury, payment methods, blind close (2026-10-21)
+
+- **Owner rules applied:** CASH-01, PAY-01 and D-059. This closes D-038, the shift-close formula. The formulas are in `FINANCIAL_RECONCILIATION.md`.
+- **Treasury:** a cash-only, immutable ledger.
+  - The opening float leaves it and the counted cash at close returns to it, each exactly once.
+  - Corrections are reversals or adjustments with a reason.
+  - It starts at 0 after the update; the owner records the counted treasury once.
+- **Methods:** cash, Visa, wallet and InstaPay each have their own expected, counted and variance figures at close.
+  - Variance = actual − expected: below zero is a shortage (عجز), above zero a surplus (زيادة).
+  - The 50 EGP acknowledgement applies to cash only.
+- **Blind close:** expected amounts are refused by the service to users without `shifts.view_expected` (administrators only) until the close is saved. The supervisor request carries no amounts, and refused attempts are logged.
+- **Expenses and debt payments:** they go to the user's shift or, for treasury managers, the treasury. When both are possible the user must choose; the service never guesses. Expenses are visible to their creator, and to administrators with `expenses.view_all`.
+- **Payment method correction:** only while the sale's shift is open, never for a sale with a return. It's recorded in `sale_payment_corrections`.
+
+## D-063 Owner notes after phase D (2026-10-21)
+
+- **Payment methods only:** the store uses cash, Visa, wallet and InstaPay only. The Momkn machine and the wallet-service tills are removed from every screen and from the shift report; their old records are kept.
+- **الورديات:** the page follows the owner's screenshots: a list with filters, and a full details page per shift.
+- **Barcodes:** a product's barcode can be changed. Its whole history follows it.
+- **No reasons asked:** the manual invoice discount needs no reason (this replaces the reason rule of D-057), and neither does a payment method correction.
+
+## D-064 Owner decisions: preliminary supplier invoices, per-method treasury, receivables, close (2026-10-21)
+
+- **Preliminary supplier invoice (replaces the "information only" notice of D-059 / SUP-01).**
+  - A cashier records a supplier, a total, a payment mode (cash, credit, partial), the amount paid now and its payment method.
+  - The payment is real and recorded once in the current shift (or, for treasury managers, the treasury). The rest becomes a supplier payable.
+  - Nothing reaches stock or cost until an administrator converts it into a detailed purchase. That conversion moves stock and the moving average and records no payment again.
+- **Final total ≠ preliminary total.** The detailed invoice is the true debt: the payable is adjusted by (final − preliminary), recorded as an explicit "تسوية فاتورة مبدئية" supplier ledger row. If more was paid than the final total, the supplier owes the store (a credit balance, as with customers).
+- **Per-method treasury.** The treasury is a ledger of the business's funds by method: cash, Visa, wallet and InstaPay, plus the overall total.
+  - At close, each method's **counted** amount goes to its own treasury balance (one row per method, once).
+  - The opening float is cash.
+  - Treasury expenses and debt payments state their method.
+- **Close (owner, 2026-10-21).**
+  - The cashier enters the four counted amounts. The total is calculated from them.
+  - The difference is shown per method and overall, in the shift details page and the closing report. Nothing is charged to cash by default.
+  - The total-only handover proposal is withdrawn.
+- **Receivables.**
+  - On account and partial sales stay.
+  - The part paid at once on a partial sale is recorded with its own payment method.
+  - Later collections reduce the customer's balance and appear in the collecting shift as collections, never as sales. Each request is recorded once.
+
+## D-065 Owner requests of 2026-10-21 (evening)
+
+- **Cancelling a preliminary supplier invoice (owner's answer).** A cashier may cancel their own preliminary invoice entered by mistake; an administrator may cancel any. The invoice is never deleted: it becomes "ملغاة", with who, when and how.
+  - Cancelling reverses the payable it created.
+  - **If money was paid:** the user says whether the supplier returned it.
+    - Returned: the return is a real money movement in the current shift (or the treasury) by its method, and the original payment stays in its shift's history.
+    - Not returned: nothing is added to cash or electronic balances. The amount becomes the supplier's debt to the store (a credit on the supplier's account).
+  - **A converted invoice cannot be cancelled here.** Its stock and cost need a purchase return, which is not built yet; the user is told so. A cancelled invoice cannot be converted. Cancelling is atomic and happens once.
+- **Payment method correction (owner's answer).** No reason is asked, as decided before (D-063). The correction is now also allowed after the sale's shift is closed:
+  - the sale's method is reclassified and recorded (who, when, from, to, after close);
+  - no money moves and the closed shift's saved close is not rewritten, because the treasury already holds the counted amounts;
+  - the correction is listed with that shift.
+- **Hotkeys:** F1 prints, as before (confirm and print). F2 confirms without printing. F7 opens the product search.
+- **Dashboard:** period selector (today, this week, this month, this year, custom range) with cards and charts. The quick actions stay.
+- **Packaging (Parts 9–10).** Already in place since 1.4.0: units with a factor, their own barcode and price, and the factor kept on every sale and purchase line (INV-01, D-055).
+  - Added now: a package purchase price entered by the owner; a package selling price required for a sellable package (no derived price); stock shown as complete packages and loose units (floor); acceptance tests for the HoHos example.
+- **Keyboard (Part 2), one shared behaviour for every window and list** (`lib/modalChrome.js`, `lib/keyboard.js`):
+  - **Windows:**
+    - a window that opens takes the focus: its first field, else its cancel button, never a confirm button;
+    - Tab and Shift+Tab stay inside the top window;
+    - Esc closes it the way its cancel button does, asking "إغلاق بدون حفظ؟" if something was typed. A window or list that uses Esc itself keeps it. Windows without a cancel (a required shift opening) do not close;
+    - on closing, the focus goes back to the control that opened it.
+  - **No action from a stray Enter:**
+    - in the 13 forms that move money or stock (close, cancel, preliminary invoice, payment correction, returns, purchase, expense, treasury, debt payments, damaged goods), Enter in a field goes to the next field, and from the last field to the confirm button;
+    - only Enter on that button carries the action out;
+    - a confirm that deletes, cancels or returns starts on إلغاء.
+  - **Lists:** clickable rows (invoices, customers, suppliers, cashiers) are reached by Tab, open with Enter or Space, and ↑ ↓ move between rows. The dashboard's period tabs move with ← →. A visible focus ring is on every row and control.
+  - **The till's Esc:** Esc in the product search clears it and goes back to the barcode field. It no longer also asks to clear the invoice (a bug found in the running app).
+- **Invoice numbers (Part 3):**
+  - on the shift details they are buttons: a click or Enter opens the invoice in الفواتير والمرتجعات;
+  - identifiers in tables are isolated left to right (`.ltr-id`), so "INV-39" and "#12" no longer flip or misalign in right-to-left cells.
+- **Stat cards:** a long amount is shown smaller until it fits its card, measured at any window width, instead of being cut to "12,350.26 …".
+
+## D-066 Purchase invoice discount and purchase returns (owner, 2026-10-22, migration 0020)
+
+- **Invoice discount (SUP-02, revised by the owner).** An optional amount on the whole invoice, zero by default.
+  - The supplier is owed the net: lines − discount. The payable, payments, purchase totals and the audit use the net, once.
+  - Never allocated to lines. Product purchase prices, moving-average costs, selling prices and package prices do not change.
+  - **Owner's answer (asked because profit would otherwise be understated):** the discount is a separate gain, "خصم مشتريات مكتسب", on the purchase's date. Net profit in the dashboard, the performance screen and the advanced reports adds it.
+  - Stored: `supplier_purchases.gross_amount` and `discount`; `total_amount` stays the net. Old invoices: gross empty, discount 0.
+  - Also on completing a preliminary invoice.
+- **Purchase returns.** Separate from cancelling a preliminary invoice. Goods of a recorded purchase go back, in parts, never more than bought (per line, in the line's unit).
+  - Stock leaves at the cost the line was bought at; the moving average falls back by exactly that value (FINANCIAL_RECONCILIATION §12).
+  - **Owner's answer:** the supplier is credited the lines' value × net ÷ gross, so a discount is never credited twice. The part of the discount given back reduces the purchase gain.
+  - The payable falls by the credit; below zero the supplier owes the store.
+  - Money is recorded only when the supplier hands it back now, by its method, in the current shift or the treasury (`supplier_refund`). The rest stays owed by the supplier.
+  - Goods already sold cannot go back (refused). One transaction; a request id makes a retry return the first result.
+  - Permission `suppliers.manage` (granted per role by an administrator). Audit with the lines, values and refund.
+- **Open:** the spec's line selling price that updates the product on posting (original SUP-02) is not built. The owner's revision says the purchase must not change prices automatically, so it waits for the owner.
+
+## D-067 HeroMarket data workflow: export, templates, permissions, backup audit (owner, 2026-10-22)
+
+- **No importer for the other POS.** The shop's data comes through HeroMarket's own Excel template. The plan's go-live and visit documents say so.
+- **Export (DATA-01):** the template's sheets and headers, filled from one read-only snapshot. The file is read back and checked before it is saved. Details and exclusions: DATA_IMPORT_EXPORT.md.
+- **Template version 2:** optional package columns on products (name, units per package, barcode, selling, wholesale and purchase price), checked like the units window. A version marker; newer files are refused, old files import unchanged. Optional fields stay optional.
+- **Permissions (ROLE-01):** `data.import` and `data.export`, separate. Administrators by default; a supervisor or any other role gets them only when an administrator grants them. The import screen shows each part only to its holders. Owner's rule (2026-10-22): anything sensitive is granted by an administrator, per role.
+- **Backup audit:** every schema table is backed up or listed with its reason; a store using every feature restores row for row with equal balances and stock and keeps working; a failing restore changes nothing.
+- **Compatibility rule:** every later data-model change goes through the checklist in DATA_IMPORT_EXPORT.md §6 (migration, backup, template/import/export, reconciliation).
+
+## D-068 New selling and wholesale prices on purchase lines (owner, 2026-10-22, migration 0021)
+
+- **Owner's rule:** each purchase line has two optional fields, "سعر البيع الجديد" and "سعر البيع الجديد (الجملة)" (the owner asked for the wholesale one too). Both are prices of the product's base unit, even when the line is bought in boxes.
+  - A filled field sets the product's price when the purchase is confirmed (saved, or a preliminary invoice completed). This holds even when an earlier purchase set a different price.
+  - An empty field keeps the current price. Each product and each of the two prices is handled on its own.
+  - Package prices are never changed by a purchase; they stay in the units window.
+- **Same transaction** as the purchase: a refused or failing purchase changes no price.
+  - One product on two lines (pieces and boxes) with two different prices of the same kind is refused.
+  - The same price again changes and logs nothing.
+- **Trail:** the line keeps the price it set and the one it replaced (`new_/old_retail_price`, `new_/old_wholesale_price`). Each change is an activity-log entry `product_price_change` with the invoice.
+- **Unchanged:** the moving-average cost (it follows the line costs) and the invoice discount (D-066).
+- **Data workflow:** the new columns are purchase history. They travel in the backup and are not template fields (DATA_IMPORT_EXPORT.md §6 checked).
+
+## D-069 Every window and screen fits, closes and moves by keyboard (owner, 2026-10-22)
+
+- **Owner's rule:** no sideways scrolling anywhere. Every small window closes with its X and with a click outside it. The arrows move between its buttons.
+- **Fixes:**
+  - **Purchase window:** wider (up to the screen); its lines fit the window; the two new prices are stacked in one column.
+  - **Units window:** made wider, with the same fitted columns.
+  - **Closing report:** now has the X and closes with a click outside.
+  - **Arrows:** ← → ↑ ↓ move between a window's buttons and checkboxes. They never move into text fields; lists, dropdowns, radio groups and tabs keep their own arrows.
+  - **Tables on windows narrower than 1280 px:** headers wrap, cells are tighter, dates and times may take two lines, and a button's word beside its icon is hidden (it stays as the button's name).
+- **Checked in the running app:**
+  - 51 window openings across every admin screen and the till: fit at 1366, 1024 and 800 px, X closes, a click outside closes, arrows move.
+  - Every menu screen at 1366 and 1024 px: no sideways scrolling with the menu in its automatic size, which shrinks below 1200 px.
+  - The windows without a close (a required shift opening, the recovery notice) stay that way by design.
+- **Limit:** with the menu kept expanded by hand on a 1024 px screen, the two widest reports (التقارير المتقدمة, تقييم الكاشيرات) still scroll by up to 85 px.
+
+## D-070 Supplier opening balance and editable contact (SUP-03, owner, 2026-10-22)
+
+- **Opening balance:** what was owed between the store and a supplier before HeroMarket. It can be entered when the supplier is added, or set and corrected later from «تعديل».
+  - It is a `supplier_ledger` line of type `opening` ("رصيد افتتاحي"): never a purchase, payment or stock receipt, so stock, cost, prices, the treasury and the drawer do not change.
+  - A correction adds one line for the difference ("تعديل الرصيد الافتتاحي: من … إلى …"); earlier lines stay. Setting the same value again does nothing.
+  - Later payments reduce the balance and reach the treasury or drawer once, as before.
+- **Signs in words:** + means the store owes the supplier, − means the supplier owes the store. Screens show «مستحق للمورد (علينا)» or «مستحق على المورد (لنا)» with the amount, never a bare minus. The import template's hint uses the same rule.
+- **Permission** `suppliers.opening` ("الرصيد الافتتاحي للموردين"): administrators by default; supervisors and the stock role get it only when an administrator grants it. Contact editing needs `suppliers.manage`.
+- **Contact editing:** name, phone, address and representative, trimmed and checked (name required; phone digits and + - ( ) / only). The changes are listed in the activity log. Invoices, payments, ledger lines and balances do not change.
+- **No migration:** existing balances are unchanged, and an imported opening balance already uses the same `opening` line.
+
+## D-071 Stock value, the owner's snapshots, stock movements, damaged-goods search (phase F, 2026-10-22)
+
+- **One stock-value rule** (`modules/stockReports.js`), used by the report and the dashboard:
+  - quantities are in the product's base unit; packages are inside it, never counted twice; weighed products are in kg;
+  - value at cost = stock × current moving-average cost; at selling price = stock × current retail price;
+  - negative stock counts as 0 in totals and is listed and flagged;
+  - a product with stock but no cost adds 0 at cost and is counted;
+  - stopped products are left out unless asked for.
+- **«قيمة المخزون» (PROD-02):**
+  - filters (search, category, measurement kind, status, stopped products) change rows and totals together;
+  - the rules are written on the screen;
+  - it shows a reconciliation count of products whose stock differs from their movements (0 = healthy).
+- **«الوضع الآن» on the dashboard (DASH-01):** the four figures the spec lists (stock at cost and at selling price, owed to suppliers, owed by customers).
+  - Supplier and customer credits are shown apart from the debts.
+  - Computed on every load (nothing cached), with a refresh button.
+  - Each card opens its screen.
+- **Permission** `reports.valuation` ("قيمة المخزون والأرصدة"): administrators by default; others when an administrator grants it.
+- **«حركات المخزون» (STOCK-01):** a menu entry under المخزون listing every movement, newest first.
+  - Filters: product (name or barcode), movement type, dates.
+  - It reads the same `stock_movements` rows as each product's history (tested to be identical), with source document, user and reason. A sale opens its invoice.
+  - Costs are hidden without `products.view_cost`. History is never changed.
+- **Damaged goods (WASTE-01):** the window uses the purchase window's product search (name or barcode, ↑ ↓ Enter, scanner, paged for large catalogues). A package can be chosen (2 cartons = 24 pieces), converted by its factor as in sales and purchases. Records stay in the base unit, so reversal, cost and the ledger are unchanged.
+- **Product search lists** close after a pick, in purchases and damaged goods alike; typing reopens them.
+
+## D-072 Customer codes (CUST-01, migration 0022)
+
+- **Code format:** every customer has a code C + its number with at least five digits (C00012), taken from the customer id.
+  - Ids are never reused, so a code is never recycled after a deletion.
+  - Concurrent creation cannot collide (identity sequence plus a unique constraint).
+  - A trigger refuses any change to a code.
+- **On sales:** each sale keeps its customer's code (`sales.client_code`), shown in the invoice details. Customers with invoices cannot be deleted anyway.
+- **Search:** the till and the customers screen find a customer by name, phone or code; an exact code comes first.
+- **Unchanged rules:** two phones and three addresses per customer.
+- **Backfill:** existing customers get C + id, and their sales get the code; nothing else changes. Tested over existing data.
+- **Data workflow:** the code is generated by the store; it is not a template column. Imported customers get new codes; the backup keeps the codes.
+
+## D-073 A shift close is never refused; the cashier never sees expected amounts before it (owner, 2026-10-22)
+
+- **Owner's rule, restated:** the cashier must not see the expected amount in the drawer, or any expected figure, until the shift is closed.
+  - The cashier enters the counted amount for each payment method and confirms.
+  - Only then does the report show expected, actual and the difference (shortage or surplus) per method and in total.
+- **Audit of every place an expected figure can appear (2026-10-22):**
+  - the tills page, the periodic drawer count ("جرد الدرج الدوري", a blind count) and the close window are blind without `shifts.view_expected`;
+  - the server refuses `shifts.liveSummary`, `shifts.auditPreview` and open-shift `shifts.details` without that permission;
+  - `tills.drawerSummary` answers blind, and a saved count returns only its id;
+  - the cashier and supervisor roles do not hold `shifts.view_expected`. The owner's screenshot was of the administrator's own shift, which is meant to show them.
+- **Changed:** a close is never refused, however large the shortage or surplus (even beyond EGP 5,000). This replaces the EGP 50 supervisor approval of D-046.
+  - A refusal told the cashier "your count is off" and let them recount until it passed. Now there is nothing to probe.
+  - The difference is saved with the close and shown in the report and in «الورديات», where the owner deals with it. No approval is asked or recorded; an approver sent by an older till is ignored.
+  - Closes recorded before D-073 keep their acknowledgement in their report.
+- **Tests:** the close test now proves that a 6,000 shortage and a 6,000 surplus close at once, with the difference in the report and the shift details and no approval. The existing test that a cashier cannot read expected amounts through any operation before closing still passes.
+- **Running app, as cashier1:**
+  - the tills page showed only the notice;
+  - the close window showed no expected figure and no fill button;
+  - a close with a 201,127.30 shortage was accepted;
+  - the report after it showed expected, actual and «عجز» per method.
+
+## D-074 The backup after a shift close is automatic (owner, 2026-10-22)
+
+- **Owner's rule:** no question to the cashier. If the system makes a backup after a close, it does so automatically.
+- **Removed:** the prompt «هل تريد أخذ نسخة احتياطية من قاعدة البيانات الآن قبل إغلاق الوردية؟» and its save dialog. The close goes straight through.
+- **Added:** after every successful close, the till starts the on-demand task «HeroMarket Backup After Close» and does not wait.
+  - The task runs the nightly job as the system account in its after-close mode: one new verified copy each time, in the same locked folder (users can read the copies, not delete them).
+  - The newest 20 close copies are kept. The nightly daily and weekly copies, their schedule, catch-up, retention and checks are unchanged.
+  - Windows users may start the task, but not change it.
+  - The installer registers the task next to the nightly one and removes both on uninstall.
+  - A development build logs that it skipped.
+- **Evidence:**
+  - unit tests (a close copy every time, never a daily or weekly one; retention 20; the task definition);
+  - Windows Sandbox C1 with test build 1.5.0-test.2: installed, started twice with normal user rights, two verified copies written as SYSTEM, deletion as a normal user refused.
+  - The close itself was checked in the running app.
+- **Updates:** an installed 1.5.0 gets the new task when its installer runs (the service setup step registers both tasks).
+
+## D-075 Permissions enforced by the service, tested by direct request; a generated matrix (ROLE-02, 2026-10-22)
+
+- **Every service operation requires a permission.** The exceptions are listed with their reason:
+  - 5 before sign-in: status, first setup, sign-in, first password, recovery;
+  - 7 for any signed-in user: sign out, the own account, the own password and recovery code, display settings, two sync flags, measurement-kind names.
+  - A new operation without a permission fails a test until it gets one or is listed with its reason.
+- **Checked before the request is read:** a caller without access learns nothing about an operation's fields. Hiding a button is only a convenience.
+- **Direct requests:** each built-in role is refused (403), with no screen involved, every operation it does not hold:
+  - store administrator 1, supervisor 32, cashier 100, stock 97, auditor 103;
+  - signed out, every non-public operation answers 401.
+- **Owner-only by default** (an administrator may grant them per role): expected amounts before the close, the treasury, every user's expenses, stock value and balances, payment corrections, supplier opening balances, data import and export, users and roles.
+- **Menu:** every permission the menu uses exists in the catalogue (tested).
+- **`.docs/PERMISSION_MATRIX.md`** is generated from the code (`node scripts/permission-matrix.js`) and lists permissions × built-in roles and every operation with what it requires. A test fails when it is out of date.
+
+## D-076 Administrator password reset: own password first, temporary password expires (USER-02, migration 0023)
+
+- **Unchanged:**
+  - the administrator never sees the old password;
+  - a temporary password replaces it and the old one and any PIN stop working;
+  - the user's sessions end, and they must choose their own password at the next sign-in;
+  - the reset is logged;
+  - an administrator cannot act on an account above their own authority (escalation check).
+- **Added:**
+  - **Re-authentication:** the administrator types their own password in the window. Missing or wrong refuses the reset, changes nothing, and logs `password_reset_refused`.
+  - **Expiry:** the temporary password works for 72 hours (`users.temp_password_expires_at`; the local reset command too). After that it is refused with "انتهت صلاحية كلمة المرور المؤقتة…", shown only to whoever typed it correctly; a wrong password still gets the ordinary answer. Choosing a password clears it.
+- **Not changed:** a new account's first password does not expire, since staff accounts are often prepared before the person starts.
+- **The window:** it opens fresh each time, so a typed password never stays.
+- **Tests:** `auth.test.js` covers the refused resets (2 logged), the 72-hour expiry, sign-in and set-password both refused after expiry, and a new reset working.
+
+## D-077 Reprints from saved documents, marked as copies (POS-02, 2026-10-22)
+
+- **Already in place:** the print / no-print choice at the till (F1 prints, F2 does not, D-065, shown beside the buttons); sale invoice reprint from `sales.reprintData` with «*** نسخة معاد طباعتها ***»; the closing report reprint from the saved close.
+- **Added:**
+  - **Supplier invoices:** a print button on each recorded purchase in the supplier's list, built from `suppliers.purchaseDetail`. It shows the lines (with what was returned), gross, invoice discount, net, paid and still owed at purchase, and the returns' credit. It always carries the copy mark.
+  - **Closing reports printed again** (from the report window or the shift details) carry the copy mark; the automatic print at the close does not.
+- **Each document keeps its own layout:** sale receipts use the receipt designer's template; closing reports and supplier invoices use the report layouts (`shared/reportLines.mjs`).
+- **Printing records nothing:** `tests/service/reprints.test.js` reprints a sale, a supplier invoice and a closing report three times each, and every table's content fingerprint is unchanged (no second sale, stock movement, supplier posting or close). `tests/unit/reprints.test.mjs` checks the layouts and the copy marks.
+- **Physical printing** is part of HW-02 at the shop.
+- **2026-10-22, owner: the supplier's purchases table still scrolled sideways.** The earlier sweep had measured each screen only as it opens; the supplier, customer, invoice and cashier pages appear only after a row is opened.
+  - The purchases table now has 5 columns: invoice (date and payment type under it); net (discount and returns under it); paid; owed; icon actions for print and return.
+  - Bar charts share their width instead of scrolling (24 hours fit).
+  - The sweep now opens the first row of every list: all 29 screens, closed and opened, at 1366 and 1024 px, show no sideways scrolling.
+  - A purchase entered without an invoice number is named by its own number in the ledger, the drawer and the log ("#12", not "#").
+
+## D-078 The visible-control inventory (UX-01, 2026-10-22)
+
+- **`.docs/UI_INVENTORY.md`** covers:
+  - every screen in the menu: permission, purpose, main actions and their effects, tests;
+  - every window and its effect;
+  - every key;
+  - the checks done: right to left, keyboard only, no sideways scrolling, feedback, empty and loading states;
+  - the open points for the owner.
+- **Kept current:** a test fails when a menu screen is missing from it.
+- **No dead or decorative control was found among the visible ones.** The audit raised three questions for the owner, and nothing is removed without an answer:
+  - the two permissions marked «غير مستخدمة» in the roles screen (Momkn and wallet tills, stopped in D-063);
+  - whether «المزامنة السحابية» stays visible while the shop does not use the cloud;
+  - whether three overlapping report screens are kept.
+- **Invisible leftovers of the old Momkn tills** (state passed between components, server operations kept so old shifts stay readable) are not controls and stay as they are.
+- **The owner's answers (2026-10-22):**
+  - the two unused permissions are hidden from the roles screen (`hidden: true` in the catalogue; `roles.catalog` leaves them out; the keys stay valid);
+  - «المزامنة السحابية» stays visible;
+  - «الأداء والأرباح» is merged into the dashboard's period statistics (new period «الكل», profit margin, cash flow); «التقارير المتقدمة» is kept.
+
+## D-079 Release candidate 1.5.0: the copy before an update is kept; going back restores first (phase H, 2026-10-22)
+
+- **Version 1.5.0** on this branch (`package.json`); release notes in `RELEASE_NOTES_1.5.0.md`. Nothing is merged, tagged or published.
+- **Found in the Windows Sandbox update check:** after 1.4.0 → 1.5.0 and four later installer runs (Case A, a failing update, Case A again, the 1.4.0 installer refused), `--restore-pre-install` found no copy of the 1.4.0 data. Every installer run takes a copy, and only the newest 3 were kept.
+- **Changed:**
+  - the newest 3 copies are kept, plus the newest copy of each of the last 3 data versions (`pruneSnapshots` with the data version from `update.json`);
+  - `--restore-pre-install=<version>` restores the newest copy of that version's data (a folder name still works);
+  - going back is now: restore with the newer program, then run the older installer. 1.4.0's own installer still prunes by the old rule, so running it first can remove the 1.4.0 copy (UPDATE_GUIDE.md §6).
+- **Tests:** unit tests replay the Sandbox sequence and the copy choice; the Sandbox runs are in UPDATE_GUIDE.md §8.
+
+## D-080 Release 1.5.0: the shop upgrades from 1.4.0 in place; two backup fixes (2026-10-22)
+
+- **The shop runs HeroMarket 1.4.0** with its data, imported from the old program's export through the HeroMarket template. The scanner, printer and workflows were tested there by the developer on 1.4.0. There is no further visit. The owner installs 1.5.0 over 1.4.0 himself, following `UPGRADE_TO_1.5.0.md`. The data is not imported again: the update keeps it.
+- **Rehearsed on the real path** (disposable databases):
+  - 1.4.0's own code (`main`, f0f0d84) imported a filled `.xlsx` template and recorded a day's work: cash, wallet, part-paid and credit sales, an expense, a purchase, supplier and customer payments, the close;
+  - then the 1.5.0 migrations with the installer's own checks: no problem, every figure unchanged;
+  - then 1.5.0: stock = movements, reports, a new sale and close, export;
+  - the same 1.4.0 file reads into an empty 1.5.0 store, and importing it a second time is refused as a whole.
+- **Backups across versions:** a 1.4.0 backup file restores only into 1.4.0. The owner makes one before the update as his way back.
+- **Fix 1, backup lock:** the nightly and after-close runs share one lock. A run that found it taken gave up, so a shift closed just before midnight cost that day's daily copy: the scheduler counts the run as done and does not retry. A run now waits up to 20 minutes for the other one, then decides.
+- **Fix 2, catch-up at start-up:** a missed midnight is made up as soon as the PC starts, often before the database service accepts connections. The run failed for the day. It now waits up to 10 minutes for the database, and only when a copy is due.
+- **Tests:** `backupJob.test.mjs` (both cases); Windows Sandbox on the final installer (NIGHTLY_BACKUP.md).
+- **Packaging:** a release candidate was found, by listing its package, to contain a git worktree that sat inside the project folder; it was discarded. Top-level dot-folders, `deploy/` and `electron-builder.qa.yml` are now excluded, and a test checks the rules.
+- **The final installer:** `HeroMarket-Setup-1.5.0.exe`, SHA-256 `9f8e506cfb824c055bd4c97f42df29926291ed195389a750ab7067285529f9d5`, built from `f05eb99` with no uncommitted change.

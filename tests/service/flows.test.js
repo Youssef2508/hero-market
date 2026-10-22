@@ -223,11 +223,10 @@ test('FLOWS 14–17: customer repayment and supplier purchase / payment move the
     )
   )
   assert.equal(Number(repaid.debt_balance), 20)
-  assert.equal(
-    (await svc.call('clients.repay', { clientId: client.id, amount: 5 }, admin)).status,
-    409,
-    'repayment needs an open shift'
-  )
+  // 1.5.0 (CUST-02): the owner, with a shift open, must choose the shift or the treasury.
+  const unclear = await svc.call('clients.repay', { clientId: client.id, amount: 5 }, admin)
+  assert.equal(unclear.status, 400, 'no destination chosen')
+  assert.equal(unclear.body.error.details.code, 'destination_required')
   // Overpayment creates a credit balance (legacy rule, after confirmation in the UI)
   const over = ok(
     await svc.call(
@@ -348,21 +347,10 @@ test('FLOWS 18–20: price change keeps historical sale lines; damaged goods mov
   )
 })
 
-test('FLOWS 24–27: cheques and expenses (one drawer row per expense)', async (t) => {
+test('FLOW 27: expenses (one drawer row per expense)', async (t) => {
   if (!requireDb(t)) return
-  const today = (await one("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d")).d
-  ok(
-    await svc.call(
-      'checks.create',
-      { check_type: 'مورد', party_name: 'مورد شيكات', due_date: today, amount: 1000 },
-      admin
-    )
-  )
-  const list = ok(await svc.call('checks.list', {}, admin))
-  assert.equal(list.dueToday.length, 1)
-  ok(await svc.call('checks.markPaid', { checkId: list.all[0].id }, admin))
-  assert.equal((await one('SELECT status FROM checks_register')).status, 'مسدد')
-  ok(await svc.call('checks.delete', { checkId: list.all[0].id }, admin))
+  // FLOWS 24–26 (record, settle, delete a cheque) ended with cheque processing (owner, 2026-10-21,
+  // D-060); the read-only archive is covered by checksArchive.test.js.
   // Two identical expenses → deleting one removes exactly one drawer outflow (K-28)
   ok(
     await svc.call(
@@ -425,7 +413,9 @@ test('Tills: cashier records Momkn / wallet operations; only managers of tills m
   )
   assert.equal((await svc.call('momkn.delete', { id: m.rows[0].id }, cashier)).status, 403)
   ok(await svc.call('momkn.delete', { id: m.rows[0].id }, admin))
-  const live = ok(await svc.call('shifts.liveSummary', { shiftId: cshift.id }, cashier))
+  // The live figures are the owner's (blind close, PAY-01).
+  assert.equal((await svc.call('shifts.liveSummary', { shiftId: cshift.id }, cashier)).status, 403)
+  const live = ok(await svc.call('shifts.liveSummary', { shiftId: cshift.id }, admin))
   assert.equal(Number(live.mm_cash_impact), 200)
 })
 

@@ -116,6 +116,21 @@ export default function ScaleLabelsSection({ value, onChange }) {
           <Plus size={15} aria-hidden="true" />
           إضافة بادئة
         </button>
+        <label className="field" style={{ maxWidth: 420 }}>
+          <span className="field-label">رقم التحقق (آخر رقم في الملصق)</span>
+          <select
+            className="input"
+            value={cfg.checkDigit ?? (cfg.length === 13 ? 'ean13' : 'none')}
+            onChange={(e) => set({ checkDigit: e.target.value })}
+          >
+            <option value="ean13">EAN-13 (الموازين العادية: يُرفض الملصق إذا كان خاطئاً)</option>
+            <option value="none">لا يوجد رقم تحقق</option>
+          </select>
+          <span className="field-hint">
+            مثال: الملصق 2000001001257 = بادئة 20، كود الصنف 00001 (يُسجَّل الصنف بالكود 2000001 أو
+            00001)، الوزن 00125 جرام = 0.125 كجم، و7 رقم التحقق.
+          </span>
+        </label>
         <details>
           <summary>مواضع الكود والقيمة داخل الملصق</summary>
           <div className="form-grid">

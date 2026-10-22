@@ -14,21 +14,24 @@ files:
   - '!src/server/cloud/**'
   - 'src/shared/**'
   # Never package local data, credentials, backups or development material.
-  - '!{.pgdata,.migration-backups,.docs,docs,tests,scripts,scratch,pdf,dist,coverage,build}/**'
+  - '!{.pgdata,.migration-backups,.docs,docs,tests,scripts,scratch,pdf,dist,coverage,build,deploy}/**'
+  # Any other top-level dot-folder (worktrees, editor and tool folders) is never part of the program.
+  - '!.*/**'
+  - '!electron-builder.qa.yml'
   - '!**/*.{db,db-wal,db-shm,db-journal,log}'
   - '!{sqlite3.exe,typst.exe,*.bat,AUDIT_REPORT.md,BUSINESS_AUDIT_REPORT.md,implementation_plan.md,fix_tofixed*.js,Dockerfile*,docker-compose*.yml,.dockerignore}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
 extraResources:
-  - from: "./typst.exe"
-    to: "typst.exe"
-  - from: "resources/print_receipt.ps1"
-    to: "print_receipt.ps1"
-  - from: "resources/logo.png"
-    to: "logo.png"
-  - from: "resources/brand/png/heromarket-mark-256.png"
-    to: "brand-logo.png"
+  - from: './typst.exe'
+    to: 'typst.exe'
+  - from: 'resources/print_receipt.ps1'
+    to: 'print_receipt.ps1'
+  - from: 'resources/logo.png'
+    to: 'logo.png'
+  - from: 'resources/brand/png/heromarket-mark-256.png'
+    to: 'brand-logo.png'
 asarUnpack:
   - resources/**
 # Hardening of the packaged program (1.4.0 audit): HeroMarket-POS.exe cannot be used as a plain
@@ -68,8 +71,8 @@ nsis:
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   artifactName: HeroMarket-Setup-${version}.${ext}
-  shortcutName: "HeroMarket POS"
-  uninstallDisplayName: "HeroMarket POS"
+  shortcutName: 'HeroMarket POS'
+  uninstallDisplayName: 'HeroMarket POS'
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
   createDesktopShortcut: always

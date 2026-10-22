@@ -21,14 +21,24 @@ const COMMON = new Set([
   'admin123'
 ])
 
+/** True for a plain run of consecutive characters: abcdefgh, 12345678, 87654321, zyxwvuts. */
+function isRun(p) {
+  const c = [...p.toLowerCase()].map((ch) => ch.codePointAt(0))
+  const step = c[1] - c[0]
+  return (step === 1 || step === -1) && c.every((x, i) => i === 0 || x - c[i - 1] === step)
+}
+
 /** Arabic message describing what is wrong with a new password, or '' when it is acceptable. */
 function passwordProblem(password, username = '') {
   const p = String(password ?? '')
   if (p.length < MIN_LENGTH) return `كلمة المرور يجب أن تكون ${MIN_LENGTH} أحرف على الأقل.`
   if (p.length > MAX_LENGTH) return `كلمة المرور يجب ألا تزيد عن ${MAX_LENGTH} حرفاً.`
   if (p.trim() !== p) return 'كلمة المرور لا يجب أن تبدأ أو تنتهي بمسافة.'
-  if (!/\p{L}/u.test(p) || !/[0-9٠-٩]/.test(p))
-    return 'كلمة المرور يجب أن تحتوي على حروف وأرقام معاً.'
+  // Any characters are allowed – letters, digits, symbols, spaces inside (owner feedback
+  // USER-01, D-058; NIST SP 800-63B: no composition rules). Instead of "letters and digits",
+  // trivially guessable passwords are refused.
+  if (new Set([...p]).size < 4) return 'كلمة المرور يجب أن تحتوي على 4 رموز مختلفة على الأقل.'
+  if (isRun(p)) return 'كلمة المرور سهلة التخمين (حروف أو أرقام متتالية)، اختر غيرها.'
   if (/^(.)\1+$/u.test(p)) return 'كلمة المرور ضعيفة جداً.'
   const lower = p.toLowerCase()
   if (COMMON.has(lower)) return 'كلمة المرور هذه شائعة جداً، اختر غيرها.'

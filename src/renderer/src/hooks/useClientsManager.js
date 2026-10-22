@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, newClientRef } from '../lib/api'
 import { formPhones, phoneFormError } from '../lib/phoneForm'
 import { formAddresses, addressFormError } from '../lib/addressForm'
 import { parseLocaleDateString } from '../lib/utils'
@@ -210,7 +210,8 @@ export function useClientsManager({
     }
   }
 
-  const handleRepayment = async () => {
+  // destination: 'shift' or 'treasury' (owner feedback CUST-02), chosen on the form.
+  const handleRepayment = async (destination, method = 'cash') => {
     const amount = parseFloat(repaymentAmount) || 0
     if (amount <= 0) return
     if (!selectedAdminClient) return
@@ -218,14 +219,23 @@ export function useClientsManager({
       triggerCustomAlert('العميل ليس لديه مديونية مستحقة!')
       return
     }
+    // One request id for this payment: a retry never records it twice.
+    const clientRef = newClientRef()
     const saveRepayment = async () => {
       try {
         const updated = await api('clients.repay', {
           clientId: selectedAdminClient.id,
           amount,
-          currentShiftId: currentShift ? currentShift.id : null
+          destination,
+          method,
+          currentShiftId: destination === 'shift' && currentShift ? currentShift.id : null,
+          clientRef
         })
-        triggerCustomAlert('تم تسجيل عملية السداد وتحديث الخزينة بنجاح!')
+        triggerCustomAlert(
+          destination === 'treasury'
+            ? 'تم تسجيل السداد في الخزنة.'
+            : 'تم تسجيل السداد في درج الوردية.'
+        )
         setRepaymentAmount('')
         if (updated) await selectAdminClientForProfile(updated)
         await fetchClientsList()

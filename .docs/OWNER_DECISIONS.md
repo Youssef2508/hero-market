@@ -13,7 +13,7 @@
 - **Discounts (replaced 2026-10-15):** cashiers have no discount authority; the administrator manages rules that apply automatically (D-044). Role limits and supervisor approval for discounts are **withdrawn**.
 - **Weighing (2026-10-15):** manual weighing on an ordinary scale; no scale-label integration required.
 - **Clock (2026-10-15):** 12-hour display with AM/PM.
-- **Shift differences:** supervisor acknowledgement above EGP 50 (implemented, D-046).
+- **Shift differences:** ~~supervisor acknowledgement above EGP 50 (D-046)~~ replaced 2026-10-22 (D-073): a close is never refused; the difference is in the report and in «الورديات».
 - **Sign-in:** username + password; each user's PIN works once to choose a password; recovery code for the super administrator (implemented, D-046).
 - **Hosting:** the cheapest reliable option; no paid resource without explicit approval (recommendation in STAGE4_ARCHITECTURE_REVIEW.md §10).
 

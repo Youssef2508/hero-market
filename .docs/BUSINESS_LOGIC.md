@@ -206,4 +206,4 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 - **Returns from the till:** `مرتجع` on the till opens an invoice by number.
   - A cashier returns one line (any quantity up to what is left) or the whole invoice, with a reason and a supervisor's username and password.
   - Refund rules are unchanged (D-044 / K-40); the money leaves the drawer of the cashier's open shift, or reduces the customer's credit.
-- **Shift close:** a difference above EGP 50.00 (over or short) needs a supervisor; the optional note is kept with the approval. The expected-cash formula is unchanged (K-24).
+- **Shift close:** always closes, whatever the difference (D-073, replaces the EGP 50 supervisor rule). The cashier sees expected amounts and the difference only in the report after confirming; the difference is saved with the close for the owner. The expected-cash formula is unchanged.

@@ -1,5 +1,6 @@
 import { ensureStoreDir } from './userDataPath'
 import { setupService, stopServiceOnly, removeService, restorePreInstall } from './serviceSetup'
+import { runScheduledBackup } from './scheduledBackup'
 import { openLogFile } from './logFile'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
@@ -27,6 +28,9 @@ const SERVICE_STEP_ARGS = [
   '--remove-service',
   '--restore-pre-install'
 ]
+// The nightly backup (Task Scheduler, system account): no window, its own log, and it runs while
+// the till is open (it does not take the one-instance lock).
+const scheduledBackup = process.argv.includes('--scheduled-backup')
 if (app.isPackaged) {
   const logs = join(ensureStoreDir(), 'logs')
   const installerStep = SERVICE_STEP_ARGS.some((a) =>
@@ -35,7 +39,9 @@ if (app.isPackaged) {
   const log = openLogFile(
     installerStep
       ? [join(logs, 'setup.log')]
-      : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
+      : scheduledBackup
+        ? [join(logs, 'backup.log')]
+        : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
   )
   // Errors keep their message and stack (JSON.stringify(new Error()) is "{}", which hid the reason
   // of a failed print in the 1.4.0 release checks).
@@ -102,8 +108,20 @@ if (serviceStep) {
   })
 }
 
+if (scheduledBackup) {
+  app.whenReady().then(async () => {
+    let code = 1
+    try {
+      code = await runScheduledBackup({ afterClose: process.argv.includes('--after-close') })
+    } catch (e) {
+      console.error('[backup] failed:', e.message)
+    }
+    app.exit(code)
+  })
+}
+
 // One instance per PC: a second copy would share – and on quit stop – the local database.
-if (!serviceStep && !app.requestSingleInstanceLock()) {
+if (!serviceStep && !scheduledBackup && !app.requestSingleInstanceLock()) {
   if (resetUser)
     app.whenReady().then(() => {
       dialog.showErrorBox(
@@ -203,7 +221,7 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  if (serviceStep) return // installer step: no window, no backend
+  if (serviceStep || scheduledBackup) return // installer step or nightly backup: no window, no backend
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.heromarket.pos')
 

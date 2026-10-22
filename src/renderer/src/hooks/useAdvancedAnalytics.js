@@ -24,57 +24,38 @@ export function useAdvancedAnalytics() {
   const [topProducts, setTopProducts] = useState([])
   const [paymentBreakdown, setPaymentBreakdown] = useState([])
 
+  // Quick ranges (ANALYTICS-01): calendar days in local time, today included – "3 أيام" is today
+  // and the 2 days before; "أمس" is yesterday 00:00–23:59. A quick range runs the analysis at once,
+  // so the figures always match the dates shown.
   const setQuickFilter = (type) => {
-    const now = new Date()
-    const end = getNowStr(now)
-    let start
-
-    if (type === 'today') {
+    const dayStart = (back) => {
       const d = new Date()
+      d.setDate(d.getDate() - back)
       d.setHours(0, 0, 0, 0)
-      start = getNowStr(d)
-      setFromDate(start.slice(0, 16))
-      setToDate(end.slice(0, 16))
-    } else if (type === 'yesterday') {
-      const d = new Date()
-      d.setDate(d.getDate() - 1)
-      d.setHours(0, 0, 0, 0)
-      const e = new Date()
-      e.setHours(0, 0, 0, 0)
-      setFromDate(getNowStr(d).slice(0, 16))
-      setToDate(getNowStr(e).slice(0, 16))
-    } else if (type === '3days') {
-      const d = new Date()
-      d.setDate(d.getDate() - 3)
-      d.setHours(0, 0, 0, 0)
-      start = getNowStr(d)
-      setFromDate(start.slice(0, 16))
-      setToDate(end.slice(0, 16))
-    } else if (type === 'week') {
-      const d = new Date()
-      d.setDate(d.getDate() - 7)
-      d.setHours(0, 0, 0, 0)
-      start = getNowStr(d)
-      setFromDate(start.slice(0, 16))
-      setToDate(end.slice(0, 16))
-    } else if (type === 'month') {
-      const d = new Date()
-      d.setDate(d.getDate() - 30)
-      d.setHours(0, 0, 0, 0)
-      start = getNowStr(d)
-      setFromDate(start.slice(0, 16))
-      setToDate(end.slice(0, 16))
-    } else {
-      setFromDate('2020-01-01T00:00')
-      setToDate(end.slice(0, 16))
+      return getNowStr(d).slice(0, 16)
     }
+    const now = getNowStr(new Date()).slice(0, 16)
+    const DAYS = { today: 1, '3days': 3, week: 7, month: 30 }
+    let from
+    let to = now
+    if (type === 'yesterday') {
+      from = dayStart(1)
+      to = from.slice(0, 11) + '23:59'
+    } else if (DAYS[type]) from = dayStart(DAYS[type] - 1)
+    else from = '2000-01-01T00:00'
+    setFromDate(from)
+    setToDate(to)
+    runAnalysis({ from, to })
   }
 
-  const runAnalysis = async () => {
+  // `range` ({ from, to } as 'YYYY-MM-DDTHH:mm') is passed by the quick ranges, because the date
+  // fields only update on the next render.
+  const runAnalysis = async (range) => {
     setLoading(true)
     try {
-      const from = fromDate.replace('T', ' ') + ':00'
-      const to = toDate.replace('T', ' ') + ':59'
+      const pick = range && range.from ? range : { from: fromDate, to: toDate }
+      const from = pick.from.replace('T', ' ') + ':00'
+      const to = pick.to.replace('T', ' ') + ':59'
 
       const report = await api('reports.advanced', { from, to })
       const shiftsInRange = report.shifts || []
@@ -119,7 +100,9 @@ export function useAdvancedAnalytics() {
 
       const damagedRes = [report.damaged]
       const damagedCost = damagedRes[0]?.total_cost || 0
-      const netProfit = netProfitRaw - damagedCost
+      // Invoice discounts earned on purchases (D-066).
+      const purchaseDiscounts = Number(report.purchaseDiscounts?.v) || 0
+      const netProfit = netProfitRaw - damagedCost + purchaseDiscounts
 
       const expRes = [report.expenses]
       const totalExpenses = expRes[0]?.total || 0
@@ -147,7 +130,8 @@ export function useAdvancedAnalytics() {
         netCashFlow,
         maxInvoice,
         returnCount,
-        damagedCost
+        damagedCost,
+        purchaseDiscounts
       })
 
       const perShiftSales = report.perShiftSales || []

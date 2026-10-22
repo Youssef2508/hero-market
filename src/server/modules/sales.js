@@ -5,6 +5,8 @@ const { badRequest, notFound, conflict, shiftRequired } = require('../errors')
 const { postMovement } = require('../inventory/stock')
 const { toBaseQty, kindRule } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
+const { methodOf } = require('../money/methods')
+const { addMovement } = require('../money/shiftLedger')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -30,6 +32,19 @@ async function saleWithCashier(db, saleId) {
       [saleId]
     )
   ).rows[0]
+}
+
+/** Discounts of an invoice: rules applied and the manual amount with who and why (D-057). */
+async function saleDiscounts(db, saleId) {
+  return (
+    await db.query(
+      `SELECT d.scope, d.name, d.value_type, d.value::float AS value, d.amount::float AS amount,
+              d.reason, d.created_at, u.username
+         FROM sale_discounts d LEFT JOIN users u ON u.id = d.user_id
+        WHERE d.sale_id = $1 ORDER BY d.id`,
+      [saleId]
+    )
+  ).rows
 }
 
 async function saleItems(db, saleId) {
@@ -73,7 +88,8 @@ async function refundShift(db, ctx, currentShiftId, sale) {
  * Pay a refund through the right channel (audit 1.4.0, migration 0011): first what the customer
  * still owes for this invoice, then store balance the customer spent on it, and only the rest in
  * cash from an open drawer. A plain cash sale is refunded in cash as before; a credit (آجل) sale
- * entirely on account, as before.
+ * entirely on account, as before. 1.5.0 (PAY-01): a Visa, wallet or InstaPay sale is refunded on
+ * its own method: the open shift's movement for that method, never drawer cash.
  */
 async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
   const refund = round2(amount)
@@ -109,14 +125,28 @@ async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
       await ledger(toCredit, `إعادة رصيد مستخدم في الفاتورة #${sale.id} (${label.what})`)
   }
   let shiftId = null
+  const method = methodOf(sale.payment_type) || 'cash'
   if (cash > 0) {
     shiftId = await refundShift(db, ctx, currentShiftId, sale)
-    await db.query(
-      `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp) VALUES ($1, 'outflow', $2, $3, LOCALTIMESTAMP(0))`,
-      [shiftId, cash, label.cash]
-    )
+    await addMovement(db, {
+      shiftId,
+      type: 'outflow',
+      amount: cash,
+      description: label.cash,
+      method,
+      kind: 'refund'
+    })
   }
-  return { refund, cash, toDebt, toCredit, shiftId }
+  // cash: what left the drawer; paidBack: what went back by the sale's own method (cash included).
+  return {
+    refund,
+    cash: method === 'cash' ? cash : 0,
+    paidBack: cash,
+    method,
+    toDebt,
+    toCredit,
+    shiftId
+  }
 }
 
 /**
@@ -141,8 +171,8 @@ function returnApproval(ctx, db, { subjectType, subjectId, amount, reason, appro
 
 async function recordReturn(db, ctx, row) {
   await db.query(
-    `INSERT INTO sale_returns (sale_id, sale_item_id, quantity, refund, reason, user_id, username, approval_id, shift_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO sale_returns (sale_id, sale_item_id, quantity, refund, reason, user_id, username, approval_id, shift_id, refund_method, paid_back)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       row.saleId,
       row.saleItemId ?? null,
@@ -152,7 +182,10 @@ async function recordReturn(db, ctx, row) {
       ctx.user.id,
       ctx.user.username,
       row.approvalId ?? null,
-      row.shiftId ?? null
+      row.shiftId ?? null,
+      // What went back by which method (0017): the rest went to the customer's account.
+      row.paidBack > 0 ? row.method : null,
+      row.paidBack ?? null
     ]
   )
 }
@@ -216,7 +249,24 @@ module.exports = function salesModule(app) {
       const sale = (await ctx.pool.query('SELECT * FROM sales WHERE id = $1', [saleId])).rows[0]
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
       const withCashier = await saleWithCashier(ctx.pool, saleId)
-      return { sale: withCashier || sale, items: await saleItems(ctx.pool, saleId) }
+      return {
+        sale: withCashier || sale,
+        items: await saleItems(ctx.pool, saleId),
+        discounts: await saleDiscounts(ctx.pool, saleId),
+        // PAY-02: payment method changes of this invoice, and whether its shift is still open.
+        corrections: (
+          await ctx.pool.query(
+            'SELECT from_type, to_type, amount::float8 AS amount, reason, username, created_at FROM sale_payment_corrections WHERE sale_id = $1 ORDER BY id',
+            [saleId]
+          )
+        ).rows,
+        shiftOpen:
+          (
+            await ctx.pool.query("SELECT status = 'open' AS open FROM shifts WHERE id = $1", [
+              sale.shift_id
+            ])
+          ).rows[0]?.open === true
+      }
     }
   })
 
@@ -228,7 +278,11 @@ module.exports = function salesModule(app) {
     handler: async (ctx, { saleId }) => {
       const sale = await saleWithCashier(ctx.pool, saleId)
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
-      return { sale, items: await saleItems(ctx.pool, saleId) }
+      return {
+        sale,
+        items: await saleItems(ctx.pool, saleId),
+        discounts: await saleDiscounts(ctx.pool, saleId)
+      }
     }
   })
 
@@ -338,7 +392,9 @@ module.exports = function salesModule(app) {
           refund: netRefund,
           reason,
           approvalId: approval.approvalId,
-          shiftId
+          shiftId,
+          method: paid.method,
+          paidBack: paid.paidBack
         })
         await ctx.audit(
           db,
@@ -348,6 +404,9 @@ module.exports = function salesModule(app) {
         return {
           netRefund,
           cashRefund: paid.cash,
+          // 1.5.0: the method the refund went back on, and how much (Visa, wallet, InstaPay or cash).
+          refundMethod: paid.method,
+          methodRefund: paid.paidBack,
           toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, sale.id),
           items: await saleItems(db, sale.id)
@@ -433,7 +492,9 @@ module.exports = function salesModule(app) {
           refund,
           reason,
           approvalId: approval.approvalId,
-          shiftId
+          shiftId,
+          method: paid.method,
+          paidBack: paid.paidBack
         })
         await ctx.audit(
           db,
@@ -443,6 +504,9 @@ module.exports = function salesModule(app) {
         return {
           refund,
           cashRefund: paid.cash,
+          // 1.5.0: the method the refund went back on, and how much (Visa, wallet, InstaPay or cash).
+          refundMethod: paid.method,
+          methodRefund: paid.paidBack,
           toAccount: round2(paid.toDebt + paid.toCredit),
           sale: await saleWithCashier(db, saleId),
           items: await saleItems(db, saleId)

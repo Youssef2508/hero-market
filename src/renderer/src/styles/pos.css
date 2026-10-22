@@ -572,15 +572,15 @@
 }
 .pay-grid {
   display: grid;
-  /* 3 + 2 layout without a gap: six tracks, first row spans 2, second row spans 3 */
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* 4 + 2 layout (D-061): the four payment methods on one row, the two on-account options below */
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 6px;
 }
 .pay-grid .pay-option {
-  grid-column: span 2;
-}
-.pay-grid .pay-option:nth-child(n + 4) {
   grid-column: span 3;
+}
+.pay-grid .pay-option:nth-child(n + 5) {
+  grid-column: span 6;
   flex-direction: row;
   gap: 8px;
   min-height: 44px;
@@ -1181,4 +1181,12 @@
 }
 .product-card {
   padding-top: 26px;
+}
+
+/* Manual invoice discount (D-057) */
+.manual-discount-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-start;
+  margin-top: var(--sp-2);
 }

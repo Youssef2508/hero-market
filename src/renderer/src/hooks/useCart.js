@@ -22,6 +22,8 @@ export function useCart({ playSound }) {
   const [discount, setDiscount] = useState(0)
   const [paidAmount, setPaidAmount] = useState('')
   const [paymentType, setPaymentType] = useState('نقدي')
+  // دفع جزئي (D-064): how the part paid at once is paid.
+  const [upfrontMethod, setUpfrontMethod] = useState('cash')
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
   const [isDelivery, setIsDelivery] = useState(false)
@@ -188,11 +190,14 @@ export function useCart({ playSound }) {
     setDiscount(0)
     setPaidAmount('')
     setPaymentType('نقدي')
+    setUpfrontMethod('cash')
   }
 
   return {
     cart,
     setCart,
+    upfrontMethod,
+    setUpfrontMethod,
     discount,
     setDiscount,
     paidAmount,

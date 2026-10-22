@@ -22,7 +22,8 @@ async function resetPassword(pool, username, { via = 'local command' } = {}) {
     const temporary = newTemporaryPassword()
     await client.query(
       `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
-              password_hash = NULL, updated_at = LOCALTIMESTAMP(0) WHERE id = $2`,
+              password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours',
+              updated_at = LOCALTIMESTAMP(0) WHERE id = $2`,
       [hashPassword(temporary), account.id]
     )
     await client.query(

@@ -114,15 +114,45 @@ export function verifySnapshot(target) {
   return { ok: true, files: Object.keys(manifest.files).length }
 }
 
-/** Keep the newest `keep` snapshots (folder names start with an ISO timestamp). */
-export function pruneSnapshots(backupsDir, keep = KEEP) {
+/**
+ * The copy --restore-pre-install puts back. `names` are the copies, oldest first; `versionOf` gives
+ * a copy's data version. `which` is a copy's folder name, or a version (e.g. "1.4.0") for the newest
+ * copy of that version's data; without it, the newest copy of the installed version's data. Going
+ * back to an older version: restore its data with the newer program first, then run the older
+ * installer (an older installer prunes copies by its own, older rule).
+ */
+export function pickRestoreCopy(names, versionOf, which, appVersion) {
+  if (which && names.includes(which)) return which
+  const version = which || appVersion
+  return [...names].reverse().find((n) => versionOf(n) === version) || null
+}
+
+/**
+ * Keep the newest `keep` snapshots (folder names start with an ISO timestamp). With `versionOf`
+ * (a snapshot's name → the version its data belongs to), the newest snapshot of each of the last
+ * `keep` data versions is kept too, so going back after a database update stays possible however
+ * many times an installer runs afterwards (1.5.0 Sandbox check: four later runs had removed the
+ * only copy of the 1.4.0 data).
+ */
+export function pruneSnapshots(backupsDir, keep = KEEP, versionOf = null) {
   if (!fs.existsSync(backupsDir)) return []
   const all = fs
     .readdirSync(backupsDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && fs.existsSync(path.join(backupsDir, e.name, 'manifest.json')))
     .map((e) => e.name)
     .sort()
-  const removed = all.slice(0, Math.max(0, all.length - keep))
+  const kept = new Set(all.slice(-keep))
+  if (versionOf) {
+    const versions = []
+    for (const name of [...all].reverse()) {
+      const v = versionOf(name)
+      if (!v || versions.includes(v)) continue
+      if (versions.length === keep) break
+      versions.push(v)
+      kept.add(name)
+    }
+  }
+  const removed = all.filter((name) => !kept.has(name))
   for (const name of removed)
     fs.rmSync(path.join(backupsDir, name), { recursive: true, force: true })
   return removed

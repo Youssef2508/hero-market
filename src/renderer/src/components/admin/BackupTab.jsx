@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   DatabaseBackup,
   Download,
@@ -6,8 +6,55 @@ import {
   ShieldAlert,
   CircleCheck,
   RefreshCw,
-  ShieldCheck
+  ShieldCheck,
+  MoonStar
 } from 'lucide-react'
+
+/**
+ * The automatic nightly backup (BACKUP-01): every day at 00:00, also with the program closed; 14
+ * daily and 8 weekly copies. Its last result comes from logs\backup-status.json.
+ */
+function NightlyBackup() {
+  const [s, setS] = useState(null)
+  useEffect(() => {
+    window.api?.db
+      ?.nightlyStatus?.()
+      .then(setS)
+      .catch(() => setS(null))
+  }, [])
+  if (!s) return null
+  const stamp = (v) => (v ? new Date(v).toLocaleString('ar-EG') : '—')
+  return (
+    <section className="card">
+      <div className="card-body stack">
+        <h2 className="card-title">
+          <MoonStar size={18} aria-hidden="true" />
+          النسخ الاحتياطي التلقائي كل ليلة
+        </h2>
+        <p className="cell-muted">
+          كل يوم الساعة 12:00 منتصف الليل، حتى لو كان البرنامج مغلقاً. إذا كان الجهاز مغلقاً وقتها
+          تؤخذ النسخة مرة واحدة عند تشغيله. يُحتفظ بآخر 14 نسخة يومية و8 نسخ أسبوعية.
+        </p>
+        <dl className="kv">
+          <dt>آخر نسخة ناجحة</dt>
+          <dd>{stamp(s.lastGood)}</dd>
+          <dt>آخر محاولة</dt>
+          <dd className={s.result === 'failed' ? 'text-danger' : ''}>
+            {s.result === null
+              ? 'لم تُؤخذ نسخة تلقائية بعد'
+              : s.result === 'failed'
+                ? `فشلت (${stamp(s.at)}): ${s.reason || ''}`
+                : `${stamp(s.at)} – ${s.result === 'done' ? 'تمت' : 'لا حاجة (نسخة اليوم موجودة)'}`}
+          </dd>
+          <dt>النسخ المحفوظة</dt>
+          <dd>{(s.kept || []).length}</dd>
+          <dt>المجلد</dt>
+          <dd className="mono">{s.folder}</dd>
+        </dl>
+      </div>
+    </section>
+  )
+}
 
 export default function BackupTab() {
   const [loading, setLoading] = useState(false)
@@ -74,6 +121,8 @@ export default function BackupTab() {
           <span style={{ fontWeight: 'var(--fw-semibold)' }}>{status.message}</span>
         </div>
       )}
+
+      <NightlyBackup />
 
       <div className="two-col">
         <section className="card action-card">

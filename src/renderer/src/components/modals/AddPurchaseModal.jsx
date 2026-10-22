@@ -12,6 +12,9 @@ const AddPurchaseModal = ({
   showAddPurchaseModal,
   setShowAddPurchaseModal,
   selectedSupplier,
+  // A preliminary invoice being completed (D-064): lines required, its payment already recorded.
+  convertingPending,
+  setConvertingPending,
   newPurchaseForm,
   setNewPurchaseForm,
   handleAddPurchase
@@ -50,10 +53,19 @@ const AddPurchaseModal = ({
           unit: p.unit || '',
           units: [
             { id: null, name: p.unit || 'الوحدة الأساسية', factor: 1 },
-            ...extra.map((u) => ({ id: u.id, name: u.name, factor: Number(u.factor) }))
+            ...extra.map((u) => ({
+              id: u.id,
+              name: u.name,
+              factor: Number(u.factor),
+              cost: u.purchase_cost === null ? null : Number(u.purchase_cost)
+            }))
           ],
           unitId: null,
           baseCost,
+          retailPrice: p.retail_price !== undefined ? Number(p.retail_price) : null,
+          newRetailPrice: '',
+          wholesalePrice: p.wholesale_price !== undefined ? Number(p.wholesale_price) : null,
+          newWholesalePrice: '',
           qty: '',
           unitCost: baseCost !== null ? String(baseCost) : ''
         }
@@ -75,16 +87,28 @@ const AddPurchaseModal = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-purchase-title"
-        style={{ width: items.length ? 640 : 480 }}
+        style={{ width: items.length ? 'min(940px, calc(100vw - 32px))' : 480 }}
       >
         <div className="modal-header">
           <span className="modal-icon" aria-hidden="true">
             <ReceiptText size={22} />
           </span>
-          <h2 id="add-purchase-title">فاتورة شراء جديدة</h2>
+          <h2 id="add-purchase-title">
+            {convertingPending
+              ? `إكمال الفاتورة المبدئية #${convertingPending.id}`
+              : 'فاتورة شراء جديدة'}
+          </h2>
           <p>المورد: {selectedSupplier.name}</p>
+          {convertingPending && (
+            <p className="field-hint">
+              الإجمالي المبدئي {formatMoney(convertingPending.total)} ج.م، مدفوع منه{' '}
+              {formatMoney(convertingPending.paid)} ج.م (لا يُدفع مرة أخرى). أي فرق بين إجمالي
+              الأصناف والإجمالي المبدئي يُسجَّل تسويةً على حساب المورد.
+            </p>
+          )}
         </div>
         <form
+          data-enter-step
           onSubmit={handleAddPurchase}
           style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
         >
@@ -111,13 +135,24 @@ const AddPurchaseModal = ({
               </p>
             )}
             {items.length > 0 && (
-              <table className="data-table">
+              <table className="data-table purchase-lines">
+                <colgroup>
+                  <col style={{ width: '25%' }} />
+                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '25%' }} />
+                  <col style={{ width: '6%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>الصنف</th>
                     <th>الكمية</th>
                     <th>تكلفة الوحدة</th>
                     <th>الإجمالي</th>
+                    <th title="اختياري: يغيّر سعر الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      سعر البيع الجديد (اختياري)
+                    </th>
                     <th aria-label="حذف" />
                   </tr>
                 </thead>
@@ -138,7 +173,6 @@ const AddPurchaseModal = ({
                           value={l.qty}
                           onChange={(e) => update(i, { qty: e.target.value })}
                           aria-label={`كمية ${l.name}`}
-                          style={{ width: 90 }}
                         />
                         {l.units && l.units.length > 1 ? (
                           <select
@@ -149,14 +183,18 @@ const AddPurchaseModal = ({
                               const u = l.units.find((x) => (x.id ?? null) === id)
                               update(i, {
                                 unitId: id,
+                                // The package's own purchase price when the owner set one
+                                // (D-065), else the piece cost × the factor.
                                 unitCost:
-                                  l.baseCost !== null
-                                    ? String(Math.round(l.baseCost * u.factor * 10000) / 10000)
-                                    : l.unitCost
+                                  u.cost !== null && u.cost !== undefined
+                                    ? String(u.cost)
+                                    : l.baseCost !== null
+                                      ? String(Math.round(l.baseCost * u.factor * 10000) / 10000)
+                                      : l.unitCost
                               })
                             }}
                             aria-label={`وحدة شراء ${l.name}`}
-                            style={{ width: 120, marginTop: 4 }}
+                            style={{ marginTop: 4 }}
                           >
                             {l.units.map((u) => (
                               <option key={u.id ?? 'base'} value={u.id ?? ''}>
@@ -168,6 +206,18 @@ const AddPurchaseModal = ({
                         ) : (
                           l.unit && <span className="cell-muted"> {l.unit}</span>
                         )}
+                        {(() => {
+                          // The stock it adds, in the base unit (D-065: no mental arithmetic).
+                          const u = (l.units || []).find(
+                            (x) => (x.id ?? null) === (l.unitId ?? null)
+                          )
+                          const q = parseFloat(l.qty)
+                          return u && u.factor > 1 && q > 0 ? (
+                            <div className="cell-muted">
+                              = {Math.round(q * u.factor * 1000) / 1000} {l.unit}
+                            </div>
+                          ) : null
+                        })()}
                       </td>
                       <td>
                         <input
@@ -179,10 +229,41 @@ const AddPurchaseModal = ({
                           value={l.unitCost}
                           onChange={(e) => update(i, { unitCost: e.target.value })}
                           aria-label={`تكلفة وحدة ${l.name}`}
-                          style={{ width: 100 }}
                         />
                       </td>
                       <td className="num">{formatMoney(lineTotal(l))}</td>
+                      <td>
+                        {/* D-068: the product's own selling price (its base unit), set when the
+                            invoice is saved; empty keeps the current price. */}
+                        <span className="price-pair-label">بيع</span>
+                        <input
+                          type="number"
+                          className="form-input num"
+                          min="0"
+                          step="0.01"
+                          value={l.newRetailPrice ?? ''}
+                          onChange={(e) => update(i, { newRetailPrice: e.target.value })}
+                          placeholder={l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}
+                          aria-label={`سعر البيع الجديد ${l.name}`}
+                          title={`سعر البيع الحالي ${l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}؛ اتركه فارغاً بدون تغيير`}
+                        />
+                        {/* D-068: the product's wholesale price (its base unit), the same way. */}
+                        <span className="price-pair-label">جملة</span>
+                        <input
+                          type="number"
+                          className="form-input num"
+                          min="0"
+                          step="0.01"
+                          value={l.newWholesalePrice ?? ''}
+                          onChange={(e) => update(i, { newWholesalePrice: e.target.value })}
+                          placeholder={
+                            l.wholesalePrice !== null ? formatMoney(l.wholesalePrice) : ''
+                          }
+                          aria-label={`سعر البيع الجديد (الجملة) ${l.name}`}
+                          title={`سعر الجملة الحالي ${l.wholesalePrice !== null ? formatMoney(l.wholesalePrice) : ''}؛ اتركه فارغاً بدون تغيير`}
+                        />
+                        {l.unit && <div className="cell-muted">لكل {l.unit}</div>}
+                      </td>
                       <td>
                         <button
                           type="button"
@@ -221,30 +302,70 @@ const AddPurchaseModal = ({
               />
             )}
           </div>
+          {/* Optional invoice-level discount (D-066): lowers what the supplier is owed; the lines
+              keep their prices, so no product cost or price changes. */}
           <div className="form-group">
-            <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
+            <label htmlFor="purchase-discount">خصم الفاتورة (ج.م، اختياري)</label>
             <input
+              id="purchase-discount"
               type="number"
               className="form-input"
               min="0"
               step="0.01"
-              value={newPurchaseForm.paid_amount}
-              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))}
+              value={newPurchaseForm.discount ?? ''}
+              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, discount: e.target.value }))}
               placeholder="0.00"
             />
           </div>
-          <div className="form-group">
-            <label>نوع الدفع</label>
-            <select
-              className="form-input"
-              value={newPurchaseForm.payment_type}
-              onChange={(e) => setNewPurchaseForm((p) => ({ ...p, payment_type: e.target.value }))}
-            >
-              <option value="آجل">آجل</option>
-              <option value="نقدي">نقدي كامل</option>
-              <option value="شيك">شيك</option>
-            </select>
-          </div>
+          {parseFloat(newPurchaseForm.discount) > 0 && (
+            <div className="form-group">
+              <label>صافي الفاتورة المستحق للمورد (ج.م)</label>
+              <output className="form-input num" aria-live="polite">
+                {formatMoney(
+                  Math.round(
+                    ((items.length ? itemsTotal : parseFloat(newPurchaseForm.total_amount) || 0) -
+                      parseFloat(newPurchaseForm.discount)) *
+                      100
+                  ) / 100
+                )}
+              </output>
+              <p className="field-hint">
+                الخصم على الفاتورة كلها: لا يغيّر تكلفة الأصناف ولا أسعارها، ويظهر في التقارير كخصم
+                مشتريات مكتسب.
+              </p>
+            </div>
+          )}
+          {!convertingPending && (
+            <>
+              <div className="form-group">
+                <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  min="0"
+                  step="0.01"
+                  value={newPurchaseForm.paid_amount}
+                  onChange={(e) =>
+                    setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="form-group">
+                <label>نوع الدفع</label>
+                <select
+                  className="form-input"
+                  value={newPurchaseForm.payment_type}
+                  onChange={(e) =>
+                    setNewPurchaseForm((p) => ({ ...p, payment_type: e.target.value }))
+                  }
+                >
+                  <option value="آجل">آجل</option>
+                  <option value="نقدي">نقدي كامل</option>
+                </select>
+              </div>
+            </>
+          )}
           <div className="form-group">
             <label>ملاحظات</label>
             <input
@@ -259,12 +380,19 @@ const AddPurchaseModal = ({
               data-modal-close
               type="button"
               className="btn btn-secondary"
-              onClick={() => setShowAddPurchaseModal(false)}
+              onClick={() => {
+                setShowAddPurchaseModal(false)
+                if (setConvertingPending) setConvertingPending(null)
+              }}
             >
               إلغاء
             </button>
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-              {items.length ? 'تسجيل الفاتورة واستلام الأصناف' : 'تسجيل الفاتورة'}
+              {convertingPending
+                ? 'إكمال الفاتورة واستلام الأصناف'
+                : items.length
+                  ? 'تسجيل الفاتورة واستلام الأصناف'
+                  : 'تسجيل الفاتورة'}
             </button>
           </div>
         </form>

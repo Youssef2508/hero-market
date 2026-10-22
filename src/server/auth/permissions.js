@@ -17,11 +17,18 @@ const PERMISSIONS = [
     description: 'إتمام بيع آجل أو دفع جزئي على حساب عميل'
   },
   {
+    // Owner decision 2026-10-21 (D-057): a fixed EGP amount off the current invoice, with a reason.
+    // Not given to cashiers by default; the owner assigns it to roles.
+    key: 'pos.manual_discount',
+    module: 'pos',
+    label: 'خصم يدوي على الفاتورة',
+    description: 'خصم مبلغ ثابت من إجمالي فاتورة البيع الحالية مع ذكر السبب'
+  },
+  {
     key: 'pos.approve',
     module: 'pos',
     label: 'اعتماد عمليات الكاشير',
-    description:
-      'الموافقة باسم المستخدم وكلمة المرور على مرتجعات الكاشير وفروق إغلاق الوردية التي تتجاوز 50 ج.م'
+    description: 'الموافقة باسم المستخدم وكلمة المرور على مرتجعات الكاشير'
   },
   // Shifts and tills
   {
@@ -33,26 +40,38 @@ const PERMISSIONS = [
   {
     key: 'shifts.multi_till',
     module: 'shifts',
-    label: 'أرصدة مكن وكاش المحافظ والإغلاق المتقدم',
-    description: 'إدخال أرصدة بداية مكن والمحافظ وإغلاق الوردية متعدد الأدراج'
+    // Momkn and wallet-service tills are not used by the store (owner, 2026-10-21, D-063).
+    label: 'أرصدة مكن والمحافظ (غير مستخدمة)',
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة',
+    // Not shown in the roles screen (owner, 2026-10-22, D-078); the key stays valid.
+    hidden: true
   },
   {
     key: 'shifts.view_all',
     module: 'shifts',
-    label: 'سجل الورديات',
+    label: 'الورديات',
     description: 'عرض جميع الورديات وجرد الأدراج'
+  },
+  {
+    // Blind close (owner feedback PAY-01): without it, expected amounts stay hidden until the close
+    // is confirmed; the service refuses them, the screens only follow.
+    key: 'shifts.view_expected',
+    module: 'shifts',
+    label: 'عرض المبالغ المتوقعة قبل الإغلاق',
+    description: 'رؤية المتوقع في الدرج وكل طريقة دفع أثناء الوردية وقبل تأكيد الإغلاق'
   },
   {
     key: 'tills.operate',
     module: 'tills',
-    label: 'حركات الأدراج والتحويلات',
-    description: 'تسجيل حركات مكن والمحافظ والخزنة'
+    label: 'الأدراج والتحويلات',
+    description: 'صفحة الدرج وطرق الدفع للوردية الحالية (المبالغ لمن يملك عرض المتوقع فقط)'
   },
   {
     key: 'tills.manage',
     module: 'tills',
-    label: 'حذف وطباعة حركات الأدراج',
-    description: 'حذف حركات مكن والمحافظ وطباعة تقارير الجرد'
+    label: 'حركات مكن والمحافظ (غير مستخدمة)',
+    description: 'لا تمنح أي شاشة؛ تبقى لصحة الأدوار المحفوظة',
+    hidden: true
   },
   // Sales back office
   {
@@ -78,6 +97,12 @@ const PERMISSIONS = [
     module: 'sales',
     label: 'طلب مرتجع بموافقة المشرف',
     description: 'فتح الفاتورة برقمها وتنفيذ مرتجع بعد موافقة المشرف وكتابة السبب'
+  },
+  {
+    key: 'sales.change_payment',
+    module: 'sales',
+    label: 'تغيير طريقة دفع فاتورة',
+    description: 'تصحيح طريقة الدفع لفاتورة في وردية مفتوحة مع ذكر السبب'
   },
   // Catalogue and stock
   {
@@ -160,16 +185,63 @@ const PERMISSIONS = [
     description: 'إضافة الموردين وفواتير الشراء والسداد'
   },
   {
+    // SUP-03 (D-070): what was owed between the store and a supplier before HeroMarket. Money:
+    // administrators by default; the owner grants it to other roles.
+    key: 'suppliers.opening',
+    module: 'suppliers',
+    label: 'الرصيد الافتتاحي للموردين',
+    description: 'تسجيل أو تصحيح ما كان مستحقاً للمورد أو عليه قبل بدء العمل بالبرنامج'
+  },
+  {
+    // Preliminary supplier invoice at the till (D-064): total and payment, no lines, no stock.
+    key: 'suppliers.pending',
+    module: 'suppliers',
+    label: 'فاتورة مورد مبدئية',
+    description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
+  },
+  {
     key: 'checks.manage',
     module: 'finance',
-    label: 'الشيكات',
-    description: 'تسجيل الشيكات وتحديث حالتها'
+    // Cheque processing is removed (owner, 2026-10-21, D-060): this key grants nothing any more and
+    // stays only so stored roles remain valid. The old records are kept in checks_register.
+    label: 'الشيكات (متوقفة)',
+    description: 'لم تعد تمنح أي صلاحية؛ تسجيل الشيكات وسدادها وحذفها متوقف'
+  },
+  {
+    key: 'checks.archive',
+    module: 'finance',
+    label: 'أرشيف الشيكات (عرض فقط)',
+    description: 'عرض الشيكات القديمة المسجلة قبل إيقاف الشيكات، بدون تعديل أو حذف'
   },
   {
     key: 'expenses.manage',
     module: 'finance',
     label: 'المصروفات',
-    description: 'تسجيل وحذف المصروفات'
+    description: 'تسجيل مصروفاته وعرضها وحذفها'
+  },
+  {
+    key: 'expenses.view_all',
+    module: 'finance',
+    label: 'كل المصروفات',
+    description: 'عرض وحذف مصروفات كل المستخدمين ومصروفات الخزنة'
+  },
+  {
+    key: 'expenses.categories',
+    module: 'finance',
+    label: 'تصنيفات المصروفات',
+    description: 'إضافة تصنيفات المصروفات وتعديلها وإيقافها'
+  },
+  {
+    key: 'treasury.view',
+    module: 'finance',
+    label: 'عرض الخزنة',
+    description: 'رصيد الخزنة وحركاتها'
+  },
+  {
+    key: 'treasury.manage',
+    module: 'finance',
+    label: 'حركات الخزنة',
+    description: 'إيداع وسحب وتسوية، ومصروفات وتحصيلات وسداد من الخزنة مباشرة بدون وردية'
   },
   // Reports and administration
   {
@@ -184,6 +256,29 @@ const PERMISSIONS = [
     module: 'admin',
     label: 'النسخ الاحتياطي والاستعادة',
     description: 'إنشاء نسخة احتياطية واستعادتها'
+  },
+  {
+    // PROD-02 / DASH-01 (D-071): stock value at cost and at selling price, and what suppliers
+    // and customers are owed – owner money figures, granted per role by an administrator.
+    key: 'reports.valuation',
+    module: 'reports',
+    label: 'قيمة المخزون والأرصدة',
+    description: 'قيمة المخزون بسعر الشراء وبسعر البيع، والمستحق للموردين وعلى العملاء'
+  },
+  {
+    // Separate from export (ROLE-01, D-067): importing writes new products, customers, suppliers
+    // and opening balances; it never changes existing records or history.
+    key: 'data.import',
+    module: 'admin',
+    label: 'استيراد البيانات',
+    description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket)'
+  },
+  {
+    // Reading only (DATA-01, D-067); separate from import.
+    key: 'data.export',
+    module: 'admin',
+    label: 'تصدير البيانات',
+    description: 'تصدير الأصناف والعملاء والموردين في ملف Excel بقالب الاستيراد نفسه'
   },
   {
     key: 'users.manage',
@@ -228,8 +323,24 @@ const MANAGEMENT = ALL.filter(
       'system.reset',
       'shifts.multi_till',
       'tills.manage',
+      // Bulk data in and out: administrators by default; the owner assigns them (D-067).
+      'data.import',
+      'data.export',
+      'suppliers.opening',
+      'reports.valuation',
       // Discounts are the administrator's alone (owner, 2026-10-15).
       'discounts.manage',
+      // Manual invoice discount: administrators by default; the owner assigns it (D-057).
+      'pos.manual_discount',
+      // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
+      'checks.archive',
+      // Owner-only money (owner feedback phase D, D-062): expected amounts before the close, every
+      // user's expenses, the treasury and payment method corrections.
+      'shifts.view_expected',
+      'expenses.view_all',
+      'treasury.view',
+      'treasury.manage',
+      'sales.change_payment',
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
       'sync.manage'
     ].includes(k)
@@ -267,7 +378,8 @@ const SYSTEM_ROLES = [
       'pos.credit',
       'shifts.operate',
       'tills.operate',
-      'sales.return_request'
+      'sales.return_request',
+      'suppliers.pending'
     ]
   },
   {

@@ -38,3 +38,6 @@ build/vcredist/
 
 # Temporary config files left by interrupted electron-vite builds
 electron.vite.config.*.mjs
+
+# Owner receipt photo with a customer's name and phone: kept locally; the redacted copy is committed.
+.docs/reference-images/owner-sales-receipt.jpg

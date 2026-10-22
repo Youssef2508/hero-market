@@ -11,12 +11,12 @@ import AddClientModal from './AddClientModal'
 import EditClientModal from './EditClientModal'
 import AddSupplierModal from './AddSupplierModal'
 import AddPurchaseModal from './AddPurchaseModal'
-import AddCheckModal from './AddCheckModal'
 import CustomConfirmModal from './CustomConfirmModal'
 
 export default function AppModals({
   openShiftModal,
   setOpenShiftModal,
+  onSignOut,
   currentUser,
   startingCash,
   setStartingCash,
@@ -98,18 +98,15 @@ export default function AppModals({
   newPurchaseForm,
   setNewPurchaseForm,
   handleAddPurchase,
-
-  showAddCheckModal,
-  setShowAddCheckModal,
-  newCheckForm,
-  setNewCheckForm,
-  handleAddCheck
+  convertingPending,
+  setConvertingPending
 }) {
   return (
     <>
       <OpenShiftModal
         openShiftModal={openShiftModal}
         setOpenShiftModal={setOpenShiftModal}
+        onSignOut={onSignOut}
         currentUser={currentUser}
         startingCash={startingCash}
         setStartingCash={setStartingCash}
@@ -177,6 +174,8 @@ export default function AppModals({
       />
 
       <EditUserModal
+        // A fresh window each time it opens: nothing typed (the administrator's password) stays.
+        key={showEditUserModal ? `edit-user-${editUser?.id}` : 'edit-user-closed'}
         showEditUserModal={showEditUserModal}
         setShowEditUserModal={setShowEditUserModal}
         editUser={editUser}
@@ -208,23 +207,18 @@ export default function AppModals({
         newSupplierForm={newSupplierForm}
         setNewSupplierForm={setNewSupplierForm}
         handleAddSupplier={handleAddSupplier}
+        currentUser={currentUser}
       />
 
       <AddPurchaseModal
         showAddPurchaseModal={showAddPurchaseModal}
         setShowAddPurchaseModal={setShowAddPurchaseModal}
         selectedSupplier={selectedSupplier}
+        convertingPending={convertingPending}
+        setConvertingPending={setConvertingPending}
         newPurchaseForm={newPurchaseForm}
         setNewPurchaseForm={setNewPurchaseForm}
         handleAddPurchase={handleAddPurchase}
-      />
-
-      <AddCheckModal
-        showAddCheckModal={showAddCheckModal}
-        setShowAddCheckModal={setShowAddCheckModal}
-        newCheckForm={newCheckForm}
-        setNewCheckForm={setNewCheckForm}
-        handleAddCheck={handleAddCheck}
       />
     </>
   )

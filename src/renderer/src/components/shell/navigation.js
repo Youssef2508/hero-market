@@ -12,17 +12,17 @@ import {
   ScanBarcode,
   Wallet,
   LayoutDashboard,
-  ChartColumn,
   ChartLine,
   Award,
   Trophy,
+  Boxes,
+  ArrowLeftRight,
   Package,
   ClipboardList,
   PackageX,
   ReceiptText,
   Users,
   Truck,
-  Landmark,
   HandCoins,
   Clock,
   UserCog,
@@ -33,7 +33,9 @@ import {
   Cloud,
   ShieldCheck,
   BadgePercent,
-  Settings
+  Settings,
+  Archive,
+  Landmark
 } from 'lucide-react'
 
 export const NAV_GROUPS = [
@@ -74,19 +76,26 @@ export const NAV_GROUPS = [
     ]
   },
   {
+    // Owner feedback TREAS-01: the treasury is a top-level section.
+    id: 'treasury',
+    label: 'الخزنة',
+    items: [
+      {
+        id: 'treasury',
+        permission: ['treasury.view'],
+        label: 'الخزنة',
+        icon: Landmark,
+        view: 'admin',
+        tab: 'treasury',
+        description: 'رصيد الخزنة وحركاتها: الإيداع والسحب وتوريد الورديات والمصروفات والتحصيلات.'
+      }
+    ]
+  },
+  {
     id: 'reports',
     label: 'التقارير',
     items: [
-      {
-        id: 'stats',
-        permission: ['reports.view'],
-        label: 'الأداء والأرباح',
-        icon: ChartColumn,
-        view: 'admin',
-        tab: 'stats',
-        description: 'الإيرادات والأرباح والملخص المالي للفترة.',
-        onEnter: (c) => c.fetchAnalytics()
-      },
+      // «الأداء والأرباح» is merged into the dashboard's period statistics (owner, 2026-10-22, D-078).
       {
         id: 'advanced-stats',
         permission: ['reports.view'],
@@ -114,6 +123,16 @@ export const NAV_GROUPS = [
         tab: 'bestsellers',
         description: 'الأصناف الأكثر مبيعاً والأصناف الراكدة.',
         onEnter: (c) => c.fetchBestSellers(c.bsPeriod)
+      },
+      {
+        // PROD-02 (D-071): owner money figures, granted per role.
+        id: 'stockvalue',
+        permission: ['reports.valuation'],
+        label: 'قيمة المخزون',
+        icon: Boxes,
+        view: 'admin',
+        tab: 'stockvalue',
+        description: 'قيمة المخزون بسعر الشراء وبسعر البيع، مع الأصناف بالسالب وبدون تكلفة.'
       }
     ]
   },
@@ -133,6 +152,16 @@ export const NAV_GROUPS = [
           c.setAdminSearch('')
           c.fetchInventoryPage(1, '')
         }
+      },
+      {
+        // STOCK-01 (D-071): every movement, the same rows as each product's history.
+        id: 'movements',
+        permission: ['products.view'],
+        label: 'حركات المخزون',
+        icon: ArrowLeftRight,
+        view: 'admin',
+        tab: 'movements',
+        description: 'كل حركات المخزون: شراء وبيع ومرتجع وجرد وهالك، بالصنف والنوع والتاريخ.'
       },
       {
         id: 'categories',
@@ -206,19 +235,6 @@ export const NAV_GROUPS = [
         }
       },
       {
-        id: 'checks',
-        permission: ['checks.manage'],
-        label: 'الشيكات',
-        icon: Landmark,
-        view: 'admin',
-        tab: 'checks',
-        description: 'الشيكات الصادرة والواردة وتواريخ الاستحقاق.',
-        onEnter: (c) => {
-          c.fetchChecksList()
-          c.fetchChecksDueToday()
-        }
-      },
-      {
         id: 'expenses',
         permission: ['expenses.manage'],
         label: 'المصروفات',
@@ -237,11 +253,11 @@ export const NAV_GROUPS = [
       {
         id: 'shifts',
         permission: ['shifts.view_all'],
-        label: 'سجل الورديات',
+        label: 'الورديات',
         icon: Clock,
         view: 'admin',
         tab: 'shifts',
-        description: 'الورديات المغلقة والعجز والزيادة وجرد الدرج.',
+        description: 'الورديات المغلقة والعجز والزيادة.',
         onEnter: (c) => c.fetchShiftsHistory()
       },
       {
@@ -310,13 +326,25 @@ export const NAV_GROUPS = [
       },
       {
         id: 'import',
-        // The service requires products, customers and suppliers management together.
-        permission: ['products.manage'],
-        label: 'استيراد البيانات',
+        // Separate permissions for import and export (ROLE-01, D-067); the screen shows each part
+        // to whoever holds it.
+        permission: ['data.import', 'data.export'],
+        label: 'استيراد وتصدير البيانات',
         icon: FileSpreadsheet,
         view: 'admin',
         tab: 'import',
-        description: 'استيراد الأصناف والعملاء والموردين من ملف Excel (قالب HeroMarket).'
+        description: 'استيراد وتصدير الأصناف والعملاء والموردين بملف Excel (قالب HeroMarket).'
+      },
+      {
+        // Read-only archive of the cheques kept from before cheques were removed (D-060).
+        id: 'checks',
+        permission: ['checks.archive'],
+        label: 'أرشيف الشيكات',
+        icon: Archive,
+        view: 'admin',
+        tab: 'checks',
+        description: 'الشيكات القديمة للعرض فقط؛ الشيكات متوقفة.',
+        onEnter: (c) => c.fetchChecksList()
       },
       {
         id: 'sync',

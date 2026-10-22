@@ -19,6 +19,8 @@ const { badRequest, unauthorized, conflict } = require('../errors')
 const { sha256 } = require('../app')
 
 const WRONG = 'اسم المستخدم أو كلمة المرور غير صحيحة.'
+// A temporary password works for 72 hours (USER-02, D-076); told only to whoever typed it right.
+const EXPIRED = 'انتهت صلاحية كلمة المرور المؤقتة. اطلب من المدير إعادة تعيين كلمة المرور.'
 
 function safeEqual(a, b) {
   const x = Buffer.from(a)
@@ -50,7 +52,8 @@ async function openShiftOf(db, userId) {
  */
 async function storePassword(db, userId, password, { keepSessions = false } = {}) {
   await db.query(
-    `UPDATE users SET password_scrypt = $1, must_change_password = false, password_changed_at = LOCALTIMESTAMP(0),
+    `UPDATE users SET password_scrypt = $1, must_change_password = false, temp_password_expires_at = NULL,
+            password_changed_at = LOCALTIMESTAMP(0),
             pin_lookup = NULL, pin_hash = NULL, password_hash = NULL, updated_at = LOCALTIMESTAMP(0)
       WHERE id = $2`,
     [hashPassword(password), userId]
@@ -169,6 +172,7 @@ module.exports = function authModule(app) {
         throw unauthorized(WRONG)
       }
       clearTerminal(ctx.guard, key)
+      if (state === 'expired') throw unauthorized(EXPIRED)
       if (state === 'change_required')
         return {
           passwordChangeRequired: true,
@@ -210,6 +214,7 @@ module.exports = function authModule(app) {
         throw unauthorized(WRONG)
       }
       clearTerminal(ctx.guard, key)
+      if (state === 'expired') throw unauthorized(EXPIRED)
       assertNewPassword(newPassword, account.username)
       if (newPassword === currentPassword)
         throw badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية.', {

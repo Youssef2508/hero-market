@@ -21,7 +21,8 @@ async function findAccount(db, username) {
   const name = String(username ?? '').trim()
   if (!name) return null
   const { rows } = await db.query(
-    `SELECT id, username, is_active, password_scrypt, must_change_password, pin_hash, password_hash, recovery_hash
+    `SELECT id, username, is_active, password_scrypt, must_change_password, pin_hash, password_hash, recovery_hash,
+            (temp_password_expires_at IS NOT NULL AND temp_password_expires_at < LOCALTIMESTAMP) AS temp_expired
        FROM users WHERE lower(username) = lower($1)
       ORDER BY (username = $1) DESC, id LIMIT 1`,
     [name]
@@ -33,6 +34,7 @@ async function findAccount(db, username) {
  * Returns { account, state } where state is
  *   'ok'              – password correct;
  *   'change_required' – correct PIN (not yet migrated) or temporary password: must choose a password;
+ *   'expired'         – a correct temporary password whose 72 hours have passed (USER-02, D-076);
  *   'invalid'         – unknown or disabled user, or wrong password/PIN (indistinguishable to callers).
  */
 async function checkCredentials(db, username, password) {
@@ -43,6 +45,7 @@ async function checkCredentials(db, username, password) {
   }
   if (account.password_scrypt) {
     if (!verifyPassword(password, account.password_scrypt)) return { account, state: 'invalid' }
+    if (account.must_change_password && account.temp_expired) return { account, state: 'expired' }
     return { account, state: account.must_change_password ? 'change_required' : 'ok' }
   }
   // Not migrated yet: the current PIN (scrypt, or a legacy SHA-256 / plain value) stands in once.

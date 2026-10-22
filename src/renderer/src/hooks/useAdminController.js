@@ -100,10 +100,7 @@ export function useAdminController({
     triggerCustomConfirm
   })
 
-  const checksManager = useChecksManager({
-    triggerCustomAlert,
-    triggerCustomConfirm
-  })
+  const checksManager = useChecksManager()
 
   const usersManager = useUsersManager({
     currentUser,
@@ -274,21 +271,15 @@ export function useAdminController({
     handleAddPurchase: suppliersManager.handleAddPurchase,
     handleSupplierRepay: suppliersManager.handleSupplierRepay,
     handleDeleteSupplier: suppliersManager.handleDeleteSupplier,
+    pendingInvoices: suppliersManager.pendingInvoices,
+    fetchPendingInvoices: suppliersManager.fetchPendingInvoices,
+    convertingPending: suppliersManager.convertingPending,
+    setConvertingPending: suppliersManager.setConvertingPending,
+    startConvertPending: suppliersManager.startConvertPending,
 
     // checksManager
     checksList: checksManager.checksList,
-    setChecksList: checksManager.setChecksList,
-    showAddCheckModal: checksManager.showAddCheckModal,
-    setShowAddCheckModal: checksManager.setShowAddCheckModal,
-    newCheckForm: checksManager.newCheckForm,
-    setNewCheckForm: checksManager.setNewCheckForm,
-    checksDueToday: checksManager.checksDueToday,
-    setChecksDueToday: checksManager.setChecksDueToday,
     fetchChecksList: checksManager.fetchChecksList,
-    fetchChecksDueToday: checksManager.fetchChecksDueToday,
-    handleAddCheck: checksManager.handleAddCheck,
-    handleMarkCheckPaid: checksManager.handleMarkCheckPaid,
-    handleDeleteCheck: checksManager.handleDeleteCheck,
 
     // usersManager
     usersList: usersManager.usersList,
@@ -319,6 +310,8 @@ export function useAdminController({
     fetchExpensesList: expensesManager.fetchExpensesList,
     handleAddExpense: expensesManager.handleAddExpense,
     handleDeleteExpense: expensesManager.handleDeleteExpense,
+    expenseCategories: expensesManager.expenseCategories,
+    saveExpenseCategory: expensesManager.saveExpenseCategory,
 
     // bestSellersManager
     bsPeriod: bestSellersManager.bsPeriod,

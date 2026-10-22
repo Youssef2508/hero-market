@@ -144,7 +144,7 @@ test('the owner adds "بالمتر" with 2 decimals; products follow it everywhe
   ok(
     await svc.call(
       'productUnits.save',
-      { barcode: 'M1', units: [{ name: 'لفة', factor: 25.5 }] },
+      { barcode: 'M1', units: [{ name: 'لفة', factor: 25.5, retail_price: 100 }] },
       owner
     )
   )

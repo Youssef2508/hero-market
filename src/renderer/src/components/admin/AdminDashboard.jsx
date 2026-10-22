@@ -7,7 +7,6 @@ import {
   ReceiptText,
   TriangleAlert,
   Users,
-  Landmark,
   Clock,
   ShieldAlert
 } from 'lucide-react'
@@ -15,18 +14,23 @@ import { StatCard, EmptyState } from '../ui'
 import { visibleGroups } from '../shell/navigation'
 import { formatMoney } from '../../lib/utils'
 import { canOpenTab } from '../shell/navigation'
+import { can } from '../../lib/api'
 
 // Back-office screens load on first use, so the cashier screen starts without them (G-19).
-const StatsTab = lazy(() => import('./StatsTab'))
 const InventoryTab = lazy(() => import('./InventoryTab'))
 const ShiftsTab = lazy(() => import('./ShiftsTab'))
 const SalesTab = lazy(() => import('./SalesTab'))
 const ClientsTab = lazy(() => import('./ClientsTab'))
 const SuppliersTab = lazy(() => import('./SuppliersTab'))
 const ChecksTab = lazy(() => import('./ChecksTab'))
+const DashboardPeriod = lazy(() => import('./DashboardPeriod'))
+const TreasuryTab = lazy(() => import('./TreasuryTab'))
 const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
 const BestSellersTab = lazy(() => import('./BestSellersTab'))
+const StockValueTab = lazy(() => import('./StockValueTab'))
+const StockMovementsTab = lazy(() => import('./StockMovementsTab'))
+const Snapshots = lazy(() => import('./Snapshots'))
 const BackupTab = lazy(() => import('./BackupTab'))
 const ImportTab = lazy(() => import('./ImportTab'))
 const ReorderingTab = lazy(() => import('./ReorderingTab'))
@@ -42,14 +46,7 @@ const DiscountsTab = lazy(() => import('./DiscountsTab'))
 const SyncTab = lazy(() => import('./SyncTab'))
 const CategoriesTab = lazy(() => import('./CategoriesTab'))
 
-function Overview({
-  currentUser,
-  currentShift,
-  periodicAnalytics,
-  dbStats,
-  checksDueToday,
-  onNavigate
-}) {
+function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNavigate }) {
   const groups = visibleGroups(currentUser).filter((g) => g.id !== 'overview')
   const find = (id) => groups.flatMap((g) => g.items).find((i) => i.id === id)
   const go = (id) => {
@@ -57,7 +54,6 @@ function Overview({
     if (item) onNavigate(item)
   }
   const pa = periodicAnalytics || {}
-  const dueChecks = checksDueToday?.length || 0
   const today = new Date().toLocaleDateString('ar-EG-u-nu-latn', {
     weekday: 'long',
     day: 'numeric',
@@ -83,12 +79,6 @@ function Overview({
               {dbStats.lowStock} صنف تحت حد الطلب
             </button>
           )}
-          {dueChecks > 0 && (
-            <button type="button" className="hero-chip is-alert" onClick={() => go('checks')}>
-              <Landmark size={15} aria-hidden="true" />
-              {dueChecks} شيك مستحق اليوم
-            </button>
-          )}
         </div>
       </section>
 
@@ -103,7 +93,7 @@ function Overview({
             tone="accent"
             label="إجمالي المبيعات"
             value={`${formatMoney(pa.totalSales)} ج.م`}
-            onClick={() => go('stats')}
+            onClick={() => go('advanced-stats')}
           />
           <StatCard
             icon={ChartColumn}
@@ -111,7 +101,7 @@ function Overview({
             label="صافي الربح"
             value={`${formatMoney(pa.netProfit)} ج.م`}
             meta="بعد خصم المصروفات والتوالف"
-            onClick={() => go('stats')}
+            onClick={() => go('advanced-stats')}
           />
           <StatCard
             icon={ReceiptText}
@@ -143,6 +133,12 @@ function Overview({
           />
         </div>
       </section>
+
+      {/* The owner's four figures now (DASH-01, D-071), with their permission only. */}
+      {can(currentUser, 'reports.valuation') && <Snapshots go={go} />}
+
+      {/* Period statistics and charts (owner, 2026-10-21, D-065); the quick actions stay below. */}
+      <DashboardPeriod />
 
       {groups.map((group) => (
         <section key={group.id} aria-labelledby={`grp-${group.id}`}>
@@ -185,6 +181,16 @@ function Overview({
  */
 export default function AdminDashboard(props) {
   const { adminTab, currentUser } = props
+  // The invoices screen with that invoice open; a missing or forbidden one says so.
+  const openInvoice = async (saleId) => {
+    if (!props.selectSaleForDetail) return
+    const shown = await props.selectSaleForDetail({ id: saleId })
+    if (shown === false) {
+      props.triggerCustomAlert?.('تعذّر فتح الفاتورة (غير موجودة أو بدون صلاحية).')
+      return
+    }
+    props.setAdminTab('sales')
+  }
 
   // Each tab requires its permission (same list as the sidebar); the service enforces it again.
   if (adminTab !== 'tills' && !canOpenTab(currentUser, adminTab)) {
@@ -210,16 +216,37 @@ export default function AdminDashboard(props) {
         }
       >
         {adminTab === 'menu' && <Overview {...props} />}
-        {adminTab === 'stats' && <StatsTab {...props} />}
         {adminTab === 'inventory' && <InventoryTab {...props} />}
         {adminTab === 'shifts' && (
-          <ShiftsTab shiftsHistory={props.shiftsHistory} shiftAudits={props.shiftAudits} />
+          <ShiftsTab
+            currentUser={currentUser}
+            currentShift={props.currentShift}
+            onOpenShift={props.onOpenShift}
+            onOpenInvoice={openInvoice}
+            triggerCustomAlert={props.triggerCustomAlert}
+          />
         )}
         {adminTab === 'sales' && <SalesTab {...props} />}
         {adminTab === 'suppliers' && <SuppliersTab {...props} />}
         {adminTab === 'checks' && <ChecksTab {...props} />}
+        {adminTab === 'treasury' && (
+          <TreasuryTab
+            currentUser={currentUser}
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
         {adminTab === 'expenses' && <ExpensesTab {...props} />}
         {adminTab === 'bestsellers' && <BestSellersTab {...props} />}
+        {adminTab === 'stockvalue' && (
+          <StockValueTab triggerCustomAlert={props.triggerCustomAlert} />
+        )}
+        {adminTab === 'movements' && (
+          <StockMovementsTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            onOpenInvoice={openInvoice}
+          />
+        )}
         {adminTab === 'users' && <UsersTab {...props} />}
         {adminTab === 'roles' && (
           <RolesTab
@@ -243,7 +270,12 @@ export default function AdminDashboard(props) {
         {adminTab === 'discounts' && <DiscountsTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'clients' && <ClientsTab {...props} />}
         {adminTab === 'backup' && <BackupTab />}
-        {adminTab === 'import' && <ImportTab triggerCustomAlert={props.triggerCustomAlert} />}
+        {adminTab === 'import' && (
+          <ImportTab
+            triggerCustomAlert={props.triggerCustomAlert}
+            currentUser={props.currentUser}
+          />
+        )}
         {adminTab === 'categories' && (
           <CategoriesTab
             triggerCustomAlert={props.triggerCustomAlert}
