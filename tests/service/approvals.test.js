@@ -306,63 +306,45 @@ test('credit sale: an approved return lowers the customer debt exactly once', as
   )
 })
 
-test('shift close: up to EGP 50 closes freely; above 50 needs a supervisor (over or short)', async (t) => {
+// Owner, 2026-10-22 (D-073): a close is never refused, however large the difference – it is saved
+// with the close and the owner deals with it from «الورديات». No approval is asked or recorded.
+test('shift close: any shortage or surplus closes at once; the difference is in the report', async (t) => {
   if (!requireDb(t)) return
-  const open = async (token) => ok(await svc.call('shifts.open', { startingCash: 100 }, token))
   const close = (token, s, actualCash, extra = {}) =>
     svc.call('shifts.close', { shiftId: s.id, actualCash, ...extra }, token)
-  // Expected figures are the owner's (blind close, PAY-01): read them with the owner's session.
-  const expectedOf = async (_token, s) =>
+  const expectedOf = async (s) =>
     ok(await svc.call('shifts.auditPreview', { shiftId: s.id }, owner)).expected
 
-  // Exactly 50.00 short: no acknowledgement needed.
-  ok(await close(cashier, shift, (await expectedOf(cashier, shift)) - 50))
+  // 6,000 short: closes, nothing to approve, the cashier sees the difference only now, in the report.
+  const s1 = ok(await svc.call('shifts.open', { startingCash: 6000 }, cashier2))
+  const short = ok(await close(cashier2, s1, (await expectedOf(s1)) - 6000))
+  assert.equal(short.report.variance.cash, -6000)
+  assert.equal(short.acknowledgedBy ?? null, null)
+  const row = await one(
+    'SELECT status, difference::float8 d, difference_approval_id FROM shifts WHERE id = $1',
+    [s1.id]
+  )
+  assert.deepEqual([row.status, row.d, row.difference_approval_id], ['closed', -6000, null])
+
+  // 6,000 over: closes the same way; an approver sent by an old till is ignored.
+  const s2 = ok(await svc.call('shifts.open', { startingCash: 100 }, cashier2))
+  const over = ok(
+    await close(cashier2, s2, (await expectedOf(s2)) + 6000, { approver: supervisor() })
+  )
+  assert.equal(over.report.variance.cash, 6000)
   assert.equal(
-    (await one('SELECT difference_approval_id FROM shifts WHERE id = $1', [shift.id]))
+    (await one('SELECT difference_approval_id FROM shifts WHERE id = $1', [s2.id]))
       .difference_approval_id,
     null
   )
-
-  // 50.01 over: required; refused → still open; approved → closed with the approval linked.
-  const s2 = await open(cashier2)
-  const actual = (await expectedOf(cashier2, s2)) + 50.01
-  const req = await close(cashier2, s2, actual)
-  assert.equal(req.body.error.code, 'approval_required')
-  // The cashier is not told the expected amount or the difference; the owner sees the attempt.
-  const told = req.body.error.details
-  assert.equal(told.blind, true)
-  assert.equal(told.amount, null)
-  assert.ok(!('difference' in told) && !('expected' in told) && !('actual' in told))
-  assert.doesNotMatch(req.body.error.message, /\d/, 'no amount in the message')
-  const attempt = await one(
-    "SELECT details FROM system_logs WHERE action_type = 'shift_close_attempt' ORDER BY id DESC LIMIT 1"
+  assert.equal(
+    (await one("SELECT COUNT(*)::int n FROM approvals WHERE subject_type = 'shift'")).n,
+    0,
+    'no approval asked or recorded'
   )
-  assert.equal(JSON.parse(attempt.details).difference, 50.01)
-  const refused = await close(cashier2, s2, actual, { approver: supervisor('refuse') })
-  assert.equal(refused.body.error.code, 'approval_refused')
-  assert.equal((await one('SELECT status FROM shifts WHERE id = $1', [s2.id])).status, 'open')
-  const done = ok(
-    await close(cashier2, s2, actual, { note: 'فكة زائدة من العميل', approver: supervisor() })
-  )
-  assert.equal(done.acknowledgedBy, 'manager')
-  const row = await one(
-    'SELECT s.status, a.decision, a.approver_username, a.amount::text, a.reason, a.subject_type FROM shifts s JOIN approvals a ON a.id = s.difference_approval_id WHERE s.id = $1',
-    [s2.id]
-  )
-  assert.deepEqual(
-    [row.status, row.decision, row.approver_username, row.amount, row.reason, row.subject_type],
-    ['closed', 'approved', 'manager', '50.01', 'فكة زائدة من العميل', 'shift']
-  )
-
-  // 60 short on a supervisor's own shift: acknowledged by themselves, recorded as such.
-  const s3 = await open(manager)
-  const own = ok(await close(manager, s3, (await expectedOf(manager, s3)) - 60))
-  assert.equal(own.acknowledgedBy, 'manager')
-  const selfRow = await one(
-    'SELECT a.self_approved, a.amount::text FROM shifts s JOIN approvals a ON a.id = s.difference_approval_id WHERE s.id = $1',
-    [s3.id]
-  )
-  assert.deepEqual([selfRow.self_approved, selfRow.amount], [true, '-60.00'])
+  // The owner sees both in the shift details.
+  const details = ok(await svc.call('shifts.details', { shiftId: s1.id }, owner))
+  assert.equal(details.report.variance.cash, -6000)
 })
 
 test('approvals and returns are part of the backup', async (t) => {

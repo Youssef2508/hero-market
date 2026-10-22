@@ -247,7 +247,6 @@ function App() {
     setCloseShiftModal,
     actualEndCash,
     setActualEndCash,
-    setApprovalRequest,
     rawHandleLock,
     cart,
     setCart,

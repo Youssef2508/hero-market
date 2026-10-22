@@ -47,7 +47,7 @@ variance(S, m)    = actual(S, m) − expected(S, m)      > 0 surplus (زيادة
 - **Cash inflows:** customer debt receipts in the drawer, the cash part of a دفع جزئي sale, and change kept as store balance (K-36).
 - **Cash outflows:** cash refunds, supplier payments from the drawer, and drawer expenses.
 - **Sign convention:** expected 1,000, actual 950 → variance −50, labelled **عجز 50.00**. Expected 1,000, actual 1,050 → +50, labelled **زيادة 50.00**.
-- **The 50 EGP rule:** a cash variance above 50 EGP still needs a supervisor's acknowledgement (owner, 2026-10-14). Cashless variances are reported but don't need one.
+- **No approval at close (D-073, owner 2026-10-22, replaces the 50 EGP rule of 2026-10-14):** a close is never refused, whatever the variance. The variance is saved with the close and shown in the report and in «الورديات»; the owner deals with it there.
 
 ## 4. Treasury (`treasury_ledger`, by payment method since D-064)
 

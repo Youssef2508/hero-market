@@ -9,13 +9,12 @@
 // method (methodFigures), the opening float comes from the treasury and the counted cash goes back
 // to it, the close is blind for users without shifts.view_expected and is saved as a snapshot.
 const { forbidden, notFound, conflict } = require('../errors')
-const { authorize, approverSchema } = require('../auth/approvals')
+const { approverSchema } = require('../auth/approvals')
 const { METHODS, LABELS, TYPES, variance, varianceLabel, round2 } = require('../money/methods')
 const treasury = require('../money/treasury')
 
 // Owner decision 2026-10-14: closing with a cash difference above EGP 50 (over or short) needs a
 // supervisor's acknowledgement. A difference of exactly 50.00 does not.
-const DIFFERENCE_LIMIT = 50
 
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
 
@@ -552,10 +551,11 @@ module.exports = function shiftsModule(app) {
         clientRef: { type: 'string', minLength: 8, maxLength: 120 },
         // Explanation of a large difference (optional), and the supervisor acknowledging it.
         note: { type: 'string', maxLength: 300 },
+        // Accepted from tills queued before D-073 and ignored: a close needs no approval.
         approver: approverSchema
       }
     },
-    handler: async (ctx, { shiftId, actualCash, actual = {}, clientRef, note, approver }) =>
+    handler: async (ctx, { shiftId, actualCash, actual = {}, clientRef, note }) =>
       ctx.tx(async (db) => {
         // Lock first: money movements wait for the close, then find the shift closed (0011).
         const shift = await loadShift(db, ctx, shiftId, { lock: true })
@@ -579,36 +579,12 @@ module.exports = function shiftsModule(app) {
         }
         const f = await closeFigures(db, shift)
         const difference = actualCash - f.expected
-        let approval = { approvalId: null, approver: null }
-        if (Math.abs(round2(difference)) > DIFFERENCE_LIMIT) {
-          const blind = !ctx.can('shifts.view_expected')
-          if (blind && !approver) {
-            // Every refused attempt is logged with what was counted, so recounting until the figure
-            // matches is visible to the owner. The cashier is not told the expected amount.
-            await ctx.audit(
-              ctx.pool,
-              'shift_close_attempt',
-              `محاولة إغلاق الوردية #${shift.id} بفرق يحتاج اعتماد المشرف (الفعلي ${actualCash.toFixed(2)} ج.م)`,
-              { shiftId: shift.id, counted, expected: f.expected, difference: round2(difference) }
-            )
-          }
-          // Supervisors acknowledge their own shifts (recorded as such); others need a supervisor.
-          approval = await authorize(ctx, db, {
-            action: 'shift_difference',
-            selfAllowed: ctx.can('pos.approve'),
-            recordSelf: true,
-            approverPermissions: ['pos.approve'],
-            subjectType: 'shift',
-            subjectId: shift.id,
-            amount: round2(difference),
-            reason: note,
-            approver,
-            // Blind: neither the difference nor the expected amount goes back to the cashier.
-            details: blind
-              ? { blind: true, amount: null }
-              : { expected: f.expected, actual: actualCash, difference: round2(difference) }
-          })
-        }
+        // Owner, 2026-10-22 (D-073): a close is never refused, however large the shortage or surplus.
+        // The cashier never sees the expected amount beforehand, so a refusal would only tell them
+        // "your count is off" and invite recounting until it passes. The difference is saved with
+        // the close and shown in the report and in «الورديات», where the owner deals with it.
+        // (Closes before D-073 may carry a supervisor's acknowledgement; it stays in their report.)
+        const approval = { approvalId: null, approver: null }
         const closedAt = (await db.query('SELECT LOCALTIMESTAMP(0) AS t')).rows[0].t
         const { report } = await shiftReport(db, shift, {
           actual: counted,
@@ -684,7 +660,6 @@ async function closeResult(db, shift, saved, extra = {}) {
 }
 
 module.exports.helpers = {
-  DIFFERENCE_LIMIT,
   loadShift,
   auditFigures,
   closeFigures,

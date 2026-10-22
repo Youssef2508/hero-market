@@ -28,7 +28,6 @@ export function usePOSController({
   vfcashStartCash,
   setCloseShiftModal,
   actualEndCash,
-  setApprovalRequest,
   rawHandleLock,
 
   cart,
@@ -283,34 +282,11 @@ export function usePOSController({
 
       const finalizeShiftClose = async () => {
         try {
-          // The service computes the expected drawer cash with the legacy formula and closes the shift.
+          // The service computes the expected amounts and always closes the shift, whatever the
+          // difference (owner, 2026-10-22, D-073); the report that follows shows it.
           const closed = await api('shifts.close', closeBody)
           await afterClose(closed)
         } catch (e) {
-          if (e.code === 'approval_required') {
-            // Difference above EGP 50: a supervisor acknowledges it (owner decision 2026-10-14).
-            const d = e.details || {}
-            playSound('error')
-            setApprovalRequest({
-              title: 'فرق في إغلاق الوردية',
-              // Blind close: the cashier is not told the expected amount or the difference.
-              summary: d.blind
-                ? 'المبالغ المكتوبة تختلف عن المتوقع بأكثر من 50 ج.م: يلزم اعتماد المشرف لإغلاق الوردية. يمكنك الإلغاء وإعادة العد؛ كل محاولة تُسجَّل.'
-                : `الفرق ${Number(d.difference).toFixed(2)} ج.م (المتوقع ${Number(d.expected).toFixed(2)}، الفعلي ${Number(d.actual).toFixed(2)}) يتجاوز 50 ج.م ويحتاج إلى اعتماد المشرف.`,
-              noteLabel: 'سبب الفرق (اختياري)',
-              noteRequired: false,
-              onSubmit: async (approver, note) => {
-                const closed = await api('shifts.close', {
-                  ...closeBody,
-                  approver,
-                  note: note || undefined
-                })
-                setApprovalRequest(null)
-                await afterClose(closed)
-              }
-            })
-            return
-          }
           console.error('Failed to close shift:', e)
           playSound('error')
           triggerCustomAlert('فشل إغلاق الوردية: ' + e.message)
