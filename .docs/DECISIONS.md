@@ -1037,3 +1037,28 @@ Format: context → decision → reason → consequences (→ alternatives).
   - the fields returned;
   - refused browsing and refused actions, with nothing changed;
   - the existing return and payment rules.
+
+## D-083 Automatic sign-out: only a successful shift close, and never an administrator (owner, 1.5.1)
+
+- **Owner's rules:**
+  - cashiers and every other non-administrator are signed out automatically only when they successfully close their shift;
+  - administrators are never signed out automatically, also after closing a shift;
+  - a return never signs anyone out;
+  - a failed or cancelled close does not sign out.
+- **Root cause (1.5.0 and earlier):** after every close the till signed the user out, whoever closed. It did so when the close report was dismissed, or at once if there was no report (`usePOSController`: `dismissCloseReport` and `afterClose` called `handleLock()` unconditionally). The service had no rule about it. So administrators were signed out by their own close.
+- **Returns:** no path of a return signs out. Checked in the running app on the till's «مرتجع» button:
+  - an approved return, a whole invoice of a closed shift, a wrong supervisor password and the supervisor's refusal: the cashier stayed signed in every time.
+  - The only other automatic sign-out is an expired or revoked session (HTTP 401), which a return does not cause: approval failures answer 403.
+- **Fix:**
+  - the rule lives in the service, `signOutAfterClose` in `src/server/auth/shiftRule.js`: administrators («مدير النظام» `super_admin`, «مدير المتجر» `store_admin`) keep their session; every other role is signed out, including roles made by the owner;
+  - `shifts.close` answers `signOut` with a successful close, and with its retry;
+  - the till signs out only when that answer says so: when the report is dismissed, or at once without a report;
+  - an administrator stays signed in, and the screen shows no open shift.
+  - A refused close (another user's shift, invalid amounts, already closed) carries no answer, and nothing signs out; neither does a cancelled close window.
+- **Tests:** `tests/service/closeSignOut.test.js`:
+  - the rule per role;
+  - returns of every kind leaving the session valid;
+  - a cashier's and a supervisor's close with `signOut`, also on a retry;
+  - failed closes without it;
+  - both administrator roles staying signed in and opening the next shift.
+  - Checked in the running app: a cancelled close, a cashier's close signing out after the report, and the owner's close keeping him signed in.

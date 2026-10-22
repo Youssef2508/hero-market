@@ -12,6 +12,7 @@ const { forbidden, notFound, conflict } = require('../errors')
 const { approverSchema } = require('../auth/approvals')
 const { METHODS, LABELS, TYPES, variance, varianceLabel, round2 } = require('../money/methods')
 const treasury = require('../money/treasury')
+const { signOutAfterClose } = require('../auth/shiftRule')
 
 // Owner decision 2026-10-14: closing with a cash difference above EGP 50 (over or short) needs a
 // supervisor's acknowledgement. A difference of exactly 50.00 does not.
@@ -569,7 +570,10 @@ module.exports = function shiftsModule(app) {
               ).rows[0]
             : null
           if (!saved) throw conflict('الوردية مغلقة بالفعل.')
-          return closeResult(db, shift, saved, { duplicate: true })
+          return closeResult(db, shift, saved, {
+            duplicate: true,
+            signOut: signOutAfterClose(ctx.user)
+          })
         }
         const counted = {
           cash: actualCash,
@@ -637,7 +641,8 @@ module.exports = function shiftsModule(app) {
         const saved = (
           await db.query('SELECT * FROM shift_closings WHERE shift_id = $1', [shift.id])
         ).rows[0]
-        return closeResult(db, shift, saved)
+        // The screen signs the user out after this close unless they are an administrator (D-083).
+        return closeResult(db, shift, saved, { signOut: signOutAfterClose(ctx.user) })
       })
   })
 }

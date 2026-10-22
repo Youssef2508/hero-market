@@ -1,6 +1,6 @@
 # HeroMarket POS 1.5.1 – Release notes
 
-Written for the shop owner. 1.5.1 is 1.5.0 with a correction in who may browse invoices, and three screens to act on an invoice by its number. Everything in [RELEASE_NOTES_1.5.0.md](RELEASE_NOTES_1.5.0.md) applies.
+Written for the shop owner. 1.5.1 is 1.5.0 with a correction in who may browse invoices, three screens to act on an invoice by its number, and the sign-out after closing a shift. Everything in [RELEASE_NOTES_1.5.0.md](RELEASE_NOTES_1.5.0.md) applies.
 
 **Install 1.5.1 instead of 1.5.0.** Follow [UPGRADE_TO_1.5.1.md](UPGRADE_TO_1.5.1.md):
 
@@ -44,6 +44,17 @@ Written for the shop owner. 1.5.1 is 1.5.0 with a correction in who may browse i
 | مراجع                     | every invoice (read only) | none                                 |
 
 **Limit:** receipts print the invoice number, not a barcode of it, so the number is typed. A scanner that types digits works in the field once there is something to scan.
+
+## Signing out after closing a shift
+
+- **Cashiers, supervisors and every other non-administrator:** signed out automatically when they **successfully** close their shift, after the closing report is dismissed. A cancelled or refused close does not sign out.
+- **«مدير النظام» and «مدير المتجر»:** never signed out automatically, also after closing their own shift. The screen then shows no open shift, and a new one can be opened at once.
+- **Returns never sign anyone out**: approved, refused by the supervisor, with a wrong supervisor password, or of a whole invoice.
+
+## Where to make a return
+
+- **On the cashier screen («شاشة الكاشير»):** the «مرتجع» button, as in 1.5.0.
+- **In the menu on the right, under «الحسابات»:** the new «المرتجعات» screen (1.5.1), for anyone with «المرتجعات» or «طلب مرتجع بموافقة المشرف». Type the invoice number, choose a line or the whole invoice, write the reason and, for a request, the supervisor's name and password.
 
 ## The installer
 

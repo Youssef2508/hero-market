@@ -250,7 +250,11 @@ export function usePOSController({
           playSound('chime')
           closeRef.current = null
           setCloseShiftModal(false)
-          if (closed.report) setCloseReport({ report: closed.report, shift: closed.shift })
+          // Who is signed out by this close is the service's answer (D-083): every user except the
+          // administrators. The administrator stays signed in, without the closed shift.
+          const signOut = closed.signOut !== false
+          if (!signOut) setCurrentShift(null)
+          if (closed.report) setCloseReport({ report: closed.report, shift: closed.shift, signOut })
           // The automatic backup after a close (D-074): started without asking or waiting; its
           // result is in the backup log and on the backup screen.
           window.api?.db?.afterClose?.().catch(() => {})
@@ -276,7 +280,7 @@ export function usePOSController({
           }
 
           // Signing out follows when the report is dismissed (a close without one signs out now).
-          if (!closed.report) handleLock()
+          if (!closed.report && signOut) handleLock()
         } catch (e) {
           console.error('Failed after closing the shift:', e)
         }
@@ -757,9 +761,11 @@ export function usePOSController({
     handleStartShift,
     handleConfirmCloseShift,
     closeReport,
+    // Dismissing the report of a successful close signs out, except an administrator (D-083).
     dismissCloseReport: () => {
+      const signOut = closeReport?.signOut !== false
       setCloseReport(null)
-      handleLock()
+      if (signOut) handleLock()
     },
     handleLock,
     barcodeInput,
