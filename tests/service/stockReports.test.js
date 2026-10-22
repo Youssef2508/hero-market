@@ -174,7 +174,9 @@ test('stock movements: the same rows as each product’s history, filtered, cost
   assert.equal(sales.total, 1)
   const search = ok(await svc.call('inventory.allMovements', { search: 'هوهوز' }, owner))
   assert.ok(search.rows.every((m) => m.barcode === 'F'))
-  const today = new Date().toLocaleDateString('en-CA')
+  // Today in the store's time zone (the service's), not the test machine's (a UTC runner differs
+  // between 00:00 and 02:00 in Cairo).
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })
   const dated = ok(
     await svc.call('inventory.allMovements', { from: today, to: today, kinds: ['sale'] }, owner)
   )

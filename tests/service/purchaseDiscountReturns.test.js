@@ -33,7 +33,9 @@ const product = async (b) =>
        FROM products WHERE barcode = $1`,
     [b]
   )
-const today = () => new Date().toLocaleDateString('en-CA')
+// Today in the store's time zone (the service runs on Africa/Cairo, see helpers.startService), not
+// the test machine's: on a UTC runner the two differ between 00:00 and 02:00 in Cairo.
+const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })
 const dash = async () =>
   ok(await svc.call('reports.dashboard', { from: today(), to: today() }, owner)).totals
 const buy = (body) =>

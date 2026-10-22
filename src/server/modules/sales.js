@@ -1,12 +1,13 @@
 'use strict'
 // Invoices back office (useSalesManager): history, details, returns, reprint data.
 // Returns use the legacy refund formulas, now inside one locked transaction each.
-const { badRequest, notFound, conflict, shiftRequired } = require('../errors')
+const { badRequest, notFound, conflict, shiftRequired, forbidden } = require('../errors')
 const { postMovement } = require('../inventory/stock')
 const { toBaseQty, kindRule } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
 const { methodOf } = require('../money/methods')
 const { addMovement } = require('../money/shiftLedger')
+const { invoiceShift, assertInvoiceInScope } = require('../auth/invoiceScope')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -214,18 +215,25 @@ module.exports = function salesModule(app) {
       { search = '', sortField = 'invoice_number', sortAsc = false, page = 1 }
     ) => {
       const params = []
-      let where = ''
+      const conditions = []
       if (search) {
         const clean = search.replace('#', '').trim()
         params.push(likeEscape(search))
         const textMatch = `s.client_name ILIKE '%' || $1 || '%' ESCAPE '\\' OR to_char(s.timestamp, 'YYYY-MM-DD HH24:MI:SS') LIKE '%' || $1 || '%' ESCAPE '\\'`
         if (/^\d+$/.test(clean)) {
           params.push(Number(clean))
-          where = `WHERE s.id = $2 OR ((s.id - 1) % 10000 + 1) = $2 OR ${textMatch}`
+          conditions.push(`(s.id = $2 OR ((s.id - 1) % 10000 + 1) = $2 OR ${textMatch})`)
         } else {
-          where = `WHERE ${textMatch}`
+          conditions.push(`(${textMatch})`)
         }
       }
+      // Without "all invoices": only the user's own open shift (D-081).
+      const shiftId = await invoiceShift(ctx.pool, ctx)
+      if (shiftId !== null) {
+        params.push(shiftId)
+        conditions.push(`s.shift_id = $${params.length}`)
+      }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
       const base = `FROM sales s JOIN shifts sh ON s.shift_id = sh.id JOIN users u ON sh.user_id = u.id ${where}`
       const total = (await ctx.pool.query(`SELECT COUNT(*) AS count ${base}`, params)).rows[0].count
       const order = ORDER[sortField] || 's.id'
@@ -236,18 +244,86 @@ module.exports = function salesModule(app) {
           params
         )
       ).rows
-      return { total, page, perPage: PER_PAGE, rows }
+      // scope tells the screen which invoices it lists: all, or the user's open shift only.
+      return {
+        total,
+        page,
+        perPage: PER_PAGE,
+        rows,
+        scope: shiftId === null ? 'all' : 'own_shift',
+        shiftId: shiftId || null
+      }
+    }
+  })
+
+  // One invoice by its number for one action (1.5.1, D-082): returns, reprint or a payment method
+  // change, from that action's own screen. Any cashier, shift or date, closed shifts included: the
+  // action's permission decides, not «عرض الفواتير». The answer holds only what that action needs,
+  // and finding an invoice authorizes nothing: each action checks its own permission again.
+  const LOOKUP = {
+    return: ['sales.return', 'sales.return_request'],
+    reprint: ['sales.reprint'],
+    payment: ['sales.change_payment']
+  }
+  app.operation({
+    name: 'sales.lookup',
+    anyPermission: [...new Set(Object.values(LOOKUP).flat())],
+    schema: {
+      type: 'object',
+      required: ['saleId', 'action'],
+      properties: {
+        saleId: { type: 'integer', minimum: 1 },
+        action: { type: 'string', enum: Object.keys(LOOKUP) }
+      }
+    },
+    handler: async (ctx, { saleId, action }) => {
+      if (!LOOKUP[action].some((p) => ctx.can(p))) throw forbidden()
+      const s = (
+        await ctx.pool.query(
+          `SELECT s.id, s.timestamp, s.payment_type, s.total_amount, s.client_name, sh.status = 'open' AS shift_open
+             FROM sales s LEFT JOIN shifts sh ON sh.id = s.shift_id WHERE s.id = $1`,
+          [saleId]
+        )
+      ).rows[0]
+      if (!s) throw notFound('لم يتم العثور على الفاتورة!')
+      const sale = {
+        id: s.id,
+        timestamp: s.timestamp,
+        payment_type: s.payment_type,
+        total_amount: s.total_amount
+      }
+      if (action === 'return') {
+        sale.client_name = s.client_name
+        const items = (
+          await ctx.pool.query(
+            `SELECT si.id, si.product_barcode, si.quantity, si.returned_qty, si.unit_price, si.unit_name, p.name
+               FROM sale_items si LEFT JOIN products p ON si.product_barcode = p.barcode
+              WHERE si.sale_id = $1 ORDER BY si.id`,
+            [saleId]
+          )
+        ).rows
+        return { sale, items }
+      }
+      if (action === 'payment') {
+        sale.shift_open = s.shift_open === true
+        sale.has_return = !!(
+          await ctx.pool.query('SELECT 1 FROM sale_returns WHERE sale_id = $1 LIMIT 1', [saleId])
+        ).rows[0]
+      }
+      return { sale }
     }
   })
 
   app.operation({
     name: 'sales.detail',
-    // Cashiers open an invoice by its number to request a return.
-    anyPermission: ['sales.view', 'customers.view', 'sales.return_request'],
+    // Browsing an invoice (the invoices screen, a customer's invoices). Returns by invoice number
+    // use sales.lookup (D-082).
+    anyPermission: ['sales.view', 'customers.view'],
     schema: { type: 'object', required: ['saleId'], properties: { saleId: { type: 'integer' } } },
     handler: async (ctx, { saleId }) => {
       const sale = (await ctx.pool.query('SELECT * FROM sales WHERE id = $1', [saleId])).rows[0]
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
+      await assertInvoiceInScope(ctx.pool, ctx, sale)
       const withCashier = await saleWithCashier(ctx.pool, saleId)
       return {
         sale: withCashier || sale,

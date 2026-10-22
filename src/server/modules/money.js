@@ -180,6 +180,7 @@ module.exports = function moneyModule(app) {
         const sale = (await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]))
           .rows[0]
         if (!sale) throw notFound('الفاتورة غير موجودة.')
+        // Any invoice, also of a closed shift: this permission decides, not «عرض الفواتير» (D-082).
         const shift = (
           await db.query('SELECT status FROM shifts WHERE id = $1 FOR SHARE', [sale.shift_id])
         ).rows[0]

@@ -1301,6 +1301,11 @@ input[data-computed='true'] {
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   letter-spacing: 0.05em;
 }
+/* Return, reprint and payment change by invoice number (1.5.1, D-082): one invoice per page. */
+.invoice-action-page {
+  max-width: 720px;
+}
+
 .return-lookup {
   display: flex;
   align-items: flex-end;

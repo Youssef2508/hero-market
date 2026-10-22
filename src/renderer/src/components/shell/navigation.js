@@ -17,6 +17,9 @@ import {
   Trophy,
   Boxes,
   ArrowLeftRight,
+  Undo2,
+  Printer,
+  ArrowRightLeft,
   Package,
   ClipboardList,
   PackageX,
@@ -206,6 +209,34 @@ export const NAV_GROUPS = [
         tab: 'sales',
         description: 'البحث في الفواتير وإجراء المرتجعات وإعادة الطباعة.',
         onEnter: (c) => c.fetchSalesHistory()
+      },
+      // One invoice by its number for one action, without «عرض الفواتير» (1.5.1, D-082).
+      {
+        id: 'returns',
+        permission: ['sales.return', 'sales.return_request'],
+        label: 'المرتجعات',
+        icon: Undo2,
+        view: 'admin',
+        tab: 'returns',
+        description: 'مرتجع صنف أو فاتورة كاملة برقم الفاتورة، من أي وردية.'
+      },
+      {
+        id: 'reprint',
+        permission: ['sales.reprint'],
+        label: 'إعادة طباعة فاتورة',
+        icon: Printer,
+        view: 'admin',
+        tab: 'reprint',
+        description: 'نسخة من فاتورة برقمها، من أي وردية.'
+      },
+      {
+        id: 'payment-change',
+        permission: ['sales.change_payment'],
+        label: 'تغيير طريقة الدفع',
+        icon: ArrowRightLeft,
+        view: 'admin',
+        tab: 'payment-change',
+        description: 'تصحيح طريقة دفع فاتورة برقمها، من أي وردية.'
       },
       {
         id: 'clients',

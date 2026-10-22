@@ -1,5 +1,7 @@
 # Upgrading the shop from HeroMarket 1.4.0 to 1.5.0
 
+> **Superseded by [UPGRADE_TO_1.5.1.md](UPGRADE_TO_1.5.1.md):** install 1.5.1 instead of 1.5.0 (the same update, plus the invoice access correction).
+
 Written for the shop owner, who installs the update himself on the shop PC. Print it and tick each box. It takes about 30 minutes, best after closing time.
 
 **What happens:** the 1.5.0 installer updates the program **and the data already in HeroMarket 1.4.0** on this PC: products, stock, customers, suppliers, balances, users, sales and shifts. The data you prepared from the old program and imported into 1.4.0 is already in that database, so **nothing has to be imported again**.

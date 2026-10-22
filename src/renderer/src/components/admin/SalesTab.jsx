@@ -46,6 +46,7 @@ export default function SalesTab({
   salesSortAsc,
   salesPage,
   salesTotalCount,
+  salesScope,
   itemsPerPage,
   handleReprintSale
 }) {
@@ -90,6 +91,13 @@ export default function SalesTab({
           </h2>
         </div>
         <div className="card-body stack">
+          {salesScope === 'own_shift' && (
+            // D-081: without "كل الفواتير" the list holds the user's own open shift only.
+            <p className="notice notice-info" role="note">
+              تظهر هنا فواتير ورديتك المفتوحة فقط. فواتير الورديات الأخرى والكاشيرات الآخرين لدى
+              مدير النظام.
+            </p>
+          )}
           <div className="toolbar">
             <div className="search-field">
               <Search size={17} aria-hidden="true" />

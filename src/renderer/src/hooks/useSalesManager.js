@@ -16,6 +16,8 @@ export function useSalesManager({
   const [salesSortAsc, setSalesSortAsc] = useState(false)
   const [salesPage, setSalesPage] = useState(1)
   const [salesTotalCount, setSalesTotalCount] = useState(0)
+  // 'all' or 'own_shift' (D-081): which invoices the service lists for this user.
+  const [salesScope, setSalesScope] = useState('all')
   const itemsPerPage = 12
 
   const fetchSalesHistory = async (search = '', sortField = null, sortAsc = null, page = 1) => {
@@ -33,6 +35,7 @@ export function useSalesManager({
       })
       setSalesTotalCount(res.total || 0)
       setSalesHistory(res.rows || [])
+      setSalesScope(res.scope || 'all')
       setSalesPage(page)
     } catch (e) {
       console.error('Failed to fetch sales history:', e)
@@ -64,6 +67,8 @@ export function useSalesManager({
       return true
     } catch (e) {
       console.error('Failed to load sale details:', e)
+      // An invoice outside the user's own open shift (D-081): say why instead of doing nothing.
+      if (e.status === 403) triggerCustomAlert(e.message)
       return false
     }
   }
@@ -142,6 +147,7 @@ export function useSalesManager({
     handleReturnEntireSale,
     salesPage,
     salesTotalCount,
+    salesScope,
     itemsPerPage
   }
 }

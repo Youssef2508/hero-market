@@ -49,4 +49,22 @@ async function shiftRequiredFor(db, user) {
   return list === null || list.includes(user.roleId)
 }
 
-module.exports = { KEY, OWNER, normaliseRequiredRoles, requiredRoles, shiftRequiredFor }
+// Who is signed out by closing a shift (owner, 1.5.1, D-083): every user except the administrators.
+// The administrators («مدير النظام», «مدير المتجر») keep their session after closing a shift. Only a
+// close that succeeded signs out; nothing else does (a return, a refused or cancelled close).
+const ADMINS = ['super_admin', 'store_admin']
+
+/** Does closing a shift end this user's session? (`user` as returned by describeUser.) */
+function signOutAfterClose(user) {
+  return !(user && ADMINS.includes(user.roleKey))
+}
+
+module.exports = {
+  KEY,
+  OWNER,
+  ADMINS,
+  normaliseRequiredRoles,
+  requiredRoles,
+  shiftRequiredFor,
+  signOutAfterClose
+}

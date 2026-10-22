@@ -4,6 +4,7 @@ const { badRequest, conflict, notFound } = require('../errors')
 const treasury = require('../money/treasury')
 const { addMovement, recorded } = require('../money/shiftLedger')
 const { METHODS } = require('../money/methods')
+const { invoiceShift } = require('../auth/invoiceScope')
 
 const path = require('path')
 const { pathToFileURL } = require('url')
@@ -218,12 +219,17 @@ module.exports = function customersModule(app) {
             clientId
           ])
         ).rows[0] || null
+      // The customer's invoices within the user's invoice scope (D-081): all of them with "all
+      // invoices", else those of the user's open shift. Balance and account lines are unchanged.
+      const shiftId = await invoiceShift(db, ctx)
+      const inScope = shiftId === null ? '' : ' AND s.shift_id = $2'
+      const scopeParams = shiftId === null ? [clientId] : [clientId, shiftId]
       const purchases = (
         await db.query(
           `SELECT s.*, u.username, (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) AS items_count
            FROM sales s JOIN shifts sh ON s.shift_id = sh.id JOIN users u ON sh.user_id = u.id
-           WHERE s.client_id = $1 ORDER BY s.id DESC`,
-          [clientId]
+           WHERE s.client_id = $1${inScope} ORDER BY s.id DESC`,
+          scopeParams
         )
       ).rows
       const ledger = (
@@ -235,11 +241,17 @@ module.exports = function customersModule(app) {
         await db.query(
           `SELECT si.quantity, si.unit_name, si.unit_factor, si.total_price - si.line_discount - si.cart_discount AS total_price, si.product_barcode, p.name, s.timestamp, s.id AS sale_id
            FROM sale_items si JOIN sales s ON si.sale_id = s.id JOIN products p ON si.product_barcode = p.barcode
-           WHERE s.client_id = $1 ORDER BY si.id`,
-          [clientId]
+           WHERE s.client_id = $1${inScope} ORDER BY si.id`,
+          scopeParams
         )
       ).rows
-      return { client, purchases, ledger, saleItems }
+      return {
+        client,
+        purchases,
+        ledger,
+        saleItems,
+        invoiceScope: shiftId === null ? 'all' : 'own_shift'
+      }
     }
   })
 

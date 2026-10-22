@@ -91,7 +91,10 @@ after(async () => {
 test('a cashier can open an invoice by number but cannot return without a supervisor', async (t) => {
   if (!requireDb(t)) return
   const sale = await sell([{ barcode: 'W', qty: 3 }])
-  const detail = ok(await svc.call('sales.detail', { saleId: sale.saleId }, cashier))
+  // By its number through the return lookup (1.5.1, D-082), as the till's return window does.
+  const detail = ok(
+    await svc.call('sales.lookup', { saleId: sale.saleId, action: 'return' }, cashier)
+  )
   assert.equal(detail.items.length, 1)
   const item = await itemOf(sale.saleId)
   const before = await state(sale.saleId)
