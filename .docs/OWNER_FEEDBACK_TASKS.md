@@ -35,7 +35,7 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
 | SHIFT-02     | Shift-close report                                        | D               | Done with evidence (software; HW-02 print of the close report pending)                                                                | 0016                  |
 | SUP-01       | Supplier invoice notice                                   | E               | Done with evidence (preliminary invoice with real payment and payable, D-064; cancellation, D-065)                                    | 0018 / 0019           |
 | SUP-02       | Purchase sale price, discount, posting                    | E               | Done with evidence (invoice discount D-066; new selling and wholesale prices on purchase lines D-068)                                 | 0020 / 0021           |
-| SUP-03       | Supplier opening balance, contact edit                    | E               | Not started                                                                                                                           | 0017                  |
+| SUP-03       | Supplier opening balance, contact edit                    | E               | Done with evidence (opening balance as its own ledger line with its own permission; contact editing; D-070)                           | none                  |
 | SUP-04       | Notice vs draft vs posted                                 | E               | Done with evidence (preliminary ≠ posted; conversion moves stock once, D-064)                                                         | 0017                  |
 | INV-01       | Packages and loose units                                  | E               | Done with evidence (one stock in the base unit; package price and purchase price entered by the owner; HoHos acceptance tests, D-065) | 0019                  |
 | CUST-01      | Customer code                                             | F               | Not started                                                                                                                           | 0018                  |
@@ -279,6 +279,15 @@ A task is "Done" only with tests, regression evidence and documentation (spec §
   - **Pending:** HW-02, the shop's thermal printer (sale receipt and shift report). The preview uses the same code but not the printer's driver or fonts.
 
 ### Phases D–H
+
+### SUP-03 (2026-10-22, D-070): supplier opening balance and contact
+
+- **Opening balance:** entered when adding a supplier, or set and corrected from «تعديل». It is its own ledger line (corrections add the difference), never a purchase, stock receipt or money movement. Later payments reduce it once.
+- **Words, not signs:** «مستحق للمورد (علينا)» or «مستحق على المورد (لنا)».
+- **Permission:** `suppliers.opening`, administrators by default.
+- **Contact editing:** name, phone, address and representative, in the activity log; invoices and payments unchanged.
+- **Tests:** `supplierOpening.test.js` (5), including the owner's example of a supplier owed 2,000 at setup.
+- **Running app:** a supplier was added owed 2,000, its contact edited (balance unchanged), and its opening balance corrected to 1,800.
 
 ### Owner decision D-068 (2026-10-22, migration 0021): new prices on purchase lines
 

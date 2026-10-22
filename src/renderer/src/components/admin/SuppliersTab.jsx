@@ -9,7 +9,8 @@ import {
   Phone,
   MapPin,
   UserRound,
-  HandCoins
+  HandCoins,
+  Pencil
 } from 'lucide-react'
 import { EmptyState, SortableTh, Timestamp } from '../ui'
 import { formatMoney } from '../../lib/utils'
@@ -21,6 +22,9 @@ import { rowKeys } from '../../lib/keyboard'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
 import PurchaseReturnModal from '../modals/PurchaseReturnModal'
+import EditSupplierModal from '../modals/EditSupplierModal'
+import { BalanceText } from './SupplierBalance'
+import { balanceLabel } from '../../lib/supplierBalance'
 
 const MODE_LABELS = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جزئي' }
 
@@ -143,6 +147,7 @@ export default function SuppliersTab({
   const [pendingOpen, setPendingOpen] = useState(false)
   const [cancelling, setCancelling] = useState(null)
   const [returning, setReturning] = useState(null)
+  const [editing, setEditing] = useState(false)
   const canManage = can(currentUser, 'suppliers.manage')
   const [repayTo, setRepayTo] = useState('')
   const [repayMethod, setRepayMethod] = useState('cash')
@@ -182,6 +187,18 @@ export default function SuppliersTab({
         onConvert={startConvertPending}
         onCancel={setCancelling}
       />
+      {editing && selectedSupplier && (
+        <EditSupplierModal
+          supplier={selectedSupplier}
+          currentUser={currentUser}
+          onClose={() => setEditing(false)}
+          onDone={async (updated) => {
+            await fetchSupplierProfile(updated || selectedSupplier)
+            await fetchSuppliersList?.()
+          }}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {returning && (
         <PurchaseReturnModal
           purchase={returning}
@@ -287,8 +304,10 @@ export default function SuppliersTab({
                         <td className="num cell-muted nowrap">{row.phone || '—'}</td>
                         <td
                           className={`num money-strong ${row.debt_balance > 0 ? 'text-danger' : 'text-success'}`}
+                          title={balanceLabel(row.debt_balance)}
                         >
-                          {formatMoney(row.debt_balance)}
+                          {formatMoney(Math.abs(Number(row.debt_balance) || 0))}
+                          {Number(row.debt_balance) < 0 && <span className="cell-muted"> لنا</span>}
                         </td>
                       </tr>
                     ))
@@ -351,6 +370,14 @@ export default function SuppliersTab({
                   </button>
                   <button
                     type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setEditing(true)}
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                    تعديل
+                  </button>
+                  <button
+                    type="button"
                     className="icon-btn danger"
                     onClick={() => handleDeleteSupplier(s.id)}
                     aria-label={`حذف المورد ${s.name}`}
@@ -364,8 +391,10 @@ export default function SuppliersTab({
                 <div
                   className={`balance-banner ${(s.debt_balance || 0) > 0 ? 'is-owed' : 'is-clear'}`}
                 >
-                  <span>إجمالي المديونية للمورد</span>
-                  <strong className="money">{formatMoney(s.debt_balance)} ج.م</strong>
+                  <span>رصيد المورد</span>
+                  <strong>
+                    <BalanceText value={s.debt_balance} />
+                  </strong>
                 </div>
                 <form
                   data-enter-step

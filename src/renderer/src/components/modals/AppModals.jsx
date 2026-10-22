@@ -205,6 +205,7 @@ export default function AppModals({
         newSupplierForm={newSupplierForm}
         setNewSupplierForm={setNewSupplierForm}
         handleAddSupplier={handleAddSupplier}
+        currentUser={currentUser}
       />
 
       <AddPurchaseModal

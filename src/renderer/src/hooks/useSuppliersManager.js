@@ -86,10 +86,12 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         name: newSupplierForm.name,
         phone: newSupplierForm.phone || '',
         address: newSupplierForm.address || '',
-        contact_person: newSupplierForm.contact_person || ''
+        contact_person: newSupplierForm.contact_person || '',
+        // SUP-03: signed (+ owed to the supplier); empty = none.
+        ...(newSupplierForm.opening ? { openingBalance: Number(newSupplierForm.opening) } : {})
       })
       setShowAddSupplierModal(false)
-      setNewSupplierForm({ name: '', phone: '', address: '', contact_person: '' })
+      setNewSupplierForm({ name: '', phone: '', address: '', contact_person: '', opening: '' })
       await fetchSuppliersList()
     } catch (err) {
       triggerCustomAlert('فشل إضافة المورد: ' + err.message)

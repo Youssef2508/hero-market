@@ -183,6 +183,14 @@ const PERMISSIONS = [
     description: 'إضافة الموردين وفواتير الشراء والسداد'
   },
   {
+    // SUP-03 (D-070): what was owed between the store and a supplier before HeroMarket. Money:
+    // administrators by default; the owner grants it to other roles.
+    key: 'suppliers.opening',
+    module: 'suppliers',
+    label: 'الرصيد الافتتاحي للموردين',
+    description: 'تسجيل أو تصحيح ما كان مستحقاً للمورد أو عليه قبل بدء العمل بالبرنامج'
+  },
+  {
     // Preliminary supplier invoice at the till (D-064): total and payment, no lines, no stock.
     key: 'suppliers.pending',
     module: 'suppliers',
@@ -308,6 +316,7 @@ const MANAGEMENT = ALL.filter(
       // Bulk data in and out: administrators by default; the owner assigns them (D-067).
       'data.import',
       'data.export',
+      'suppliers.opening',
       // Discounts are the administrator's alone (owner, 2026-10-15).
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).

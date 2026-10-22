@@ -816,3 +816,14 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Every menu screen at 1366 and 1024 px: no sideways scrolling with the menu in its automatic size, which shrinks below 1200 px.
   - The windows without a close (a required shift opening, the recovery notice) stay that way by design.
 - **Limit:** with the menu kept expanded by hand on a 1024 px screen, the two widest reports (التقارير المتقدمة, تقييم الكاشيرات) still scroll by up to 85 px.
+
+## D-070 Supplier opening balance and editable contact (SUP-03, owner, 2026-10-22)
+
+- **Opening balance:** what was owed between the store and a supplier before HeroMarket. It can be entered when the supplier is added, or set and corrected later from «تعديل».
+  - It is a `supplier_ledger` line of type `opening` ("رصيد افتتاحي"): never a purchase, payment or stock receipt, so stock, cost, prices, the treasury and the drawer do not change.
+  - A correction adds one line for the difference ("تعديل الرصيد الافتتاحي: من … إلى …"); earlier lines stay. Setting the same value again does nothing.
+  - Later payments reduce the balance and reach the treasury or drawer once, as before.
+- **Signs in words:** + means the store owes the supplier, − means the supplier owes the store. Screens show «مستحق للمورد (علينا)» or «مستحق على المورد (لنا)» with the amount, never a bare minus. The import template's hint uses the same rule.
+- **Permission** `suppliers.opening` ("الرصيد الافتتاحي للموردين"): administrators by default; supervisors and the stock role get it only when an administrator grants it. Contact editing needs `suppliers.manage`.
+- **Contact editing:** name, phone, address and representative, trimmed and checked (name required; phone digits and + - ( ) / only). The changes are listed in the activity log. Invoices, payments, ledger lines and balances do not change.
+- **No migration:** existing balances are unchanged, and an imported opening balance already uses the same `opening` line.

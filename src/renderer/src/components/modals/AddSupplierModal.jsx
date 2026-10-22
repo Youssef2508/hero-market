@@ -1,11 +1,14 @@
 import { Truck } from 'lucide-react'
+import { can } from '../../lib/api'
+import { OpeningBalanceField } from '../admin/SupplierBalance'
 
 const AddSupplierModal = ({
   showAddSupplierModal,
   setShowAddSupplierModal,
   newSupplierForm,
   setNewSupplierForm,
-  handleAddSupplier
+  handleAddSupplier,
+  currentUser
 }) => {
   if (!showAddSupplierModal) return null
 
@@ -61,6 +64,13 @@ const AddSupplierModal = ({
               placeholder="اسم المسؤول"
             />
           </div>
+          {can(currentUser, 'suppliers.opening') && (
+            <OpeningBalanceField
+              value={newSupplierForm.opening ?? ''}
+              onChange={(v) => setNewSupplierForm((p) => ({ ...p, opening: v }))}
+              name="new-supplier-opening"
+            />
+          )}
           <div className="modal-footer">
             <button
               data-modal-close

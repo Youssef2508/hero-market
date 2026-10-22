@@ -19,6 +19,65 @@ const NEW_PRICES = [
   { key: 'newWholesalePrice', column: 'wholesale_price', label: 'سعر الجملة' }
 ]
 
+/** A supplier's contact fields, trimmed and checked (SUP-03). */
+function supplierContact(b) {
+  const t = (v) => String(v ?? '').trim()
+  const c = {
+    name: t(b.name),
+    phone: t(b.phone),
+    address: t(b.address),
+    contact_person: t(b.contact_person)
+  }
+  if (!c.name) throw badRequest('اسم المورد مطلوب.')
+  if (c.phone && !/^[0-9+\-\s()/]{3,40}$/.test(c.phone))
+    throw badRequest('رقم الهاتف يحتوي على حروف غير مسموحة.')
+  return c
+}
+
+const balanceText = (n) =>
+  n === 0
+    ? 'لا شيء'
+    : n > 0
+      ? `${n.toFixed(2)} ج.م مستحقة للمورد`
+      : `${(-n).toFixed(2)} ج.م مستحقة على المورد`
+
+/**
+ * Bring a supplier's opening balance to `target` (+ owed to the supplier, − owed by it): one
+ * 'opening' ledger line for the difference, in the caller's transaction. Same target = nothing.
+ */
+async function setOpening(db, ctx, s, target) {
+  const current = round2(
+    (
+      await db.query(
+        "SELECT COALESCE(SUM(amount), 0) AS v FROM supplier_ledger WHERE supplier_id = $1 AND type = 'opening'",
+        [s.id]
+      )
+    ).rows[0].v
+  )
+  const delta = round2(target - current)
+  if (!delta) return
+  await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
+    delta,
+    s.id
+  ])
+  await db.query(
+    `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'opening', $2, $3, LOCALTIMESTAMP(0))`,
+    [
+      s.id,
+      delta,
+      current === 0
+        ? 'رصيد افتتاحي'
+        : `تعديل الرصيد الافتتاحي: من ${current.toFixed(2)} إلى ${target.toFixed(2)}`
+    ]
+  )
+  await ctx.audit(
+    db,
+    'supplier_opening',
+    `الرصيد الافتتاحي للمورد "${s.name}": ${balanceText(current)} ← ${balanceText(target)}`,
+    { supplierId: s.id, from: current, to: target }
+  )
+}
+
 /** The actor's own open shift (cash movements need one: safe_ledger.shift_id is required). */
 async function ownOpenShift(db, ctx, shiftId) {
   if (!shiftId) return null
@@ -233,8 +292,13 @@ module.exports = function financeModule(app) {
     },
     handler: async (ctx, { supplierId }) => ({
       supplier:
-        (await ctx.pool.query('SELECT * FROM suppliers WHERE id = $1', [supplierId])).rows[0] ||
-        null,
+        (
+          await ctx.pool.query(
+            `SELECT s.*, (SELECT COALESCE(SUM(amount), 0) FROM supplier_ledger l WHERE l.supplier_id = s.id AND l.type = 'opening')::float8 AS opening_balance
+               FROM suppliers s WHERE s.id = $1`,
+            [supplierId]
+          )
+        ).rows[0] || null,
       ledger: (
         await ctx.pool.query(
           'SELECT * FROM supplier_ledger WHERE supplier_id = $1 ORDER BY id DESC LIMIT 50',
@@ -269,18 +333,84 @@ module.exports = function financeModule(app) {
         name: { type: 'string', minLength: 1, maxLength: 120 },
         phone: str(40),
         address: str(300),
-        contact_person: str(120)
+        contact_person: str(120),
+        // SUP-03 (D-070): + the store owes the supplier, − the supplier owes the store.
+        openingBalance: { type: ['number', 'null'] }
       }
     },
     handler: async (ctx, s) =>
       ctx.tx(async (db) => {
+        const c = supplierContact(s)
+        const opening = round2(s.openingBalance || 0)
+        if (opening && !ctx.can('suppliers.opening'))
+          throw forbidden('الرصيد الافتتاحي للمورد يتطلب صلاحية.')
         const r = await db.query(
           `INSERT INTO suppliers (name, phone, address, contact_person, debt_balance, created_at)
            VALUES ($1, $2, $3, $4, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-          [s.name, s.phone || '', s.address || '', s.contact_person || '']
+          [c.name, c.phone, c.address, c.contact_person]
         )
-        await ctx.audit(db, 'supplier_create', `إضافة المورد "${s.name}"`)
-        return r.rows[0]
+        await ctx.audit(db, 'supplier_create', `إضافة المورد "${c.name}"`)
+        if (opening) await setOpening(db, ctx, r.rows[0], opening)
+        return (await db.query('SELECT * FROM suppliers WHERE id = $1', [r.rows[0].id])).rows[0]
+      })
+  })
+
+  // Contact details after creation (SUP-03): never touches invoices, payments or balances.
+  app.operation({
+    name: 'suppliers.update',
+    permission: 'suppliers.manage',
+    schema: {
+      type: 'object',
+      required: ['supplierId', 'name'],
+      properties: {
+        supplierId: { type: 'integer' },
+        name: { type: 'string', minLength: 1, maxLength: 120 },
+        phone: str(40),
+        address: str(300),
+        contact_person: str(120)
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const s = (
+          await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [b.supplierId])
+        ).rows[0]
+        if (!s) throw notFound('المورد غير موجود.')
+        const c = supplierContact(b)
+        const diff = {}
+        for (const k of ['name', 'phone', 'address', 'contact_person'])
+          if ((s[k] || '') !== c[k]) diff[k] = { from: s[k] || '', to: c[k] }
+        if (!Object.keys(diff).length) return s
+        await db.query(
+          'UPDATE suppliers SET name = $2, phone = $3, address = $4, contact_person = $5 WHERE id = $1',
+          [s.id, c.name, c.phone, c.address, c.contact_person]
+        )
+        await ctx.audit(db, 'supplier_update', `تعديل بيانات المورد "${c.name}"`, {
+          supplierId: s.id,
+          ...diff
+        })
+        return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
+      })
+  })
+
+  // The opening balance (SUP-03): set, or corrected, as its own ledger line – never a purchase,
+  // a payment or a stock receipt. A correction adds the difference; earlier lines stay.
+  app.operation({
+    name: 'suppliers.setOpening',
+    permission: 'suppliers.opening',
+    schema: {
+      type: 'object',
+      required: ['supplierId', 'amount'],
+      properties: { supplierId: { type: 'integer' }, amount: { type: 'number' } }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const s = (
+          await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [b.supplierId])
+        ).rows[0]
+        if (!s) throw notFound('المورد غير موجود.')
+        await setOpening(db, ctx, s, round2(b.amount))
+        return (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
       })
   })
 
