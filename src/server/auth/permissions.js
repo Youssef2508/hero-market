@@ -81,13 +81,13 @@ const PERMISSIONS = [
     description: 'سجل الفواتير وتفاصيلها: فواتير الوردية المفتوحة للمستخدم فقط'
   },
   {
-    // Which invoices, not what may be done with them (D-081): without it, every invoice permission
-    // applies only to the invoices of the user's own open shift.
+    // Which invoices may be browsed, not what may be done with them (D-081). The actions reach any
+    // invoice by its number with their own permission (D-082).
     key: 'sales.view_all',
     module: 'sales',
     label: 'كل الفواتير',
     description:
-      'فواتير كل الكاشيرات والورديات، المفتوحة والمغلقة. بدونها يرى المستخدم ويتعامل مع فواتير ورديته المفتوحة فقط'
+      'تصفح فواتير كل الكاشيرات والورديات، المفتوحة والمغلقة. بدونها تعرض شاشة الفواتير فواتير وردية المستخدم المفتوحة فقط'
   },
   {
     key: 'sales.reprint',

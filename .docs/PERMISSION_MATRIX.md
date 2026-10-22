@@ -158,7 +158,8 @@ Every permission is checked by the service on every request, before the request 
 | `roles.list`                     | any of `roles.manage`, `users.manage`                                                             |
 | `roles.update`                   | all of `roles.manage`                                                                             |
 | `sales.changePaymentMethod`      | all of `sales.change_payment`                                                                     |
-| `sales.detail`                   | any of `sales.view`, `customers.view`, `sales.return_request`                                     |
+| `sales.detail`                   | any of `sales.view`, `customers.view`                                                             |
+| `sales.lookup`                   | any of `sales.return`, `sales.return_request`, `sales.reprint`, `sales.change_payment`            |
 | `sales.page`                     | all of `sales.view`                                                                               |
 | `sales.reprintData`              | all of `sales.reprint`                                                                            |
 | `sales.returnEntire`             | any of `sales.return`, `sales.return_request`                                                     |
@@ -214,4 +215,4 @@ Every permission is checked by the service on every request, before the request 
 
 ## Checks inside operations
 
-Some operations decide more inside, on top of the permission above: every invoice operation (list, details, reprint, returns, payment method change, the invoices of a customer) reaches only the invoices of the own open shift of the user unless they hold `sales.view_all` (D-081); a cashier sees and cancels only the preliminary invoices they recorded; expected amounts of an open shift need `shifts.view_expected` (blind close, D-073); recording money directly in the treasury needs `treasury.manage`; an opening balance on a new supplier needs `suppliers.opening`; costs are hidden without `products.view_cost`; a user can be given only a role whose permissions the administrator holds.
+Some operations decide more inside, on top of the permission above: browsing invoices (the list, the details, the invoices of a customer) reaches only the invoices of the own open shift of the user unless they hold `sales.view_all` (D-081), while `sales.lookup` finds any invoice by its number for one action and needs that action permission (D-082); a cashier sees and cancels only the preliminary invoices they recorded; expected amounts of an open shift need `shifts.view_expected` (blind close, D-073); recording money directly in the treasury needs `treasury.manage`; an opening balance on a new supplier needs `suppliers.opening`; costs are hidden without `products.view_cost`; a user can be given only a role whose permissions the administrator holds.

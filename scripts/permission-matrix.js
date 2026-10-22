@@ -95,7 +95,7 @@ async function buildMatrix() {
   lines.push('## Checks inside operations')
   lines.push('')
   lines.push(
-    'Some operations decide more inside, on top of the permission above: every invoice operation (list, details, reprint, returns, payment method change, the invoices of a customer) reaches only the invoices of the own open shift of the user unless they hold `sales.view_all` (D-081); a cashier sees and cancels only the preliminary invoices they recorded; expected amounts of an open shift need `shifts.view_expected` (blind close, D-073); recording money directly in the treasury needs `treasury.manage`; an opening balance on a new supplier needs `suppliers.opening`; costs are hidden without `products.view_cost`; a user can be given only a role whose permissions the administrator holds.'
+    'Some operations decide more inside, on top of the permission above: browsing invoices (the list, the details, the invoices of a customer) reaches only the invoices of the own open shift of the user unless they hold `sales.view_all` (D-081), while `sales.lookup` finds any invoice by its number for one action and needs that action permission (D-082); a cashier sees and cancels only the preliminary invoices they recorded; expected amounts of an open shift need `shifts.view_expected` (blind close, D-073); recording money directly in the treasury needs `treasury.manage`; an opening balance on a new supplier needs `suppliers.opening`; costs are hidden without `products.view_cost`; a user can be given only a role whose permissions the administrator holds.'
   )
   lines.push('')
   // Formatted like every other document (Prettier), so the file and the test compare exactly.

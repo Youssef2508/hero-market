@@ -1,11 +1,10 @@
 'use strict'
-// Which invoices a user may see and act on (owner, 1.5.1, D-081). With "كل الفواتير"
-// (sales.view_all, administrators by default): every invoice, of any cashier and shift, open or
-// closed. Anyone else – a cashier or a supervisor, whatever invoice permissions they were given –
-// only the invoices of their own open shift: list, details, reprint, returns (also with a
-// supervisor's approval), payment method changes, a customer's invoices. Asking for another
-// cashier's invoice by its number is refused by the service (403, logged). Each action still needs
-// its own permission: seeing an invoice never allows acting on it.
+// Which invoices a user may BROWSE (owner, 1.5.1, D-081): the invoices list, an invoice's details
+// and a customer's invoices. With "كل الفواتير" (sales.view_all, administrators by default): every
+// invoice, of any cashier and shift, open or closed. Anyone else with «عرض الفواتير» – a cashier or a
+// supervisor – only the invoices of their own open shift. Asking for another cashier's invoice
+// details by its number is refused by the service (403, logged).
+// The actions (return, reprint, payment change) by invoice number are D-082: invoiceActions.test.js.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
@@ -15,8 +14,7 @@ const {
   startService,
   createUser,
   login,
-  seedProducts,
-  passwordFor
+  seedProducts
 } = require('./helpers')
 
 let db, svc
@@ -33,7 +31,6 @@ const refused = (r, what) => {
   assert.equal(r.status, 403, `${what}: ${JSON.stringify(r.body)}`)
   return r.body
 }
-const approver = { username: 'manager', password: passwordFor('9517') }
 const sell = async (token, shiftId, extra = {}) =>
   ok(
     await svc.call(
@@ -48,8 +45,6 @@ const sell = async (token, shiftId, extra = {}) =>
       token
     )
   ).saleId
-const itemOf = async (saleId) =>
-  (await one('SELECT id FROM sale_items WHERE sale_id = $1 ORDER BY id LIMIT 1', [saleId])).id
 const listed = async (token) => {
   const r = ok(await svc.call('sales.page', { page: 1 }, token))
   return { scope: r.scope, ids: r.rows.map((s) => s.id).sort((a, b) => a - b) }
@@ -77,7 +72,7 @@ before(async () => {
     "INSERT INTO products (barcode, name, retail_price, stock_qty, unit) VALUES ('P1', 'صنف', 10, 500, 'قطعة')"
   )
   owner = await login(svc, '8642')
-  // Cashier A is given every invoice permission (rule 3): still only the own open shift.
+  // Cashier A is given every invoice permission (rule 3): browsing still only the own open shift.
   const role = ok(
     await svc.call(
       'roles.create',
@@ -142,6 +137,8 @@ test('the list: everything for the administrator; the own open shift for a cashi
   const found = ok(await svc.call('sales.page', { search: String(sale.b1) }, cashierA))
   assert.ok(!found.rows.some((s) => s.id === sale.b1))
   assert.ok(found.rows.every((s) => s.shift_id === shiftA.id))
+  // A cashier without «عرض الفواتير» does not browse at all.
+  refused(await svc.call('sales.page', { page: 1 }, cashierB), 'B lists invoices')
 })
 
 test("details: own invoice yes; another cashier's by its number refused and logged; the administrator any", async (t) => {
@@ -151,9 +148,9 @@ test("details: own invoice yes; another cashier's by its number refused and logg
   const r = refused(await svc.call('sales.detail', { saleId: sale.b1 }, cashierA), 'A opens B')
   assert.match(r.error.message, /ورديتك/)
   assert.equal(await refusals(), before + 1, 'the refusal is in the activity log')
-  // A cashier with only "return request" opens own invoices by number, not others'.
-  ok(await svc.call('sales.detail', { saleId: sale.b1 }, cashierB))
-  refused(await svc.call('sales.detail', { saleId: sale.a1 }, cashierB), 'B opens A')
+  // A cashier with only «طلب مرتجع» does not open invoice details, not even their own: returns
+  // find the invoice through sales.lookup (D-082).
+  refused(await svc.call('sales.detail', { saleId: sale.b1 }, cashierB), 'B opens own details')
   refused(await svc.call('sales.detail', { saleId: sale.a1 }, manager), 'manager opens A')
   ok(await svc.call('sales.detail', { saleId: sale.b1 }, owner))
   ok(await svc.call('sales.detail', { saleId: sale.a1 }, auditor))
@@ -161,93 +158,22 @@ test("details: own invoice yes; another cashier's by its number refused and logg
   assert.equal((await svc.call('sales.detail', { saleId: 999999 }, cashierA)).status, 404)
 })
 
-test("reprint: own invoice yes, another cashier's refused; seeing all invoices does not allow reprinting", async (t) => {
+test('seeing every invoice does not allow acting on one', async (t) => {
   if (!requireDb(t)) return
-  ok(await svc.call('sales.reprintData', { saleId: sale.a1 }, cashierA))
-  refused(await svc.call('sales.reprintData', { saleId: sale.b1 }, cashierA), 'A reprints B')
-  refused(await svc.call('sales.reprintData', { saleId: sale.a1 }, manager), 'manager reprints A')
-  ok(await svc.call('sales.reprintData', { saleId: sale.b1 }, owner))
-  // The reviewer sees every invoice but has no reprint permission.
+  // The reviewer has «كل الفواتير» but no reprint, return or payment permission.
   refused(await svc.call('sales.reprintData', { saleId: sale.a1 }, auditor), 'auditor reprints')
-})
-
-test("returns: refused on another cashier's invoice even with a supervisor's approval; nothing changes", async (t) => {
-  if (!requireDb(t)) return
-  const stock = async () =>
-    Number((await one("SELECT stock_qty FROM products WHERE barcode = 'P1'")).stock_qty)
-  const before = await stock()
-  const itemA = await itemOf(sale.a1)
-  // Cashier B requests a return on cashier A's invoice, with the supervisor's password: refused.
+  refused(await svc.call('sales.returnEntire', { saleId: sale.a1 }, auditor), 'auditor returns')
   refused(
     await svc.call(
-      'sales.returnItem',
-      { saleItemId: itemA, quantity: 1, reason: 'طلب مرتجع', approver, currentShiftId: shiftB.id },
-      cashierB
+      'sales.changePaymentMethod',
+      { saleId: sale.a1, method: 'visa', clientRef: crypto.randomUUID() },
+      auditor
     ),
-    'B returns A with approval'
+    'auditor changes payment'
   )
   refused(
-    await svc.call(
-      'sales.returnEntire',
-      { saleId: sale.a1, reason: 'طلب مرتجع', approver, currentShiftId: shiftB.id },
-      cashierB
-    ),
-    'B returns all of A'
-  )
-  // The supervisor's own "returns" permission does not reach a cashier's invoice either.
-  refused(
-    await svc.call('sales.returnItem', { saleItemId: itemA, quantity: 1 }, manager),
-    'manager returns A'
-  )
-  // Cashier A (with "returns") cannot return B's invoice.
-  refused(
-    await svc.call('sales.returnEntire', { saleId: sale.b1, currentShiftId: shiftA.id }, cashierA),
-    'A returns B'
-  )
-  // The reviewer sees it but may not return it.
-  refused(
-    await svc.call('sales.returnItem', { saleItemId: itemA, quantity: 1 }, auditor),
-    'auditor returns'
-  )
-  assert.equal(await stock(), before, 'no refused attempt moved stock')
-  assert.equal(Number((await one('SELECT count(*) AS n FROM sale_returns')).n), 0)
-
-  // Allowed: B's own invoice with the supervisor's approval; A's own invoice directly.
-  ok(
-    await svc.call(
-      'sales.returnItem',
-      {
-        saleItemId: await itemOf(sale.b1),
-        quantity: 1,
-        reason: 'طلب مرتجع',
-        approver,
-        currentShiftId: shiftB.id
-      },
-      cashierB
-    )
-  )
-  ok(
-    await svc.call(
-      'sales.returnItem',
-      { saleItemId: itemA, quantity: 1, currentShiftId: shiftA.id },
-      cashierA
-    )
-  )
-  assert.equal(await stock(), before + 2)
-})
-
-test("payment method: own invoice yes, another cashier's refused; the administrator any", async (t) => {
-  if (!requireDb(t)) return
-  const change = (saleId, token, method = 'visa') =>
-    svc.call('sales.changePaymentMethod', { saleId, method, clientRef: crypto.randomUUID() }, token)
-  // (Invoices with a return keep their method: fresh invoices here.)
-  const b2 = await sell(cashierB, shiftB.id)
-  ok(await change(sale.a2, cashierA))
-  refused(await change(b2, cashierA), 'A changes B')
-  ok(await change(b2, owner, 'wallet'))
-  assert.equal(
-    (await one('SELECT payment_type FROM sales WHERE id = $1', [b2])).payment_type,
-    'محفظة'
+    await svc.call('sales.lookup', { saleId: sale.a1, action: 'reprint' }, auditor),
+    'auditor looks up'
   )
 })
 
@@ -266,7 +192,7 @@ test("a customer's invoices follow the same scope; the balance stays visible", a
   assert.equal(forManager.client.id, clientId, 'the customer and balance are still shown')
 })
 
-test('shift boundaries: after the close nothing of that shift; a new shift starts empty; the administrator keeps all', async (t) => {
+test('shift boundaries: after the close nothing of that shift to browse; a new shift starts empty; the administrator keeps all', async (t) => {
   if (!requireDb(t)) return
   const supervisorShift = ok(await svc.call('shifts.open', { startingCash: 0 }, manager))
   const m1 = await sell(manager, supervisorShift.id)
@@ -282,18 +208,10 @@ test('shift boundaries: after the close nothing of that shift; a new shift start
   )
   assert.deepEqual(await listed(cashierA), { scope: 'own_shift', ids: [] })
   refused(await svc.call('sales.detail', { saleId: sale.a1 }, cashierA), 'closed shift details')
-  refused(
-    await svc.call('sales.reprintData', { saleId: sale.a1 }, cashierA),
-    'closed shift reprint'
-  )
-  refused(
-    await svc.call(
-      'sales.changePaymentMethod',
-      { saleId: sale.a1, method: 'visa', clientRef: crypto.randomUUID() },
-      cashierA
-    ),
-    'closed shift payment change'
-  )
+  // Browsing is closed, but the action screens still reach it by number with their permission
+  // (D-082): cashier A holds «إعادة طباعة الفواتير».
+  ok(await svc.call('sales.lookup', { saleId: sale.a1, action: 'reprint' }, cashierA))
+  ok(await svc.call('sales.reprintData', { saleId: sale.a1 }, cashierA))
 
   const next = ok(await svc.call('shifts.open', { startingCash: 0 }, cashierA))
   const a3 = await sell(cashierA, next.id)
@@ -301,7 +219,7 @@ test('shift boundaries: after the close nothing of that shift; a new shift start
   refused(await svc.call('sales.detail', { saleId: sale.a1 }, cashierA), 'previous shift')
 
   // The administrator: every invoice, closed shift included, without any shift of their own.
-  assert.equal((await listed(owner)).ids.length, 6)
+  assert.equal((await listed(owner)).ids.length, 5)
   ok(await svc.call('sales.detail', { saleId: sale.a1 }, owner))
   ok(await svc.call('sales.reprintData', { saleId: sale.a1 }, owner))
   ok(

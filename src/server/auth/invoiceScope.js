@@ -1,13 +1,14 @@
 'use strict'
-// Which invoices a user may see and act on (owner, 1.5.1, D-081). The permission of each action
-// (view, reprint, return, return request, payment change) still applies; this decides on WHICH
-// invoices:
+// Which invoices a user may BROWSE (owner, 1.5.1, D-081): the invoices list, an invoice's details
+// and a customer's invoices.
 //  - with sales.view_all (administrators by default): every invoice, of any cashier and shift,
 //    open or closed;
 //  - anyone else, whatever invoice permissions they hold: only the invoices of their own open
 //    shift. Once that shift is closed, its invoices are out of their reach.
-// Checked by the service for every invoice operation, so asking for another cashier's invoice by
-// its number is refused (403, logged), whatever the screen shows.
+// Checked by the service, so asking for another cashier's invoice details by number is refused
+// (403, logged), whatever the screen shows.
+// Not here: the actions. A return, a reprint or a payment method change reaches any invoice by its
+// number through sales.lookup, and only its own permission decides (D-082).
 const { forbidden } = require('../errors')
 
 const ALL_INVOICES = 'sales.view_all'

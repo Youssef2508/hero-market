@@ -3,7 +3,6 @@
 // Formulas and rules: .docs/FINANCIAL_RECONCILIATION.md §4 and §8.
 const { badRequest, conflict, notFound } = require('../errors')
 const treasury = require('../money/treasury')
-const { assertInvoiceInScope } = require('../auth/invoiceScope')
 const { TYPES, CREDIT_TYPES, LABELS, METHODS, methodOf, round2 } = require('../money/methods')
 
 const SALE_VALUE = 'COALESCE(NULLIF(original_amount, 0) - discount, total_amount)'
@@ -181,8 +180,7 @@ module.exports = function moneyModule(app) {
         const sale = (await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]))
           .rows[0]
         if (!sale) throw notFound('الفاتورة غير موجودة.')
-        // Only an invoice of the user's own open shift, unless they see all invoices (D-081).
-        await assertInvoiceInScope(db, ctx, sale)
+        // Any invoice, also of a closed shift: this permission decides, not «عرض الفواتير» (D-082).
         const shift = (
           await db.query('SELECT status FROM shifts WHERE id = $1 FOR SHARE', [sale.shift_id])
         ).rows[0]

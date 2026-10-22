@@ -102,4 +102,4 @@ Then 1.5.1 changes only the program; the database stays as it is ("Case A").
 2. In 1.5.0, «النسخ الاحتياطي» → «إنشاء نسخة احتياطية الآن» → save on a USB stick.
 3. Check the installer (section B) and run it (section C).
 4. Sign in. The invoices and figures are as before.
-5. In «الأدوار والصلاحيات», check the new permission «كل الفواتير»: the administrators have it, «مشرف» and «كاشير» do not.
+5. In «الأدوار والصلاحيات», check who may browse and act on invoices (the table in [RELEASE_NOTES_1.5.1.md](RELEASE_NOTES_1.5.1.md)): the new permission «كل الفواتير» is with the administrators only, and the new screens «المرتجعات», «إعادة طباعة فاتورة» and «تغيير طريقة الدفع» appear for the roles that hold those permissions.

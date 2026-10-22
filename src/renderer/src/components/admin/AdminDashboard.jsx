@@ -20,6 +20,7 @@ import { can } from '../../lib/api'
 const InventoryTab = lazy(() => import('./InventoryTab'))
 const ShiftsTab = lazy(() => import('./ShiftsTab'))
 const SalesTab = lazy(() => import('./SalesTab'))
+const InvoiceActionTab = lazy(() => import('./InvoiceActionTab'))
 const ClientsTab = lazy(() => import('./ClientsTab'))
 const SuppliersTab = lazy(() => import('./SuppliersTab'))
 const ChecksTab = lazy(() => import('./ChecksTab'))
@@ -227,6 +228,9 @@ export default function AdminDashboard(props) {
           />
         )}
         {adminTab === 'sales' && <SalesTab {...props} />}
+        {adminTab === 'returns' && <InvoiceActionTab {...props} action="return" />}
+        {adminTab === 'reprint' && <InvoiceActionTab {...props} action="reprint" />}
+        {adminTab === 'payment-change' && <InvoiceActionTab {...props} action="payment" />}
         {adminTab === 'suppliers' && <SuppliersTab {...props} />}
         {adminTab === 'checks' && <ChecksTab {...props} />}
         {adminTab === 'treasury' && (
