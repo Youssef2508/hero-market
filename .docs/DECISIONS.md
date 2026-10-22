@@ -986,3 +986,5 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Fix 1, backup lock:** the nightly and after-close runs share one lock. A run that found it taken gave up, so a shift closed just before midnight cost that day's daily copy: the scheduler counts the run as done and does not retry. A run now waits up to 20 minutes for the other one, then decides.
 - **Fix 2, catch-up at start-up:** a missed midnight is made up as soon as the PC starts, often before the database service accepts connections. The run failed for the day. It now waits up to 10 minutes for the database, and only when a copy is due.
 - **Tests:** `backupJob.test.mjs` (both cases); Windows Sandbox on the final installer (NIGHTLY_BACKUP.md).
+- **Packaging:** a release candidate was found, by listing its package, to contain a git worktree that sat inside the project folder; it was discarded. Top-level dot-folders, `deploy/` and `electron-builder.qa.yml` are now excluded, and a test checks the rules.
+- **The final installer:** `HeroMarket-Setup-1.5.0.exe`, SHA-256 `9f8e506cfb824c055bd4c97f42df29926291ed195389a750ab7067285529f9d5`, built from `f05eb99` with no uncommitted change.

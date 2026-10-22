@@ -93,17 +93,50 @@ Written for the shop owner. Screen names are given as they appear in the program
 
 ## The installer
 
-<<INSTALLER>>
+|                  |                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| File             | `HeroMarket-Setup-1.5.0.exe`                                                                                                         |
+| Size             | 181,152,170 bytes                                                                                                                    |
+| SHA-256          | `9f8e506cfb824c055bd4c97f42df29926291ed195389a750ab7067285529f9d5`                                                                   |
+| Built from       | commit `f05eb99` on `feature/owner-feedback`, with no uncommitted change. Later commits change only `.docs`, which is never packaged |
+| Package contents | checked before release: only the program (`node_modules`, `src`, `out`, `resources`, `package.json`)                                 |
+| Signed           | no (Windows shows "Windows protected your PC")                                                                                       |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.0.exe` must show the SHA-256 above ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md) step 8).
 
 ## How this release was verified
 
 **Automated** (on the release commit, and in CI):
 
-<<AUTOMATED>>
+- **The full test suite: 392 of 392 pass** (service, database and migrations, backup and restore, permissions by direct request, receipts and reprints, keyboard behaviour, update checks). Lint: no errors. Formatting: clean.
+- **Receipts, printing, scanner and scale labels:** 43 tests, all pass:
+  - the right-to-left receipt and closing report render with the printing code;
+  - 15 golden receipt layouts;
+  - reprints are marked as copies and record nothing;
+  - printer errors are explained;
+  - a fast scanner is never cut;
+  - the owner's scale label 2000001001257 is decoded.
+- **The shop's upgrade path, rehearsed on disposable databases:**
+  - HeroMarket 1.4.0's own code imported a filled `.xlsx` template and recorded a day's work: cash, wallet, part-paid and credit sales, an expense, a purchase, supplier and customer payments, the close;
+  - then the 1.5.0 migrations with the installer's own checks: no problem, every figure unchanged;
+  - then 1.5.0: stock equal to its movements, reports, a new sale and close, the export;
+  - the same 1.4.0 file reads into an empty 1.5.0 store; importing it a second time is refused as a whole.
+- **CI (GitHub Actions)** on every push of the release branch.
 
 **Windows Sandbox** (clean Windows 10, disposable, no network), with the final installer unless noted:
 
-<<SANDBOX>>
+- **From the shop's own 1.4.0 build** (the visit stick, SHA-256 `960bc572…`), with sample money records:
+  - an update that fails is put back by itself, and the 1.4.0 installer brings everything back;
+  - the update to 1.5.0 (Case B): every figure identical, both backup tasks registered, program opens.
+- **Backups end to end** ([NIGHTLY_BACKUP.md](NIGHTLY_BACKUP.md)):
+  - the 00:00 trigger by itself;
+  - a missed midnight made up at the next start, waiting for the database;
+  - a shift closed at midnight;
+  - the program open meanwhile;
+  - retention of 14 daily, 8 weekly and 20 close copies;
+  - copies read-only for users;
+  - four copies restored into disposable databases with every figure equal.
+- **Update safety** (release candidate, [UPDATE_GUIDE.md §9](UPDATE_GUIDE.md)): refused while the program is open, a reinstall (Case A), the older installer refused, going back to 1.4.0.
 
 **In the running program** (development build, disposable test database): every screen and 51 windows at 1366, 1024 and 800 px; keyboard only; blind close; the dashboard.
 

@@ -78,6 +78,12 @@ The export screen shows how many of these were left out. A product's stock, cost
 - The nightly backup (`NIGHTLY_BACKUP.md`) keeps its midnight schedule, catch-up after downtime, retention and safety checks; it uses the same snapshot.
 - **Known gap:** `applied_commands` (cloud commands already applied) is not in the backup; after a restore the new sync epoch (D-047) governs. Cloud sync is not in use at the shop. Settle this before it is.
 
+### Between versions (1.4.0 → 1.5.0)
+
+- A template filled for 1.4.0 (template version 1) reads in 1.5.0 unchanged. Tested on a real `.xlsx` written from 1.4.0's own template code.
+- The shop updates in place: its data is already in the database, and the update keeps it. Importing the same file into a store that has its records is refused as a whole ("مسجل بالفعل"), and nothing is written.
+- A backup restores only into the same database version: a 1.4.0 backup file into 1.4.0, a 1.5.0 copy into 1.5.0.
+
 ## 6. Checklist when a feature changes the data model
 
 For every added, removed or renamed field or table:

@@ -167,6 +167,10 @@ Previous version can open the database after this update: yes (A) / no (B: resto
   | Going back, as first documented (1.4.0 installer, then its restore)               | **Failed:** the 1.4.0 installer's own pruning had removed the only copy of the 1.4.0 data. Fixed in 1.5.0 and §6 rewritten (D-079)                                                  |
   | Going back, new order: `--restore-pre-install=1.4.0` with 1.5.0, then 1.4.0 setup | The copy of the 1.4.0 data was still there after three later installer runs; restore exit 0; every 1.4.0 figure, schema 0014; then the 1.4.0 installer: "case A, ok", program opens |
 
+- **The final installer** (SHA-256 `9f8e506c…`, commit `f05eb99`), from the shop's own 1.4.0 build (the visit stick, SHA-256 `960bc572…`) with the sample records:
+  - an update that fails over 1.4.0 (`1.5.1-test.1`, exit 3) put the data back, every figure identical, and the 1.4.0 installer brought everything back ("case A, ok");
+  - the update to 1.5.0: Case B, migrations 0015–0023, every figure identical, both backup tasks registered, program opens;
+  - the backups: see NIGHTLY_BACKUP.md.
 - **Builds:** the refusal checks (installer open, older installer) ran with the candidate built before the D-079 fix; that fix changes only how copies are kept and chosen. Every other row ran with the final candidate.
 - **Earlier, with test build 1.5.0-test.2 (D-074):** the after-close backup task runs as the system account when started with normal user rights; a normal user cannot delete a copy.
 - **Not observed:** the update on the shop PC itself. The owner runs it ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md)); the installer checks every record and total and puts the copy back on any problem.

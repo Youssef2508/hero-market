@@ -33,7 +33,13 @@ Written for the shop owner, who installs the update himself on the shop PC. Prin
   Get-FileHash "$env:USERPROFILE\Desktop\HeroMarket-Setup-1.5.0.exe"
   ```
 
-  The `Hash` must be exactly the one in `SHA256SUMS.txt` and in the release notes. If it differs, **stop**: do not install that file.
+  The `Hash` must be exactly:
+
+  ```
+  9F8E506CFB824C055BD4C97F42DF29926291ED195389A750AB7067285529F9D5
+  ```
+
+  (the same as in `SHA256SUMS.txt` and the release notes). If it differs, **stop**: do not install that file.
 
 ## C. Install
 
