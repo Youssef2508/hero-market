@@ -17,6 +17,7 @@ import {
   readCopy,
   taskXml,
   closeTaskXml,
+  retryUntil,
   KEEP
 } from '../../src/main/backupJob.js'
 
@@ -195,6 +196,57 @@ test('after-close copies keep the newest 20; daily and weekly copies are not aff
   // The oldest close copies went, the newest stayed.
   assert.ok(copies.some((c) => c.file === 'HeroMarket-close-2026-10-02_082400.json.gz'))
   assert.ok(!copies.some((c) => c.file === 'HeroMarket-close-2026-10-02_080000.json.gz'))
+})
+
+test('a shift closed just before midnight: the nightly run waits for its copy, then makes its own', async () => {
+  const dir = tmp()
+  // The after-close copy is still being written (its lock is held) when midnight comes.
+  fs.writeFileSync(path.join(dir, '.backup.lock'), '1234')
+  setTimeout(() => fs.rmSync(path.join(dir, '.backup.lock')), 300)
+  const nightly = await run(dir, at(2026, 10, 23, 0, 0), { lockWaitMs: 5000 })
+  assert.equal(nightly.result, 'done', 'not skipped: that day would have no daily copy')
+  assert.deepEqual(
+    listCopies(dir).map((c) => c.kind),
+    ['daily', 'weekly']
+  )
+  // A run that never finishes within the wait: skipped, nothing written, the lock left alone.
+  fs.writeFileSync(path.join(dir, '.backup.lock'), '1234')
+  const close = await run(dir, at(2026, 10, 23, 0, 1), { afterClose: true, lockWaitMs: 200 })
+  assert.equal(close.result, 'skipped')
+  assert.equal(listCopies(dir).length, 2)
+  assert.ok(fs.existsSync(path.join(dir, '.backup.lock')))
+})
+
+test('a catch-up right after the PC starts waits for the database instead of failing the day', async () => {
+  let tries = 0
+  const lines = []
+  const dir = tmp()
+  const status = await run(dir, at(2026, 10, 24, 7, 30), {
+    // The database service is still starting: the first two attempts are refused.
+    exportData: () =>
+      retryUntil(
+        async () => {
+          if (++tries < 3) throw new Error('connect ECONNREFUSED 127.0.0.1:54330')
+          return fake()
+        },
+        { timeoutMs: 2000, intervalMs: 20, log: (l) => lines.push(l) }
+      )
+  })
+  assert.equal(status.result, 'done')
+  assert.equal(tries, 3)
+  assert.match(lines.join('\n'), /waiting for the database/)
+  // A database that never comes: the run fails with the reason, and nothing is written.
+  const down = await run(tmp(), at(2026, 10, 24, 7, 30), {
+    exportData: () =>
+      retryUntil(
+        async () => {
+          throw new Error('connect ECONNREFUSED 127.0.0.1:54330')
+        },
+        { timeoutMs: 100, intervalMs: 20 }
+      )
+  })
+  assert.equal(down.result, 'failed')
+  assert.match(down.reason, /ECONNREFUSED/)
 })
 
 test('the after-close task: on demand only, the system account, Windows users may start it', () => {

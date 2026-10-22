@@ -15,7 +15,7 @@ import os from 'os'
 import pg from 'pg'
 import { storeDir } from './userDataPath'
 import { readConfig } from './backend'
-import { runBackup, taskXml, closeTaskXml } from './backupJob'
+import { runBackup, taskXml, closeTaskXml, retryUntil } from './backupJob'
 import { systemTool } from './winTools'
 import { execFile } from 'child_process'
 
@@ -72,7 +72,11 @@ export async function runScheduledBackup({ afterClose = false } = {}) {
   try {
     const status = await runBackup({
       dir: scheduledDir(),
-      exportData: () => exportSnapshot(pool),
+      // Only when a copy is needed: wait for the database (the PC may have just started).
+      exportData: async () => {
+        await retryUntil(() => pool.query('SELECT 1'), { log: backupLog })
+        return exportSnapshot(pool)
+      },
       schema: listMigrations().map((m) => m.version),
       statusFile: join(
         storeDir(),

@@ -5,7 +5,8 @@ Written for the owner's support person and the developer. It describes the autom
 ## What it does
 
 - **When:** every day at **12:00 AM local time**, with no confirmation and no window. It runs even when nobody is signed in to Windows, and while the till is open.
-- **Missed midnight:** if the PC was off at midnight, one copy is taken as soon as it starts again. Never more than one a day: a second run the same day does nothing.
+- **Missed midnight:** if the PC was off at midnight, one copy is taken as soon as it starts again. If the database service is still starting then, the run waits for it (up to 10 minutes) instead of failing for the day. Never more than one a day: a second run the same day does nothing.
+- **One run at a time:** the nightly and after-close runs never write together. A run that finds the other one busy (a shift closed just before midnight) waits for it, up to 20 minutes, then makes its own copy (D-080).
 - **How it is started:**
   - the Windows Task Scheduler task **`HeroMarket\HeroMarket Backup`** runs `HeroMarket-POS.exe --scheduled-backup` as the system account;
   - it is created by the installer and removed by the uninstaller;

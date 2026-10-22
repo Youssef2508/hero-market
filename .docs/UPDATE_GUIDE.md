@@ -1,6 +1,6 @@
 # Updating HeroMarket at the supermarket (every release after 1.4.0)
 
-Written for you, the developer, and for whoever installs updates at the shop. It describes what exists in 1.4.0 and what was tested. Anything not done yet is marked.
+Written for you, the developer, and for whoever installs updates at the shop. It describes the update mechanism since 1.4.0 and what was tested (1.5.0: §9). The shop owner's own step-by-step upgrade from 1.4.0 to 1.5.0 is [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). Anything not done yet is marked.
 
 ## 1. What kind of update system this is
 
@@ -169,4 +169,4 @@ Previous version can open the database after this update: yes (A) / no (B: resto
 
 - **Builds:** the refusal checks (installer open, older installer) ran with the candidate built before the D-079 fix; that fix changes only how copies are kept and chosen. Every other row ran with the final candidate.
 - **Earlier, with test build 1.5.0-test.2 (D-074):** the after-close backup task runs as the system account when started with normal user rights; a normal user cannot delete a copy.
-- **Not tested:** the update on a real PC (the shop gets a fresh install; the owner's laptop update is the first real one), and the backups on the shop PC.
+- **Not observed:** the update on the shop PC itself. The owner runs it ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md)); the installer checks every record and total and puts the copy back on any problem.

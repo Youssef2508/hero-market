@@ -1,5 +1,7 @@
 # HeroMarket 1.4.0 at the supermarket: step by step
 
+> **History (2026-10-22).** The shop visit is done: the shop runs HeroMarket 1.4.0 with its data, and the scanner, printer and workflows were tested there. There is no further visit. The owner upgrades to 1.5.0 himself: [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). This guide (1.3 → 1.4.0) is kept as history only.
+>
 > **Not for the supermarket as written (2026-10-16).** This guide assumes the shop PC runs HeroMarket 1.3. The owner has since said the shop uses another company's POS program. Go-live there is a fresh install. The shop's products, customers and suppliers are entered through HeroMarket's own Excel import template (owner, 2026-10-22: no importer for the other program; see [DATA_IMPORT_EXPORT.md](DATA_IMPORT_EXPORT.md)). The first step is **[SUPERMARKET_VISIT_1.md](SUPERMARKET_VISIT_1.md)**, which only collects information. The installation guide for the shop will be rewritten once its data and hardware are known. This version still applies to any PC that runs HeroMarket 1.3.
 
 Written for you, the person who installs it at the shop. Print it, or open START-HERE.html from the USB folder, and tick each box. The whole visit takes about two hours plus a normal day of selling.

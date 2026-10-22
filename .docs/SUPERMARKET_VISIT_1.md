@@ -1,5 +1,7 @@
 # HeroMarket at the supermarket, visit 1: collect what we need (install nothing)
 
+> **History (2026-10-22).** The shop visit is done: the shop runs HeroMarket 1.4.0 with its data, and the scanner, printer and workflows were tested there. There is no further visit. The owner upgrades to 1.5.0 himself: [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md). This checklist is kept as the record of that visit.
+
 Written for you, the person visiting the shop. Print it, or open `START-HERE.html` from the USB folder, and tick each box. It takes about 30 minutes.
 
 **Why a first visit:** the supermarket runs another company's POS program, not an older HeroMarket. Before installing anything we need to know:

@@ -973,3 +973,16 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `--restore-pre-install=<version>` restores the newest copy of that version's data (a folder name still works);
   - going back is now: restore with the newer program, then run the older installer. 1.4.0's own installer still prunes by the old rule, so running it first can remove the 1.4.0 copy (UPDATE_GUIDE.md §6).
 - **Tests:** unit tests replay the Sandbox sequence and the copy choice; the Sandbox runs are in UPDATE_GUIDE.md §8.
+
+## D-080 Release 1.5.0: the shop upgrades from 1.4.0 in place; two backup fixes (2026-10-22)
+
+- **The shop runs HeroMarket 1.4.0** with its data, imported from the old program's export through the HeroMarket template. The scanner, printer and workflows were tested there by the developer on 1.4.0. There is no further visit. The owner installs 1.5.0 over 1.4.0 himself, following `UPGRADE_TO_1.5.0.md`. The data is not imported again: the update keeps it.
+- **Rehearsed on the real path** (disposable databases):
+  - 1.4.0's own code (`main`, f0f0d84) imported a filled `.xlsx` template and recorded a day's work: cash, wallet, part-paid and credit sales, an expense, a purchase, supplier and customer payments, the close;
+  - then the 1.5.0 migrations with the installer's own checks: no problem, every figure unchanged;
+  - then 1.5.0: stock = movements, reports, a new sale and close, export;
+  - the same 1.4.0 file reads into an empty 1.5.0 store, and importing it a second time is refused as a whole.
+- **Backups across versions:** a 1.4.0 backup file restores only into 1.4.0. The owner makes one before the update as his way back.
+- **Fix 1, backup lock:** the nightly and after-close runs share one lock. A run that found it taken gave up, so a shift closed just before midnight cost that day's daily copy: the scheduler counts the run as done and does not retry. A run now waits up to 20 minutes for the other one, then decides.
+- **Fix 2, catch-up at start-up:** a missed midnight is made up as soon as the PC starts, often before the database service accepts connections. The run failed for the day. It now waits up to 10 minutes for the database, and only when a copy is due.
+- **Tests:** `backupJob.test.mjs` (both cases); Windows Sandbox on the final installer (NIGHTLY_BACKUP.md).

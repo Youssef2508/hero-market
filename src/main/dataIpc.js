@@ -116,7 +116,7 @@ export function registerDataIpc({
   ipcMain.handle('backup:restore', async () => {
     const { filePaths } = await dialog.showOpenDialog({
       title: 'استعادة نسخة احتياطية',
-      // The nightly copies are gzip-compressed (backupsscheduled, BACKUP-01).
+      // The nightly copies are gzip-compressed (backups\scheduled, BACKUP-01).
       defaultPath: scheduledDir(),
       filters: [{ name: 'HeroMarket backup', extensions: ['json', 'gz'] }],
       properties: ['openFile']

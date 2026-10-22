@@ -154,6 +154,31 @@ function verifyCopy(file, { schema, rows }) {
 }
 
 /**
+ * Calls fn until it succeeds, for up to timeoutMs. A missed midnight is made up as soon as the PC
+ * starts, often before the database service accepts connections: the copy waits for it instead of
+ * failing for the day (nothing would retry it).
+ */
+async function retryUntil(
+  fn,
+  { timeoutMs = 10 * 60 * 1000, intervalMs = 5000, log = () => {} } = {}
+) {
+  const until = Date.now() + timeoutMs
+  let waited = false
+  for (;;) {
+    try {
+      const r = await fn()
+      if (waited) log('backup: the database is available')
+      return r
+    } catch (e) {
+      if (Date.now() + intervalMs > until) throw e
+      if (!waited) log(`backup: waiting for the database (${e.message})`)
+      waited = true
+      await new Promise((r) => setTimeout(r, intervalMs))
+    }
+  }
+}
+
+/**
  * The backup job. exportData() returns the backup object (exportSnapshot). Returns the run's status
  * (also written to statusFile, keeping the time of the last good run): { result: 'done' |
  * 'skipped' | 'failed', ... }. Never throws.
@@ -165,7 +190,8 @@ async function runBackup({
   now = new Date(),
   statusFile,
   log = () => {},
-  afterClose = false
+  afterClose = false,
+  lockWaitMs = 20 * 60 * 1000
 }) {
   const started = Date.now()
   const status = { at: now.toISOString(), result: 'failed', files: [] }
@@ -173,20 +199,33 @@ async function runBackup({
   let locked = false
   try {
     fs.mkdirSync(dir, { recursive: true })
-    // One run at a time (a catch-up and the midnight trigger together). A lock older than six
-    // hours is from a run that died.
-    try {
-      fs.writeFileSync(lock, String(process.pid), { flag: 'wx' })
-      locked = true
-    } catch {
-      const age = Date.now() - fs.statSync(lock).mtimeMs
-      if (age < 6 * 3600 * 1000) {
-        status.result = 'skipped'
-        status.reason = 'another backup is running'
-        return status
+    // One run at a time. A run that finds another one (a shift closed just before midnight, or a
+    // catch-up and the midnight trigger together) waits for it, then decides: giving up would lose
+    // that night's copy, since the scheduler counts the run as done. A lock older than six hours
+    // is from a run that died.
+    const waitUntil = Date.now() + lockWaitMs
+    while (!locked) {
+      try {
+        fs.writeFileSync(lock, String(process.pid), { flag: 'wx' })
+        locked = true
+      } catch {
+        let age = 0
+        try {
+          age = Date.now() - fs.statSync(lock).mtimeMs
+        } catch {
+          continue // released in between: try again
+        }
+        if (age >= 6 * 3600 * 1000) {
+          fs.writeFileSync(lock, String(process.pid))
+          locked = true
+        } else if (Date.now() >= waitUntil) {
+          status.result = 'skipped'
+          status.reason = 'another backup is running'
+          return status
+        } else {
+          await new Promise((r) => setTimeout(r, Math.min(2000, Math.max(50, lockWaitMs / 20))))
+        }
       }
-      fs.writeFileSync(lock, String(process.pid))
-      locked = true
     }
     // Leftovers of an interrupted run are never valid copies.
     for (const f of fs.readdirSync(dir)) if (f.endsWith('.partial')) fs.rmSync(path.join(dir, f))
@@ -353,6 +392,7 @@ function closeTaskXml(exePath) {
 export {
   KEEP,
   closeTaskXml,
+  retryUntil,
   REQUIRED_TABLES,
   backupName,
   parseName,

@@ -1,8 +1,8 @@
 # HeroMarket POS 1.5.0 – Release notes
 
-Status: **ready for your testing, not released.** Nothing has been merged, tagged, published or installed on the shop PC. 1.4.0 was never published; 1.5.0 contains it (Owner decision Q8).
+Status: **release 1.5.0.** For the shop, which runs HeroMarket 1.4.0. The owner installs it over 1.4.0 himself ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md)). 1.4.0 was never published as a release; 1.5.0 contains it (owner decision Q8).
 
-Written for the owner and for whoever installs HeroMarket at the shop. Screen names are given as they appear in the program. The reasons and details of each change are in [DECISIONS.md](DECISIONS.md) (D-057 to D-078).
+Written for the shop owner. Screen names are given as they appear in the program. The reasons and details of each change are in [DECISIONS.md](DECISIONS.md) (D-057 to D-078).
 
 ## For the cashier
 
@@ -77,54 +77,59 @@ Written for the owner and for whoever installs HeroMarket at the shop. Screen na
 
 - The cheques screen (old records are kept and readable by administrators), the «جرد الدرج» button at the top (the periodic count and its reminder stay), the Momkn machine and wallet-service tills (old records kept), and «الأداء والأرباح».
 
-## Installing and updating
+## Installing: the shop's upgrade from 1.4.0
 
-- **At the supermarket:** a fresh installation (the shop runs another company's program today). The store's data comes through HeroMarket's Excel template. The first visit only collects information ([SUPERMARKET_VISIT_1.md](SUPERMARKET_VISIT_1.md)); the step-by-step installation guide for the shop is written after it, from what the visit finds (PC, printer, scanner, data).
-- **Over 1.4.0 (for example the owner's laptop): Case B**, a database change. The installer takes a verified copy, applies migrations 0015 to 0023 and checks that no record or total changed. On any problem it puts the copy back by itself.
-- **Going back to 1.4.0** means restoring the copy taken before the update: first `--restore-pre-install=1.4.0` with 1.5.0 still installed, then the 1.4.0 installer (UPDATE_GUIDE.md §6; the order matters). Sales recorded in 1.5.0 since the update are then lost. 1.4.0 refuses to open data updated by 1.5.0, so it cannot damage it.
-- **Copies before each installation** are kept longer: the newest 3, plus the newest copy of each of the last 3 data versions, so the copy from before a database update is never removed by later installer runs.
+- **The shop runs HeroMarket 1.4.0** with its data, imported from the old program's export through the HeroMarket Excel template. The owner installs 1.5.0 over it himself. **Step by step: [UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md).**
+- **Case B (database change):** the installer takes a verified copy of the whole database, applies migrations 0015 to 0023 and checks that no record and no total changed. On any problem it puts the copy back by itself and 1.4.0 can be reinstalled.
+- **The data is not imported again.** It is already in the 1.4.0 database and the update keeps it. Importing the same template into the updated store is refused as a whole ("مسجل بالفعل"), and nothing is written.
+  - The template filled for 1.4.0 can be read by 1.5.0 (template version 1), but only for a PC that never had HeroMarket. It brings back the opening state of the file, without the sales since.
+- **Backups and versions:**
+  - a backup file saved by 1.4.0 («إنشاء نسخة احتياطية الآن») restores only into 1.4.0;
+  - 1.5.0 restores only its own backups, including the automatic ones.
+  - So the owner makes a 1.4.0 backup before the update, as his way back, and keeps it with the old program's export and the filled template until 1.5.0 has run well for a week.
+- **Going back to 1.4.0:** first `--restore-pre-install=1.4.0` with 1.5.0 still installed, then the 1.4.0 installer ([UPDATE_GUIDE.md §6](UPDATE_GUIDE.md); the order matters). Sales recorded in 1.5.0 since the update are lost. 1.4.0 refuses to open data updated by 1.5.0, so it cannot damage it.
+- **Copies before each installation** are kept longer: the newest 3, plus the newest copy of each of the last 3 data versions.
 - The installer refuses to run while HeroMarket is open on any Windows account.
 
-## What was tested
+## The installer
 
-- **Automated tests:** 390 of 390 pass (service, database, migrations, backup and restore, permissions by direct request, reprints, keyboard behaviour), on every push in CI.
-- **In the running program** (disposable test database): every screen and 51 windows at 1366, 1024 and 800 px; keyboard only; blind close; the after-close backup; the dashboard.
-- **Windows Sandbox (clean Windows, release candidate):** 1.3 → 1.4.0 with sample money records → 1.5.0 (every figure identical), a refusal while the program is open, a reinstall, a failing update put back by itself, the older installer refused, and going back to 1.4.0. Details in [UPDATE_GUIDE.md §9](UPDATE_GUIDE.md).
+<<INSTALLER>>
 
-## Not tested yet
+## How this release was verified
 
-- **The barcode scanner (HW-01) and the receipt printer (HW-02)** at the shop: a sale receipt, a reprint and a shift-close report on the real printer; scale labels and product barcodes on the real scanner.
-- **The nightly and after-close backups on the shop PC** itself (tested in Windows Sandbox only).
-- The installer is not code-signed yet: Windows shows "Windows protected your PC" (More info → Run anyway).
+**Automated** (on the release commit, and in CI):
+
+<<AUTOMATED>>
+
+**Windows Sandbox** (clean Windows 10, disposable, no network), with the final installer unless noted:
+
+<<SANDBOX>>
+
+**In the running program** (development build, disposable test database): every screen and 51 windows at 1366, 1024 and 800 px; keyboard only; blind close; the dashboard.
+
+**At the shop, by the developer (2026-10-22), on HeroMarket 1.4.0:** the barcode scanner, the receipt printer and the shop's workflows. These hardware tests were done with 1.4.0, not with 1.5.0.
+
+## What cannot be guaranteed without watching the shop PC
+
+- **The 1.5.0 receipt on the shop's printer.** The right-to-left receipt and closing report are verified by automated tests and by rendering them to images with the same printing code. The printer's own driver and fonts were used only with 1.4.0. The owner checks the first printed receipt after the update ([UPGRADE_TO_1.5.0.md](UPGRADE_TO_1.5.0.md) step 16).
+- **Scale labels on the shop's scanner.** The owner's label 2000001001257 is decoded correctly by tests. Scanning a label with 1.5.0 is the owner's step 16.
+- **The automatic backups on the shop PC:**
+  - Windows Sandbox proves the task definitions, the runs as the system account, the copies and their checks, retention and restore;
+  - whether the shop PC is on, asleep or off at midnight, and its Windows Task Scheduler, can only be seen there.
+  - The owner checks the first after-close and nightly copies (steps 18 to 20).
+- **The update on the shop's real data.** It was rehearsed on the real 1.4.0 code with a template import and a day of sales, and in Windows Sandbox. The shop's own records are only touched by the owner's installer run, which checks them and puts them back on any problem.
 
 ## Known limits
 
+- The installer is not code-signed: Windows shows "Windows protected your PC" (More info → Run anyway).
+- The automatic copies stay on the shop PC. The owner copies the newest one to a USB stick each week; a lost or failed disk takes the copies with it.
 - With the menu kept expanded by hand on a 1024 px screen, «التقارير المتقدمة» and «تقييم الكاشيرات» still scroll sideways by up to 85 px. The automatic menu size avoids it.
-- The cloud link («المزامنة السحابية») is built but not used by the shop.
+- The cloud link («المزامنة السحابية») is built but not used by the shop. Commands already applied from the cloud are not in the backup (they are not used).
 
-## Try it yourself (on the laptop, before the shop)
+## What to look at in the first days
 
-Tick each line when it behaves as described. Use test data, never the shop's real sales.
-
-- [ ] **Blind close:** sign in as a cashier, sell something, open «إغلاق الوردية». No expected amount appears anywhere until you confirm; then the report shows expected, counted and the difference. A large shortage still closes.
-- [ ] **No question after closing:** the close finishes without asking about a backup. A new copy appears in `C:\ProgramData\HeroMarket\backups\scheduled`.
-- [ ] **Treasury:** «الخزنة» shows the counted amounts of that close, per method.
-- [ ] **Manual discount:** as the owner, take EGP 2 off an invoice; as a cashier (without the permission) the field is not there.
-- [ ] **Purchase:** enter an invoice with a discount and a new selling price on one line. The product's price changes; the supplier is owed the net.
-- [ ] **Purchase return:** return part of that invoice. The stock and the supplier's balance fall.
-- [ ] **Preliminary invoice:** as a cashier, record a supplier delivery with a payment; as the owner, complete it with the lines.
-- [ ] **Supplier opening balance:** add a supplier with an opening balance; its balance is shown in words.
-- [ ] **Customer code:** a new customer gets a code; the till finds the customer by it.
-- [ ] **Scale label:** scan or type a scale barcode; the weight is right.
-- [ ] **Dashboard:** «الكل» shows everything since the first record; the stock-value cards open their screens.
-- [ ] **Export:** الإدارة → استيراد البيانات → تصدير gives an Excel file that the import accepts.
-- [ ] **Password reset:** reset a cashier's password; it asks for your own password first.
-- [ ] **Windows:** every window closes with X, a click outside and Esc; nothing scrolls sideways.
-
-## Before installing at the shop
-
-1. The first visit (SUPERMARKET_VISIT_1.md): the PC, the printer, the scanner, and the filled data template.
-2. The installation guide for the shop, written from that visit: install, sign in as the owner, import the template.
-3. Check the scanner and the printer there (HW-01, HW-02) before the first real sale.
-4. Record the counted treasury once.
-5. The next morning, check that the midnight backup is in `C:\ProgramData\HeroMarket\backups\scheduled`.
+- **Closing a shift:** the cashier sees no expected amount before confirming; afterwards the report shows expected, counted and the difference. No question about a backup.
+- **«الخزنة»:** it receives the counted amounts of each close, per method, after the opening amount is recorded once.
+- **Purchases:** a discount on the whole invoice; «سعر البيع الجديد» changes the product's price when the invoice is saved.
+- **Customers:** each has a code (C00001…); the till finds a customer by it.
+- **Permissions:** in «الأدوار والصلاحيات», check what each role may do: manual discount, the treasury, export and import, expected amounts.
