@@ -38,7 +38,7 @@ Written for the shop owner, who installs the update himself on the shop PC. Prin
   The `Hash` must be exactly:
 
   ```
-  <<SHA151>>
+  FDB02B68E3C24B77D438CCD6F93C362CDD05265790C4C22D8A9FEA62ABAED6D0
   ```
 
   (the same as in `SHA256SUMS.txt` and the release notes). If it differs, **stop**: do not install that file.

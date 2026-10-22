@@ -58,11 +58,38 @@ Written for the shop owner. 1.5.1 is 1.5.0 with a correction in who may browse i
 
 ## The installer
 
-<<INSTALLER>>
+|                  |                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| File             | `HeroMarket-Setup-1.5.1.exe`                                                                                         |
+| Size             | 181,155,666 bytes                                                                                                    |
+| SHA-256          | `fdb02b68e3c24b77d438ccd6f93c362cdd05265790c4c22d8a9fea62abaed6d0`                                                   |
+| Built from       | commit `3aac1ae` with no uncommitted change. Later commits change only `tests` and `.docs`, which are never packaged |
+| Package contents | checked: only the program (`node_modules`, `src`, `out`, `resources`, `package.json`)                                |
+| Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                            |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.1.exe` must show the SHA-256 above ([UPGRADE_TO_1.5.1.md](UPGRADE_TO_1.5.1.md) step 8).
 
 ## How this release was verified
 
-<<VERIFIED>>
+- **The full test suite: 410 of 410 pass** on the release code. New tests:
+  - `invoiceScope.test.js`: browsing;
+  - `invoiceActions.test.js`: each action permission alone and in combination, other cashiers, closed shifts, refused browsing and actions;
+  - `closeSignOut.test.js`: returns never sign out; a cashier's and a supervisor's close sign out; a failed close does not; administrators never.
+- **Lint:** no errors. **CI:** green on the branch head.
+- **CI found a test bug, now fixed:** two test files took "today" from the machine running them instead of the store's time zone, so they failed on CI between 00:00 and 02:00 Cairo time. Test-only; no program change.
+- **In the running program** (development build, disposable databases):
+  - **Each action screen**, with a user holding only that permission:
+    - a reprint lookup of another cashier's closed-shift invoice;
+    - a payment change on it, recorded as after close and logged;
+    - a return of one line, the refund paid from the user's own drawer.
+    - The invoices list was absent from each of these users' menus.
+  - **At the till's «مرتجع» button:** an approved return, a wrong supervisor password, the supervisor refusing and a whole invoice. The cashier stayed signed in every time.
+  - **Closing a shift:** a cancelled close kept the cashier in; a successful close signed the cashier out after the report; the owner's close kept him signed in, with no open shift shown.
+- **Windows Sandbox** (clean Windows 10), with this installer, from the shop's own 1.4.0 build (the visit stick) with sample money records:
+  - 1.4.0 → 1.5.1: Case B, migrations 0015–0023, every figure identical, both backup tasks registered, «كل الفواتير» on exactly the administrators and the reviewer after the first start, a nightly copy verified;
+  - going back, as documented: restore with 1.5.1, then the 1.4.0 installer, every figure identical;
+  - 1.4.0 → 1.5.0 (the released installer) → 1.5.1: Case B then Case A, every figure identical, the new permission added at the first start.
+- **Everything verified for 1.5.0 still applies** ([RELEASE_NOTES_1.5.0.md](RELEASE_NOTES_1.5.0.md)): the backups end to end, the update safety and the receipt tests.
 
 ## Known limits
 
