@@ -210,6 +210,7 @@ export function useAdminController({
     handleReturnEntireSale: salesManager.handleReturnEntireSale,
     salesPage: salesManager.salesPage,
     salesTotalCount: salesManager.salesTotalCount,
+    salesScope: salesManager.salesScope,
     // itemsPerPage (12) is shared with productsManager above; both managers use the same page size.
 
     // clientsManager

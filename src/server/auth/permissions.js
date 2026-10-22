@@ -78,7 +78,16 @@ const PERMISSIONS = [
     key: 'sales.view',
     module: 'sales',
     label: 'عرض الفواتير',
-    description: 'سجل الفواتير وتفاصيلها'
+    description: 'سجل الفواتير وتفاصيلها: فواتير الوردية المفتوحة للمستخدم فقط'
+  },
+  {
+    // Which invoices, not what may be done with them (D-081): without it, every invoice permission
+    // applies only to the invoices of the user's own open shift.
+    key: 'sales.view_all',
+    module: 'sales',
+    label: 'كل الفواتير',
+    description:
+      'فواتير كل الكاشيرات والورديات، المفتوحة والمغلقة. بدونها يرى المستخدم ويتعامل مع فواتير ورديته المفتوحة فقط'
   },
   {
     key: 'sales.reprint',
@@ -334,6 +343,8 @@ const MANAGEMENT = ALL.filter(
       'pos.manual_discount',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
+      // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).
+      'sales.view_all',
       // Owner-only money (owner feedback phase D, D-062): expected amounts before the close, every
       // user's expenses, the treasury and payment method corrections.
       'shifts.view_expected',
@@ -404,6 +415,9 @@ const SYSTEM_ROLES = [
     description: 'عرض التقارير والسجلات والبيانات دون أي تعديل.',
     permissions: [
       'sales.view',
+      // A read-only reviewer has no shift: the invoices to review are everyone's (D-081). It cannot
+      // reprint, return or change an invoice.
+      'sales.view_all',
       'products.view',
       'products.view_cost',
       'customers.view',

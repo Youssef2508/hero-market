@@ -988,3 +988,27 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Tests:** `backupJob.test.mjs` (both cases); Windows Sandbox on the final installer (NIGHTLY_BACKUP.md).
 - **Packaging:** a release candidate was found, by listing its package, to contain a git worktree that sat inside the project folder; it was discarded. Top-level dot-folders, `deploy/` and `electron-builder.qa.yml` are now excluded, and a test checks the rules.
 - **The final installer:** `HeroMarket-Setup-1.5.0.exe`, SHA-256 `9f8e506cfb824c055bd4c97f42df29926291ed195389a750ab7067285529f9d5`, built from `f05eb99` with no uncommitted change.
+
+## D-081 Invoices are scoped to the user's own open shift unless they hold «كل الفواتير» (owner, 1.5.1)
+
+- **Owner's rules:**
+  - the administrator sees and works on every invoice, of every cashier and shift, with the actions their permissions allow;
+  - a cashier or supervisor given invoice permissions sees and acts only on their **own invoices of the current shift**: details, reprint, payment method change, returns and return requests;
+  - granting «عرض الفواتير» must not open every invoice;
+  - the service enforces it, so asking for another cashier's invoice by its number is refused.
+- **Root cause (1.5.0 and earlier):** every invoice operation (`sales.page`, `sales.detail`, `sales.reprintData`, `sales.returnItem`, `sales.returnEntire`, `sales.changePaymentMethod`) checked only the action's permission. None of them checked whose invoice it was or which shift it belonged to, and no permission meant "all invoices". So «عرض الفواتير» showed every invoice in the store, and any invoice id could be opened, reprinted, returned or reclassified by anyone holding the action's permission. A missing scope, enforced nowhere: not a screen filter that failed.
+- **Fix:**
+  - new permission `sales.view_all` («كل الفواتير»). By default the two administrator roles and the read-only reviewer («مراجع»: it has no shift, cannot reprint, return or change an invoice);
+  - supervisors («مشرف») and cashiers do not get it;
+  - roles made by the owner get it only if he grants it;
+  - without it, every invoice operation is limited to the invoices of the user's own open shift (`src/server/auth/invoiceScope.js`). A request for any other invoice is refused (403) and logged as `invoice_access_refused`. A customer's invoices in «العملاء» follow the same scope; the customer's balance and account lines are unchanged.
+- **Unchanged:**
+  - each action still needs its own permission: seeing every invoice never allows reprinting, returning or changing one;
+  - a cashier's return still needs a supervisor's approval, and the approval no longer reaches another cashier's invoice;
+  - administrators keep every invoice, independent of any shift, including the reclassification of a closed shift's sale (D-065).
+- **Effect for the shop:**
+  - a supervisor no longer opens cashiers' invoices: returns on them go through the cashier's own request with the supervisor's approval while the shift is open, or through the administrator;
+  - after a shift is closed, its invoices are with the administrator;
+  - the invoices screen says so when it shows the own shift only.
+- **Tests:** `tests/service/invoiceScope.test.js` (allowed and refused cases for each operation, shift boundaries, closed shift, the supervisor's approval, the customer screen).
+- **Data:** no migration. The permission is added to the built-in roles at the first start, as every new permission (`ensureAccessControl`).

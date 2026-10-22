@@ -41,6 +41,7 @@ const PERIODS = [
 export default function ClientsTab({
   currentUser,
   currentShift,
+  triggerCustomAlert,
   highestPointsCustomer,
   bestCustomerOfMonth,
   monthlyClientsReport,
@@ -91,6 +92,8 @@ export default function ClientsTab({
       }
     } catch (err) {
       console.error('Failed to load invoice details:', err)
+      // An invoice outside the user's own open shift (D-081): say why instead of doing nothing.
+      if (err.status === 403) triggerCustomAlert?.(err.message)
     }
   }
 

@@ -7,6 +7,7 @@ const { toBaseQty, kindRule } = require('../inventory/units')
 const { authorize, approverSchema } = require('../auth/approvals')
 const { methodOf } = require('../money/methods')
 const { addMovement } = require('../money/shiftLedger')
+const { invoiceShift, assertInvoiceInScope } = require('../auth/invoiceScope')
 
 const PER_PAGE = 12
 const ORDER = {
@@ -214,18 +215,25 @@ module.exports = function salesModule(app) {
       { search = '', sortField = 'invoice_number', sortAsc = false, page = 1 }
     ) => {
       const params = []
-      let where = ''
+      const conditions = []
       if (search) {
         const clean = search.replace('#', '').trim()
         params.push(likeEscape(search))
         const textMatch = `s.client_name ILIKE '%' || $1 || '%' ESCAPE '\\' OR to_char(s.timestamp, 'YYYY-MM-DD HH24:MI:SS') LIKE '%' || $1 || '%' ESCAPE '\\'`
         if (/^\d+$/.test(clean)) {
           params.push(Number(clean))
-          where = `WHERE s.id = $2 OR ((s.id - 1) % 10000 + 1) = $2 OR ${textMatch}`
+          conditions.push(`(s.id = $2 OR ((s.id - 1) % 10000 + 1) = $2 OR ${textMatch})`)
         } else {
-          where = `WHERE ${textMatch}`
+          conditions.push(`(${textMatch})`)
         }
       }
+      // Without "all invoices": only the user's own open shift (D-081).
+      const shiftId = await invoiceShift(ctx.pool, ctx)
+      if (shiftId !== null) {
+        params.push(shiftId)
+        conditions.push(`s.shift_id = $${params.length}`)
+      }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
       const base = `FROM sales s JOIN shifts sh ON s.shift_id = sh.id JOIN users u ON sh.user_id = u.id ${where}`
       const total = (await ctx.pool.query(`SELECT COUNT(*) AS count ${base}`, params)).rows[0].count
       const order = ORDER[sortField] || 's.id'
@@ -236,7 +244,15 @@ module.exports = function salesModule(app) {
           params
         )
       ).rows
-      return { total, page, perPage: PER_PAGE, rows }
+      // scope tells the screen which invoices it lists: all, or the user's open shift only.
+      return {
+        total,
+        page,
+        perPage: PER_PAGE,
+        rows,
+        scope: shiftId === null ? 'all' : 'own_shift',
+        shiftId: shiftId || null
+      }
     }
   })
 
@@ -248,6 +264,7 @@ module.exports = function salesModule(app) {
     handler: async (ctx, { saleId }) => {
       const sale = (await ctx.pool.query('SELECT * FROM sales WHERE id = $1', [saleId])).rows[0]
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
+      await assertInvoiceInScope(ctx.pool, ctx, sale)
       const withCashier = await saleWithCashier(ctx.pool, saleId)
       return {
         sale: withCashier || sale,
@@ -278,6 +295,7 @@ module.exports = function salesModule(app) {
     handler: async (ctx, { saleId }) => {
       const sale = await saleWithCashier(ctx.pool, saleId)
       if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
+      await assertInvoiceInScope(ctx.pool, ctx, sale)
       return {
         sale,
         items: await saleItems(ctx.pool, saleId),
@@ -311,6 +329,7 @@ module.exports = function salesModule(app) {
           await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [item.sale_id])
         ).rows[0]
         if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
+        await assertInvoiceInScope(db, ctx, sale)
         const already = Number(item.returned_qty) || 0
         const maxReturnable = Number(item.quantity) - already
         if (quantity > maxReturnable + 1e-9) {
@@ -427,6 +446,7 @@ module.exports = function salesModule(app) {
         const sale = (await db.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]))
           .rows[0]
         if (!sale) throw notFound('لم يتم العثور على الفاتورة!')
+        await assertInvoiceInScope(db, ctx, sale)
         const items = (
           await db.query('SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id FOR UPDATE', [
             saleId

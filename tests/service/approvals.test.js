@@ -268,20 +268,52 @@ test('an approved cashier return is applied once, with the reason and the superv
 
 test('supervisors and administrators return directly; the record still says who and why', async (t) => {
   if (!requireDb(t)) return
+  // A supervisor returns directly on an invoice of their own open shift (1.5.1, D-081: only there).
+  const own = ok(await svc.call('shifts.open', { startingCash: 0 }, manager))
+  const mine = ok(
+    await svc.call(
+      'pos.checkout',
+      {
+        clientRef: crypto.randomUUID(),
+        shiftId: own.id,
+        paymentType: 'نقدي',
+        items: [{ barcode: 'W', qty: 2 }]
+      },
+      manager
+    )
+  )
+  ok(
+    await svc.call(
+      'sales.returnItem',
+      { saleItemId: (await itemOf(mine.saleId)).id, quantity: 1, currentShiftId: own.id },
+      manager
+    )
+  )
+  // A cashier's invoice: not the supervisor's to return; the administrator returns it directly.
   const sale = await sell([{ barcode: 'W', qty: 2 }])
   const item = await itemOf(sale.saleId)
-  ok(await svc.call('sales.returnItem', { saleItemId: item.id, quantity: 1 }, manager))
+  assert.equal(
+    (await svc.call('sales.returnItem', { saleItemId: item.id, quantity: 1 }, manager)).status,
+    403
+  )
   ok(await svc.call('sales.returnEntire', { saleId: sale.saleId, reason: 'خطأ في الإدخال' }, owner))
   const rows = await q(
-    'SELECT username, reason, approval_id FROM sale_returns WHERE sale_id = $1 ORDER BY id',
-    [sale.saleId]
+    'SELECT sale_id, username, reason, approval_id FROM sale_returns WHERE sale_id IN ($1, $2) ORDER BY id',
+    [mine.saleId, sale.saleId]
   )
   assert.deepEqual(
-    rows.map((r) => [r.username, r.reason, r.approval_id]),
+    rows.map((r) => [r.sale_id, r.username, r.reason, r.approval_id]),
     [
-      ['manager', null, null],
-      ['owner', 'خطأ في الإدخال', null]
+      [mine.saleId, 'manager', null, null],
+      [sale.saleId, 'owner', 'خطأ في الإدخال', null]
     ]
+  )
+  ok(
+    await svc.call(
+      'shifts.close',
+      { shiftId: own.id, actualCash: 0, clientRef: crypto.randomUUID() },
+      manager
+    )
   )
 })
 
