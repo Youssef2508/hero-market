@@ -788,3 +788,16 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Permissions (ROLE-01):** `data.import` and `data.export`, separate. Administrators by default; a supervisor or any other role gets them only when an administrator grants them. The import screen shows each part only to its holders. Owner's rule (2026-10-22): anything sensitive is granted by an administrator, per role.
 - **Backup audit:** every schema table is backed up or listed with its reason; a store using every feature restores row for row with equal balances and stock and keeps working; a failing restore changes nothing.
 - **Compatibility rule:** every later data-model change goes through the checklist in DATA_IMPORT_EXPORT.md §6 (migration, backup, template/import/export, reconciliation).
+
+## D-068 New selling and wholesale prices on purchase lines (owner, 2026-10-22, migration 0021)
+
+- **Owner's rule:** each purchase line has two optional fields, "سعر البيع الجديد" and "سعر البيع الجديد (الجملة)" (the owner asked for the wholesale one too). Both are prices of the product's base unit, even when the line is bought in boxes.
+  - A filled field sets the product's price when the purchase is confirmed (saved, or a preliminary invoice completed). This holds even when an earlier purchase set a different price.
+  - An empty field keeps the current price. Each product and each of the two prices is handled on its own.
+  - Package prices are never changed by a purchase; they stay in the units window.
+- **Same transaction** as the purchase: a refused or failing purchase changes no price.
+  - One product on two lines (pieces and boxes) with two different prices of the same kind is refused.
+  - The same price again changes and logs nothing.
+- **Trail:** the line keeps the price it set and the one it replaced (`new_/old_retail_price`, `new_/old_wholesale_price`). Each change is an activity-log entry `product_price_change` with the invoice.
+- **Unchanged:** the moving-average cost (it follows the line costs) and the invoice discount (D-066).
+- **Data workflow:** the new columns are purchase history. They travel in the backup and are not template fields (DATA_IMPORT_EXPORT.md §6 checked).

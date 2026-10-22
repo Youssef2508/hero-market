@@ -13,6 +13,12 @@ const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 const str = (max) => ({ type: ['string', 'null'], maxLength: max })
 
+// Prices a purchase line may set on its product (D-068): request key, products column, label.
+const NEW_PRICES = [
+  { key: 'newRetailPrice', column: 'retail_price', label: 'سعر البيع' },
+  { key: 'newWholesalePrice', column: 'wholesale_price', label: 'سعر الجملة' }
+]
+
 /** The actor's own open shift (cash movements need one: safe_ledger.shift_id is required). */
 async function ownOpenShift(db, ctx, shiftId) {
   if (!shiftId) return null
@@ -55,7 +61,14 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     unitId: i.unitId ?? null,
     qty: Number(i.qty),
     unitCost: Number(i.unitCost),
-    lineTotal: round2(Number(i.qty) * Number(i.unitCost))
+    lineTotal: round2(Number(i.qty) * Number(i.unitCost)),
+    // New selling and wholesale prices for the product's base unit (D-068); empty = keep.
+    ...Object.fromEntries(
+      NEW_PRICES.map(({ key }) => [
+        key,
+        i[key] === null || i[key] === undefined || i[key] === '' ? null : round2(i[key])
+      ])
+    )
   }))
   if (items.length) {
     const sum = round2(items.reduce((a, i) => a + i.lineTotal, 0))
@@ -67,6 +80,15 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       )
     if (new Set(items.map((i) => `${i.barcode}|${i.unitId ?? ''}`)).size !== items.length)
       throw badRequest('الصنف مكرر في فاتورة الشراء.')
+    // One product bought in two units (pieces and boxes) may carry one new price of each kind.
+    for (const { key, label } of NEW_PRICES) {
+      const prices = new Map()
+      for (const i of items.filter((x) => x[key] !== null)) {
+        if (prices.has(i.barcode) && prices.get(i.barcode) !== i[key])
+          throw badRequest(`سعران مختلفان (${label}) للصنف (${i.barcode}) في نفس الفاتورة.`)
+        prices.set(i.barcode, i[key])
+      }
+    }
     const known = new Set(
       (
         await db.query('SELECT barcode FROM products WHERE barcode = ANY($1::text[])', [
@@ -89,9 +111,21 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     )
   ).rows[0].id
   // Lock the products in a stable order (concurrent sales lock the same rows).
+  const priceChanges = new Map()
   for (const i of [...items].sort((a, b) => (a.barcode < b.barcode ? -1 : 1))) {
     const product = (await db.query('SELECT * FROM products WHERE barcode = $1', [i.barcode]))
       .rows[0]
+    for (const { key, column } of NEW_PRICES)
+      if (i[key] !== null && !priceChanges.has(`${i.barcode}|${column}`))
+        priceChanges.set(`${i.barcode}|${column}`, {
+          barcode: i.barcode,
+          column,
+          name: product.name,
+          from: Number(product[column]) || 0,
+          to: i[key]
+        })
+    const old = (column, key) =>
+      i[key] === null ? null : priceChanges.get(`${i.barcode}|${column}`).from
     const unit = await loadUnit(db, product, i.unitId, { purpose: 'buy' })
     const { baseQty } = toBaseQty(
       await kindRule(db, product.unit_kind),
@@ -100,8 +134,9 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       product.name
     )
     await db.query(
-      `INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total, unit_id, unit_name, unit_factor)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO supplier_purchase_items (purchase_id, product_barcode, qty, unit_cost, line_total, unit_id, unit_name, unit_factor,
+                                          new_retail_price, old_retail_price, new_wholesale_price, old_wholesale_price)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         purchaseId,
         i.barcode,
@@ -110,7 +145,11 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         i.lineTotal,
         unit.id,
         unit.id === null ? product.unit || null : unit.name,
-        unit.factor
+        unit.factor,
+        i.newRetailPrice,
+        old('retail_price', 'newRetailPrice'),
+        i.newWholesalePrice,
+        old('wholesale_price', 'newWholesalePrice')
       ]
     )
     // Stock and the moving average work per base unit.
@@ -141,6 +180,21 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       description: `دفعة لمورد: ${s.name} - فاتورة #${ref}`,
       kind: 'supplier_payment'
     })
+  }
+  // New prices (D-068), in the purchase's transaction: the base unit's selling and wholesale
+  // prices only, each when its own field was filled; package prices are left as they are. Each
+  // change is in the activity log.
+  for (const c of priceChanges.values()) {
+    if (c.from === c.to) continue
+    // column comes from NEW_PRICES, never from the request.
+    await db.query(`UPDATE products SET ${c.column} = $2 WHERE barcode = $1`, [c.barcode, c.to])
+    const label = NEW_PRICES.find((x) => x.column === c.column).label
+    await ctx.audit(
+      db,
+      'product_price_change',
+      `${label} "${c.name}" (${c.barcode}): ${c.from.toFixed(2)} ← ${c.to.toFixed(2)} ج.م (فاتورة شراء #${ref || purchaseId} من "${s.name}")`,
+      { barcode: c.barcode, price: c.column, from: c.from, to: c.to, purchaseId }
+    )
   }
   await ctx.audit(
     db,
@@ -259,7 +313,10 @@ module.exports = function financeModule(app) {
               // are in that unit (e.g. 3 cartons at 120 each).
               unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
-              unitCost: { type: 'number', minimum: 0 }
+              unitCost: { type: 'number', minimum: 0 },
+              // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
+              newRetailPrice: { type: ['number', 'null'], minimum: 0 },
+              newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
             }
           }
         }

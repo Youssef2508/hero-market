@@ -189,3 +189,7 @@ One transaction, once per request (`cancel_ref`); the invoice is kept with statu
 | Money received now R ≤ C               | inflow `supplier_refund` by its method, shift or treasury; payable + R (`refund`) |
 
 Tested with exact balances in `tests/service/purchaseDiscountReturns.test.js` (10 tests).
+
+## 13. New prices on purchase lines (D-068, migration 0021)
+
+A purchase line may set the product's selling or wholesale price (base unit). This moves no money, stock or cost: the payable, payments, discount and moving average are exactly as in §12. A sale made after the change uses the new price.

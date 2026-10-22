@@ -62,6 +62,10 @@ const AddPurchaseModal = ({
           ],
           unitId: null,
           baseCost,
+          retailPrice: p.retail_price !== undefined ? Number(p.retail_price) : null,
+          newRetailPrice: '',
+          wholesalePrice: p.wholesale_price !== undefined ? Number(p.wholesale_price) : null,
+          newWholesalePrice: '',
           qty: '',
           unitCost: baseCost !== null ? String(baseCost) : ''
         }
@@ -138,6 +142,12 @@ const AddPurchaseModal = ({
                     <th>الكمية</th>
                     <th>تكلفة الوحدة</th>
                     <th>الإجمالي</th>
+                    <th title="اختياري: يغيّر سعر بيع الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      سعر البيع الجديد
+                    </th>
+                    <th title="اختياري: يغيّر سعر الجملة للصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      سعر البيع الجديد (الجملة)
+                    </th>
                     <th aria-label="حذف" />
                   </tr>
                 </thead>
@@ -219,6 +229,41 @@ const AddPurchaseModal = ({
                         />
                       </td>
                       <td className="num">{formatMoney(lineTotal(l))}</td>
+                      <td>
+                        {/* D-068: the product's own selling price (its base unit), set when the
+                            invoice is saved; empty keeps the current price. */}
+                        <input
+                          type="number"
+                          className="form-input num"
+                          min="0"
+                          step="0.01"
+                          value={l.newRetailPrice ?? ''}
+                          onChange={(e) => update(i, { newRetailPrice: e.target.value })}
+                          placeholder={l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}
+                          aria-label={`سعر البيع الجديد ${l.name}`}
+                          title={`سعر البيع الحالي ${l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}؛ اتركه فارغاً بدون تغيير`}
+                          style={{ width: 100 }}
+                        />
+                        {l.unit && <div className="cell-muted">لكل {l.unit}</div>}
+                      </td>
+                      <td>
+                        {/* D-068: the product's wholesale price (its base unit), the same way. */}
+                        <input
+                          type="number"
+                          className="form-input num"
+                          min="0"
+                          step="0.01"
+                          value={l.newWholesalePrice ?? ''}
+                          onChange={(e) => update(i, { newWholesalePrice: e.target.value })}
+                          placeholder={
+                            l.wholesalePrice !== null ? formatMoney(l.wholesalePrice) : ''
+                          }
+                          aria-label={`سعر البيع الجديد (الجملة) ${l.name}`}
+                          title={`سعر الجملة الحالي ${l.wholesalePrice !== null ? formatMoney(l.wholesalePrice) : ''}؛ اتركه فارغاً بدون تغيير`}
+                          style={{ width: 100 }}
+                        />
+                        {l.unit && <div className="cell-muted">لكل {l.unit}</div>}
+                      </td>
                       <td>
                         <button
                           type="button"

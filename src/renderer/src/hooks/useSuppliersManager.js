@@ -105,7 +105,16 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       barcode: l.barcode,
       unitId: l.unitId ?? null,
       qty: parseFloat(l.qty) || 0,
-      unitCost: parseFloat(l.unitCost) || 0
+      unitCost: parseFloat(l.unitCost) || 0,
+      // D-068: empty = keep the product's current selling price.
+      newRetailPrice:
+        l.newRetailPrice === '' || l.newRetailPrice === undefined
+          ? null
+          : parseFloat(l.newRetailPrice),
+      newWholesalePrice:
+        l.newWholesalePrice === '' || l.newWholesalePrice === undefined
+          ? null
+          : parseFloat(l.newWholesalePrice)
     }))
     if (items.some((l) => l.qty <= 0)) {
       triggerCustomAlert('أدخل كمية صحيحة لكل صنف مستلم.')
@@ -162,7 +171,16 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       barcode: l.barcode,
       unitId: l.unitId ?? null,
       qty: parseFloat(l.qty) || 0,
-      unitCost: parseFloat(l.unitCost) || 0
+      unitCost: parseFloat(l.unitCost) || 0,
+      // D-068: empty = keep the product's current selling price.
+      newRetailPrice:
+        l.newRetailPrice === '' || l.newRetailPrice === undefined
+          ? null
+          : parseFloat(l.newRetailPrice),
+      newWholesalePrice:
+        l.newWholesalePrice === '' || l.newWholesalePrice === undefined
+          ? null
+          : parseFloat(l.newWholesalePrice)
     }))
     if (!items.length || items.some((l) => l.qty <= 0)) {
       triggerCustomAlert('أضف أصناف الفاتورة بكمية صحيحة لكل صنف.')

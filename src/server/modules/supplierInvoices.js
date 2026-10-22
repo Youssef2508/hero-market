@@ -316,7 +316,10 @@ module.exports = function supplierInvoicesModule(app) {
               barcode: { type: 'string', minLength: 1, maxLength: 64 },
               unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
-              unitCost: { type: 'number', minimum: 0 }
+              unitCost: { type: 'number', minimum: 0 },
+              // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
+              newRetailPrice: { type: ['number', 'null'], minimum: 0 },
+              newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
             }
           }
         },
