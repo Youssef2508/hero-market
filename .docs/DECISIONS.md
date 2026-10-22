@@ -963,3 +963,13 @@ Format: context → decision → reason → consequences (→ alternatives).
   - the two unused permissions are hidden from the roles screen (`hidden: true` in the catalogue; `roles.catalog` leaves them out; the keys stay valid);
   - «المزامنة السحابية» stays visible;
   - «الأداء والأرباح» is merged into the dashboard's period statistics (new period «الكل», profit margin, cash flow); «التقارير المتقدمة» is kept.
+
+## D-079 Release candidate 1.5.0: the copy before an update is kept; going back restores first (phase H, 2026-10-22)
+
+- **Version 1.5.0** on this branch (`package.json`); release notes in `RELEASE_NOTES_1.5.0.md`. Nothing is merged, tagged or published.
+- **Found in the Windows Sandbox update check:** after 1.4.0 → 1.5.0 and four later installer runs (Case A, a failing update, Case A again, the 1.4.0 installer refused), `--restore-pre-install` found no copy of the 1.4.0 data. Every installer run takes a copy, and only the newest 3 were kept.
+- **Changed:**
+  - the newest 3 copies are kept, plus the newest copy of each of the last 3 data versions (`pruneSnapshots` with the data version from `update.json`);
+  - `--restore-pre-install=<version>` restores the newest copy of that version's data (a folder name still works);
+  - going back is now: restore with the newer program, then run the older installer. 1.4.0's own installer still prunes by the old rule, so running it first can remove the 1.4.0 copy (UPDATE_GUIDE.md §6).
+- **Tests:** unit tests replay the Sandbox sequence and the copy choice; the Sandbox runs are in UPDATE_GUIDE.md §8.

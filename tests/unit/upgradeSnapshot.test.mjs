@@ -12,7 +12,8 @@ import {
   snapshotDataDir,
   copyAndVerify,
   verifySnapshot,
-  pruneSnapshots
+  pruneSnapshots,
+  pickRestoreCopy
 } from '../../src/main/upgradeSnapshot.js'
 import { copyTree } from '../../src/main/pgPaths.js'
 
@@ -56,6 +57,61 @@ test('snapshot copies every file and empty folder, verifies hashes, detects tamp
   } finally {
     fs.rmSync(base, { recursive: true, force: true })
   }
+})
+
+test('the copy of the data before an update survives later installer runs (1.5.0 Sandbox R7)', () => {
+  const backups = tmp('hm-prune-')
+  try {
+    // The Sandbox sequence: 1.4.0 → 1.5.0 (copy of 1.4.0 data), then four more runs over 1.5.0
+    // data (Case A, a failing update, Case A again, an older installer refused).
+    const runs = [
+      ['2026-10-22T14-10-12-630Z-app-1.5.0', '1.4.0'],
+      ['2026-10-22T14-13-53-358Z-app-1.5.0', '1.5.0'],
+      ['2026-10-22T14-16-56-431Z-app-1.5.1-test.1', '1.5.0'],
+      ['2026-10-22T14-20-23-518Z-app-1.5.0', '1.5.0'],
+      ['2026-10-22T14-23-57-360Z-app-1.4.0', '1.5.0']
+    ]
+    const versionOf = (n) =>
+      JSON.parse(fs.readFileSync(path.join(backups, n, 'update.json'), 'utf8')).fromVersion
+    for (const [name, fromVersion] of runs) {
+      fs.mkdirSync(path.join(backups, name))
+      fs.writeFileSync(path.join(backups, name, 'manifest.json'), '{}')
+      fs.writeFileSync(path.join(backups, name, 'update.json'), JSON.stringify({ fromVersion }))
+      pruneSnapshots(backups, 3, versionOf)
+    }
+    const left = fs.readdirSync(backups).sort()
+    assert.deepEqual(left, [runs[0][0], runs[2][0], runs[3][0], runs[4][0]])
+    assert.equal(versionOf(left[0]), '1.4.0', 'the only copy of the 1.4.0 data is kept')
+    // Only the newest copy of each data version is kept beyond the newest three, for 3 versions.
+    for (const [i, v] of ['1.1.0', '1.2.0', '1.3.0'].entries()) {
+      const name = `2026-10-0${i + 1}T00-00-00-000Z-old`
+      fs.mkdirSync(path.join(backups, name))
+      fs.writeFileSync(path.join(backups, name, 'manifest.json'), '{}')
+      fs.writeFileSync(path.join(backups, name, 'update.json'), JSON.stringify({ fromVersion: v }))
+    }
+    const removed = pruneSnapshots(backups, 3, versionOf)
+    assert.deepEqual(removed.sort(), [
+      '2026-10-01T00-00-00-000Z-old',
+      '2026-10-02T00-00-00-000Z-old'
+    ])
+  } finally {
+    fs.rmSync(backups, { recursive: true, force: true })
+  }
+})
+
+test('restore picks a copy by name, by data version, or the installed version by default', () => {
+  const data = { a: '1.4.0', b: '1.5.0', c: '1.4.0', d: '1.5.0' }
+  const names = Object.keys(data)
+  const versionOf = (n) => data[n]
+  assert.equal(pickRestoreCopy(names, versionOf, undefined, '1.5.0'), 'd')
+  assert.equal(
+    pickRestoreCopy(names, versionOf, '1.4.0', '1.5.0'),
+    'c',
+    'newest copy of 1.4.0 data'
+  )
+  assert.equal(pickRestoreCopy(names, versionOf, 'a', '1.5.0'), 'a', 'by folder name')
+  assert.equal(pickRestoreCopy(names, versionOf, '1.3.0', '1.5.0'), null)
+  assert.equal(pickRestoreCopy(names, versionOf, undefined, '1.6.0'), null)
 })
 
 test('copying a store never freezes the app: the event loop keeps running during the copy', async () => {

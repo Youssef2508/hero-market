@@ -100,7 +100,7 @@ export function registerDataIpc({
     return { success: true, filePath }
   })
 
-  // The nightly backup's last result (logsackup-status.json): shown on the backup screen.
+  // The nightly backup's last result (logs\backup-status.json): shown on the backup screen.
   // After a shift close (D-074): the automatic copy, started without asking anyone.
   ipcMain.handle('backup:afterClose', async () => startCloseBackup())
 

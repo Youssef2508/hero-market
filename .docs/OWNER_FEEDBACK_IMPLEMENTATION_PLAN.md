@@ -176,7 +176,7 @@ The spec's suggested order puts the money model before purchasing and catalogue 
 - `main` holds 1.4.0, never tagged or published, and the shop doesn't run it yet.
 - This work is **1.5.0**: migrations 0015+, so a Case B update over any 1.4.0 build.
 - Repository history confirms it: the last tag is `v1.3.0-stable`, there is no 1.4.0 tag or release, and `package.json` on `main` says 1.4.0.
-- **Owner decision (Q8, 2026-10-21):** plan toward 1.5.0; 1.4.0 is not published first. The bump to 1.5.0 is made on this branch before phase H.
+- **Owner decision (Q8, 2026-10-21):** plan toward 1.5.0; 1.4.0 is not published first. The bump to 1.5.0 is made on this branch (done 2026-10-22, phase H; D-079).
 - This is not approval to merge, tag, publish or deploy. Each of those waits for an explicit go-ahead.
 
 ## 10. Owner questions
