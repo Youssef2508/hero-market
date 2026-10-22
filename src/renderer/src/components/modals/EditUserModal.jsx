@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { UserCog, KeyRound } from 'lucide-react'
 
 const EditUserModal = ({
@@ -9,6 +10,9 @@ const EditUserModal = ({
   handleResetPassword,
   rolesList = []
 }) => {
+  // USER-02 (D-076): a reset needs the administrator's own password, typed here.
+  const [resetOpen, setResetOpen] = useState(false)
+  const [actorPassword, setActorPassword] = useState('')
   if (!showEditUserModal) return null
 
   return (
@@ -37,14 +41,55 @@ const EditUserModal = ({
           </div>
           <div className="form-group">
             <label>كلمة المرور</label>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => handleResetPassword(editUser)}
-            >
-              <KeyRound size={15} aria-hidden="true" />
-              إعادة تعيين كلمة المرور (كلمة مؤقتة)
-            </button>
+            {!resetOpen ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setResetOpen(true)}
+              >
+                <KeyRound size={15} aria-hidden="true" />
+                إعادة تعيين كلمة المرور (كلمة مؤقتة)
+              </button>
+            ) : (
+              <div className="stack">
+                <p className="field-hint">
+                  ستتوقف كلمة المرور الحالية لـ «{editUser.username}» ويُسجَّل خروجه من كل الأجهزة.
+                  الكلمة المؤقتة صالحة 72 ساعة. للتأكيد اكتب كلمة مرورك أنت.
+                </p>
+                <input
+                  type="password"
+                  className="form-input"
+                  autoComplete="current-password"
+                  aria-label="كلمة مرورك للتأكيد"
+                  placeholder="كلمة مرورك للتأكيد"
+                  value={actorPassword}
+                  onChange={(e) => setActorPassword(e.target.value)}
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    disabled={!actorPassword}
+                    onClick={async () => {
+                      await handleResetPassword(editUser, actorPassword)
+                      setActorPassword('')
+                    }}
+                  >
+                    تأكيد إعادة التعيين
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setResetOpen(false)
+                      setActorPassword('')
+                    }}
+                  >
+                    تراجع
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>الدور *</label>

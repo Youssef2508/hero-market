@@ -174,6 +174,8 @@ export default function AppModals({
       />
 
       <EditUserModal
+        // A fresh window each time it opens: nothing typed (the administrator's password) stays.
+        key={showEditUserModal ? `edit-user-${editUser?.id}` : 'edit-user-closed'}
         showEditUserModal={showEditUserModal}
         setShowEditUserModal={setShowEditUserModal}
         editUser={editUser}

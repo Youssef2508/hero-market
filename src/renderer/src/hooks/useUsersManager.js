@@ -115,29 +115,26 @@ export function useUsersManager({
     }
   }
 
-  // Forgotten password: a temporary one replaces it; the user's sessions end.
-  const handleResetPassword = (u) => {
-    triggerCustomConfirm(
-      `إعادة تعيين كلمة مرور "${u.username}"؟ ستتوقف كلمة المرور الحالية ويتم تسجيل خروجه من كل الأجهزة.`,
-      async () => {
-        try {
-          const r = await api('users.update', {
-            id: u.id,
-            username: u.username,
-            roleId: Number(u.roleId),
-            resetPassword: true
-          })
-          setShowEditUserModal(false)
-          triggerCustomAlert(
-            `كلمة المرور المؤقتة للمستخدم "${u.username}":\n\n${r.temporaryPassword}\n\nأعطها للموظف. سيختار كلمة مرور خاصة به عند أول تسجيل دخول، ولن تظهر هذه الكلمة مرة أخرى.`,
-            'كلمة مرور مؤقتة'
-          )
-          await fetchUsersList()
-        } catch (err) {
-          triggerCustomAlert('فشلت إعادة التعيين: ' + err.message)
-        }
-      }
-    )
+  // Forgotten password: a temporary one (72 hours) replaces it; the user's sessions end. The
+  // administrator confirms with their own password, typed in the window (USER-02, D-076).
+  const handleResetPassword = async (u, actorPassword) => {
+    try {
+      const r = await api('users.update', {
+        id: u.id,
+        username: u.username,
+        roleId: Number(u.roleId),
+        resetPassword: true,
+        actorPassword
+      })
+      setShowEditUserModal(false)
+      triggerCustomAlert(
+        `كلمة المرور المؤقتة للمستخدم "${u.username}":\n\n${r.temporaryPassword}\n\nأعطها للموظف. صالحة 72 ساعة؛ سيختار كلمة مرور خاصة به عند أول تسجيل دخول، ولن تظهر هذه الكلمة مرة أخرى.`,
+        'كلمة مرور مؤقتة'
+      )
+      await fetchUsersList()
+    } catch (err) {
+      triggerCustomAlert('فشلت إعادة التعيين: ' + err.message)
+    }
   }
 
   return {

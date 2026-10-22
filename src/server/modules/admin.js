@@ -8,7 +8,7 @@
 //  - every change is audited; permission changes take effect on the next request (no caching).
 const { badRequest, conflict, forbidden, notFound } = require('../errors')
 const { PERMISSIONS, KEYS } = require('../auth/permissions')
-const { hashPassword, newTemporaryPassword } = require('../auth/password')
+const { hashPassword, newTemporaryPassword, verifyPassword } = require('../auth/password')
 const { activeSuperAdmins, permissionsForRole } = require('../auth/access')
 const { helpers: authHelpers } = require('./auth')
 
@@ -120,6 +120,8 @@ module.exports = function adminModule(app) {
         // Replace the user's password with a temporary one (forgotten password, new staff member).
         resetPassword: { type: 'boolean' },
         password: { type: 'string', maxLength: 128 },
+        // The administrator's own password, required for a reset (USER-02, D-076).
+        actorPassword: { type: 'string', maxLength: 128 },
         roleId: { type: 'integer' },
         isActive: { type: 'boolean' }
       }
@@ -164,11 +166,23 @@ module.exports = function adminModule(app) {
         let temporary = null
         if (u.resetPassword) {
           if (isSelf) throw forbidden('لتغيير كلمة مرورك استخدم "تغيير كلمة المرور".')
+          // Re-authentication: whoever resets another user's password types their own first.
+          const me = (
+            await db.query('SELECT password_scrypt FROM users WHERE id = $1', [ctx.user.id])
+          ).rows[0]
+          if (!me?.password_scrypt || !verifyPassword(u.actorPassword || '', me.password_scrypt)) {
+            await ctx.audit(
+              ctx.pool,
+              'password_reset_refused',
+              `رفض إعادة تعيين كلمة مرور "${before.username}": كلمة مرور المدير غير صحيحة`
+            )
+            throw forbidden('كلمة مرورك غير صحيحة؛ لم تتم إعادة التعيين.')
+          }
           temporary = temporaryPassword(u.password, username)
           // The old password and any PIN stop working; the user's sessions end.
           await db.query(
             `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
-                    password_hash = NULL WHERE id = $2`,
+                    password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours' WHERE id = $2`,
             [hashPassword(temporary), u.id]
           )
           await db.query(

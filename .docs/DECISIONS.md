@@ -900,3 +900,32 @@ Format: context → decision → reason → consequences (→ alternatives).
   - Windows Sandbox C1 with test build 1.5.0-test.2: installed, started twice with normal user rights, two verified copies written as SYSTEM, deletion as a normal user refused.
   - The close itself was checked in the running app.
 - **Updates:** an installed 1.5.0 gets the new task when its installer runs (the service setup step registers both tasks).
+
+## D-075 Permissions enforced by the service, tested by direct request; a generated matrix (ROLE-02, 2026-10-22)
+
+- **Every service operation requires a permission.** The exceptions are listed with their reason:
+  - 5 before sign-in: status, first setup, sign-in, first password, recovery;
+  - 7 for any signed-in user: sign out, the own account, the own password and recovery code, display settings, two sync flags, measurement-kind names.
+  - A new operation without a permission fails a test until it gets one or is listed with its reason.
+- **Checked before the request is read:** a caller without access learns nothing about an operation's fields. Hiding a button is only a convenience.
+- **Direct requests:** each built-in role is refused (403), with no screen involved, every operation it does not hold:
+  - store administrator 1, supervisor 32, cashier 100, stock 97, auditor 103;
+  - signed out, every non-public operation answers 401.
+- **Owner-only by default** (an administrator may grant them per role): expected amounts before the close, the treasury, every user's expenses, stock value and balances, payment corrections, supplier opening balances, data import and export, users and roles.
+- **Menu:** every permission the menu uses exists in the catalogue (tested).
+- **`.docs/PERMISSION_MATRIX.md`** is generated from the code (`node scripts/permission-matrix.js`) and lists permissions × built-in roles and every operation with what it requires. A test fails when it is out of date.
+
+## D-076 Administrator password reset: own password first, temporary password expires (USER-02, migration 0023)
+
+- **Unchanged:**
+  - the administrator never sees the old password;
+  - a temporary password replaces it and the old one and any PIN stop working;
+  - the user's sessions end, and they must choose their own password at the next sign-in;
+  - the reset is logged;
+  - an administrator cannot act on an account above their own authority (escalation check).
+- **Added:**
+  - **Re-authentication:** the administrator types their own password in the window. Missing or wrong refuses the reset, changes nothing, and logs `password_reset_refused`.
+  - **Expiry:** the temporary password works for 72 hours (`users.temp_password_expires_at`; the local reset command too). After that it is refused with "انتهت صلاحية كلمة المرور المؤقتة…", shown only to whoever typed it correctly; a wrong password still gets the ordinary answer. Choosing a password clears it.
+- **Not changed:** a new account's first password does not expire, since staff accounts are often prepared before the person starts.
+- **The window:** it opens fresh each time, so a typed password never stays.
+- **Tests:** `auth.test.js` covers the refused resets (2 logged), the 72-hour expiry, sign-in and set-password both refused after expiry, and a new reset working.
