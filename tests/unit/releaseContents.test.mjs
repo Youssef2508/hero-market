@@ -32,9 +32,19 @@ const QA_MARK = /\bQA[A-Z0-9]{2,}\b|['"]QA\s|\sQA['"]/
 test('the packaged files exclude development databases, data and test material', () => {
   const yml = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8')
   const excluded = [...yml.matchAll(/'!\{([^}]*)\}\/\*\*'/g)].flatMap((m) => m[1].split(','))
-  for (const dir of ['.pgdata', '.migration-backups', '.docs', 'tests', 'scripts', 'scratch']) {
+  for (const dir of [
+    '.pgdata',
+    '.migration-backups',
+    '.docs',
+    'tests',
+    'scripts',
+    'scratch',
+    'deploy'
+  ]) {
     assert.ok(excluded.includes(dir), `${dir} is excluded from the package`)
   }
+  // A stray top-level folder such as a git worktree once went into a release candidate (1.5.0).
+  assert.ok(yml.includes(`- '!.*/**'`), 'top-level dot-folders are excluded')
   assert.ok(
     yml.includes(`'!**/*.{db,db-wal,db-shm,db-journal,log}'`),
     'database and log files are excluded'
