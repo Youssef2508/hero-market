@@ -1611,3 +1611,78 @@ label.btn.is-disabled {
 .stat-value.is-longest {
   font-size: var(--fs-md);
 }
+
+/* Tables of fields in a window (purchase lines, units) fit it: no sideways scrolling (owner, 2026-10-22) */
+.purchase-lines,
+.fit-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.purchase-lines th,
+.purchase-lines td,
+.fit-table th,
+.fit-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.purchase-lines input,
+.purchase-lines select,
+.fit-table input:not([type='checkbox']),
+.fit-table select {
+  width: 100%;
+  min-width: 0;
+}
+.purchase-lines .price-pair-label {
+  display: block;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+/* Narrower windows (owner, 2026-10-22: no sideways scrolling): headers may wrap and cells are
+   tighter, so every table fits; numbers and dates stay on one line. */
+@media (max-width: 1280px) {
+  .table th,
+  .admin-table th,
+  .data-table th {
+    white-space: normal;
+    padding: 8px 8px;
+  }
+  .table td,
+  .admin-table td,
+  .data-table td {
+    padding: 8px 8px;
+    font-size: var(--fs-sm);
+  }
+  .table td.nowrap,
+  .admin-table td.nowrap,
+  .data-table td.nowrap {
+    white-space: normal;
+  }
+  .table th.num,
+  .admin-table th.num,
+  .data-table th.num {
+    white-space: normal;
+  }
+}
+@media (max-width: 1280px) {
+  /* A button's word next to its icon: hidden on narrow windows, still its name (read aloud). */
+  .label-wide {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1100px) {
+  .table th,
+  .admin-table th,
+  .data-table th,
+  .table td,
+  .admin-table td,
+  .data-table td {
+    padding: 6px 6px;
+  }
+}

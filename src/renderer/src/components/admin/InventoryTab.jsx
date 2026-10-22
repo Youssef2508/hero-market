@@ -193,7 +193,7 @@ export default function InventoryTab({
                             }}
                           >
                             <Pencil size={15} aria-hidden="true" />
-                            تعديل
+                            <span className="label-wide">تعديل</span>
                           </button>
                           <button
                             type="button"

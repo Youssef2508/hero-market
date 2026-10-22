@@ -85,7 +85,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
   return (
     <div className="modal-overlay">
       <form
-        className="modal-content modal-wide modal-scroll"
+        className="modal-content modal-xl modal-scroll"
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-units-title"
@@ -127,7 +127,17 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
               جاري التحميل...
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table fit-table">
+              <colgroup>
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '25%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>اسم الوحدة</th>
@@ -153,7 +163,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.name}
                           onChange={(e) => update(i, { name: e.target.value })}
                           aria-label="اسم الوحدة"
-                          style={{ width: 110 }}
                         />
                       </td>
                       <td>
@@ -166,7 +175,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.factor}
                           onChange={(e) => update(i, { factor: e.target.value })}
                           aria-label={`معامل ${u.name}`}
-                          style={{ width: 80 }}
                         />
                       </td>
                       <td>
@@ -184,7 +192,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                               : undefined
                           }
                           aria-label={`سعر بيع ${u.name}`}
-                          style={{ width: 90 }}
                         />
                       </td>
                       <td>
@@ -196,7 +203,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.purchase_cost}
                           onChange={(e) => update(i, { purchase_cost: e.target.value })}
                           aria-label={`سعر شراء ${u.name}`}
-                          style={{ width: 90 }}
                         />
                       </td>
                       <td>
@@ -206,7 +212,6 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                           value={u.codes}
                           onChange={(e) => update(i, { codes: e.target.value })}
                           aria-label={`باركودات ${u.name}`}
-                          style={{ width: 150 }}
                         />
                       </td>
                       <td>

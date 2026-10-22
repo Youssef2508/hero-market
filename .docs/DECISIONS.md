@@ -801,3 +801,18 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Trail:** the line keeps the price it set and the one it replaced (`new_/old_retail_price`, `new_/old_wholesale_price`). Each change is an activity-log entry `product_price_change` with the invoice.
 - **Unchanged:** the moving-average cost (it follows the line costs) and the invoice discount (D-066).
 - **Data workflow:** the new columns are purchase history. They travel in the backup and are not template fields (DATA_IMPORT_EXPORT.md §6 checked).
+
+## D-069 Every window and screen fits, closes and moves by keyboard (owner, 2026-10-22)
+
+- **Owner's rule:** no sideways scrolling anywhere. Every small window closes with its X and with a click outside it. The arrows move between its buttons.
+- **Fixes:**
+  - **Purchase window:** wider (up to the screen); its lines fit the window; the two new prices are stacked in one column.
+  - **Units window:** made wider, with the same fitted columns.
+  - **Closing report:** now has the X and closes with a click outside.
+  - **Arrows:** ← → ↑ ↓ move between a window's buttons and checkboxes. They never move into text fields; lists, dropdowns, radio groups and tabs keep their own arrows.
+  - **Tables on windows narrower than 1280 px:** headers wrap, cells are tighter, dates and times may take two lines, and a button's word beside its icon is hidden (it stays as the button's name).
+- **Checked in the running app:**
+  - 51 window openings across every admin screen and the till: fit at 1366, 1024 and 800 px, X closes, a click outside closes, arrows move.
+  - Every menu screen at 1366 and 1024 px: no sideways scrolling with the menu in its automatic size, which shrinks below 1200 px.
+  - The windows without a close (a required shift opening, the recovery notice) stay that way by design.
+- **Limit:** with the menu kept expanded by hand on a 1024 px screen, the two widest reports (التقارير المتقدمة, تقييم الكاشيرات) still scroll by up to 85 px.

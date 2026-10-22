@@ -15,11 +15,13 @@
 // Keyboard (owner, 2026-10-21, D-065): Esc closes the top window the same way (unless the window
 // used Esc itself, for example to close a list inside it); Tab and Shift+Tab stay inside the top
 // window; a window that opens takes the focus (its first field, else its cancel button, never a
-// confirm button) and gives it back to where it was when it closes.
+// confirm button) and gives it back to where it was when it closes. The arrow keys move between
+// its buttons (owner, 2026-10-22).
 
 const dirty = new WeakSet()
 let asking = false
 const openers = new Map()
+const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
 let lastOutside = null
 
 const FOCUSABLE =
@@ -92,6 +94,33 @@ function onKeyDown(e) {
     if (wrapTo) {
       e.preventDefault()
       wrapTo.focus()
+    }
+  } else if (ARROWS.has(e.key) && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+    // Arrows move between a window's buttons and checkboxes (owner, 2026-10-22). Text and number
+    // fields, lists, dropdowns, radio groups and tabs keep their own arrows.
+    const top = topOverlay()
+    const el = document.activeElement
+    if (!top || !el || !top.contains(el) || e.defaultPrevented) return
+    const movable =
+      el.matches('button, a[href], input[type=checkbox]') &&
+      !el.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
+    if (!movable) return
+    // Only among buttons and checkboxes: an arrow never lands in a text field (which keeps its own).
+    const list = focusablesIn(top).filter(
+      (x) =>
+        !x.matches('.modal-close') &&
+        x.matches('button, a[href], input[type=checkbox]') &&
+        !x.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
+    )
+    const i = list.indexOf(el)
+    if (i === -1) return
+    // Right to left: ← and ↓ go forward, → and ↑ go back.
+    const rtl = getComputedStyle(top).direction === 'rtl'
+    const forward = e.key === 'ArrowDown' || (rtl ? e.key === 'ArrowLeft' : e.key === 'ArrowRight')
+    const next = list[(i + (forward ? 1 : -1) + list.length) % list.length]
+    if (next && next !== el) {
+      e.preventDefault()
+      next.focus()
     }
   } else if (e.key === 'Escape') {
     const top = topOverlay()

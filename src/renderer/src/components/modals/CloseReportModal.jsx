@@ -63,6 +63,7 @@ export default function CloseReportModal({ data, onDone, title, doneLabel = 'ØªÙ
             </button>
           )}
           <button
+            data-modal-close
             type="button"
             className="btn btn-primary"
             style={{ flex: 1 }}

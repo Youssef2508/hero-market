@@ -87,7 +87,7 @@ const AddPurchaseModal = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-purchase-title"
-        style={{ width: items.length ? 640 : 480 }}
+        style={{ width: items.length ? 'min(940px, calc(100vw - 32px))' : 480 }}
       >
         <div className="modal-header">
           <span className="modal-icon" aria-hidden="true">
@@ -135,18 +135,23 @@ const AddPurchaseModal = ({
               </p>
             )}
             {items.length > 0 && (
-              <table className="data-table">
+              <table className="data-table purchase-lines">
+                <colgroup>
+                  <col style={{ width: '25%' }} />
+                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '25%' }} />
+                  <col style={{ width: '6%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>الصنف</th>
                     <th>الكمية</th>
                     <th>تكلفة الوحدة</th>
                     <th>الإجمالي</th>
-                    <th title="اختياري: يغيّر سعر بيع الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
-                      سعر البيع الجديد
-                    </th>
-                    <th title="اختياري: يغيّر سعر الجملة للصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
-                      سعر البيع الجديد (الجملة)
+                    <th title="اختياري: يغيّر سعر الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      سعر البيع الجديد (اختياري)
                     </th>
                     <th aria-label="حذف" />
                   </tr>
@@ -168,7 +173,6 @@ const AddPurchaseModal = ({
                           value={l.qty}
                           onChange={(e) => update(i, { qty: e.target.value })}
                           aria-label={`كمية ${l.name}`}
-                          style={{ width: 90 }}
                         />
                         {l.units && l.units.length > 1 ? (
                           <select
@@ -190,7 +194,7 @@ const AddPurchaseModal = ({
                               })
                             }}
                             aria-label={`وحدة شراء ${l.name}`}
-                            style={{ width: 120, marginTop: 4 }}
+                            style={{ marginTop: 4 }}
                           >
                             {l.units.map((u) => (
                               <option key={u.id ?? 'base'} value={u.id ?? ''}>
@@ -225,13 +229,13 @@ const AddPurchaseModal = ({
                           value={l.unitCost}
                           onChange={(e) => update(i, { unitCost: e.target.value })}
                           aria-label={`تكلفة وحدة ${l.name}`}
-                          style={{ width: 100 }}
                         />
                       </td>
                       <td className="num">{formatMoney(lineTotal(l))}</td>
                       <td>
                         {/* D-068: the product's own selling price (its base unit), set when the
                             invoice is saved; empty keeps the current price. */}
+                        <span className="price-pair-label">بيع</span>
                         <input
                           type="number"
                           className="form-input num"
@@ -242,12 +246,9 @@ const AddPurchaseModal = ({
                           placeholder={l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}
                           aria-label={`سعر البيع الجديد ${l.name}`}
                           title={`سعر البيع الحالي ${l.retailPrice !== null ? formatMoney(l.retailPrice) : ''}؛ اتركه فارغاً بدون تغيير`}
-                          style={{ width: 100 }}
                         />
-                        {l.unit && <div className="cell-muted">لكل {l.unit}</div>}
-                      </td>
-                      <td>
                         {/* D-068: the product's wholesale price (its base unit), the same way. */}
+                        <span className="price-pair-label">جملة</span>
                         <input
                           type="number"
                           className="form-input num"
@@ -260,7 +261,6 @@ const AddPurchaseModal = ({
                           }
                           aria-label={`سعر البيع الجديد (الجملة) ${l.name}`}
                           title={`سعر الجملة الحالي ${l.wholesalePrice !== null ? formatMoney(l.wholesalePrice) : ''}؛ اتركه فارغاً بدون تغيير`}
-                          style={{ width: 100 }}
                         />
                         {l.unit && <div className="cell-muted">لكل {l.unit}</div>}
                       </td>
