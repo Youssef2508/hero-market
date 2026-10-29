@@ -128,17 +128,17 @@ In «الأدوار والصلاحيات»:
 |                  |                                                                                                                                                                |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | File             | `HeroMarket-Setup-1.5.2.exe`                                                                                                                                   |
-| Size             | 181,181,781 bytes                                                                                                                                              |
-| SHA-256          | `2282f209de7d321b930a4b33cded0ece340a49492fd5b125c6392afbb4abb2a1`                                                                                             |
-| Built from       | the merge commit `bf48cbb` on `main` (PR #33), with no uncommitted change. Later commits change only `.docs`, which is never packaged                          |
-| Package contents | checked: only the program (`node_modules`, `out`, `src` with migrations 0001–0030, `resources`, `package.json`); no tests, documents, databases or local files |
+| Size             | 181,182,005 bytes                                                                                                                                              |
+| SHA-256          | `275b9cc8b8d8f1b57fadb8b380840adbbfe823f716fa3cc503ce8d0217b701ff`                                                                                             |
+| Built from       | the merge commit `bcd3a23` on `main` (PR #35), with no uncommitted change. Later commits change only `.docs`, which is never packaged                          |
+| Package contents | checked: only the program (`node_modules`, `out`, `src` with migrations 0001–0031, `resources`, `package.json`); no tests, documents, databases or local files |
 | Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                                                                      |
 
 Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must show the SHA-256 above ([UPGRADE_TO_1.5.2.md](UPGRADE_TO_1.5.2.md) step 8).
 
 ## How this release was verified
 
-- **The full test suite: 483 of 483 pass** on the release code (disposable PostgreSQL databases). Lint: no errors. Formatting: clean. **CI:** the Linux, Docker and Windows (bundled PostgreSQL and packaging check) jobs passed on PRs #32 and #33.
+- **The full test suite: 487 of 487 pass** on the release code (disposable PostgreSQL databases). Lint: no errors. Formatting: clean. **CI:** the Linux, Docker and Windows (bundled PostgreSQL and packaging check) jobs passed on PRs #32, #33 and #35.
 - **New tests** include:
   - `latestPurchasePrice.test.js` (13): your 200 → 220 / 260 example with a typed and an automatic package, and migration 0026;
   - `twoPrices.test.js` (7): automatic and typed package prices, pieces against cartons, no wholesale price, migration 0029;
@@ -155,7 +155,7 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
   - 1.4.0 → 1.5.0 → 1.5.2;
   - going back to 1.5.0 → 1.5.1 → 1.5.2.
 
-  Repeated with the final code (migrations up to 0030): the same results, and packages with their own price stayed typed while those without one became automatic. No record was left reserved.
+  Repeated with the final code (migrations up to 0031, the installer above): the same results, and packages with their own price stayed typed while those without one became automatic. No record was left reserved. The rejection columns and checks of migration 0031 were in place after each update to 1.5.2.
 
   Each time, every figure was identical before and after: products, stock, customers and their debts, users, shifts with their closing figures, sales, the drawer, expenses, suppliers, their purchases and balances. The purchase prices became the latest purchase (a carton at 120 for 24 → 5; a product never bought kept its price), with each change recorded. The new permissions were on the right roles. The backup tasks were registered and a nightly copy was made and verified.
 
