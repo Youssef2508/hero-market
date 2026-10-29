@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../../lib/api'
 import { PackageX, Trash2, Plus, Layers, Banknote, X } from 'lucide-react'
-import { EmptyState, StatCard, Timestamp } from '../ui'
+import { EmptyState, StatCard, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import ProductPicker from '../modals/ProductPicker'
 
@@ -244,9 +244,8 @@ export default function DamagedGoodsTab({
               <div className="form-grid">
                 <label className="field">
                   <span className="field-label">الكمية التالفة</span>
-                  <input
+                  <NumberField
                     id="damaged-quantity-input"
-                    type="number"
                     step="any"
                     required
                     className="input num"

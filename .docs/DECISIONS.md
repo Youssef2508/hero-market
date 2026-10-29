@@ -1084,3 +1084,24 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `units.test.mjs`: the defaults, a customized 12-digit format, boundaries, invalid labels, consistency;
   - `units.test.js`: labels at the till;
   - `scaleDefaultsMigration.test.js`: migration 0024.
+
+## D-085 Input validation audit: no arbitrary character limits; amount fields take Arabic digits (owner, 1.5.2)
+
+- **Audited:** the service's schemas (patterns and lengths), the checks in its code, the database constraints, and the screens' input handling.
+- **Kept, because each protects something real:**
+  - dates as dates;
+  - internal keys of measurement kinds;
+  - a printer name without quotes or shell characters (it goes to the printing script);
+  - phone numbers as phone numbers (customers: 7–15 digits, Egyptian mobiles 11; separators and Arabic digits accepted);
+  - the logo as a PNG;
+  - the cloud address over HTTPS;
+  - numbers as numbers;
+  - unique barcodes, codes and usernames.
+  - Names, descriptions, units, addresses and reasons take any characters (Arabic, English, digits, punctuation), with length limits of 40–300 that fit the screens and receipts.
+- **Fixed:**
+  - **Amount and quantity fields** (47 in the app) were the browser's number field. It drops Arabic-Indic digits (typing «١٥٠» gave an empty value) and the Arabic decimal sign: typing «12٫5» gave **125**, a silently wrong amount.
+    - They are now `NumberField` (`components/ui`): text fields that convert Arabic-Indic and Persian digits, read ٫ and a comma as the decimal point, drop the thousands sign and spaces, and keep only what can be part of a number (`lib/numberInput.js`).
+    - Checked in the running app: «١٥٠» → 150, «12٫5» → 12.5.
+  - **A supplier's phone** now takes Arabic-Indic digits and several numbers written together, as a customer's does. The message says what is accepted.
+- **Customer codes** were limited to the `C00012` form; that is Phase 6 (D-086).
+- **Tests:** `numberInput.test.mjs`; `supplierOpening.test.js` (Arabic digits, two numbers).

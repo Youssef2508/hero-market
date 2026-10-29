@@ -5,6 +5,7 @@ import { formatMoney } from '../../lib/utils'
 import PaymentMethodSelect from '../admin/PaymentMethodSelect'
 import PaymentDestination from '../admin/PaymentDestination'
 import { fixedDestination } from '../../lib/destination'
+import { NumberField } from '../ui'
 
 const MODES = [
   ['cash', 'نقدي (مدفوعة بالكامل)'],
@@ -127,8 +128,7 @@ export default function PendingInvoiceModal({
           </label>
           <label className="field">
             <span className="field-label">إجمالي الفاتورة (ج.م) *</span>
-            <input
-              type="number"
+            <NumberField
               min="0.01"
               step="0.01"
               required
@@ -154,8 +154,7 @@ export default function PendingInvoiceModal({
           {form.mode === 'partial' && (
             <label className="field">
               <span className="field-label">المدفوع الآن (ج.م) *</span>
-              <input
-                type="number"
+              <NumberField
                 min="0.01"
                 step="0.01"
                 required

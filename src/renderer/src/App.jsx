@@ -33,6 +33,7 @@ import ChangePasswordModal from './components/modals/ChangePasswordModal'
 import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
 import { ALL_NAV_ITEMS } from './components/shell/navigation'
 import { startupPhaseFor } from './lib/startupPhase'
+import { NumberField } from './components/ui'
 
 function App() {
   // Refs
@@ -889,8 +890,7 @@ function App() {
 
               <label className="field">
                 <span className="field-label">المبلغ النقدي الفعلي في الدرج حالياً (ج.م) *</span>
-                <input
-                  type="number"
+                <NumberField
                   className="input input-lg input-money"
                   placeholder="0.00"
                   value={auditActualCash}

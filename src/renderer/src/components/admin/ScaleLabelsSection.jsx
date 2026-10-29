@@ -1,4 +1,5 @@
 import { Scale, Plus, Trash2 } from 'lucide-react'
+import { NumberField } from '../ui'
 
 const parse = (text) => {
   try {
@@ -142,9 +143,8 @@ export default function ScaleLabelsSection({ value, defaults, onChange }) {
             {POSITIONS.map(([k, label]) => (
               <label className="field" key={k}>
                 <span className="field-label">{label}</span>
-                <input
+                <NumberField
                   className="input num"
-                  type="number"
                   min="0"
                   value={cfg[k]}
                   onChange={(e) => set({ [k]: Number(e.target.value) })}

@@ -14,7 +14,7 @@ import {
   Printer,
   PackageMinus
 } from 'lucide-react'
-import { EmptyState, SortableTh, Timestamp } from '../ui'
+import { EmptyState, SortableTh, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
@@ -430,8 +430,7 @@ export default function SuppliersTab({
                   <PaymentMethodSelect value={repayMethod} onChange={setRepayMethod} />
                   <label className="field" style={{ flex: 1 }}>
                     <span className="field-label">سداد دفعة للمورد (ج.م)</span>
-                    <input
-                      type="number"
+                    <NumberField
                       className="input num"
                       placeholder="مبلغ السداد"
                       min="0"

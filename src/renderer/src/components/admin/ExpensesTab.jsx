@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { HandCoins, Plus, Trash2, NotebookPen, Tags, Pencil } from 'lucide-react'
-import { EmptyState, SortableTh, Timestamp } from '../ui'
+import { EmptyState, SortableTh, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { can } from '../../lib/api'
 import PaymentMethodSelect from './PaymentMethodSelect'
@@ -319,8 +319,7 @@ export default function ExpensesTab({
             <div className="modal-body">
               <label className="field">
                 <span className="field-label">المبلغ (ج.م) *</span>
-                <input
-                  type="number"
+                <NumberField
                   step="any"
                   required
                   placeholder="0.00"

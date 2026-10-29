@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import ScaleLabelsSection from './ScaleLabelsSection'
+import { NumberField } from '../ui'
 
 const FIELDS = {
   store: [
@@ -230,9 +231,8 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
         <div className="card-body form-grid">
           <label className="field">
             <span className="field-label">مبلغ الفكة الافتراضي عند فتح الوردية (ج.م)</span>
-            <input
+            <NumberField
               className="input input-money"
-              type="number"
               min="0"
               step="0.01"
               value={values.default_opening_cash}
@@ -249,9 +249,8 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
           </label>
           <label className="field">
             <span className="field-label">الجرد كل (دقيقة)</span>
-            <input
+            <NumberField
               className="input"
-              type="number"
               min="10"
               max="720"
               value={values.audit_interval_minutes}
@@ -261,9 +260,8 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
           </label>
           <label className="field">
             <span className="field-label">بعد خمول الشاشة لمدة (ثانية)</span>
-            <input
+            <NumberField
               className="input"
-              type="number"
               min="5"
               max="600"
               value={values.audit_idle_seconds}

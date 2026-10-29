@@ -1,4 +1,5 @@
 import { PlayCircle, Store } from 'lucide-react'
+import { NumberField } from '../ui'
 
 // Why the window is open (1.4.0). 'required' (or true): the user's role must open a shift before
 // working, so it cannot be closed. Otherwise the user may close it and work without a shift.
@@ -54,8 +55,7 @@ const OpenShiftModal = ({
               <Store size={16} aria-hidden="true" />
               درج السوبر ماركت — العهدة الافتتاحية *
             </h3>
-            <input
-              type="number"
+            <NumberField
               className="input input-lg input-money"
               value={startingCash}
               onChange={(e) => setStartingCash(e.target.value)}

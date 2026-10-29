@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BadgePercent, Plus, Pencil, Power } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
-import { Timestamp, EmptyState } from '../ui'
+import { Timestamp, EmptyState, NumberField } from '../ui'
 
 const EMPTY = {
   id: null,
@@ -253,9 +253,8 @@ export default function DiscountsTab({ triggerCustomAlert }) {
                   <span className="field-label">
                     يُطبَّق عندما يصل الإجمالي (بعد خصومات الأصناف) إلى (ج.م)
                   </span>
-                  <input
+                  <NumberField
                     className="input num"
-                    type="number"
                     min="0"
                     step="0.01"
                     required
@@ -281,9 +280,8 @@ export default function DiscountsTab({ triggerCustomAlert }) {
                 <span className="field-label">
                   {form.valueType === 'percent' ? 'النسبة %' : 'المبلغ (ج.م)'}
                 </span>
-                <input
+                <NumberField
                   className="input num"
-                  type="number"
                   min="0.01"
                   max={form.valueType === 'percent' ? 100 : undefined}
                   step="0.01"

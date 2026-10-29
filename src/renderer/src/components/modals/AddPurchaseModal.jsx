@@ -3,6 +3,7 @@ import { ReceiptText, Trash2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import ProductPicker from './ProductPicker'
+import { NumberField } from '../ui'
 
 const lineTotal = (l) => Math.round((Number(l.qty) || 0) * (Number(l.unitCost) || 0) * 100) / 100
 
@@ -164,8 +165,7 @@ const AddPurchaseModal = ({
                         <div className="cell-muted num">{l.barcode}</div>
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0.001"
                           step="0.001"
@@ -220,8 +220,7 @@ const AddPurchaseModal = ({
                         })()}
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.0001"
@@ -236,8 +235,7 @@ const AddPurchaseModal = ({
                         {/* D-068: the product's own selling price (its base unit), set when the
                             invoice is saved; empty keeps the current price. */}
                         <span className="price-pair-label">بيع</span>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.01"
@@ -249,8 +247,7 @@ const AddPurchaseModal = ({
                         />
                         {/* D-068: the product's wholesale price (its base unit), the same way. */}
                         <span className="price-pair-label">جملة</span>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.01"
@@ -288,8 +285,7 @@ const AddPurchaseModal = ({
                 {formatMoney(itemsTotal)}
               </output>
             ) : (
-              <input
-                type="number"
+              <NumberField
                 className="form-input"
                 required
                 min="0.01"
@@ -306,9 +302,8 @@ const AddPurchaseModal = ({
               keep their prices, so no product cost or price changes. */}
           <div className="form-group">
             <label htmlFor="purchase-discount">خصم الفاتورة (ج.م، اختياري)</label>
-            <input
+            <NumberField
               id="purchase-discount"
-              type="number"
               className="form-input"
               min="0"
               step="0.01"
@@ -339,8 +334,7 @@ const AddPurchaseModal = ({
             <>
               <div className="form-group">
                 <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
-                <input
-                  type="number"
+                <NumberField
                   className="form-input"
                   min="0"
                   step="0.01"

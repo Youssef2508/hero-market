@@ -5,6 +5,7 @@ import { formatMoney } from '../../lib/utils'
 import PaymentMethodSelect from '../admin/PaymentMethodSelect'
 import PaymentDestination from '../admin/PaymentDestination'
 import { fixedDestination } from '../../lib/destination'
+import { NumberField } from '../ui'
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -140,8 +141,7 @@ export default function PurchaseReturnModal({
                         <td className="num">{l.returned}</td>
                         <td className="num">{formatMoney(l.unit_cost)}</td>
                         <td>
-                          <input
-                            type="number"
+                          <NumberField
                             className="input num"
                             min="0"
                             max={left}
@@ -218,8 +218,7 @@ export default function PurchaseReturnModal({
             <>
               <label className="field">
                 <span className="field-label">المبلغ المستلم (حتى {formatMoney(credit)}) *</span>
-                <input
-                  type="number"
+                <NumberField
                   className="input num"
                   min="0.01"
                   max={credit}

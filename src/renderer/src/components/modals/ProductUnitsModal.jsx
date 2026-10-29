@@ -3,6 +3,7 @@ import { Boxes, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { kindInfo } from '../../lib/measureKinds'
+import { NumberField } from '../ui'
 
 const splitCodes = (text) =>
   String(text || '')
@@ -166,8 +167,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="input num"
                           required
                           min={decimals === 0 ? 2 : 10 ** -decimals}
@@ -178,8 +178,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="input num"
                           min="0"
                           step="0.01"
@@ -195,8 +194,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="input num"
                           min="0"
                           step="0.01"

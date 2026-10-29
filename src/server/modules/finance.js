@@ -22,15 +22,24 @@ const NEW_PRICES = [
 /** A supplier's contact fields, trimmed and checked (SUP-03). */
 function supplierContact(b) {
   const t = (v) => String(v ?? '').trim()
+  // A supplier's phone may hold one number or several ("0100… / 0122…"); Arabic-Indic and Persian
+  // digits are taken as typed, as for customers (D-085).
+  const latin = (s) =>
+    s &&
+    s
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
   const c = {
     name: t(b.name),
-    phone: t(b.phone),
+    phone: latin(t(b.phone)),
     address: t(b.address),
     contact_person: t(b.contact_person)
   }
   if (!c.name) throw badRequest('اسم المورد مطلوب.')
-  if (c.phone && !/^[0-9+\-\s()/]{3,40}$/.test(c.phone))
-    throw badRequest('رقم الهاتف يحتوي على حروف غير مسموحة.')
+  if (c.phone && !/^[0-9+\-\s()/.,،]{3,40}$/.test(c.phone))
+    throw badRequest(
+      'رقم هاتف المورد يقبل الأرقام والمسافات والعلامات + - ( ) / فقط، من 3 إلى 40 حرفاً.'
+    )
   return c
 }
 

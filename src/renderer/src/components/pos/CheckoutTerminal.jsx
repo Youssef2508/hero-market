@@ -28,7 +28,7 @@ import {
   FolderTree,
   List
 } from 'lucide-react'
-import { Kbd } from '../ui'
+import { Kbd, NumberField } from '../ui'
 import CategoryBrowser from './CategoryBrowser'
 import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
@@ -852,8 +852,7 @@ function CheckoutTerminal({
               <span className="field-label">
                 {paymentType === 'دفع جزئي' ? 'المدفوع مقدماً' : 'المدفوع من العميل'}
               </span>
-              <input
-                type="number"
+              <NumberField
                 className="input input-amount num"
                 value={paidAmount}
                 placeholder="0.00"
@@ -1091,8 +1090,7 @@ function CheckoutTerminal({
             {changeRemaining > 0 && selectedClient && (
               <label className="deposit-row">
                 <span>حفظ جزء من الباقي كرصيد للعميل</span>
-                <input
-                  type="number"
+                <NumberField
                   id="deposit-change-input"
                   className="input num"
                   value={depositChange}
