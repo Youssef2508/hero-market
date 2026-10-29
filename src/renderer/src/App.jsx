@@ -210,6 +210,7 @@ function App() {
     setSearchInput,
     handleSearchChange,
     handleSearchKeyDown,
+    searchedTerm,
     searchResults,
     setSearchResults,
     selectedSearchIndex,
@@ -765,6 +766,7 @@ function App() {
             searchInput={searchInput}
             handleSearchChange={handleSearchChange}
             handleSearchKeyDown={handleSearchKeyDown}
+            searchedTerm={searchedTerm}
             searchResults={searchResults}
             selectedSearchIndex={selectedSearchIndex}
             addToCart={(item) => addProductByBarcode(item.barcode)}

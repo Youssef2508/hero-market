@@ -1231,3 +1231,21 @@ Format: context → decision → reason → consequences (→ alternatives).
   - **An unnamed customer:** sale-related movements carry the invoice reference (فاتورة #n).
 - **Printed** (80 mm and 58 mm): one line per event (time, party, method, amount), then the user, the reference and the status on a small line, right to left.
 - **Screens:** the shift details page and the closing window show the same lines (`MoneyEvents`).
+
+## D-092 One product field at the till (owner, 1.5.2)
+
+- **Before:** two fields, «امسح الباركود أو اكتبه» and «بحث بالاسم…» (F7).
+- **Now:** one field for a scan, a typed barcode or a name.
+  - **Typing** (two characters or more, after a 150 ms pause) opens the matches under it: name, barcode, price and stock. ↓ and ↑ move through them, and the field announces the highlighted one (`aria-activedescendant`).
+  - **Enter** adds the highlighted product. With nothing highlighted, the text is resolved as a code, as before: product, extra and packaging barcodes, scale labels, and the suffix of a barcode. Text that is not all digits and is not a code adds its only match, or lists the matches with the first highlighted. An unknown code shows the same error as before and adds nothing.
+  - **Esc** clears the text and the list first. Only an empty field lets Esc reach «تفريغ الفاتورة».
+  - **F7** focuses the field.
+- **Scanner timing is unchanged** (`useBarcode`, `scannerTiming`). A scan is written into the field by the scanner hook, not typed, and it ends with Enter before the search pause, so no list opens during or after a scan.
+- **Checked in the running app** (Playwright, `till-search.js`, 20 checks):
+  - one field; F7;
+  - a name lists matches; ↓ highlights; Enter adds;
+  - Esc with text keeps the invoice;
+  - a 10 ms/key "scanner" code is added with no list;
+  - a slowly typed barcode is added; an unknown code adds nothing;
+  - "no match" appears once the search has answered.
+  - **Limitation:** this was simulated keyboard input, not a physical scanner.

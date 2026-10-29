@@ -76,6 +76,16 @@ export function usePOSController({
   }, [searchInput])
   const [searchResults, setSearchResults] = useState([])
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
+  // The text the shown results answer (1.5.2, D-092): "no results" only once a search has answered.
+  const [searchedTerm, setSearchedTerm] = useState('')
+  const clearSearch = () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    latestSearchRef.current = ''
+    setSearchInput('')
+    setSearchResults([])
+    setSearchedTerm('')
+    setSelectedSearchIndex(-1)
+  }
 
   const [clientAddress, setClientAddress] = useState('')
   // A saved address of the selected customer chosen for delivery (null = typed address).
@@ -321,12 +331,15 @@ export function usePOSController({
     }
   }
 
-  // Handle Barcode Scanner Form Submit
+  // One field at the till (owner, 1.5.2, D-092): a scan, a typed barcode or a product name. Enter
+  // resolves the text as a code first (scale labels, packaging and extra barcodes, as before); a
+  // name that is not a code adds its only match, or lists the matches to choose from.
   const handleBarcodeSubmit = async (e) => {
     if (e) e.preventDefault()
     if (!barcodeInput) return
 
     const rawInput = barcodeInput.trim()
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
     try {
       // The service resolves the scan to a product and a unit: product barcode, extra or
       // packaging barcode, or a scale label (weight or price) per the store's settings.
@@ -346,7 +359,26 @@ export function usePOSController({
       if (product) {
         addToCart(product)
         setBarcodeInput('')
+        clearSearch()
+      } else if (/\D/.test(rawInput)) {
+        const results = await api('pos.searchProducts', { term: rawInput })
+        if (results.length === 1) {
+          await addProductByBarcode(results[0].barcode)
+          setBarcodeInput('')
+          clearSearch()
+        } else if (results.length > 1) {
+          latestSearchRef.current = rawInput
+          setSearchInput(rawInput)
+          setSearchResults(results)
+          setSearchedTerm(rawInput)
+          setSelectedSearchIndex(0)
+        } else {
+          playSound('error')
+          setToastMessage({ text: `لا يوجد صنف باسم أو باركود «${rawInput}».`, type: 'error' })
+          setTimeout(() => setToastMessage(null), 4000)
+        }
       } else {
+        clearSearch()
         const missingBarcode = rawInput
         setBarcodeInput('')
         playSound('error')
@@ -367,40 +399,48 @@ export function usePOSController({
     }
   }
 
-  // Instant catalog search
+  // Live search from the same field (D-092). A scanner's characters are written by useBarcode, not
+  // typed: they never start a search, and a typed digit run is answered only after a 150 ms pause,
+  // so a scan that ends with Enter never opens the list.
   const handleSearchChange = (e) => {
     const val = e.target.value
+    setBarcodeInput(val)
     setSearchInput(val)
+    latestSearchRef.current = val
     setSelectedSearchIndex(-1)
 
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current)
     }
 
-    if (!val.trim()) {
+    if (val.trim().length < 2) {
       setSearchResults([])
+      setSearchedTerm('')
       return
     }
 
     searchDebounceRef.current = setTimeout(async () => {
       if (latestSearchRef.current !== val) return
       try {
-        if (latestSearchRef.current !== val) return
-        const results = await api('pos.searchProducts', { term: val })
+        const results = await api('pos.searchProducts', { term: val.trim() })
         if (latestSearchRef.current !== val) return
         setSearchResults(results)
+        setSearchedTerm(val)
       } catch (err) {
         console.error('Search query error:', err)
       }
     }, 150)
   }
 
+  // Keys of the one field: ↓/↑ move in the list, Enter adds the highlighted product (otherwise the
+  // form resolves the text), Esc clears the text and the list first and only then belongs to the
+  // till (clear the invoice).
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Escape') {
+      if (!barcodeInput && !searchInput && searchResults.length === 0) return
       e.preventDefault()
-      setSearchInput('')
-      setSearchResults([])
-      setSelectedSearchIndex(-1)
+      setBarcodeInput('')
+      clearSearch()
       barcodeInputRef.current?.focus()
       return
     }
@@ -413,17 +453,13 @@ export function usePOSController({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSelectedSearchIndex((prev) => (prev > 0 ? prev - 1 : searchResults.length - 1))
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && selectedSearchIndex >= 0) {
       e.preventDefault()
-      const targetItem =
-        selectedSearchIndex >= 0 && selectedSearchIndex < searchResults.length
-          ? searchResults[selectedSearchIndex]
-          : searchResults[0]
+      const targetItem = searchResults[selectedSearchIndex]
       if (targetItem) {
         addProductByBarcode(targetItem.barcode)
-        setSearchInput('')
-        setSearchResults([])
-        setSelectedSearchIndex(-1)
+        setBarcodeInput('')
+        clearSearch()
         barcodeInputRef.current?.focus()
       }
     }
@@ -775,6 +811,8 @@ export function usePOSController({
     setSearchInput,
     handleSearchChange,
     handleSearchKeyDown,
+    searchedTerm,
+    clearSearch,
     searchResults,
     setSearchResults,
     selectedSearchIndex,
