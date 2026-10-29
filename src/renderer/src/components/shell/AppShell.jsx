@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
-import { activeItem } from './navigation'
+import { activeItem, ALL_NAV_ITEMS } from './navigation'
 
 const SIDEBAR_KEY = 'heromarket.sidebar' // 'expanded' | 'compact' | absent = automatic
 const AUTO_COMPACT_BELOW = 1200
@@ -75,6 +75,10 @@ export default function AppShell({
           onCloseShift={onCloseShift}
           onLock={onLock}
           onChangePassword={onChangePassword}
+          onOpenPaymentRequests={() => {
+            const suppliers = ALL_NAV_ITEMS.find((i) => i.id === 'suppliers')
+            if (suppliers) onNavigate(suppliers)
+          }}
         />
         <main className="app-content" id="main-content">
           {children}

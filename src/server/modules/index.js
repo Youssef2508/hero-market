@@ -14,6 +14,7 @@ module.exports = [
   require('./money'),
   require('./supplierInvoices'),
   require('./purchaseReturns'),
+  require('./supplierPayments'),
   require('./stockReports'),
   require('./admin'),
   require('./settings'),

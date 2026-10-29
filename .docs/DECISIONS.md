@@ -1188,3 +1188,46 @@ Format: context → decision → reason → consequences (→ alternatives).
   - a retry;
   - an administrator with a shift;
   - a non-administrator with no shift.
+
+## D-090 Supplier debt-payment requests with administrator approval (owner, 1.5.2, migration 0028)
+
+- **Owner's workflow:** a cashier allowed to do so hands cash from the drawer to a supplier for an older debt and records it in the active shift. The cash leaves the drawer at once. The supplier's balance falls only when an administrator approves.
+- **Permissions** (both administrators-only by default; the owner grants the first to a cashier's role in «الأدوار والصلاحيات»):
+  - `suppliers.payment_request` «طلب سداد دين مورد من الدرج»;
+  - `suppliers.payment_approve` «اعتماد طلبات سداد الموردين».
+- **States** (`supplier_payment_requests`):
+  - **pending:** the cash is out of the drawer as a `supplier_payment_request` shift movement. The balance is unchanged.
+  - **approved:** the balance falls by the amount and a supplier-ledger `payment` row is written, once. No cash moves again.
+  - **disputed:** rejected with a reason after the cash was handed. Nothing goes back into the drawer by itself.
+  - **settled:** a disputed request settled by what really happened, with a required note:
+    - `returned`: the supplier gave the money back. It is an inflow (`supplier_refund`) where it arrives now: the administrator's shift, or the treasury.
+    - `applied`: it was a valid payment after all. The balance falls, as on approval.
+    - `loss`: nothing moves. The request stays on record as a loss.
+- **Guards:**
+  - The request needs the requester's own open shift.
+  - The amount may not exceed what is owed less the pending requests, so a debt is never paid twice.
+  - The amount may not exceed the cash the drawer is expected to hold.
+- **Exactly once:**
+  - A request id (`client_ref`, under an advisory lock) records a double click once.
+  - Approval and settlement lock the row. A second approval, or the same settlement again, returns the first result. A different settlement is refused.
+- **Notice:** administrators see «طلبات سداد» with the count and amount in the top bar, checked every 30 seconds. It opens the suppliers page, where the requests section lists pending, disputed, approved and settled requests and has the approve, reject and settle actions.
+- **Reports:**
+  - The shift details, the closing report and the printed close list each request with its supplier, amount, time, cashier, reference and status.
+  - The drawer counts it as a supplier payment.
+  - The closing report keeps the count and total per status (`supplierRequests`).
+- **Audit:** `supplier_payment_request`, `supplier_payment_approve`, `supplier_payment_reject` and `supplier_payment_settle`.
+- **Backup and sync:**
+  - The table is in the backup (restored row for row, tested) and in the reset.
+  - It is sent to the owner's cloud copy.
+- **Tests:** `supplierPaymentRequests.test.js` (8): permissions, creation and notice, retry, limits, concurrent approval, rejection and the three settlements, shift report reconciliation, and backup restore.
+
+## D-091 Every money event of a shift itemized (owner, 1.5.2, migration 0028)
+
+- **Before:** the shift details, closing report and receipt listed expenses and returns one by one. Customer collections, supplier payments and supplier refunds were totals only.
+- **Now:**
+  - Each shift money movement records its reference (`ref_type`, `ref_id`), who it was with (`party`: the customer's name and code, or the supplier) and who recorded it (`user_id`). Customer collections, sale upfront payments, kept change, refunds, supplier payments (invoices, preliminary invoices, settlements, requests), supplier refunds and expenses are all covered.
+  - The report has `events`: collections, supplier payments, supplier refunds and other. Each line carries the time, the party (or the description for movements recorded before 1.5.2), the method, the amount, the user, the reference and a request's status. Each group's total equals the corresponding figure of the report (tested), so nothing is counted twice and collections are never sales.
+  - Expenses and returns show their time and user.
+  - **An unnamed customer:** sale-related movements carry the invoice reference (فاتورة #n).
+- **Printed** (80 mm and 58 mm): one line per event (time, party, method, amount), then the user, the reference and the status on a small line, right to left.
+- **Screens:** the shift details page and the closing window show the same lines (`MoneyEvents`).

@@ -84,6 +84,11 @@ export function MoneyCategories({ report: r }) {
       'سداد مديونيات موردين',
       m(r.supplierPayments.settlements)
     ],
+    r.supplierPayments?.requests > 0 && [
+      'طلبات سداد موردين من الدرج',
+      `${m(r.supplierPayments.requests)}${r.supplierRequests?.pending?.count ? ` – بانتظار الاعتماد ${m(r.supplierRequests.pending.total)}` : ''}`
+    ],
+    r.supplierRefunds > 0 && ['مبالغ أعادها موردون', m(r.supplierRefunds)],
     ['المصروفات', `${m(r.expenses?.total)} (${r.expenses?.count || 0})`],
     ['المرتجعات', `${m(r.returns?.total)} (${r.returns?.count || 0})`],
     r.manualDiscounts?.count > 0 && [
@@ -102,6 +107,7 @@ export function MoneyCategories({ report: r }) {
           </div>
         ))}
       </dl>
+      <MoneyEvents report={r} />
       {r.treasuryTransfers && (
         <>
           <h3 className="till-section-title">
@@ -119,4 +125,84 @@ export function MoneyCategories({ report: r }) {
       )}
     </>
   )
+}
+
+const METHOD_LABEL = Object.fromEntries(METHODS)
+const REF_LABELS = {
+  client: 'عميل',
+  sale: 'فاتورة',
+  supplier: 'مورد',
+  supplier_purchase: 'فاتورة شراء',
+  supplier_pending_invoice: 'فاتورة مبدئية',
+  supplier_purchase_return: 'مرتجع مشتريات',
+  supplier_payment_request: 'طلب سداد',
+  expense: 'مصروف'
+}
+const GROUPS = [
+  ['collections', 'تحصيلات ديون العملاء'],
+  ['supplierPayments', 'مدفوعات الموردين'],
+  ['supplierRefunds', 'مبالغ أعادها موردون'],
+  ['other', 'حركات أخرى']
+]
+const timeOf = (at) => String(at ?? '').match(/\d{2}:\d{2}/)?.[0] || ''
+
+/**
+ * Every money event of the shift that is not a sale, one line each (D-091): when, with whom, how
+ * and how much, who recorded it and its reference. Reports saved before 1.5.2 have no lines.
+ */
+export function MoneyEvents({ report: r }) {
+  const groups = GROUPS.filter(([k]) => r.events?.[k]?.count > 0)
+  if (!groups.length) return null
+  return groups.map(([k, title]) => {
+    const g = r.events[k]
+    return (
+      <section key={k} aria-label={title}>
+        <h3 className="till-section-title">
+          {title} ({g.count}) – {m(g.total)}
+        </h3>
+        <div className="table-wrap">
+          <table className="table table-compact">
+            <thead>
+              <tr>
+                <th>الوقت</th>
+                <th>البيان</th>
+                <th>الطريقة</th>
+                <th className="num">المبلغ</th>
+                <th>بواسطة</th>
+                <th>المرجع</th>
+              </tr>
+            </thead>
+            <tbody>
+              {g.lines.map((e) => (
+                <tr key={e.id}>
+                  <td className="num">
+                    <bdi dir="ltr">{timeOf(e.at)}</bdi>
+                  </td>
+                  <td>
+                    {e.party || e.description}
+                    {e.requestStatusLabel && (
+                      <div className="cell-muted">{e.requestStatusLabel}</div>
+                    )}
+                  </td>
+                  <td>{METHOD_LABEL[e.method] || e.method}</td>
+                  <td className="num">{m(e.amount)}</td>
+                  <td>{e.username || '—'}</td>
+                  <td>
+                    {e.refType && e.refId != null ? (
+                      <span>
+                        {REF_LABELS[e.refType] || e.refType}{' '}
+                        <span className="ltr-id">#{e.refId}</span>
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    )
+  })
 }

@@ -217,6 +217,22 @@ const PERMISSIONS = [
     description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
   },
   {
+    // Supplier debt-payment requests (owner, 1.5.2, D-090): cash from the drawer, the balance after
+    // an administrator approves.
+    key: 'suppliers.payment_request',
+    module: 'suppliers',
+    label: 'طلب سداد دين مورد من الدرج',
+    description:
+      'دفع مبلغ من درج الوردية لمورد عن دين سابق. يخرج المبلغ من الدرج فوراً، ولا يُخصم من حساب المورد إلا بعد اعتماد المدير'
+  },
+  {
+    key: 'suppliers.payment_approve',
+    module: 'suppliers',
+    label: 'اعتماد طلبات سداد الموردين',
+    description:
+      'اعتماد أو رفض طلبات سداد الموردين المدفوعة من الأدراج، وتسوية الطلب المرفوض بعد دفعه (استرداد أو احتساب أو خسارة)'
+  },
+  {
     key: 'checks.manage',
     module: 'finance',
     // Cheque processing is removed (owner, 2026-10-21, D-060): this key grants nothing any more and
@@ -351,6 +367,10 @@ const MANAGEMENT = ALL.filter(
       'pos.manual_discount',
       // Customer codes by hand: administrators by default (D-086).
       'customers.code',
+      // Supplier debt-payment requests and their approval: administrators by default; the owner
+      // grants the request to a cashier (D-090).
+      'suppliers.payment_request',
+      'suppliers.payment_approve',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
       // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).

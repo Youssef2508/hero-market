@@ -49,6 +49,7 @@ const TABLES = [
   'momkn_transactions',
   'mobile_money_transactions',
   'safe_ledger',
+  'supplier_payment_requests',
   'sale_payment_corrections',
   'receipt_templates'
 ]

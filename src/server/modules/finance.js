@@ -338,7 +338,11 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       type: 'outflow',
       amount: paid,
       description: `دفعة لمورد: ${s.name} - فاتورة #${ref || purchaseId}`,
-      kind: 'supplier_payment'
+      kind: 'supplier_payment',
+      refType: 'supplier_purchase',
+      refId: purchaseId,
+      party: s.name,
+      userId: ctx.user?.id
     })
   } else if (paidFrom === 'treasury') {
     // Never a shift's money: no shift is involved, so no drawer total can include it.
@@ -659,7 +663,11 @@ module.exports = function financeModule(app) {
             description: `سداد دين مورد: ${s.name}`,
             method,
             kind: 'supplier_settlement',
-            clientRef: clientRef ? `supplier-pay:${clientRef}` : null
+            clientRef: clientRef ? `supplier-pay:${clientRef}` : null,
+            refType: 'supplier',
+            refId: s.id,
+            party: s.name,
+            userId: ctx.user?.id
           })
         }
         await ctx.audit(db, 'supplier_payment', `سداد ${amount.toFixed(2)} ج.م للمورد "${s.name}"`)
@@ -848,7 +856,9 @@ module.exports = function financeModule(app) {
           description: text,
           method,
           kind: 'expense',
-          clientRef: e.clientRef ? `expense:${e.clientRef}` : null
+          clientRef: e.clientRef ? `expense:${e.clientRef}` : null,
+          refType: 'expense',
+          userId: ctx.user?.id
         })
         const x = (
           await db.query(
@@ -857,6 +867,7 @@ module.exports = function financeModule(app) {
             [shift.id, e.amount, category, note, ctx.user.id, categoryId, ledger.id]
           )
         ).rows[0]
+        await db.query('UPDATE safe_ledger SET ref_id = $1 WHERE id = $2', [x.id, ledger.id])
         await ctx.audit(
           db,
           'expense_create',

@@ -135,7 +135,11 @@ async function settleRefund(db, ctx, sale, amount, currentShiftId, label) {
       amount: cash,
       description: label.cash,
       method,
-      kind: 'refund'
+      kind: 'refund',
+      refType: 'sale',
+      refId: sale.id,
+      party: sale.client_name || null,
+      userId: ctx.user?.id
     })
   }
   // cash: what left the drawer; paidBack: what went back by the sale's own method (cash included).

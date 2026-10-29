@@ -482,7 +482,11 @@ module.exports = function customersModule(app) {
             description: `سداد دين العميل: ${c.name}`,
             method,
             kind: 'customer_payment',
-            clientRef: clientRef ? `client-pay:${clientRef}` : null
+            clientRef: clientRef ? `client-pay:${clientRef}` : null,
+            refType: 'client',
+            refId: c.id,
+            party: c.code ? `${c.name} (${c.code})` : c.name,
+            userId: ctx.user?.id
           })
         }
         await ctx.audit(

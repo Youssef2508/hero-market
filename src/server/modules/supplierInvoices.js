@@ -103,7 +103,11 @@ module.exports = function supplierInvoicesModule(app) {
             amount: paid,
             description: `دفعة لمورد: ${s.name} - ${label}`,
             method,
-            kind: 'supplier_payment'
+            kind: 'supplier_payment',
+            refType: 'supplier_pending_invoice',
+            refId: inv.id,
+            party: s.name,
+            userId: ctx.user?.id
           })
           await db.query('UPDATE supplier_pending_invoices SET ledger_id = $1 WHERE id = $2', [
             m.id,
@@ -243,7 +247,11 @@ module.exports = function supplierInvoicesModule(app) {
               description: `مبلغ أعاده المورد ${inv.supplier_name} – إلغاء ${label}`,
               method,
               kind: 'supplier_refund',
-              clientRef: `cancel-pending:${b.clientRef}`
+              clientRef: `cancel-pending:${b.clientRef}`,
+              refType: 'supplier_pending_invoice',
+              refId: inv.id,
+              party: inv.supplier_name,
+              userId: ctx.user?.id
             })
           } else {
             await treasury.post(db, ctx, {

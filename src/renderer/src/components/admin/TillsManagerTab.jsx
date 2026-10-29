@@ -6,13 +6,68 @@ import {
   ArrowLeftRight,
   Wallet,
   Clock,
-  ReceiptText
+  ReceiptText,
+  HandCoins
 } from 'lucide-react'
-import { EmptyState, StatCard } from '../ui'
+import { EmptyState, StatCard, Timestamp } from '../ui'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
+import SupplierPaymentRequestModal from '../modals/SupplierPaymentRequestModal'
+
+/** The supplier debt-payment requests this user made (D-090), with their status. */
+function MyPaymentRequests({ refreshKey }) {
+  const [rows, setRows] = useState([])
+  useEffect(() => {
+    api('supplierPayments.list', { status: 'all' })
+      .then((r) => setRows(r.slice(0, 20)))
+      .catch(() => setRows([]))
+  }, [refreshKey])
+  if (!rows.length) return null
+  return (
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          <HandCoins size={18} aria-hidden="true" />
+          طلبات سداد الموردين التي سجلتها
+        </h2>
+      </div>
+      <div className="card-body">
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>المورد</th>
+                <th className="num">المبلغ</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <span className="ltr-id">{r.id}</span>
+                    <div className="cell-muted">
+                      <Timestamp value={r.created_at} />
+                    </div>
+                  </td>
+                  <td>{r.supplier_name}</td>
+                  <td className="num">{formatMoney(r.amount)}</td>
+                  <td>
+                    {r.status_label}
+                    {r.settlement_label && <div className="cell-muted">{r.settlement_label}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 /** The preliminary invoices this user recorded and that wait for their lines: cancel a mistake. */
 function MyPendingInvoices({ currentUser, currentShift, refreshKey, triggerCustomAlert }) {
@@ -227,20 +282,39 @@ function TillsBody({ currentUser, currentShift }) {
 /** The page: the shift's money, and the preliminary supplier invoice (D-064) for the cashier. */
 export default function TillsManagerTab({ currentUser, currentShift, triggerCustomAlert }) {
   const [pendingOpen, setPendingOpen] = useState(false)
+  const [payOpen, setPayOpen] = useState(false)
   const [savedAt, setSavedAt] = useState(0)
+  const canPending = can(currentUser, 'suppliers.pending')
+  const canPay = can(currentUser, 'suppliers.payment_request')
   return (
     <>
-      {can(currentUser, 'suppliers.pending') && (
+      {(canPending || canPay) && (
         <div className="page-head">
           <span />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => setPendingOpen(true)}
-          >
-            <ReceiptText size={15} aria-hidden="true" />
-            فاتورة مورد مبدئية
-          </button>
+          <div className="row-actions">
+            {canPay && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setPayOpen(true)}
+                disabled={!currentShift}
+                title={currentShift ? undefined : 'افتح وردية أولاً: المبلغ يخرج من الدرج'}
+              >
+                <HandCoins size={15} aria-hidden="true" />
+                سداد دين مورد
+              </button>
+            )}
+            {canPending && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setPendingOpen(true)}
+              >
+                <ReceiptText size={15} aria-hidden="true" />
+                فاتورة مورد مبدئية
+              </button>
+            )}
+          </div>
         </div>
       )}
       <TillsBody key={savedAt} currentUser={currentUser} currentShift={currentShift} />
@@ -249,6 +323,20 @@ export default function TillsManagerTab({ currentUser, currentShift, triggerCust
           currentUser={currentUser}
           currentShift={currentShift}
           refreshKey={savedAt}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
+      {canPay && <MyPaymentRequests refreshKey={savedAt} />}
+      {payOpen && (
+        <SupplierPaymentRequestModal
+          currentShift={currentShift}
+          onClose={() => setPayOpen(false)}
+          onSaved={(r) => {
+            setSavedAt(Date.now())
+            triggerCustomAlert?.(
+              `تم تسجيل طلب السداد #${r.id} (${formatMoney(r.amount)} ج.م). خرج المبلغ من الدرج وينتظر اعتماد المدير.`
+            )
+          }}
           triggerCustomAlert={triggerCustomAlert}
         />
       )}

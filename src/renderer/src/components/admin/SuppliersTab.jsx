@@ -26,6 +26,7 @@ import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
 import PurchaseReturnModal from '../modals/PurchaseReturnModal'
 import PurchaseDetailModal from '../modals/PurchaseDetailModal'
+import SupplierPaymentRequests from './SupplierPaymentRequests'
 import EditSupplierModal from '../modals/EditSupplierModal'
 import { BalanceText } from './SupplierBalance'
 import { balanceLabel } from '../../lib/supplierBalance'
@@ -197,6 +198,15 @@ export default function SuppliersTab({
 
   return (
     <>
+      <SupplierPaymentRequests
+        currentUser={currentUser}
+        currentShift={currentShift}
+        triggerCustomAlert={triggerCustomAlert}
+        onChanged={() => {
+          fetchSuppliersList?.()
+          if (selectedSupplier) fetchSupplierProfile(selectedSupplier)
+        }}
+      />
       <PendingInvoices
         rows={pendingInvoices}
         canConvert={can(currentUser, 'suppliers.manage')}

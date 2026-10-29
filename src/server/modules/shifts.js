@@ -168,6 +168,86 @@ async function manualDiscounts(db, shift) {
   }
 }
 
+// The movement kinds the report itemizes, in its order (sales and their refunds have their own
+// sections: invoices, returns).
+const EVENT_GROUPS = {
+  collections: ['customer_payment'],
+  supplierPayments: ['supplier_payment', 'supplier_settlement', 'supplier_payment_request'],
+  supplierRefunds: ['supplier_refund'],
+  other: ['other']
+}
+const REQUEST_STATUS = {
+  pending: 'بانتظار الاعتماد',
+  approved: 'معتمد',
+  disputed: 'مرفوض بعد الدفع',
+  settled: 'تمت التسوية'
+}
+
+/**
+ * The shift's money movements that are not sales, one line each (D-091), grouped as EVENT_GROUPS.
+ * A movement recorded before 1.5.2 has no party or reference: its description names them.
+ */
+async function moneyEvents(db, shift) {
+  const rows = (
+    await db.query(
+      `SELECT l.id, l.kind, l.type, l.method, l.amount::float8 AS amount, l.timestamp AS at,
+              COALESCE(l.party, '') AS party, l.ref_type AS "refType", l.ref_id AS "refId",
+              COALESCE(l.description, '') AS description, COALESCE(u.username, su.username) AS username,
+              r.status AS "requestStatus"
+         FROM safe_ledger l
+         JOIN shifts sh ON sh.id = l.shift_id
+         LEFT JOIN users u ON u.id = l.user_id
+         LEFT JOIN users su ON su.id = sh.user_id
+         LEFT JOIN supplier_payment_requests r ON l.ref_type = 'supplier_payment_request' AND r.id = l.ref_id AND l.kind = 'supplier_payment_request'
+        WHERE l.shift_id = $1 AND l.kind = ANY($2::text[])
+        ORDER BY l.timestamp, l.id`,
+      [shift.id, Object.values(EVENT_GROUPS).flat()]
+    )
+  ).rows
+  const out = {}
+  for (const [group, kinds] of Object.entries(EVENT_GROUPS)) {
+    const lines = rows
+      .filter((x) => kinds.includes(x.kind))
+      .map((x) => ({
+        ...x,
+        // + into the drawer, − out of it.
+        signed: round2(x.type === 'inflow' ? x.amount : -x.amount),
+        requestStatusLabel: x.requestStatus ? REQUEST_STATUS[x.requestStatus] : null
+      }))
+    out[group] = {
+      count: lines.length,
+      total: round2(lines.reduce((a, x) => a + x.amount, 0)),
+      lines
+    }
+  }
+  return out
+}
+
+/** Supplier debt-payment requests made in this shift, by status (D-090). */
+async function shiftRequests(db, shift) {
+  const rows = (
+    await db.query(
+      `SELECT r.id, r.status, r.settlement, r.amount::float8 AS amount, s.name AS supplier, r.created_at AS at,
+              cu.username, du.username AS "decidedBy", r.decided_at AS "decidedAt", r.decision_note AS "decisionNote"
+         FROM supplier_payment_requests r JOIN suppliers s ON s.id = r.supplier_id
+         LEFT JOIN users cu ON cu.id = r.created_by LEFT JOIN users du ON du.id = r.decided_by
+        WHERE r.shift_id = $1 ORDER BY r.id`,
+      [shift.id]
+    )
+  ).rows
+  const by = (st) => rows.filter((x) => x.status === st)
+  const sum = (xs) => round2(xs.reduce((a, x) => a + x.amount, 0))
+  return {
+    count: rows.length,
+    total: sum(rows),
+    pending: { count: by('pending').length, total: sum(by('pending')) },
+    approved: { count: by('approved').length, total: sum(by('approved')) },
+    disputed: { count: by('disputed').length, total: sum(by('disputed')) },
+    settled: { count: by('settled').length, total: sum(by('settled')) },
+    lines: rows.map((x) => ({ ...x, statusLabel: REQUEST_STATUS[x.status] }))
+  }
+}
+
 /**
  * The shift report (SHIFT-02): every figure the close receipt prints, from the persisted records.
  * With `actual`, it is the close report (expected, actual and variance per method).
@@ -189,8 +269,8 @@ async function shiftReport(
     )
   )[0]
   const expenses = await q(
-    `SELECT id, amount::float8 AS amount, category, description, timestamp AS at
-       FROM expenses WHERE shift_id = $1 ORDER BY id`
+    `SELECT e.id, e.amount::float8 AS amount, e.category, e.description, e.timestamp AS at, u.username
+       FROM expenses e LEFT JOIN users u ON u.id = e.created_by WHERE e.shift_id = $1 ORDER BY e.id`
   )
   const returns = await q(
     `SELECT r.id, r.sale_id AS "saleId", r.refund::float8 AS refund, r.reason, r.username, r.created_at AS at,
@@ -220,6 +300,7 @@ async function shiftReport(
     )
   )[0]
   const upfront = sumKind('sale_upfront')
+  const events = await moneyEvents(db, shift)
   const report = {
     shiftId: shift.id,
     cashier: cashier?.username || '',
@@ -260,8 +341,14 @@ async function shiftReport(
     supplierRefunds: sumKind('supplier_refund'),
     supplierPayments: {
       withInvoices: sumKind('supplier_payment'),
-      settlements: sumKind('supplier_settlement')
+      settlements: sumKind('supplier_settlement'),
+      // Cash handed for an older debt, waiting for or after an administrator's decision (D-090).
+      requests: sumKind('supplier_payment_request')
     },
+    // Every money event that is not a sale, one line each (D-091): what, how much, with whom, when,
+    // by whom and its reference. Each group adds up to its total above.
+    events,
+    supplierRequests: await shiftRequests(db, shift),
     expected: Object.fromEntries(METHODS.map((m) => [m, methods[m].expected])),
     expectedTotal: round2(METHODS.reduce((a, m) => a + methods[m].expected, 0)),
     labels: LABELS,

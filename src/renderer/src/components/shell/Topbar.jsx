@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
+import { BellRing, ChevronDown, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
 import { Kbd } from '../ui'
 import { formatClock } from '../../lib/time'
+import { api, can } from '../../lib/api'
+import { formatMoney } from '../../lib/utils'
 
 const ROLE_LABELS = { admin: 'مدير النظام', manager: 'مشرف', cashier: 'كاشير' }
 
@@ -12,6 +14,48 @@ function useClock() {
     return () => clearInterval(t)
   }, [])
   return now
+}
+
+// The administrator's notice (owner, 1.5.2, D-090): supplier debt payments handed from a drawer and
+// waiting for approval, and rejected ones waiting for their settlement. Checked every 30 seconds.
+function PaymentRequestsNotice({ currentUser, onOpen }) {
+  const allowed = can(currentUser, 'suppliers.payment_approve')
+  const [n, setN] = useState(null)
+  useEffect(() => {
+    if (!allowed) return undefined
+    let stop = false
+    const load = () =>
+      api('supplierPayments.pendingCount')
+        .then((r) => !stop && setN(r))
+        .catch(() => {})
+    load()
+    const t = setInterval(load, 30000)
+    return () => {
+      stop = true
+      clearInterval(t)
+    }
+  }, [allowed])
+  if (!allowed || !n || n.pending + n.disputed === 0) return null
+  const label = [
+    n.pending > 0 &&
+      `${n.pending} طلب سداد مورد بانتظار الاعتماد (${formatMoney(n.pendingAmount)} ج.م)`,
+    n.disputed > 0 && `${n.disputed} مرفوض بانتظار التسوية`
+  ]
+    .filter(Boolean)
+    .join('، ')
+  return (
+    <button
+      type="button"
+      className="btn btn-warning-soft btn-sm"
+      onClick={onOpen}
+      title={label}
+      aria-label={label}
+    >
+      <BellRing size={16} aria-hidden="true" />
+      <span className="num">{n.pending + n.disputed}</span>
+      <span className="hide-sm">طلبات سداد</span>
+    </button>
+  )
 }
 
 function UserMenu({ currentUser, onChangePassword, onLock }) {
@@ -101,7 +145,8 @@ export default function Topbar({
   onOpenShift,
   onCloseShift,
   onLock,
-  onChangePassword
+  onChangePassword,
+  onOpenPaymentRequests
 }) {
   const now = useClock()
   const hasShift = !!(currentShift && currentShift.id)
@@ -164,6 +209,7 @@ export default function Topbar({
           </>
         )}
 
+        <PaymentRequestsNotice currentUser={currentUser} onOpen={onOpenPaymentRequests} />
         <UserMenu currentUser={currentUser} onChangePassword={onChangePassword} onLock={onLock} />
       </div>
     </header>

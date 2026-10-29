@@ -890,7 +890,11 @@ module.exports = function posModule(app) {
                     ? `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`
                     : `مقدم بيع دفع جزئي (${LABELS[m]}) فاتورة رقم #${saleId}`,
                 method: m,
-                kind: 'sale_upfront'
+                kind: 'sale_upfront',
+                refType: 'sale',
+                refId: saleId,
+                party: clientName || null,
+                userId: ctx.user?.id
               })
             }
           }
@@ -915,7 +919,11 @@ module.exports = function posModule(app) {
                 type: 'inflow',
                 amount: deposit,
                 description: `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`,
-                kind: 'kept_change'
+                kind: 'kept_change',
+                refType: 'sale',
+                refId: saleId,
+                party: clientName || null,
+                userId: ctx.user?.id
               })
             }
           }

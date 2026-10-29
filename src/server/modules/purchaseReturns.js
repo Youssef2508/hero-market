@@ -304,7 +304,11 @@ module.exports = function purchaseReturnsModule(app) {
               description: text,
               method,
               kind: 'supplier_refund',
-              clientRef: `purchase-return:${b.clientRef}`
+              clientRef: `purchase-return:${b.clientRef}`,
+              refType: 'supplier_purchase_return',
+              refId: returnId,
+              party: purchase.supplier_name,
+              userId: ctx.user?.id
             })
           else
             await treasury.post(db, ctx, {
