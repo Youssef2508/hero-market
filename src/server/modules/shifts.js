@@ -175,14 +175,19 @@ const EVENT_GROUPS = {
   collections: ['customer_payment'],
   supplierPayments: ['supplier_payment', 'supplier_settlement', 'supplier_payment_request'],
   supplierRefunds: ['supplier_refund'],
+  // The cash of a rejected or cancelled request back into this drawer (D-100).
+  supplierReversals: ['supplier_payment_reversal'],
   other: ['other']
 }
 const REQUEST_STATUS = {
   pending: 'بانتظار الاعتماد',
   approved: 'معتمد',
-  disputed: 'مرفوض بعد الدفع',
-  settled: 'تمت التسوية'
+  rejected: 'مرفوض – أُعيد المبلغ',
+  cancelled: 'ألغاه الكاشير – أُعيد المبلغ',
+  disputed: 'مرفوض (قديم)',
+  settled: 'تمت التسوية (قديم)'
 }
+const RESTORED = { shift: 'إلى درج الوردية', treasury: 'إلى الخزنة (الوردية مغلقة)' }
 
 /**
  * The shift's money movements that are not sales, one line each (D-091), grouped as EVENT_GROUPS.
@@ -199,7 +204,7 @@ async function moneyEvents(db, shift) {
          JOIN shifts sh ON sh.id = l.shift_id
          LEFT JOIN users u ON u.id = l.user_id
          LEFT JOIN users su ON su.id = sh.user_id
-         LEFT JOIN supplier_payment_requests r ON l.ref_type = 'supplier_payment_request' AND r.id = l.ref_id AND l.kind = 'supplier_payment_request'
+         LEFT JOIN supplier_payment_requests r ON l.ref_type = 'supplier_payment_request' AND r.id = l.ref_id AND l.kind IN ('supplier_payment_request', 'supplier_payment_reversal')
         WHERE l.shift_id = $1 AND l.kind = ANY($2::text[])
         ORDER BY l.timestamp, l.id`,
       [shift.id, Object.values(EVENT_GROUPS).flat()]
@@ -229,9 +234,12 @@ async function shiftRequests(db, shift) {
   const rows = (
     await db.query(
       `SELECT r.id, r.status, r.settlement, r.amount::float8 AS amount, s.name AS supplier, r.created_at AS at,
-              cu.username, du.username AS "decidedBy", r.decided_at AS "decidedAt", r.decision_note AS "decisionNote"
+              cu.username, du.username AS "decidedBy", r.decided_at AS "decidedAt", r.decision_note AS "decisionNote",
+              r.reversed_to AS "reversedTo", r.reversed_at AS "reversedAt", r.reversal_reason AS "reversalReason",
+              vu.username AS "reversedBy", r.reversal_ledger_id AS "reversalLedgerId", r.reversal_treasury_id AS "reversalTreasuryId"
          FROM supplier_payment_requests r JOIN suppliers s ON s.id = r.supplier_id
          LEFT JOIN users cu ON cu.id = r.created_by LEFT JOIN users du ON du.id = r.decided_by
+         LEFT JOIN users vu ON vu.id = r.reversed_by
         WHERE r.shift_id = $1 ORDER BY r.id`,
       [shift.id]
     )
@@ -243,9 +251,22 @@ async function shiftRequests(db, shift) {
     total: sum(rows),
     pending: { count: by('pending').length, total: sum(by('pending')) },
     approved: { count: by('approved').length, total: sum(by('approved')) },
+    rejected: { count: by('rejected').length, total: sum(by('rejected')) },
+    cancelled: { count: by('cancelled').length, total: sum(by('cancelled')) },
+    // Reversed: rejected or cancelled, the money back (to this drawer or to the treasury).
+    reversed: {
+      count: rows.filter((x) => x.reversedTo).length,
+      total: sum(rows.filter((x) => x.reversedTo)),
+      toShift: sum(rows.filter((x) => x.reversedTo === 'shift')),
+      toTreasury: sum(rows.filter((x) => x.reversedTo === 'treasury'))
+    },
     disputed: { count: by('disputed').length, total: sum(by('disputed')) },
     settled: { count: by('settled').length, total: sum(by('settled')) },
-    lines: rows.map((x) => ({ ...x, statusLabel: REQUEST_STATUS[x.status] }))
+    lines: rows.map((x) => ({
+      ...x,
+      statusLabel: REQUEST_STATUS[x.status],
+      restoredLabel: x.reversedTo ? RESTORED[x.reversedTo] : null
+    }))
   }
 }
 
@@ -356,7 +377,9 @@ async function shiftReport(
       withInvoices: sumKind('supplier_payment'),
       settlements: sumKind('supplier_settlement'),
       // Cash handed for an older debt, waiting for or after an administrator's decision (D-090).
-      requests: sumKind('supplier_payment_request')
+      requests: sumKind('supplier_payment_request'),
+      // Back into this drawer from rejected or cancelled requests (D-100).
+      reversed: sumKind('supplier_payment_reversal')
     },
     // Every money event that is not a sale, one line each (D-091): what, how much, with whom, when,
     // by whom and its reference. Each group adds up to its total above.

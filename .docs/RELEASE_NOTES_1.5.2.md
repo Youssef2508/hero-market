@@ -23,10 +23,14 @@ Written for the shop owner. 1.5.2 brings the changes you asked for after 1.5.1. 
 - **Paying an old supplier debt from the drawer, with your approval** (new permission «طلب سداد دين مورد من الدرج»):
   - The cashier chooses the supplier and the amount on the new screen «سداد ديون الموردين» → «سداد دين مورد». The cash leaves the drawer at once.
   - **The supplier's balance falls only when you approve.** You see «طلبات سداد» in the top bar; it opens «سداد ديون الموردين», where you approve or reject («اعتماد طلبات سداد الموردين»). The same list is on «الموردون والمشتريات».
-  - A request rejected after the money was handed over does not put money back in the drawer by itself. You settle it by what really happened:
-    - the supplier gave it back (it is recorded where it arrives);
-    - it was a real payment after all (the balance falls);
-    - it is lost.
+  - **Rejecting a request cancels it completely.** You give a reason, and the money goes back:
+    - into the drawer of the shift it came from, if that shift is still open;
+    - otherwise into the treasury, recorded against that shift and that request.
+
+    The supplier's balance does not change. It is never an expense or a loss. The request, the money taken out and the money put back all stay in the history, the shift details, the closing report and the printed close.
+
+  - **The cashier who recorded a request can cancel it** while it is still waiting («إلغاء الطلب» on «سداد دين مورد»), with a reason. The money comes back the same way. A cashier never approves their own request, even with the approval permission; an administrator approves it.
+  - Rejecting or cancelling twice, or both at the same moment, puts the money back once.
   - Approving never takes money from the drawer a second time.
 - **Opening a recorded purchase invoice:** the «عرض» button on each invoice shows all its lines, units, returns and where it was paid from.
   - Its number and notes can be corrected (new permission «تعديل بيانات فاتورة شراء مسجلة»), and the change is logged.
@@ -35,7 +39,7 @@ Written for the shop owner. 1.5.2 brings the changes you asked for after 1.5.1. 
 
 ## Two people never edit the same invoice or request
 
-- When someone opens a **preliminary supplier invoice** to complete it, it is reserved for them for **30 minutes**. When an administrator opens a **supplier debt-payment request** to approve, reject or settle it, it is reserved for **5 minutes**.
+- When someone opens a **preliminary supplier invoice** to complete it, it is reserved for them for **30 minutes**. When an administrator opens a **supplier debt-payment request** to approve or reject it, it is reserved for **5 minutes**. The cashier cannot cancel it during that time.
 - Everyone else still sees it in the list, in blue, with «[الاسم] بيعدل الفاتورة حاليًا» or «[الاسم] بيعدل طلب السداد حاليًا». Its buttons are disabled, and the reason and the time it becomes free are shown under them. The program refuses the attempt itself, not only the screen.
 - It becomes free when the person finishes or closes the window, or when the time runs out (also if their PC was switched off). The lists update by themselves every 30 seconds.
 - A reservation never pays, approves, or changes stock or a balance.
@@ -141,7 +145,8 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
   - `shiftReportDetails.test.js`: every list of the shift report checked against its records and printed;
   - `reservations.test.js` (8): who may edit an invoice or a request, for how long, two people at once;
   - `supplierScreens.test.js` (3): each supplier screen with its own permission alone;
-  - `supplierPaymentRequests.test.js` (8): approval once, rejection and settlement, the itemized shift report, backup restore;
+  - `supplierPaymentRequests.test.js` (8): approval once; rejection and cancellation putting the money back once, into the open shift's drawer or, after the close, into the treasury; the itemized shift report; backup restore;
+  - `supplierPaymentReversal.test.js` (4): a cashier never approves their own request, an administrator may; a cancel and a rejection at the same moment put the money back once; a reservation holds a cancel back; the supplier balance reconciles;
   - `shiftReconciliation152.test.js`: one realistic shift with every kind of money movement and failed operations, reconciled to the drawer, treasury, supplier, customer, stock and the saved close;
   - `purchaseViewEdit`, `adminPurchaseTreasury`, `tillSearch`, `permissionUpgrade`, `customerCodesManual` and `navigationLayout`.
 - **The update, in Windows Sandbox with the 1.5.2 installer**, on a made-up store (no real shop data):
@@ -169,4 +174,3 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
 
 - The stock value at purchase price uses the latest purchase price. It is not the cost of each batch.
 - The till search, scanning and keyboard were tested with simulated keys in the development program, not with the shop's scanner. Scan a product and a scale label once after installing (step 16).
-- A supplier request settled as «خسارة» is recorded but is not counted as an expense in the profit figures.

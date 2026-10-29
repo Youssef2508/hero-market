@@ -6,20 +6,22 @@ import { formatMoney } from '../../lib/utils'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
 import SupplierPaymentRequestModal from '../modals/SupplierPaymentRequestModal'
-import SupplierPaymentRequests from './SupplierPaymentRequests'
+import SupplierPaymentRequests, { ReverseModal } from './SupplierPaymentRequests'
 
 // The two supplier operations of the till, each a screen of its own with its own permission
 // (owner, 1.5.2, D-097). They used to sit on «الأدراج والتحويلات», which was removed: neither
 // needs the drawers' permission.
 
 /** The supplier debt-payment requests this user made (D-090), with their status. */
-function MyPaymentRequests({ refreshKey, showEmpty }) {
+function MyPaymentRequests({ refreshKey, showEmpty, currentUser, triggerCustomAlert }) {
   const [rows, setRows] = useState([])
+  const [cancelling, setCancelling] = useState(null)
+  const [reloaded, setReloaded] = useState(0)
   useEffect(() => {
     api('supplierPayments.list', { status: 'all' })
-      .then((r) => setRows(r.slice(0, 20)))
+      .then((r) => setRows(r.filter((x) => x.created_by === currentUser?.id).slice(0, 20)))
       .catch(() => setRows([]))
-  }, [refreshKey])
+  }, [refreshKey, reloaded, currentUser])
   if (!rows.length)
     return showEmpty ? <p className="cell-muted text-center">لم تسجل طلبات سداد بعد.</p> : null
   return (
@@ -54,7 +56,22 @@ function MyPaymentRequests({ refreshKey, showEmpty }) {
                   <td className="num">{formatMoney(r.amount)}</td>
                   <td>
                     {r.status_label}
-                    {r.settlement_label && <div className="cell-muted">{r.settlement_label}</div>}
+                    {r.restored_label && <div className="cell-muted">{r.restored_label}</div>}
+                    {/* D-100: the cashier may cancel a pending request (the money comes back). */}
+                    {r.status === 'pending' && !(r.reserved_active && !r.reserved_mine) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setCancelling(r)}
+                      >
+                        إلغاء الطلب
+                      </button>
+                    )}
+                    {r.status === 'pending' && r.reserved_active && !r.reserved_mine && (
+                      <div className="cell-muted">
+                        «{r.reserved_by_name}» بيعدل طلب السداد حاليًا
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -62,6 +79,18 @@ function MyPaymentRequests({ refreshKey, showEmpty }) {
           </table>
         </div>
       </div>
+      {cancelling && (
+        <ReverseModal
+          request={cancelling}
+          action="cancel"
+          onClose={() => setCancelling(null)}
+          onDone={() => {
+            setCancelling(null)
+            setReloaded(Date.now())
+          }}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
     </section>
   )
 }
@@ -227,7 +256,14 @@ export function SupplierPaymentsTab({ currentUser, currentShift, triggerCustomAl
         currentShift={currentShift}
         triggerCustomAlert={triggerCustomAlert}
       />
-      {canPay && <MyPaymentRequests refreshKey={savedAt} showEmpty />}
+      {canPay && (
+        <MyPaymentRequests
+          refreshKey={savedAt}
+          showEmpty
+          currentUser={currentUser}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {open && (
         <SupplierPaymentRequestModal
           currentShift={currentShift}

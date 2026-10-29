@@ -14,6 +14,7 @@ const KIND_LABELS = {
   customer_payment: 'تحصيل من عميل',
   supplier_payment: 'سداد لمورد',
   supplier_refund: 'مبلغ أعاده مورد',
+  supplier_payment_reversal: 'إلغاء طلب سداد مورد (عودة المبلغ)',
   adjustment: 'تسوية',
   reversal: 'عكس حركة'
 }

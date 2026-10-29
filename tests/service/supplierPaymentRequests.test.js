@@ -1,8 +1,10 @@
 'use strict'
-// Supplier debt-payment requests (owner, 1.5.2, D-090) and the itemized shift report (D-091).
+// Supplier debt-payment requests (owner, 1.5.2, D-090, reversal D-100) and the itemized shift
+// report (D-091).
 // The cash leaves the drawer when the request is made; the supplier's balance falls only when an
-// administrator approves, exactly once; a request rejected after the cash was handed is disputed
-// until it is settled by what happened. Every money event of the shift is itemized in its report.
+// administrator approves, exactly once; a rejected or cancelled request is reversed in full (the
+// cash back to its shift's drawer, or to the treasury once that shift has closed), never a loss.
+// Every money event of the shift is itemized in its report.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
@@ -223,92 +225,87 @@ test('approval: the balance falls exactly once, even approved twice at once; no 
   assert.match(log.description, /خُصم 250\.00/)
 })
 
-test('rejected after the cash was handed: disputed, nothing moves; then settled by what happened', async (t) => {
+test('rejected or cancelled: the whole transaction reversed, once; the balance never moves (D-100)', async (t) => {
   if (!requireDb(t)) return
   const list = ok(await svc.call('supplierPayments.list', { status: 'pending' }, owner))
   const forty = list.find((x) => x.amount === 40)
   const other = list.find((x) => x.supplier_id === otherSupplierId)
   const d0 = await drawer()
   const debt0 = await debtOf(supplierId)
+  const otherDebt0 = await debtOf(otherSupplierId)
   // A reason is required.
   assert.equal(
     (await svc.call('supplierPayments.reject', { requestId: forty.id, note: '' }, owner)).status,
     400
   )
-  const rej = ok(
-    await svc.call(
-      'supplierPayments.reject',
-      { requestId: forty.id, note: 'المورد ينكر الاستلام' },
-      owner
+  // The administrator rejects: the 40 goes back into the request's open shift drawer, once, even
+  // rejected three times at once.
+  const tries = await Promise.all(
+    [1, 2, 3].map(() =>
+      svc.call(
+        'supplierPayments.reject',
+        { requestId: forty.id, note: 'المورد ينكر الاستلام' },
+        owner
+      )
     )
-  ).request
-  assert.equal(rej.status, 'disputed')
-  assert.equal(await drawer(), d0, 'no money is put back by itself')
-  assert.equal(await debtOf(supplierId), debt0)
-  // Approving a disputed request is refused; settling needs a reason.
+  )
+  tries.forEach((x) => ok(x))
+  const rej = ok(await svc.call('supplierPayments.list', { status: 'rejected' }, owner)).find(
+    (x) => x.id === forty.id
+  )
+  assert.deepEqual(
+    [rej.status, rej.reversed_to, rej.restored_label],
+    ['rejected', 'shift', 'أُعيد إلى درج الوردية']
+  )
+  assert.equal(await drawer(), r2(d0 + 40), 'the cash is back in the drawer')
+  assert.equal(await debtOf(supplierId), debt0, 'the supplier balance never moved')
+  const back = await q(
+    "SELECT shift_id, type, amount::float8 a, kind FROM safe_ledger WHERE ref_type = 'supplier_payment_request' AND ref_id = $1 ORDER BY id",
+    [forty.id]
+  )
+  assert.deepEqual(back, [
+    { shift_id: shift.id, type: 'outflow', a: 40, kind: 'supplier_payment_request' },
+    { shift_id: shift.id, type: 'inflow', a: 40, kind: 'supplier_payment_reversal' }
+  ])
+  // A rejected request cannot be approved, cancelled or rejected again into money.
   assert.equal(
     (await svc.call('supplierPayments.approve', { requestId: forty.id }, owner)).status,
     409
   )
-  // The supplier brought the money back: into the treasury (the owner has no shift), once.
-  const t0 = await treasuryBalance()
-  const settled = ok(
-    await svc.call(
-      'supplierPayments.settle',
-      { requestId: forty.id, outcome: 'returned', note: 'أعاد المبلغ للمالك' },
-      owner
-    )
-  ).request
-  assert.deepEqual([settled.status, settled.settlement], ['settled', 'returned'])
-  assert.equal(await treasuryBalance(), r2(t0 + 40))
-  assert.equal(await debtOf(supplierId), debt0)
-  // Retried: nothing again; a different outcome: refused.
-  ok(
-    await svc.call(
-      'supplierPayments.settle',
-      { requestId: forty.id, outcome: 'returned', note: 'أعاد المبلغ للمالك' },
-      owner
-    )
-  )
-  assert.equal(await treasuryBalance(), r2(t0 + 40))
+  // The cashier cancels their own pending request: reversed the same way.
+  const d1 = await drawer()
   assert.equal(
-    (
-      await svc.call(
-        'supplierPayments.settle',
-        { requestId: forty.id, outcome: 'applied', note: 'غيّرت رأيي' },
-        owner
-      )
-    ).status,
-    409
-  )
-  // The other: rejected, then found to be a valid payment after all → the balance falls once.
-  ok(
-    await svc.call('supplierPayments.reject', { requestId: other.id, note: 'لا يوجد إيصال' }, owner)
+    (await svc.call('supplierPayments.cancel', { requestId: other.id, note: '' }, cashier)).status,
+    400
   )
   ok(
     await svc.call(
-      'supplierPayments.settle',
-      { requestId: other.id, outcome: 'applied', note: 'وصل الإيصال لاحقاً' },
-      owner
+      'supplierPayments.cancel',
+      { requestId: other.id, note: 'سجلته بالخطأ' },
+      cashier
     )
   )
-  assert.equal(await debtOf(otherSupplierId), 0)
-  // A loss: nothing moves.
-  const lossReq = ok(await request(10)).request
-  ok(
-    await svc.call('supplierPayments.reject', { requestId: lossReq.id, note: 'مبلغ مفقود' }, owner)
-  )
-  const t1 = await treasuryBalance()
-  const debt1 = await debtOf(supplierId)
   ok(
     await svc.call(
-      'supplierPayments.settle',
-      { requestId: lossReq.id, outcome: 'loss', note: 'لم يُعرف المستلم' },
-      owner
+      'supplierPayments.cancel',
+      { requestId: other.id, note: 'سجلته بالخطأ' },
+      cashier
     )
   )
-  assert.equal(await treasuryBalance(), t1)
-  assert.equal(await debtOf(supplierId), debt1)
+  assert.equal(await drawer(), r2(d1 + 300))
+  assert.equal(await debtOf(otherSupplierId), otherDebt0)
+  // Another user's request cannot be cancelled by a cashier; the plain cashier has no permission.
+  const third = ok(await request(10)).request
+  assert.equal(
+    (await svc.call('supplierPayments.cancel', { requestId: third.id, note: 'ليس طلبي' }, plain))
+      .status,
+    403
+  )
+  // Nothing was an expense or a loss.
+  assert.equal(
+    (await one("SELECT count(*)::int n FROM expenses WHERE description LIKE '%سداد%'")).n,
+    0
+  )
   const audit = (
     await q(
       "SELECT action_type FROM system_logs WHERE action_type LIKE 'supplier_payment_%' ORDER BY id"
@@ -318,9 +315,10 @@ test('rejected after the cash was handed: disputed, nothing moves; then settled 
     'supplier_payment_request',
     'supplier_payment_approve',
     'supplier_payment_reject',
-    'supplier_payment_settle'
+    'supplier_payment_cancel'
   ])
     assert.ok(audit.includes(a), a)
+  assert.equal(audit.filter((x) => x === 'supplier_payment_reject').length, 1, 'logged once')
 })
 
 test('the shift report itemizes every money event and reconciles with the drawer', async (t) => {
@@ -392,7 +390,8 @@ test('the shift report itemizes every money event and reconciles with the drawer
   )
   assert.equal(rep.events.collections.total, rep.collections)
   assert.equal(rep.totalSales, 140, 'collections are not sales (5 × 20 on credit + 2 × 20 cash)')
-  // Supplier payments: the four requests made in the shift, each with its status.
+  // Supplier payments: the four requests made in the shift, each with its status; the two
+  // reversed ones came back into this drawer (D-100).
   const sp = rep.events.supplierPayments
   assert.equal(
     sp.total,
@@ -406,28 +405,42 @@ test('the shift report itemizes every money event and reconciles with the drawer
     sp.lines.map((l) => [l.party, l.amount, l.requestStatusLabel]),
     [
       ['مورد الألبان', 250, 'معتمد'],
-      ['مورد الألبان', 40, 'تمت التسوية'],
-      ['مورد آخر', 300, 'تمت التسوية'],
-      ['مورد الألبان', 10, 'تمت التسوية']
+      ['مورد الألبان', 40, 'مرفوض – أُعيد المبلغ'],
+      ['مورد آخر', 300, 'ألغاه الكاشير – أُعيد المبلغ'],
+      ['مورد الألبان', 10, 'بانتظار الاعتماد']
     ]
   )
+  assert.deepEqual(
+    rep.events.supplierReversals.lines.map((l) => [
+      l.party,
+      l.amount,
+      l.type,
+      l.requestStatusLabel
+    ]),
+    [
+      ['مورد الألبان', 40, 'inflow', 'مرفوض – أُعيد المبلغ'],
+      ['مورد آخر', 300, 'inflow', 'ألغاه الكاشير – أُعيد المبلغ']
+    ]
+  )
+  assert.equal(rep.supplierPayments.reversed, 340)
   assert.deepEqual(
     [
       rep.supplierRequests.count,
       rep.supplierRequests.total,
       rep.supplierRequests.approved.total,
-      rep.supplierRequests.settled.count
+      rep.supplierRequests.reversed.toShift,
+      rep.supplierRequests.pending.total
     ],
-    [4, 600, 250, 3]
+    [4, 600, 250, 340, 10]
   )
-  // Reconciliation: opening + cash sales + cash collections − cash supplier requests = drawer.
-  assert.equal(rep.expected.cash, r2(1000 + 40 + 60 - 600))
+  // Reconciliation: opening + cash sales + cash collections − requests + reversals = drawer.
+  assert.equal(rep.expected.cash, r2(1000 + 40 + 60 - 600 + 340))
   assert.equal(rep.expected.instapay, 25)
   // Close: the saved report keeps the lines, and the printed report lists them.
   const closed = ok(
     await svc.call(
       'shifts.close',
-      { shiftId: shift.id, actualCash: 500, actual: { instapay: 25 }, clientRef: ref() },
+      { shiftId: shift.id, actualCash: 840, actual: { instapay: 25 }, clientRef: ref() },
       cashier
     )
   )
@@ -444,7 +457,58 @@ test('the shift report itemizes every money event and reconciles with the drawer
   assert.match(textOf, /مدفوعات الموردين/)
   assert.match(textOf, /طلب سداد #\d+ · بانتظار الاعتماد|طلب سداد #\d+ · معتمد/)
   assert.match(textOf, /طلبات سداد موردين من الدرج\|600\.00/)
+  assert.match(textOf, /عاد للدرج من طلبات سداد مرفوضة\/ملغاة\|340\.00/)
+  assert.match(textOf, /عودة مبالغ طلبات سداد مرفوضة أو ملغاة/)
   assert.ok(closed)
+  // After the close, the last pending request is rejected: its 10 goes to the treasury, against
+  // the closed shift and the request; the closed shift's saved close is not rewritten.
+  const pendingReq = ok(await svc.call('supplierPayments.list', { status: 'pending' }, owner))[0]
+  const t0 = await treasuryBalance()
+  const debt0 = await debtOf(supplierId)
+  const rejected = ok(
+    await svc.call(
+      'supplierPayments.reject',
+      { requestId: pendingReq.id, note: 'لم يُسلَّم' },
+      owner
+    )
+  ).request
+  ok(
+    await svc.call(
+      'supplierPayments.reject',
+      { requestId: pendingReq.id, note: 'لم يُسلَّم' },
+      owner
+    )
+  )
+  assert.deepEqual(
+    [rejected.reversed_to, rejected.restored_label],
+    ['treasury', 'أُعيد إلى الخزنة (الوردية مغلقة)']
+  )
+  assert.equal(await treasuryBalance(), r2(t0 + 10), 'credited to the treasury once')
+  assert.equal(await debtOf(supplierId), debt0)
+  const entry = await one(
+    "SELECT kind, amount::float8 a, shift_id, ref_type, ref_id FROM treasury_ledger WHERE kind = 'supplier_payment_reversal'"
+  )
+  assert.deepEqual(entry, {
+    kind: 'supplier_payment_reversal',
+    a: 10,
+    shift_id: shift.id,
+    ref_type: 'supplier_payment_request',
+    ref_id: pendingReq.id
+  })
+  const again = (await one('SELECT report FROM shift_closings WHERE shift_id = $1', [shift.id]))
+    .report
+  assert.deepEqual(
+    typeof again === 'string' ? JSON.parse(again) : again,
+    report,
+    'the saved close stays'
+  )
+  // The shift's details list the treasury entry with the request (for audit and reporting).
+  const after = ok(await svc.call('shifts.details', { shiftId: shift.id }, owner))
+  assert.equal(after.saved, true)
+  const treasuryRows = await q('SELECT kind FROM treasury_ledger WHERE shift_id = $1 ORDER BY id', [
+    shift.id
+  ])
+  assert.ok(treasuryRows.some((x) => x.kind === 'supplier_payment_reversal'))
 })
 
 test('a backup restores the requests and their states exactly', async (t) => {

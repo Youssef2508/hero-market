@@ -133,6 +133,8 @@ export function buildCloseReportLines(rep, opts = {}) {
     cat.push(`سداد مديونيات موردين|${money(rep.supplierPayments.settlements)}`)
   if (Number(rep.supplierPayments?.requests) > 0)
     cat.push(`طلبات سداد موردين من الدرج|${money(rep.supplierPayments.requests)}`)
+  if (Number(rep.supplierPayments?.reversed) > 0)
+    cat.push(`عاد للدرج من طلبات سداد مرفوضة/ملغاة|${money(rep.supplierPayments.reversed)}`)
   if (Number(rep.supplierRefunds) > 0) cat.push(`مبالغ أعادها موردون|${money(rep.supplierRefunds)}`)
   if (cat.length) lines.push(sep, '[C]حركات أخرى (ليست مبيعات)', ...cat)
   // Each of those, one line (D-091): time, with whom, how and how much; the signed-in user, the
@@ -156,6 +158,7 @@ export function buildCloseReportLines(rep, opts = {}) {
   eventLines('تحصيلات ديون العملاء', ev.collections)
   eventLines('مدفوعات الموردين', ev.supplierPayments)
   eventLines('مبالغ أعادها موردون', ev.supplierRefunds)
+  eventLines('عودة مبالغ طلبات سداد مرفوضة أو ملغاة', ev.supplierReversals)
   eventLines('حركات أخرى', ev.other)
   if (rep.treasuryTransfers)
     lines.push(

@@ -168,7 +168,8 @@ async function purchaseReturns(db, shiftId) {
 
 const TREASURY_LABELS = {
   opening_float: 'عهدة افتتاحية من الخزنة',
-  shift_close: 'توريد الوردية إلى الخزنة عند الإغلاق'
+  shift_close: 'توريد الوردية إلى الخزنة عند الإغلاق',
+  supplier_payment_reversal: 'عودة مبلغ طلب سداد مورد مرفوض/ملغى إلى الخزنة'
 }
 
 async function treasuryEntries(db, shiftId) {
@@ -183,7 +184,12 @@ async function treasuryEntries(db, shiftId) {
   ).rows.map((r) => ({
     ...r,
     label: TREASURY_LABELS[r.kind] || r.description,
-    short: { opening_float: 'عهدة من الخزنة', shift_close: 'توريد للخزنة' }[r.kind] || null
+    short:
+      {
+        opening_float: 'عهدة من الخزنة',
+        shift_close: 'توريد للخزنة',
+        supplier_payment_reversal: 'عودة طلب سداد'
+      }[r.kind] || null
   }))
   return { count: rows.length, lines: rows }
 }

@@ -3,38 +3,32 @@ import { BellRing } from 'lucide-react'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { Timestamp } from '../ui'
-import PaymentMethodSelect from './PaymentMethodSelect'
-import PaymentDestination from './PaymentDestination'
-import { fixedDestination } from '../../lib/destination'
 
 const FILTERS = [
   ['open', 'بانتظار قرار'],
   ['approved', 'معتمدة'],
-  ['settled', 'تمت تسويتها'],
+  ['rejected', 'مرفوضة'],
+  ['cancelled', 'ألغاها الكاشير'],
   ['all', 'الكل']
 ]
-const OUTCOMES = [
-  ['returned', 'أعاد المورد المبلغ', 'يُسجَّل المبلغ داخلاً إلى ورديتك أو الخزنة الآن.'],
-  ['applied', 'احتُسب سداداً للمورد', 'يُخصم من مستحق المورد كأنه اعتُمد.'],
-  ['loss', 'خسارة (لم يُسترد)', 'لا يتحرك أي مبلغ ولا يتغير حساب المورد؛ يبقى مسجلاً كخسارة.']
-]
-const TONE = { pending: 'badge-warning', approved: 'badge-success', disputed: 'badge-danger' }
+const TONE = {
+  pending: 'badge-warning',
+  approved: 'badge-success',
+  rejected: 'badge-danger',
+  cancelled: 'badge-danger'
+}
 
 /**
- * Supplier debt-payment requests for the administrator (owner, 1.5.2, D-090): approve (the
- * supplier's balance falls once; the cash already left the drawer), reject with a reason (the
- * request becomes disputed: the cash was handed), and settle a disputed one by what happened.
+ * Supplier debt-payment requests for the administrator (owner, 1.5.2, D-090, D-100): approve (the
+ * supplier's balance falls once; the cash already left the drawer) or reject with a reason, which
+ * reverses the whole transaction: the cash back into the request's shift drawer, or the treasury
+ * when that shift has closed; the supplier's balance stays; nothing is a loss.
  */
-export default function SupplierPaymentRequests({
-  currentUser,
-  currentShift,
-  triggerCustomAlert,
-  onChanged
-}) {
+export default function SupplierPaymentRequests({ currentUser, triggerCustomAlert, onChanged }) {
   const canDecide = can(currentUser, 'suppliers.payment_approve')
   const [filter, setFilter] = useState('open')
   const [rows, setRows] = useState([])
-  const [acting, setActing] = useState(null) // { request, action: 'reject' | 'settle' }
+  const [acting, setActing] = useState(null) // { request, action: 'reject', token }
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
@@ -110,7 +104,8 @@ export default function SupplierPaymentRequests({
       <div className="card-body">
         <p className="field-hint">
           المبلغ خرج من درج الوردية عند تسجيل الطلب. الاعتماد يخصمه من مستحق المورد مرة واحدة ولا
-          يُخرج نقوداً أخرى. الرفض بعد الدفع لا يعيد المال للدرج تلقائياً: سوِّ الطلب بما حدث فعلاً.
+          يُخرج نقوداً أخرى. الرفض يلغي العملية كلها: يعود المبلغ إلى درج الوردية إن كانت مفتوحة،
+          وإلا إلى الخزنة، ولا يتغير حساب المورد ولا يُسجَّل خسارة.
         </p>
         {!rows.length ? (
           <p className="cell-muted text-center">لا توجد طلبات.</p>
@@ -165,10 +160,11 @@ export default function SupplierPaymentRequests({
                             {r.decision_note ? ` – ${r.decision_note}` : ''}
                           </div>
                         )}
-                        {r.settlement_label && (
+                        {r.restored_label && (
                           <div className="cell-muted">
-                            {r.settlement_label}
-                            {r.settlement_note ? ` – ${r.settlement_note}` : ''}
+                            {r.restored_label}
+                            {r.reversed_by_name ? ` – ${r.reversed_by_name}` : ''}
+                            {r.reversal_reason ? ` – ${r.reversal_reason}` : ''}
                           </div>
                         )}
                       </td>
@@ -196,17 +192,6 @@ export default function SupplierPaymentRequests({
                               </button>
                             </>
                           )}
-                          {r.status === 'disputed' && (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-warning-soft"
-                              disabled={held}
-                              title={why}
-                              onClick={() => open(r, 'settle')}
-                            >
-                              تسوية
-                            </button>
-                          )}
                         </div>
                         {held && <div className="cell-muted reserved-why">{why}</div>}
                       </td>
@@ -219,10 +204,8 @@ export default function SupplierPaymentRequests({
         )}
       </div>
       {acting && (
-        <DecisionModal
+        <ReverseModal
           {...acting}
-          currentUser={currentUser}
-          currentShift={currentShift}
           onClose={() => {
             // Left without deciding: give the reservation back.
             api('supplierPayments.release', {
@@ -244,53 +227,35 @@ export default function SupplierPaymentRequests({
   )
 }
 
-function DecisionModal({
-  request: r,
-  action,
-  token,
-  currentUser,
-  currentShift,
-  onClose,
-  onDone,
-  triggerCustomAlert
-}) {
+/**
+ * Rejecting (an administrator) or cancelling (the cashier who recorded it) a pending request
+ * (D-100): a reason, and where the money goes back – the request's own shift drawer while it is
+ * open, otherwise the treasury. Shared by the approvals list and the cashier's own list.
+ */
+export function ReverseModal({ request: r, action, token, onClose, onDone, triggerCustomAlert }) {
   const [note, setNote] = useState('')
-  const [outcome, setOutcome] = useState('')
-  const [method, setMethod] = useState('cash')
-  const [destination, setDestination] = useState('')
   const [busy, setBusy] = useState(false)
-  const fixed = fixedDestination(currentUser, currentShift)
   const reject = action === 'reject'
+  const toShift = r.shift_status === 'open'
+  const where = toShift
+    ? `يعود ${formatMoney(r.amount)} ج.م إلى درج الوردية #${r.shift_id}.`
+    : `الوردية #${r.shift_id} مغلقة: يعود ${formatMoney(r.amount)} ج.م إلى الخزنة، مسجلاً على الوردية والطلب.`
 
   const save = async (e) => {
     e.preventDefault()
-    if (note.trim().length < 3 || (!reject && !outcome)) return
+    if (note.trim().length < 3) return
     setBusy(true)
     try {
-      if (reject) {
-        await api('supplierPayments.reject', {
-          requestId: r.id,
-          note: note.trim(),
-          reservationToken: token
-        })
-        triggerCustomAlert?.(`رُفض الطلب #${r.id} وينتظر التسوية.`)
-      } else {
-        const dest = outcome === 'returned' ? fixed || destination : undefined
-        await api('supplierPayments.settle', {
-          reservationToken: token,
-          requestId: r.id,
-          outcome,
-          note: note.trim(),
-          ...(outcome === 'returned'
-            ? {
-                method,
-                destination: dest,
-                currentShiftId: dest === 'shift' && currentShift ? currentShift.id : null
-              }
-            : {})
-        })
-        triggerCustomAlert?.(`تمت تسوية الطلب #${r.id}.`)
-      }
+      const res = reject
+        ? await api('supplierPayments.reject', {
+            requestId: r.id,
+            note: note.trim(),
+            reservationToken: token
+          })
+        : await api('supplierPayments.cancel', { requestId: r.id, note: note.trim() })
+      triggerCustomAlert?.(
+        `${reject ? 'رُفض' : 'أُلغي'} طلب السداد #${r.id}: ${res.request.restored_label || 'أُعيد المبلغ'}. حساب المورد لم يتغير.`
+      )
       onDone()
     } catch (err) {
       triggerCustomAlert?.('تعذّر الحفظ: ' + err.message)
@@ -306,58 +271,25 @@ function DecisionModal({
         className="modal-content"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="spr-decision-title"
+        aria-labelledby="spr-reverse-title"
         onSubmit={save}
         style={{ width: 520 }}
       >
         <div className="modal-header">
-          <h2 id="spr-decision-title">
-            {reject ? 'رفض' : 'تسوية'} طلب السداد #{r.id}
+          <h2 id="spr-reverse-title">
+            {reject ? 'رفض' : 'إلغاء'} طلب السداد #{r.id}
           </h2>
           <p>
             {r.supplier_name} · {formatMoney(r.amount)} ج.م · من درج الوردية #{r.shift_id}
           </p>
         </div>
         <div className="modal-body">
-          {reject ? (
-            <p className="field-hint">
-              المبلغ سُلِّم للمورد وخرج من الدرج. بعد الرفض يبقى الطلب «مرفوضاً بعد الدفع» حتى
-              تسويته بما حدث فعلاً، ولا يعود أي مبلغ للدرج تلقائياً.
-            </p>
-          ) : (
-            <fieldset className="field">
-              <legend className="field-label">ماذا حدث فعلاً؟ *</legend>
-              {OUTCOMES.map(([k, l, hint]) => (
-                <label className="check-row" key={k}>
-                  <input
-                    type="radio"
-                    name="spr-outcome"
-                    required
-                    checked={outcome === k}
-                    onChange={() => setOutcome(k)}
-                  />
-                  <span>
-                    {l}
-                    <span className="field-hint"> – {hint}</span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {!reject && outcome === 'returned' && (
-            <>
-              <PaymentMethodSelect value={method} onChange={setMethod} label="استُلم بـ" />
-              <PaymentDestination
-                currentUser={currentUser}
-                currentShift={currentShift}
-                value={destination}
-                onChange={setDestination}
-                name="spr-destination"
-              />
-            </>
-          )}
+          <p className="field-hint">
+            {reject ? 'الرفض' : 'الإلغاء'} يلغي العملية كلها: {where} لا يُسجَّل مصروفاً ولا خسارة،
+            ويبقى الطلب وعودة المبلغ في السجل.
+          </p>
           <label className="field">
-            <span className="field-label">{reject ? 'سبب الرفض *' : 'ما حدث (يُسجَّل) *'}</span>
+            <span className="field-label">{reject ? 'سبب الرفض *' : 'سبب الإلغاء *'}</span>
             <input
               className="input"
               required
@@ -374,11 +306,11 @@ function DecisionModal({
           </button>
           <button
             type="submit"
-            className={`btn ${reject ? 'btn-danger' : 'btn-primary'}`}
+            className="btn btn-danger"
             style={{ flex: 1 }}
-            disabled={busy || note.trim().length < 3 || (!reject && !outcome)}
+            disabled={busy || note.trim().length < 3}
           >
-            {reject ? 'رفض الطلب' : 'حفظ التسوية'}
+            {reject ? 'رفض الطلب وإعادة المبلغ' : 'إلغاء الطلب وإعادة المبلغ'}
           </button>
         </div>
       </form>

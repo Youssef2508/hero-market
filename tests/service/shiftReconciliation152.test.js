@@ -2,7 +2,7 @@
 // A realistic shift (1.5.2 release gate): cash, card, credit and partial sales; customer
 // collections in cash and InstaPay; an item return and a whole-invoice return; an expense; a
 // supplier purchase paid from the drawer at the latest purchase price; supplier debt-payment
-// requests approved, pending and rejected-then-returned; and operations that fail and must leave
+// requests approved, pending and rejected (reversed into the drawer, D-100); and operations that fail and must leave
 // no trace. Every figure is worked out by hand below and checked against the drawer, the
 // treasury, the supplier and customer balances, stock, cost and the saved closing report.
 const { test, before, after } = require('node:test')
@@ -169,14 +169,8 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
   await req(75)
   const c = await req(60)
   ok(await svc.call('supplierPayments.approve', { requestId: a.id }, owner))
+  // Rejected while the shift is open: the 60 comes back into this drawer (D-100).
   ok(await svc.call('supplierPayments.reject', { requestId: c.id, note: 'بدون إيصال' }, owner))
-  ok(
-    await svc.call(
-      'supplierPayments.settle',
-      { requestId: c.id, outcome: 'returned', note: 'أعادها للمالك', destination: 'treasury' },
-      owner
-    )
-  )
   // ── Failures that must leave nothing behind ──────────────────
   const failures = [
     // A purchase whose lines do not match its total.
@@ -238,9 +232,9 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
   // ── Expected, worked out by hand ─────────────────────────────
   // Cash: 500 opening + cash sales as sold (130 + 70) + 40 upfront + 50 collection − 30 refund
   //       (the drawer counts a sale as sold and its refund as an outflow, K-40) − 25 expense
-  //       − 100 purchase − (200 + 75 + 60) requests.
+  //       − 100 purchase − (200 + 75 + 60) requests + 60 back from the rejected one.
   const cashSales = 130 + 70 // as sold
-  const expectedCash = r2(500 + cashSales + 40 + 50 - 30 - 25 - 100 - 335)
+  const expectedCash = r2(500 + cashSales + 40 + 50 - 30 - 25 - 100 - 335 + 60)
   const live = ok(await svc.call('shifts.details', { shiftId: shift.id }, owner)).report
   assert.equal(live.expected.cash, expectedCash, JSON.stringify(live.cash))
   assert.equal(live.expected.visa, 70)
@@ -249,14 +243,17 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
   assert.equal(live.events.collections.total, 80)
   assert.equal(live.supplierPayments.withInvoices, 100)
   assert.equal(live.supplierPayments.requests, 335)
+  assert.equal(live.supplierPayments.reversed, 60)
+  assert.equal(live.events.supplierReversals.total, 60)
   assert.equal(live.events.supplierPayments.total, 435)
   assert.deepEqual(
     [
       live.supplierRequests.approved.total,
       live.supplierRequests.pending.total,
-      live.supplierRequests.settled.total
+      live.supplierRequests.rejected.total,
+      live.supplierRequests.reversed.toShift
     ],
-    [200, 75, 60]
+    [200, 75, 60, 60]
   )
   assert.equal(live.expenses.total, 25)
   assert.equal(live.returns.total, 30)
@@ -266,7 +263,7 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
   assert.equal(r2(live.totalSales - live.returns.total), 470)
   // ── Balances ────────────────────────────────────────────────
   // Supplier: 1000 + 120 (purchase remainder) − 200 (approved) = 920; the pending 75 and the
-  // returned 60 do not change it.
+  // rejected 60 do not change it.
   assert.equal(
     r2((await one('SELECT debt_balance d FROM suppliers WHERE id = $1', [supplierId])).d),
     920
@@ -276,8 +273,8 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
     r2((await one('SELECT debt_balance d FROM clients WHERE id = $1', [clientId])).d),
     110
   )
-  // Treasury: + 60 returned by the supplier; nothing else of this shift until its close.
-  assert.equal(r2((await one('SELECT SUM(amount) s FROM treasury_ledger')).s), r2(tre0 + 60))
+  // Treasury: nothing of this shift until its close (the rejected 60 went back to the drawer).
+  assert.equal(r2((await one('SELECT SUM(amount) s FROM treasury_ledger')).s), tre0)
   // Stock and cost: rice 100 − 2 + 1 − 3 + 10 = 106 at the latest purchase price 22; oil
   // 100 − 1 − 1 − 2 − 1 = 95.
   const rice = await one(
@@ -313,7 +310,7 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
   // At close the counted money goes to the treasury.
   assert.equal(
     r2((await one('SELECT SUM(amount) s FROM treasury_ledger')).s),
-    r2(tre0 + 60 + expectedCash + 70 + 30)
+    r2(tre0 + expectedCash + 70 + 30)
   )
   // The purchase is recorded once with its source.
   assert.deepEqual(

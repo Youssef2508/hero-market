@@ -89,6 +89,10 @@ export function MoneyCategories({ report: r }) {
       `${m(r.supplierPayments.requests)}${r.supplierRequests?.pending?.count ? ` – بانتظار الاعتماد ${m(r.supplierRequests.pending.total)}` : ''}`
     ],
     r.supplierRefunds > 0 && ['مبالغ أعادها موردون', m(r.supplierRefunds)],
+    r.supplierPayments?.reversed > 0 && [
+      'عاد للدرج من طلبات سداد مرفوضة/ملغاة',
+      m(r.supplierPayments.reversed)
+    ],
     ['المصروفات', `${m(r.expenses?.total)} (${r.expenses?.count || 0})`],
     ['المرتجعات', `${m(r.returns?.total)} (${r.returns?.count || 0})`],
     r.manualDiscounts?.count > 0 && [
@@ -143,6 +147,7 @@ const GROUPS = [
   ['collections', 'تحصيلات ديون العملاء'],
   ['supplierPayments', 'مدفوعات الموردين'],
   ['supplierRefunds', 'مبالغ أعادها موردون'],
+  ['supplierReversals', 'عودة مبالغ طلبات سداد مرفوضة أو ملغاة'],
   ['other', 'حركات أخرى']
 ]
 const timeOf = (at) => String(at ?? '').match(/\d{2}:\d{2}/)?.[0] || ''

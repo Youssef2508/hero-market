@@ -13,6 +13,8 @@ const KINDS = [
   'supplier_settlement',
   // Cash handed to a supplier for an older debt, waiting for an administrator (D-090).
   'supplier_payment_request',
+  // The same cash back into the drawer when the request is rejected or cancelled (D-100).
+  'supplier_payment_reversal',
   'supplier_refund',
   'expense',
   'refund',
