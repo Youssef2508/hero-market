@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, newClientRef } from '../lib/api'
 import { effectiveCost } from '../lib/purchaseLines'
 
@@ -29,7 +29,27 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
   // Preliminary supplier invoices (D-064): those waiting for their lines, and the one being
   // completed in the purchase window (with its request id, so a retry converts once).
   const [pendingInvoices, setPendingInvoices] = useState([])
-  const [convertingPending, setConvertingPending] = useState(null)
+  const [convertingPending, setConvertingPendingRaw] = useState(null)
+  // D-099: the reservation taken when a preliminary invoice is opened is given back whenever the
+  // window closes without completing it (cancel, Esc, the X); when the program closes, it is
+  // given back if possible and otherwise expires at its deadline.
+  const reservedRef = useRef(null)
+  const giveBack = () => {
+    const r = reservedRef.current
+    reservedRef.current = null
+    if (r) api('supplierInvoices.release', r).catch(() => {})
+  }
+  const setConvertingPending = (value) => {
+    if (value === null) giveBack()
+    setConvertingPendingRaw(value)
+  }
+  useEffect(() => {
+    window.addEventListener('beforeunload', giveBack)
+    return () => {
+      window.removeEventListener('beforeunload', giveBack)
+      giveBack()
+    }
+  }, [])
 
   const fetchPendingInvoices = async () => {
     try {
@@ -48,8 +68,21 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     fetchPendingInvoices()
   }
 
-  /** Open the purchase window to enter the lines of a preliminary invoice. */
+  /**
+   * Open the purchase window to enter the lines of a preliminary invoice. It is reserved first
+   * (30 minutes, D-099): if another user is completing it, the reason is shown and nothing opens.
+   */
   const startConvertPending = async (inv) => {
+    let reservation
+    try {
+      reservation = await api('supplierInvoices.reserve', { invoiceId: inv.id })
+    } catch (err) {
+      triggerCustomAlert(err.message)
+      fetchPendingInvoices()
+      return
+    }
+    reservedRef.current = { invoiceId: inv.id, token: reservation.token }
+    fetchPendingInvoices()
     await fetchSupplierProfile({ id: inv.supplier_id, name: inv.supplier_name })
     setNewPurchaseForm({
       invoice_ref: inv.invoice_ref || '',
@@ -60,7 +93,12 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       discount: '',
       items: []
     })
-    setConvertingPending({ ...inv, clientRef: newClientRef() })
+    setConvertingPendingRaw({
+      ...inv,
+      clientRef: newClientRef(),
+      reservationToken: reservation.token,
+      reservedUntil: reservation.until
+    })
     setShowAddPurchaseModal(true)
   }
 
@@ -110,15 +148,11 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       qty: parseFloat(l.qty) || 0,
       // D-087: empty = keep the product's current purchase price.
       unitCost: String(l.unitCost ?? '').trim() === '' ? null : parseFloat(l.unitCost) || 0,
-      // D-068: empty = keep the product's current selling price.
+      // D-068: empty = keep the product's current selling price (no wholesale price, D-096).
       newRetailPrice:
         l.newRetailPrice === '' || l.newRetailPrice === undefined
           ? null
-          : parseFloat(l.newRetailPrice),
-      newWholesalePrice:
-        l.newWholesalePrice === '' || l.newWholesalePrice === undefined
-          ? null
-          : parseFloat(l.newWholesalePrice)
+          : parseFloat(l.newRetailPrice)
     }))
     if (items.some((l) => l.qty <= 0)) {
       triggerCustomAlert('أدخل كمية صحيحة لكل صنف مستلم.')
@@ -184,15 +218,11 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       qty: parseFloat(l.qty) || 0,
       // D-087: empty = keep the product's current purchase price.
       unitCost: String(l.unitCost ?? '').trim() === '' ? null : parseFloat(l.unitCost) || 0,
-      // D-068: empty = keep the product's current selling price.
+      // D-068: empty = keep the product's current selling price (no wholesale price, D-096).
       newRetailPrice:
         l.newRetailPrice === '' || l.newRetailPrice === undefined
           ? null
-          : parseFloat(l.newRetailPrice),
-      newWholesalePrice:
-        l.newWholesalePrice === '' || l.newWholesalePrice === undefined
-          ? null
-          : parseFloat(l.newWholesalePrice)
+          : parseFloat(l.newRetailPrice)
     }))
     if (!items.length || items.some((l) => l.qty <= 0)) {
       triggerCustomAlert('أضف أصناف الفاتورة بكمية صحيحة لكل صنف.')
@@ -205,7 +235,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
         notes: newPurchaseForm.notes || null,
         discount: Math.round((parseFloat(newPurchaseForm.discount) || 0) * 100) / 100,
         items,
-        clientRef: convertingPending.clientRef
+        clientRef: convertingPending.clientRef,
+        reservationToken: convertingPending.reservationToken
       })
       setShowAddPurchaseModal(false)
       setConvertingPending(null)

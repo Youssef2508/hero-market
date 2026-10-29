@@ -139,3 +139,223 @@ test(
     fs.rmSync(dir, { recursive: true, force: true })
   }
 )
+
+// 1.5.2 (D-098): the detailed close report – every return, credit sale, supplier invoice and
+// purchase return on its own line – is drawn by the printing code, right to left, with no line
+// dropped. HM_KEEP_PREVIEW=<file> keeps the drawn page for a person to look at.
+test('the detailed close report renders to PNG with every line', { skip: !windows }, async (t) => {
+  const { buildCloseReportLines } = await import('../../src/shared/reportLines.mjs')
+  const rep = {
+    shiftId: 9,
+    cashier: 'AhmedSalah',
+    openedAt: '2026-10-29 08:00:00',
+    closedAt: '2026-10-29 20:00:00',
+    openingFloat: 2000,
+    invoiceCount: 4,
+    totalSales: 390,
+    salesByMethod: { cash: 220, visa: 0, wallet: 0, instapay: 0 },
+    cash: { sales: 220, inflow: 90, expenses: 15, refunds: 65, supplier: 320 },
+    expected: { cash: 1910, visa: 0, wallet: 0, instapay: 0 },
+    actual: { cash: 1910, visa: 0, wallet: 0, instapay: 0 },
+    variance: { cash: 0, visa: 0, wallet: 0, instapay: 0 },
+    expectedTotal: 1910,
+    actualTotal: 1910,
+    netTotal: 1910,
+    varianceTotal: 0,
+    expenses: {
+      count: 1,
+      total: 15,
+      lines: [
+        {
+          id: 3,
+          category: 'بوفيه',
+          description: 'شاي للعمال',
+          amount: 15,
+          at: '2026-10-29 10:05:00',
+          username: 'cashier'
+        }
+      ]
+    },
+    returns: {
+      count: 2,
+      total: 65,
+      lines: [
+        {
+          saleId: 11,
+          kindLabel: 'مرتجع جزئي',
+          customer: 'عميل بدون اسم – فاتورة #11',
+          items: [{ name: 'سكر', qty: 1, unit: 'كيلو' }],
+          refund: 25,
+          at: '2026-10-29 11:00:00',
+          username: 'cashier'
+        },
+        {
+          saleId: 12,
+          kindLabel: 'مرتجع الفاتورة كاملة',
+          customer: 'سعاد (C00001)',
+          items: [{ name: 'شاي', qty: 1, unit: 'علبة' }],
+          refund: 40,
+          at: '2026-10-29 11:10:00',
+          username: 'cashier'
+        }
+      ]
+    },
+    creditSales: {
+      count: 1,
+      total: 50,
+      lines: [
+        {
+          saleId: 13,
+          customer: 'سعاد (C00001)',
+          total: 50,
+          paidNow: 0,
+          unpaid: 50,
+          at: '2026-10-29 12:00:00'
+        }
+      ]
+    },
+    partialSales: {
+      count: 1,
+      total: 120,
+      paidNow: 30,
+      unpaid: 90,
+      lines: [
+        {
+          saleId: 14,
+          customer: 'سعاد (C00001)',
+          total: 120,
+          paidNow: 30,
+          unpaid: 90,
+          at: '2026-10-29 12:30:00'
+        }
+      ]
+    },
+    supplierInvoices: {
+      purchases: {
+        count: 3,
+        total: 510,
+        paid: 160,
+        remaining: 350,
+        lines: [
+          {
+            ref: 'S-0',
+            supplier: 'مورد التفاصيل',
+            total: 300,
+            paid: 0,
+            remaining: 300,
+            status: 'آجل (لم يُدفع شيء)',
+            at: '2026-10-29 13:00:00'
+          },
+          {
+            ref: 'S-60',
+            supplier: 'مورد التفاصيل',
+            total: 60,
+            paid: 60,
+            remaining: 0,
+            status: 'مدفوعة بالكامل',
+            at: '2026-10-29 13:10:00'
+          },
+          {
+            ref: 'S-100',
+            supplier: 'مورد التفاصيل',
+            total: 150,
+            paid: 100,
+            remaining: 50,
+            status: 'دفع جزئي',
+            at: '2026-10-29 13:20:00'
+          }
+        ]
+      },
+      preliminary: {
+        count: 1,
+        total: 400,
+        paid: 0,
+        remaining: 400,
+        lines: [
+          {
+            ref: '#1',
+            supplier: 'مورد التفاصيل',
+            total: 400,
+            paid: 0,
+            remaining: 400,
+            status: 'آجل (لم يُدفع شيء)',
+            stateLabel: 'بانتظار الأصناف',
+            at: '2026-10-29 14:00:00'
+          }
+        ]
+      }
+    },
+    purchaseReturns: {
+      count: 1,
+      refund: 60,
+      lines: [
+        {
+          ref: 'S-0',
+          supplier: 'مورد التفاصيل',
+          value: 60,
+          credit: 60,
+          refund: 60,
+          items: [{ name: 'شاي', qty: 2, unit: 'علبة' }],
+          at: '2026-10-29 15:00:00'
+        }
+      ]
+    },
+    supplierPayments: { withInvoices: 160, settlements: 0, requests: 40 },
+    supplierRefunds: 60,
+    collections: 0,
+    events: {
+      supplierPayments: {
+        count: 1,
+        total: 40,
+        lines: [
+          {
+            id: 9,
+            kind: 'supplier_payment_request',
+            party: 'مورد التفاصيل',
+            method: 'cash',
+            amount: 40,
+            at: '2026-10-29 16:00:00',
+            username: 'cashier',
+            refType: 'supplier_payment_request',
+            refId: 1,
+            requestStatusLabel: 'معتمد'
+          }
+        ]
+      }
+    },
+    treasuryEntries: {
+      count: 1,
+      lines: [
+        {
+          kind: 'shift_close',
+          label: 'توريد الوردية إلى الخزنة عند الإغلاق',
+          method: 'cash',
+          amount: 1910
+        }
+      ]
+    }
+  }
+  const lines = buildCloseReportLines(rep, { store })
+  for (const needle of [
+    'S-0 مورد التفاصيل|300.00 ج.م',
+    'مرتجع جزئي',
+    'سكر × 1 كيلو',
+    'فاتورة #13',
+    'طلب سداد #1'
+  ])
+    assert.ok(
+      lines.some((l) => l.includes(needle)),
+      needle
+    )
+  const drawn = render(lines, ['-TemplateLayout'])
+  if (/not valid/.test(drawn.out)) return t.skip('no printer at all on this machine')
+  // A long report continues on the next page of the roll (the printer feeds it on).
+  const pages = Number(drawn.out.match(/PREVIEW_DONE (\d+)/)?.[1])
+  assert.ok(pages >= 1, drawn.out)
+  const files = fs.readdirSync(drawn.dir).filter((f) => f.endsWith('.png'))
+  assert.ok(files.length >= 1)
+  if (process.env.HM_KEEP_PREVIEW)
+    for (const f of files)
+      fs.copyFileSync(path.join(drawn.dir, f), `${process.env.HM_KEEP_PREVIEW}-${f}`)
+  fs.rmSync(drawn.dir, { recursive: true, force: true })
+})

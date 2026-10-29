@@ -38,7 +38,6 @@ export const SHEETS = {
         hint: 'مطلوب. سعر الوحدة للجمهور.'
       },
       { key: 'cost_price', header: 'سعر الشراء', number: true, hint: 'تكلفة الوحدة من المورد.' },
-      { key: 'wholesale_price', header: 'سعر الجملة', number: true },
       {
         key: 'stock_qty',
         header: 'الكمية الحالية',
@@ -77,9 +76,8 @@ export const SHEETS = {
         key: 'pack_price',
         header: 'سعر بيع العبوة',
         number: true,
-        hint: 'مطلوب مع اسم العبوة: سعر العبوة كاملة (لا يُحسب تلقائياً).'
+        hint: 'سعر العبوة كاملة. فارغ = تلقائي: سعر بيع الوحدة × عدد الوحدات في العبوة.'
       },
-      { key: 'pack_wholesale', header: 'سعر جملة العبوة', number: true, hint: 'اختياري.' },
       {
         key: 'pack_cost',
         header: 'سعر شراء العبوة',

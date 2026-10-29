@@ -63,8 +63,12 @@ const PERMISSIONS = [
   {
     key: 'tills.operate',
     module: 'tills',
-    label: 'الأدراج والتحويلات',
-    description: 'صفحة الدرج وطرق الدفع للوردية الحالية (المبالغ لمن يملك عرض المتوقع فقط)'
+    // The «الأدراج والتحويلات» screen was removed in 1.5.2 (D-097); the key stays for the old
+    // Momkn and wallet tills of earlier versions, which the store does not use.
+    label: 'أدراج مكن والمحافظ القديمة (غير مستخدمة)',
+    description:
+      'لم تعد تفتح أي شاشة. أرقام الدرج وطرق الدفع للوردية المفتوحة في «الورديات» ← «تفاصيل»',
+    hidden: true
   },
   {
     key: 'tills.manage',
@@ -213,8 +217,9 @@ const PERMISSIONS = [
     // Preliminary supplier invoice at the till (D-064): total and payment, no lines, no stock.
     key: 'suppliers.pending',
     module: 'suppliers',
-    label: 'فاتورة مورد مبدئية',
-    description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
+    label: 'فواتير الموردين المبدئية',
+    description:
+      'شاشة «فواتير الموردين المبدئية»: تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة). لا تحتاج صلاحية أخرى'
   },
   {
     // Correcting a recorded purchase's reference and notes (owner, 1.5.2, D-088, D-094). On an
@@ -233,7 +238,7 @@ const PERMISSIONS = [
     module: 'suppliers',
     label: 'طلب سداد دين مورد من الدرج',
     description:
-      'دفع مبلغ من درج الوردية لمورد عن دين سابق. يخرج المبلغ من الدرج فوراً، ولا يُخصم من حساب المورد إلا بعد اعتماد المدير'
+      'شاشة «سداد ديون الموردين»: دفع مبلغ من درج الوردية لمورد عن دين سابق. يخرج المبلغ من الدرج فوراً، ولا يُخصم من حساب المورد إلا بعد اعتماد المدير. لا تحتاج صلاحية أخرى'
   },
   {
     key: 'suppliers.payment_approve',

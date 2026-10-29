@@ -45,13 +45,34 @@ export default function SupplierPaymentRequests({
   }, [canDecide, filter])
   useEffect(() => {
     load()
+    // Reservations change on other PCs (D-099): look again every 30 seconds.
+    const t = setInterval(load, 30000)
+    return () => clearInterval(t)
   }, [load])
   if (!canDecide) return null
+
+  // D-099: a request is reserved (5 minutes) before deciding, so two administrators never decide
+  // on it together; another's reservation is shown and refused by the service.
+  const reserve = async (r) => {
+    try {
+      return await api('supplierPayments.reserve', { requestId: r.id })
+    } catch (err) {
+      triggerCustomAlert?.(err.message)
+      load()
+      return null
+    }
+  }
+  const open = async (r, action) => {
+    const res = await reserve(r)
+    if (res) setActing({ request: r, action, token: res.token })
+  }
 
   const approve = async (r) => {
     setBusy(true)
     try {
-      await api('supplierPayments.approve', { requestId: r.id })
+      const res = await reserve(r)
+      if (!res) return
+      await api('supplierPayments.approve', { requestId: r.id, reservationToken: res.token })
       triggerCustomAlert?.(
         `تم اعتماد طلب السداد #${r.id}: خُصم ${formatMoney(r.amount)} ج.م من مستحق "${r.supplier_name}".`
       )
@@ -108,73 +129,90 @@ export default function SupplierPaymentRequests({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span className="ltr-id">#{r.id}</span>
-                      <div className="cell-muted">
-                        <Timestamp value={r.created_at} /> · {r.created_by_name} · وردية #
-                        {r.shift_id}
-                      </div>
-                      {r.note && <div className="cell-muted">{r.note}</div>}
-                    </td>
-                    <td>
-                      {r.supplier_name}
-                      <div className="cell-muted">
-                        المستحق الآن {formatMoney(r.supplier_debt)} ج.م
-                      </div>
-                    </td>
-                    <td className="num money-strong">{formatMoney(r.amount)}</td>
-                    <td>
-                      <span className={`badge ${TONE[r.status] || ''}`}>{r.status_label}</span>
-                      {r.decided_by_name && (
+                {rows.map((r) => {
+                  // D-099: another administrator is deciding on it now (5 minutes at most).
+                  const held = r.reserved_active && !r.reserved_mine
+                  const why = held
+                    ? `«${r.reserved_by_name}» بيعدل طلب السداد حاليًا. يتاح عند انتهائه أو انتهاء الحجز (${String(r.reserved_until_text || '').slice(11, 16)}).`
+                    : undefined
+                  return (
+                    <tr key={r.id} className={held ? 'row-reserved' : undefined}>
+                      <td>
+                        <span className="ltr-id">#{r.id}</span>
                         <div className="cell-muted">
-                          {r.decided_by_name}
-                          {r.decision_note ? ` – ${r.decision_note}` : ''}
+                          <Timestamp value={r.created_at} /> · {r.created_by_name} · وردية #
+                          {r.shift_id}
                         </div>
-                      )}
-                      {r.settlement_label && (
+                        {r.note && <div className="cell-muted">{r.note}</div>}
+                      </td>
+                      <td>
+                        {r.supplier_name}
                         <div className="cell-muted">
-                          {r.settlement_label}
-                          {r.settlement_note ? ` – ${r.settlement_note}` : ''}
+                          المستحق الآن {formatMoney(r.supplier_debt)} ج.م
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        {r.status === 'pending' && (
-                          <>
+                      </td>
+                      <td className="num money-strong">{formatMoney(r.amount)}</td>
+                      <td>
+                        <span className={`badge ${TONE[r.status] || ''}`}>{r.status_label}</span>
+                        {held && (
+                          <div className="badge badge-info" role="status">
+                            «{r.reserved_by_name}» بيعدل طلب السداد حاليًا
+                          </div>
+                        )}
+                        {r.decided_by_name && (
+                          <div className="cell-muted">
+                            {r.decided_by_name}
+                            {r.decision_note ? ` – ${r.decision_note}` : ''}
+                          </div>
+                        )}
+                        {r.settlement_label && (
+                          <div className="cell-muted">
+                            {r.settlement_label}
+                            {r.settlement_note ? ` – ${r.settlement_note}` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          {r.status === 'pending' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-primary"
+                                disabled={busy || held}
+                                title={why}
+                                onClick={() => approve(r)}
+                              >
+                                اعتماد
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-secondary"
+                                disabled={busy || held}
+                                title={why}
+                                onClick={() => open(r, 'reject')}
+                              >
+                                رفض
+                              </button>
+                            </>
+                          )}
+                          {r.status === 'disputed' && (
                             <button
                               type="button"
-                              className="btn btn-sm btn-primary"
-                              disabled={busy}
-                              onClick={() => approve(r)}
+                              className="btn btn-sm btn-warning-soft"
+                              disabled={held}
+                              title={why}
+                              onClick={() => open(r, 'settle')}
                             >
-                              اعتماد
+                              تسوية
                             </button>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-secondary"
-                              disabled={busy}
-                              onClick={() => setActing({ request: r, action: 'reject' })}
-                            >
-                              رفض
-                            </button>
-                          </>
-                        )}
-                        {r.status === 'disputed' && (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-warning-soft"
-                            onClick={() => setActing({ request: r, action: 'settle' })}
-                          >
-                            تسوية
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          )}
+                        </div>
+                        {held && <div className="cell-muted reserved-why">{why}</div>}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -185,7 +223,15 @@ export default function SupplierPaymentRequests({
           {...acting}
           currentUser={currentUser}
           currentShift={currentShift}
-          onClose={() => setActing(null)}
+          onClose={() => {
+            // Left without deciding: give the reservation back.
+            api('supplierPayments.release', {
+              requestId: acting.request.id,
+              token: acting.token
+            }).catch(() => {})
+            setActing(null)
+            load()
+          }}
           onDone={() => {
             setActing(null)
             load()
@@ -201,6 +247,7 @@ export default function SupplierPaymentRequests({
 function DecisionModal({
   request: r,
   action,
+  token,
   currentUser,
   currentShift,
   onClose,
@@ -221,11 +268,16 @@ function DecisionModal({
     setBusy(true)
     try {
       if (reject) {
-        await api('supplierPayments.reject', { requestId: r.id, note: note.trim() })
+        await api('supplierPayments.reject', {
+          requestId: r.id,
+          note: note.trim(),
+          reservationToken: token
+        })
         triggerCustomAlert?.(`رُفض الطلب #${r.id} وينتظر التسوية.`)
       } else {
         const dest = outcome === 'returned' ? fixed || destination : undefined
         await api('supplierPayments.settle', {
+          reservationToken: token,
           requestId: r.id,
           outcome,
           note: note.trim(),

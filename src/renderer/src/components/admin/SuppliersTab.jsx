@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Truck,
   Plus,
@@ -66,44 +66,65 @@ function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <span className="ltr-id">{p.id}</span>
-                  </td>
-                  <td className="cell-strong">{p.supplier_name}</td>
-                  <td className="nowrap cell-muted">
-                    <Timestamp value={p.created_at} />
-                  </td>
-                  <td className="num">{formatMoney(p.total)}</td>
-                  <td className="num">{formatMoney(p.paid)}</td>
-                  <td>{MODE_LABELS[p.payment_mode]}</td>
-                  <td className="cell-muted">{p.created_by_name || '—'}</td>
-                  <td>
-                    <span className="badge badge-warning">بدون أصناف</span>
-                  </td>
-                  <td>
-                    <div className="cell-actions">
-                      {canConvert && (
+              {rows.map((p) => {
+                // D-099: another user is completing it now; the row stays, its actions wait.
+                const busy = p.reserved_active && !p.reserved_mine
+                const why = busy
+                  ? `«${p.reserved_by_name}» بيعدل الفاتورة حاليًا. تتاح عند إكمالها أو انتهاء الحجز (${String(p.reserved_until_text || '').slice(11, 16)}).`
+                  : undefined
+                return (
+                  <tr key={p.id} className={busy ? 'row-reserved' : undefined}>
+                    <td>
+                      <span className="ltr-id">{p.id}</span>
+                    </td>
+                    <td className="cell-strong">{p.supplier_name}</td>
+                    <td className="nowrap cell-muted">
+                      <Timestamp value={p.created_at} />
+                    </td>
+                    <td className="num">{formatMoney(p.total)}</td>
+                    <td className="num">{formatMoney(p.paid)}</td>
+                    <td>{MODE_LABELS[p.payment_mode]}</td>
+                    <td className="cell-muted">{p.created_by_name || '—'}</td>
+                    <td>
+                      {busy ? (
+                        <span className="badge badge-info" role="status">
+                          «{p.reserved_by_name}» بيعدل الفاتورة حاليًا
+                        </span>
+                      ) : p.reserved_mine ? (
+                        <span className="badge badge-info">مفتوحة عندك للتعديل</span>
+                      ) : (
+                        <span className="badge badge-warning">بدون أصناف</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="cell-actions">
+                        {canConvert && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            onClick={() => onConvert(p)}
+                            disabled={busy}
+                            title={why}
+                            aria-disabled={busy}
+                          >
+                            إكمال
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="btn btn-sm btn-primary"
-                          onClick={() => onConvert(p)}
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => onCancel(p)}
+                          disabled={busy}
+                          title={why}
                         >
-                          إكمال
+                          إلغاء
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => onCancel(p)}
-                      >
-                        إلغاء
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                      {busy && <div className="cell-muted reserved-why">{why}</div>}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -153,6 +174,13 @@ export default function SuppliersTab({
   const [cancelling, setCancelling] = useState(null)
   const [returning, setReturning] = useState(null)
   const [viewing, setViewing] = useState(null)
+  // Who is completing which preliminary invoice changes on other PCs (D-099): look again every
+  // 30 seconds, so a finished or expired reservation does not stay shown.
+  useEffect(() => {
+    const t = setInterval(() => fetchPendingInvoices?.(), 30000)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [editing, setEditing] = useState(false)
   // A recorded supplier invoice printed again from what was saved (POS-02, D-077); nothing is
   // recorded by printing.

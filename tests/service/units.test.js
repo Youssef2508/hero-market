@@ -67,7 +67,7 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
         baseBarcodes: ['CAKE-ALT'],
         units: [
           { name: 'كرتونة', factor: 24, retail_price: 60, barcodes: ['CAKE-CTN'] },
-          // D-065: the owner enters the package price (here the same 3 × 6); none is derived.
+          // Typed package prices (D-065, D-096: here the same 3 × 6, typed, so kept as typed).
           { name: 'علبة 6', factor: 6, retail_price: 18, purchasable: false, barcodes: [] }
         ]
       },
@@ -119,8 +119,9 @@ test('define packaging: carton = 24 pieces with its own barcode and price; extra
   )
   await bad([{ name: 'واحد', factor: 1, retail_price: 1 }], /مطابقة/)
   await bad([{ name: 'سرقة', factor: 2, retail_price: 1, barcodes: ['WATER'] }], /مستخدم بالفعل/)
-  // A sellable package without the owner's price is refused (no derived price, D-065).
-  await bad([{ name: 'علبة بلا سعر', factor: 4 }], /اكتب سعر بيع/)
+  // A package marked as typed (not automatic) needs its price (D-096; an empty price without the
+  // mark is automatic, tested in twoPrices.test.js).
+  await bad([{ name: 'علبة بلا سعر', factor: 4, retail_auto: false }], /اكتب سعر بيع/)
   // A new product cannot take an existing extra barcode.
   const clash = await svc.call(
     'products.create',

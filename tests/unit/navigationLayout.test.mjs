@@ -7,16 +7,27 @@ const nav = await import('../../src/renderer/src/components/shell/navigation.js'
 
 test('every defined screen is in the sidebar exactly once', () => {
   assert.deepEqual(nav.LAYOUT_PROBLEMS, [])
-  assert.equal(nav.ALL_NAV_ITEMS.length, 31)
-  assert.equal(new Set(nav.ALL_NAV_ITEMS.map((i) => i.id)).size, 31)
+  assert.equal(nav.ALL_NAV_ITEMS.length, 32)
+  assert.equal(new Set(nav.ALL_NAV_ITEMS.map((i) => i.id)).size, 32)
 })
 
 test('the groups, with the day’s selling first', () => {
   assert.deepEqual(
     nav.NAV_GROUPS.map((g) => [g.label, g.items.map((i) => i.id)]),
     [
-      ['البيع اليومي', ['pos', 'tills', 'returns', 'reprint', 'payment-change']],
-      ['الحسابات', ['sales', 'clients', 'suppliers', 'expenses', 'treasury']],
+      ['البيع اليومي', ['pos', 'returns', 'reprint', 'payment-change']],
+      [
+        'الحسابات',
+        [
+          'sales',
+          'clients',
+          'suppliers',
+          'supplier-pending',
+          'supplier-payments',
+          'expenses',
+          'treasury'
+        ]
+      ],
       ['المخزون', ['inventory', 'movements', 'categories', 'reordering', 'damaged']],
       ['التقارير', ['menu', 'advanced-stats', 'cashier-performance', 'bestsellers', 'stockvalue']],
       ['الإدارة', ['shifts', 'users', 'roles', 'discounts']],
@@ -26,10 +37,33 @@ test('the groups, with the day’s selling first', () => {
 })
 
 test('permissions still decide what each user sees', () => {
-  const cashier = { permissions: ['pos.sell', 'tills.operate', 'sales.return_request'] }
+  // The built-in cashier (D-097): the till, returns and preliminary supplier invoices; the old
+  // drawers permission opens nothing.
+  const cashier = {
+    permissions: ['pos.sell', 'tills.operate', 'sales.return_request', 'suppliers.pending']
+  }
   assert.deepEqual(
     nav.visibleGroups(cashier).map((g) => [g.id, g.items.map((i) => i.id)]),
-    [['sell', ['pos', 'tills', 'returns']]]
+    [
+      ['sell', ['pos', 'returns']],
+      ['accounts', ['supplier-pending']]
+    ]
+  )
+  // Each supplier screen with its own permission alone.
+  const payer = { permissions: ['suppliers.payment_request'] }
+  assert.deepEqual(
+    nav.visibleGroups(payer).flatMap((g) => g.items.map((i) => i.id)),
+    ['supplier-payments']
+  )
+  assert.equal(nav.canOpenTab(payer, 'supplier-payments'), true)
+  assert.equal(nav.canOpenTab(payer, 'supplier-pending'), false)
+  assert.equal(
+    nav.canOpenTab({ permissions: ['suppliers.payment_approve'] }, 'supplier-payments'),
+    true
+  )
+  assert.equal(
+    nav.ALL_NAV_ITEMS.some((i) => i.id === 'tills'),
+    false
   )
   assert.equal(nav.canOpenTab(cashier, 'users'), false)
   assert.equal(nav.canOpenTab({ permissions: ['users.manage'] }, 'users'), true)

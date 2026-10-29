@@ -42,7 +42,12 @@ const LogsTab = lazy(() => import('./LogsTab'))
 const RolesTab = lazy(() => import('./RolesTab'))
 const SettingsTab = lazy(() => import('./SettingsTab'))
 const ReceiptDesignerTab = lazy(() => import('./ReceiptDesignerTab'))
-const TillsManagerTab = lazy(() => import('./TillsManagerTab'))
+const SupplierPendingTab = lazy(() =>
+  import('./SupplierOpsTabs').then((m) => ({ default: m.SupplierPendingTab }))
+)
+const SupplierPaymentsTab = lazy(() =>
+  import('./SupplierOpsTabs').then((m) => ({ default: m.SupplierPaymentsTab }))
+)
 const DiscountsTab = lazy(() => import('./DiscountsTab'))
 const SyncTab = lazy(() => import('./SyncTab'))
 const CategoriesTab = lazy(() => import('./CategoriesTab'))
@@ -194,7 +199,7 @@ export default function AdminDashboard(props) {
   }
 
   // Each tab requires its permission (same list as the sidebar); the service enforces it again.
-  if (adminTab !== 'tills' && !canOpenTab(currentUser, adminTab)) {
+  if (!canOpenTab(currentUser, adminTab)) {
     return (
       <div className="admin-container">
         <EmptyState
@@ -297,12 +302,18 @@ export default function AdminDashboard(props) {
         {adminTab === 'cashier-performance' && <CashierPerformanceTab />}
         {adminTab === 'damaged' && <DamagedGoodsTab {...props} />}
         {adminTab === 'logs' && <LogsTab />}
-        {adminTab === 'tills' && (
-          <TillsManagerTab
+        {adminTab === 'supplier-pending' && (
+          <SupplierPendingTab
             currentUser={props.currentUser}
             currentShift={props.currentShift}
             triggerCustomAlert={props.triggerCustomAlert}
-            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
+        {adminTab === 'supplier-payments' && (
+          <SupplierPaymentsTab
+            currentUser={props.currentUser}
+            currentShift={props.currentShift}
+            triggerCustomAlert={props.triggerCustomAlert}
           />
         )}
       </Suspense>

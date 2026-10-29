@@ -1330,3 +1330,108 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Checked:**
   - `navigationLayout.test.mjs` (3): every screen placed exactly once, the groups, and what a cashier sees;
   - in the running app (`sidebar152.js`): the owner sees all 31; folding by Enter and click, remembered after signing in again; 1024 px and the compact rail; the cashier sees the till, tills and returns only.
+
+## D-096 Two prices per unit; package prices automatic or typed; purchases in pieces or cartons (owner, 1.5.2, migration 0029)
+
+- **No wholesale price.** The owner keeps only a purchase price and a selling price for each unit.
+  - The wholesale price is gone from the product forms, the products list, purchase lines, the units window, the Excel template and export, and owner commands (a command naming it is refused).
+  - The till never used it, so no selling price changes.
+  - The columns keep their old values for history; nothing writes them any more. Old filled templates still import: the column is ignored.
+- **Package selling price** (owner's answer):
+  - **Automatic** by default: the piece's current selling price × the package's count. It follows every change of either, at the till, in the units window and in reports.
+  - **Typed:** the owner unticks «تلقائي» and types a price, which is kept as typed, also when it happens to equal piece × count.
+  - Ticking «تلقائي» again restores the automatic price.
+  - The mode is stored explicitly (`product_units.retail_auto`), never inferred from equal numbers, and changes are logged.
+  - Migration 0029: packages with a price of their own stay typed; packages without one were already sold at piece × count and become automatic. Nothing changes price at the till on the day of the update.
+  - Import: an empty package price is automatic.
+- **Purchases in pieces or cartons** (owner's answer), with the purchase unit chosen per line:
+  - **In pieces at p:** the piece's purchase price is p, and every package costs p × its count.
+  - **In a package at c:** that package costs exactly c, the piece c ÷ its count, and every other package c × its count ÷ this one's. Money is rounded to 0.01 and the piece cost to 4 decimals.
+  - The same purchase gives the same stock, purchase price and stock value either way.
+  - The invoice line keeps the unit, factor and quantity as entered.
+  - A purchase price never changes a selling price. Only the line's «سعر البيع الجديد» does, explicitly.
+  - An empty or free line changes no price. The latest purchase price rule (D-087) and past costs are unchanged.
+- **Tests:**
+  - `twoPrices.test.js` (7): automatic default at the till; following the piece price; typed override kept, also when equal; restoring; a new package count; pieces against cartons (stock, cost, value, carton cost, rounding, lines); no wholesale; migration 0029;
+  - `latestPurchasePrice.test.js`: the Roumy example with a typed and an automatic package;
+  - `units`, `packaging`, `purchaseSalePrice`, `dataExport` and `sync` updated where they asserted a wholesale price, a required package price or package purchase prices that never moved.
+
+## D-097 Supplier screens of their own; «الأدراج والتحويلات» removed (owner, 1.5.2)
+
+- **Audit of «الأدراج والتحويلات» before removing it:**
+  - **The open shift's expected amounts per method:** shown only with «عرض المبالغ المتوقعة»; cashiers saw only a notice. The same live figures, itemized, are in «الورديات» → the open shift → «تفاصيل» (`shifts.details`) and in the closing window.
+  - **«فاتورة مورد مبدئية» and the user's pending invoices:** moved to their own screen.
+  - **«سداد دين مورد» and the user's requests:** moved to their own screen.
+  - **Nothing else** was reachable only there. Its backend (`tills.*`, the Momkn and wallet tills of D-063, unused by the store), the records, the tables and the audit are kept.
+- **New screens**, in «الحسابات» after «الموردون والمشتريات»:
+  - **«فواتير الموردين المبدئية»** (`supplier-pending`), with «فواتير الموردين المبدئية» (`suppliers.pending`, renamed from «فاتورة مورد مبدئية»): record a preliminary invoice; the user's pending ones, with cancel.
+  - **«سداد ديون الموردين»** (`supplier-payments`), with «طلب سداد دين مورد من الدرج» or «اعتماد طلبات سداد الموردين»: record a payment; the user's requests; for approvers, approve, reject and settle. The top-bar notice opens it.
+- **Permissions:**
+  - Each screen needs only its own permission. The service never asked for the drawers permission (`tills.operate`), and granting either permission grants nothing else.
+  - Approval stays a separate permission.
+  - The built-in cashier keeps «فواتير الموردين المبدئية», so the cashier's menu gains that screen in place of the drawers one.
+- **Removed:**
+  - the menu entry and the screen (`TillsManagerTab`);
+  - `tills.operate` is hidden in «الأدوار والصلاحيات», like the other unused till permissions. Its label now says it opens nothing. The key stays valid and no role's grants change.
+- **Tests:**
+  - `supplierScreens.test.js` (3): each permission alone works without `tills.operate`; the other feature and approval are refused; the roles catalogue hides `tills.operate` and explains both;
+  - `navigationLayout.test.mjs`: the menu, the cashier's menu, each screen by its permission alone, no `tills` entry;
+  - `uiInventory` and the matrix are updated.
+
+## D-098 The shift report lists every record that makes its figures (owner's review, 1.5.2)
+
+The shift details, the closing window, the saved close and the printed close list each of these one by one, from their own records (`modules/shiftDetails.js`):
+
+- **Expenses:** time, category and description, amount, who recorded it, reference (مصروف #n). They add up to the expense total.
+- **Customer returns:** time, invoice, kind («مرتجع جزئي» or «مرتجع الفاتورة كاملة»), customer, the products and quantities returned, amount and user. A partial return names the returned line; a whole return names the invoice's lines.
+- **Credit and partial sales:** invoice, customer, total, paid now and still owed. A customer without a name is «عميل بدون اسم – فاتورة #n». The lines' unpaid amounts are what the customer owes (tested). Collections stay a separate list (D-091) and are never sales.
+- **Supplier invoices of the shift**, final and preliminary:
+  - supplier, reference, the invoice's **real total**, paid now, remaining, and status: «آجل (لم يُدفع شيء)», «مدفوعة بالكامل» or «دفع جزئي»;
+  - a preliminary invoice also shows its state (بانتظار الأصناف / أُكملت / ملغاة);
+  - a credit invoice shows 0 paid, never a total of 0;
+  - an invoice belongs to the shift of the user who recorded it, also when nothing was paid. `supplier_purchases.shift_id` and `supplier_pending_invoices.shift_id` are set for unpaid ones from 1.5.2; older unpaid invoices have none;
+  - the amounts paid now add up to the shift's invoice payments, once each.
+- **Supplier purchase returns with money back in the shift:** supplier, purchase reference, products and quantities, money received, credit. They add up to the money returned by suppliers.
+- **Supplier debt payments:** each request with its status (D-090).
+- **The shift's treasury entries:** its opening float and its transfer at close. The treasury's own movements outside shifts are not shift events.
+- **Reconciliation** (tested in `shiftReportDetails.test.js` against the source rows): every drawer movement of the shift is listed exactly once, and the expected cash is the drawer formula.
+- **Printing:**
+  - every line is printed; none is dropped to shorten the receipt;
+  - details go on a small line under their amount, wrapped to the paper's width (48 characters on 80 mm, 32 on 58 mm) and never cut, with an amount kept with «ج.م»;
+  - drawn right to left by the printing code itself (`print_receipt.ps1 -PreviewFile`, `printPreview.test.mjs`); a long close continues on the next page of the roll;
+  - **not tested on the shop's thermal printer.**
+- **Tests:**
+  - `shiftReportDetails.test.js`: a shift with every kind of record, checked list by list against its source records and totals, the drawer, and the printed lines;
+  - `printPreview.test.mjs`: the detailed close drawn to PNG;
+  - `payablesReceivables.test.js`: checks the credit-sale lines too.
+
+## D-099 Reservations against concurrent editing (owner, 1.5.2, migration 0030)
+
+- **What is reserved:**
+  - a preliminary supplier invoice opened to be completed: **30 minutes**, «[الاسم] بيعدل الفاتورة حاليًا»;
+  - a supplier debt-payment request opened to be decided on (approve, reject, settle): **5 minutes**, «[الاسم] بيعدل طلب السداد حاليًا».
+- **Stored in the record itself:** `reserved_by`, `reserved_at`, `reserved_until` and `reserve_token`. Never in a screen. Existing records start with none.
+- **Taking a reservation** (`supplierInvoices.reserve`, `supplierPayments.reserve`; the same permissions as completing or deciding, nothing new):
+  - one conditional `UPDATE`: the record must still be eligible (pending; for a request, pending or disputed) and not held by another user's valid reservation;
+  - two simultaneous attempts serialize on the row: exactly one owner, and the other is refused with the holder's name and the time it ends;
+  - the holder opening it again renews it with the same token.
+- **Every write checks the reservation** in its own transaction:
+  - completion, cancellation, approval, rejection and settlement are refused while another user's reservation is valid;
+  - with a token, the caller must hold that valid reservation, so a screen left open past its expiry, or after the record passed to someone else, cannot write;
+  - a write without a token is allowed only while nobody else holds one (older screens, direct requests);
+  - finishing clears the reservation in the same `UPDATE`.
+  - A refused attempt changes nothing: no stock, payment, balance or record.
+- **Expiry and release:**
+  - expiry is checked on every action against the database clock; no timer is needed;
+  - closing the window without finishing gives it back (`release`, only by the holder's own token);
+  - closing the program gives it back if possible, and otherwise it expires at its deadline;
+  - another user's attempt never releases it.
+- **Screens:**
+  - the row stays in the list with its supplier, amount and date, in a distinct colour, with the holder's name;
+  - its actions are disabled, with the reason and the time underneath;
+  - the lists look again every 30 seconds, so a finished or expired reservation disappears by itself;
+  - the cashier's own pending list shows it too, without its cancel button.
+- **Untouched:** a reservation never moves money or stock, never approves, and never changes a balance. The approval permission stays separate, and idempotency and the audit trail are unchanged.
+- **Tests:**
+  - `reservations.test.js` (8): unreserved start, the first holder, the second refused by name, 30 and 5 minutes with a controllable clock (`HEROMARKET_TEST_CLOCK_OFFSET_SECONDS`, tests only), taking over after expiry, a stale holder refused, completion and cancellation clearing it, release by the holder only, a crashed session freed at the deadline, simultaneous attempts giving one owner, direct requests, unauthorized users, duplicates once, and unreserved records unchanged;
+  - checked in the running app: a row held by another user, opening and cancelling one's own, and an expired one disappearing.

@@ -18,7 +18,6 @@ export function useProductsManager({
     name: '',
     cost_price: '',
     retail_price: '',
-    wholesale_price: '',
     stock_qty: '',
     reorder_limit: '',
     unit: '',
@@ -29,7 +28,6 @@ export function useProductsManager({
     name: '',
     cost_price: '',
     retail_price: '',
-    wholesale_price: '',
     stock_qty: '',
     reorder_limit: '',
     unit: ''
@@ -70,17 +68,8 @@ export function useProductsManager({
 
   const handleAddProduct = async (e) => {
     if (e) e.preventDefault()
-    const {
-      barcode,
-      name,
-      cost_price,
-      retail_price,
-      wholesale_price,
-      stock_qty,
-      reorder_limit,
-      unit,
-      unit_kind
-    } = newProduct
+    const { barcode, name, cost_price, retail_price, stock_qty, reorder_limit, unit, unit_kind } =
+      newProduct
     if (!barcode || !name) {
       triggerCustomAlert('يرجى ملء الباركود والاسم!')
       return
@@ -95,7 +84,6 @@ export function useProductsManager({
           name,
           cost_price: cost,
           retail_price: retail,
-          wholesale_price: parseFloat(wholesale_price) || 0,
           stock_qty: parseFloat(stock_qty) || 0,
           reorder_limit: parseFloat(reorder_limit) || 0,
           unit: unit || '',
@@ -109,7 +97,6 @@ export function useProductsManager({
           name: '',
           cost_price: '',
           retail_price: '',
-          wholesale_price: '',
           stock_qty: '',
           reorder_limit: '',
           unit: '',
@@ -139,7 +126,6 @@ export function useProductsManager({
       name,
       cost_price,
       retail_price,
-      wholesale_price,
       stock_qty,
       stock_base,
       reorder_limit,
@@ -167,7 +153,6 @@ export function useProductsManager({
           name,
           cost_price: cost,
           retail_price: retail,
-          wholesale_price: parseFloat(wholesale_price) || 0,
           stock_qty: parseFloat(stock_qty) || 0,
           // The stock shown when the form opened: the service applies only the difference, so
           // sales made meanwhile are kept (K-37).

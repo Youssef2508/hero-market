@@ -108,6 +108,7 @@ export function MoneyCategories({ report: r }) {
         ))}
       </dl>
       <MoneyEvents report={r} />
+      <ShiftDetailLists report={r} />
       {r.treasuryTransfers && (
         <>
           <h3 className="till-section-title">
@@ -205,4 +206,142 @@ export function MoneyEvents({ report: r }) {
       </section>
     )
   })
+}
+
+const items = (list) =>
+  (list || []).map((i) => `${i.name} × ${i.qty}${i.unit ? ` ${i.unit}` : ''}`).join('، ')
+
+/** One titled table of a report list; nothing when the list is empty. */
+function ListTable({ title, total, head, rows }) {
+  if (!rows.length) return null
+  return (
+    <section aria-label={title}>
+      <h3 className="till-section-title">
+        {title} ({rows.length}){total !== undefined ? ` – ${m(total)}` : ''}
+      </h3>
+      <div className="table-wrap">
+        <table className="table table-compact">
+          <thead>
+            <tr>
+              {head.map((h) => (
+                <th key={h}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((cells, i) => (
+              <tr key={i}>
+                {cells.map((c, j) => (
+                  <td key={j}>{c}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * The shift's itemized records (owner's review, 1.5.2, D-098): expenses, customer returns with
+ * what was returned, credit and partial sales with what each customer still owes, supplier
+ * invoices with their payment status, purchase returns and the shift's treasury entries. Reports
+ * saved before 1.5.2 show only what they kept.
+ */
+export function ShiftDetailLists({ report: r }) {
+  const si = r.supplierInvoices
+  const t = (at) => <bdi dir="ltr">{timeOf(at)}</bdi>
+  return (
+    <>
+      <ListTable
+        title="المصروفات"
+        total={r.expenses?.total}
+        head={['الوقت', 'البيان', 'المبلغ', 'بواسطة', 'المرجع']}
+        rows={(r.expenses?.lines || []).map((e) => [
+          t(e.at),
+          `${e.category || ''}${e.description ? ` – ${e.description}` : ''}`,
+          m(e.amount),
+          e.username || '—',
+          `مصروف #${e.id}`
+        ])}
+      />
+      <ListTable
+        title="مرتجعات العملاء"
+        total={r.returns?.total}
+        head={['الوقت', 'الفاتورة', 'النوع', 'العميل', 'المرتجع', 'المبلغ', 'بواسطة']}
+        rows={(r.returns?.lines || []).map((x) => [
+          t(x.at),
+          `#${x.saleId}`,
+          x.kindLabel || '—',
+          x.customer || '—',
+          items(x.items) || '—',
+          m(x.refund),
+          x.username || '—'
+        ])}
+      />
+      {[
+        ['مبيعات آجل', r.creditSales],
+        ['مبيعات دفع جزئي', r.partialSales]
+      ].map(([title, g]) => (
+        <ListTable
+          key={title}
+          title={title}
+          total={g?.total}
+          head={['الوقت', 'الفاتورة', 'العميل', 'الإجمالي', 'مدفوع الآن', 'المتبقي على العميل']}
+          rows={(g?.lines || []).map((x) => [
+            t(x.at),
+            `#${x.saleId}`,
+            x.customer,
+            m(x.total),
+            m(x.paidNow),
+            m(x.unpaid)
+          ])}
+        />
+      ))}
+      {[
+        ['فواتير شراء من الموردين', si?.purchases],
+        ['فواتير موردين مبدئية', si?.preliminary]
+      ].map(([title, g]) => (
+        <ListTable
+          key={title}
+          title={title}
+          total={g?.total}
+          head={['الوقت', 'الفاتورة', 'المورد', 'الإجمالي', 'المدفوع', 'المتبقي', 'الحالة']}
+          rows={(g?.lines || []).map((p) => [
+            t(p.at),
+            p.ref,
+            p.supplier,
+            m(p.total),
+            m(p.paid),
+            m(p.remaining),
+            [p.status, p.stateLabel].filter(Boolean).join(' · ')
+          ])}
+        />
+      ))}
+      <ListTable
+        title="مرتجعات للموردين"
+        total={r.purchaseReturns?.refund}
+        head={['الوقت', 'فاتورة الشراء', 'المورد', 'المرتجع', 'المستلم الآن', 'خُصم من المستحق']}
+        rows={(r.purchaseReturns?.lines || []).map((x) => [
+          t(x.at),
+          x.ref,
+          x.supplier,
+          items(x.items),
+          m(x.refund),
+          m(x.credit)
+        ])}
+      />
+      <ListTable
+        title="حركات الخزنة الخاصة بالوردية"
+        head={['الوقت', 'البيان', 'الطريقة', 'المبلغ']}
+        rows={(r.treasuryEntries?.lines || []).map((e) => [
+          t(e.at),
+          e.label,
+          METHOD_LABEL[e.method] || e.method,
+          m(Math.abs(e.amount))
+        ])}
+      />
+    </>
+  )
 }

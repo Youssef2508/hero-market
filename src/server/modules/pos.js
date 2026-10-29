@@ -247,7 +247,7 @@ module.exports = function posModule(app) {
         throw conflict(`الصنف "${product.name}" موقوف عن البيع.`, { inactive: true })
       const units = (
         await db.query(
-          'SELECT id, name, factor, retail_price FROM product_units WHERE product_barcode = $1 AND is_active AND sellable ORDER BY factor, id',
+          'SELECT id, name, factor, retail_price, retail_auto FROM product_units WHERE product_barcode = $1 AND is_active AND sellable ORDER BY factor, id',
           [product.barcode]
         )
       ).rows.map((u) => ({

@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 const MODULE_LABELS = {
   pos: 'البيع',
   shifts: 'الورديات',
-  tills: 'الأدراج والتحويلات',
+  tills: 'الأدراج القديمة',
   sales: 'الفواتير والمرتجعات',
   products: 'الأصناف',
   inventory: 'المخزون',

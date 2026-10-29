@@ -232,7 +232,6 @@ test('package columns are checked like the units window; nothing is written on a
     assert.match(r.errors.map((e) => e.message).join(' | '), pattern)
   }
   await check({ pack_name: 'علبة', pack_factor: 2.5, pack_price: 12 }, /عدداً صحيحاً/)
-  await check({ pack_name: 'علبة', pack_factor: 10 }, /سعر بيع العبوة مطلوب/)
   await check({ pack_factor: 10, pack_price: 45 }, /اسم العبوة/)
   await check(
     { pack_name: 'علبة', pack_factor: 10, pack_price: 45, pack_barcode: 'NEW-1' },
@@ -244,6 +243,26 @@ test('package columns are checked like the units window; nothing is written on a
   )
   await check({ pack_name: 'قطعة', pack_factor: 10, pack_price: 45 }, /نفس وحدة الصنف/)
   assert.equal((await svc.pool.query('SELECT COUNT(*)::int n FROM products')).rows[0].n, before)
+  // A package without a selling price is automatic (D-096): the unit's price × the count.
+  const auto = ok(
+    await svc.call(
+      'storeImport.apply',
+      {
+        products: [
+          row({ barcode: 'AUTO-1', pack_name: 'علبة', pack_factor: 10, pack_barcode: 'AUTO-BOX' })
+        ]
+      },
+      owner
+    )
+  )
+  assert.ok(auto.written, JSON.stringify(auto))
+  const u = (
+    await svc.pool.query(
+      "SELECT retail_price, retail_auto FROM product_units WHERE product_barcode = 'AUTO-1'"
+    )
+  ).rows[0]
+  assert.deepEqual([u.retail_price, u.retail_auto], [null, true])
+  assert.equal(ok(await svc.call('pos.resolve', { code: 'AUTO-BOX' }, owner)).unit.price, 50)
 })
 
 test('a file of a newer template version is refused; an old file without a version still reads', async () => {

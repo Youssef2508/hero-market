@@ -12,7 +12,7 @@
 // already in the store is reported, not overwritten.
 //
 // Template version 2 (D-067): a product row may carry one package (name, units per package, its
-// barcode, selling, wholesale and purchase prices), checked by the same rules as the units
+// barcode, selling and purchase prices; an empty selling price is automatic, D-096), checked by the same rules as the units
 // window (whole factor for counted products, its own selling price, unique barcode).
 // Permission data.import (ROLE-01), separate from data.export.
 const path = require('path')
@@ -105,7 +105,6 @@ module.exports = function storeImportModule(app) {
           if (retail === null || !(retail >= 0)) fail(P, p.row, 'سعر البيع مطلوب ولا يكون بالسالب.')
           for (const [k, label] of [
             ['cost_price', 'سعر الشراء'],
-            ['wholesale_price', 'سعر الجملة'],
             ['reorder_limit', 'حد الطلب']
           ])
             if (num(p[k]) !== null && !(num(p[k]) >= 0)) fail(P, p.row, `${label} لا يكون بالسالب.`)
@@ -132,9 +131,7 @@ module.exports = function storeImportModule(app) {
           const packAny =
             packName ||
             packBarcode ||
-            [p.pack_factor, p.pack_price, p.pack_wholesale, p.pack_cost].some(
-              (v) => num(v) !== null
-            )
+            [p.pack_factor, p.pack_price, p.pack_cost].some((v) => num(v) !== null)
           let pack = null
           if (packAny) {
             if (!packName) fail(P, p.row, 'اكتب اسم العبوة (أو امسح بيانات العبوة).')
@@ -156,11 +153,10 @@ module.exports = function storeImportModule(app) {
                 fail(P, p.row, e.message)
               }
             }
+            // Empty = automatic: the piece's selling price × the factor (D-096).
             const price = num(p.pack_price)
-            if (price === null) fail(P, p.row, 'سعر بيع العبوة مطلوب (سعر العبوة كاملة).')
             for (const [k, label] of [
               ['pack_price', 'سعر بيع العبوة'],
-              ['pack_wholesale', 'سعر جملة العبوة'],
               ['pack_cost', 'سعر شراء العبوة']
             ])
               if (num(p[k]) !== null && !(num(p[k]) >= 0))
@@ -182,7 +178,6 @@ module.exports = function storeImportModule(app) {
               factor,
               barcode: packBarcode,
               price,
-              wholesale: num(p.pack_wholesale),
               cost: num(p.pack_cost)
             }
           }
@@ -193,7 +188,6 @@ module.exports = function storeImportModule(app) {
             pack,
             retail: retail ?? 0,
             cost: num(p.cost_price) ?? 0,
-            wholesale: num(p.wholesale_price) ?? 0,
             stock: stock ?? 0,
             unit: text(p.unit, 40),
             kind: kind ? kind.key : 'count',
@@ -331,27 +325,23 @@ module.exports = function storeImportModule(app) {
           const barcode = p.barcode || (await internalCode())
           const cat = await categoryFor(p.category)
           await db.query(
-            `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
-             VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, true)`,
-            [
-              barcode,
-              p.name,
-              p.cost,
-              p.retail,
-              p.wholesale,
-              p.reorder,
-              p.unit,
-              p.kind,
-              cat.id,
-              cat.name
-            ]
+            `INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
+             VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9, true)`,
+            [barcode, p.name, p.cost, p.retail, p.reorder, p.unit, p.kind, cat.id, cat.name]
           )
           if (p.pack) {
             const unitId = (
               await db.query(
-                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable, purchase_cost)
+                `INSERT INTO product_units (product_barcode, name, factor, retail_price, retail_auto, sellable, purchasable, purchase_cost)
                  VALUES ($1, $2, $3, $4, $5, true, true, $6) RETURNING id`,
-                [barcode, p.pack.name, p.pack.factor, p.pack.price, p.pack.wholesale, p.pack.cost]
+                [
+                  barcode,
+                  p.pack.name,
+                  p.pack.factor,
+                  p.pack.price,
+                  p.pack.price === null,
+                  p.pack.cost
+                ]
               )
             ).rows[0].id
             if (p.pack.barcode)
@@ -436,12 +426,12 @@ module.exports = function storeImportModule(app) {
         const q = async (sql) => (await client.query(sql)).rows
         const products = await q(
           `SELECT p.barcode, p.name, p.retail_price::float8 AS retail_price, p.cost_price::float8 AS cost_price,
-                  p.wholesale_price::float8 AS wholesale_price, p.stock_qty::float8 AS stock_qty, p.unit,
+                  p.stock_qty::float8 AS stock_qty, p.unit,
                   COALESCE(k.name, p.unit_kind) AS unit_kind, COALESCE(c.name, p.category, '') AS category,
                   p.reorder_limit::float8 AS reorder_limit,
                   u.name AS pack_name, u.factor::float8 AS pack_factor,
                   (SELECT MIN(b.barcode) FROM product_barcodes b WHERE b.unit_id = u.id) AS pack_barcode,
-                  u.retail_price::float8 AS pack_price, u.wholesale_price::float8 AS pack_wholesale,
+                  CASE WHEN u.retail_auto THEN NULL ELSE u.retail_price::float8 END AS pack_price,
                   u.purchase_cost::float8 AS pack_cost
              FROM products p
              LEFT JOIN measure_kinds k ON k.key = p.unit_kind

@@ -163,21 +163,113 @@ export function buildCloseReportLines(rep, opts = {}) {
       '[C]المحوَّل إلى الخزنة',
       ...METHODS.map((m) => `${METHOD_LABELS[m]}|${money(rep.treasuryTransfers[m])}`)
     )
+  // Every line is printed (D-098): nothing is left out to shorten the receipt. Names are cut to
+  // the paper's width; the details go on a small line under their amount.
+  // Wrapped to the paper's width, never cut: a detail that does not fit goes on the next line.
+  const width = sep.length - 6
+  const small = (parts) => {
+    const words = parts
+      .filter(Boolean)
+      .map((x) => text(x, 120))
+      .join(' · ')
+      // An amount stays with its currency.
+      .replace(/(\d) ج\.م/g, '$1\u00a0ج.م')
+      .split(' ')
+    let line = ''
+    for (const w of words) {
+      if (line && (line + ' ' + w).length > width) {
+        lines.push(`[R][N]  ${line}`)
+        line = w
+      } else line = line ? `${line} ${w}` : w
+    }
+    if (line) lines.push(`[R][N]  ${line}`)
+  }
+  const itemsText = (items) =>
+    (items || []).map((i) => `${i.name} × ${i.qty}${i.unit ? ` ${i.unit}` : ''}`).join('، ')
   const ex = rep.expenses
   if (ex && ex.count > 0) {
     lines.push(sep, '[C]المصروفات', `العدد|${ex.count}`, `[B]الإجمالي|${money(ex.total)}`)
-    for (const e of ex.lines || [])
+    for (const e of ex.lines || []) {
       lines.push(
         `${e.at ? `${text(timeOf(e.at), 5)} ` : ''}${text(e.category, 18)}${e.description ? ` – ${text(e.description, 16)}` : ''}|${money(e.amount)}`
       )
+      small([e.id && `مصروف #${e.id}`, e.username && text(e.username, 20)])
+    }
   }
   const rt = rep.returns
   if (rt && rt.count > 0) {
-    lines.push(sep, '[C]المرتجعات', `العدد|${rt.count}`, `[B]الإجمالي|${money(rt.total)}`)
-    for (const r of rt.lines || [])
+    lines.push(sep, '[C]مرتجعات العملاء', `العدد|${rt.count}`, `[B]الإجمالي|${money(rt.total)}`)
+    for (const r of rt.lines || []) {
       lines.push(
-        `${r.at ? `${text(timeOf(r.at), 5)} ` : ''}فاتورة #${text(r.saleId, 12)}${r.username ? ` (${text(r.username, 16)})` : ''}|${money(r.refund)}`
+        `${r.at ? `${text(timeOf(r.at), 5)} ` : ''}فاتورة #${text(r.saleId, 12)}${r.kindLabel ? ` ${text(r.kindLabel, 22)}` : ''}|${money(r.refund)}`
       )
+      small([r.customer && text(r.customer, 40), r.username && text(r.username, 16)])
+      small([itemsText(r.items)])
+    }
+  }
+  const saleList = (title, group, paidLabel) => {
+    if (!group || !group.lines || !group.lines.length) return
+    lines.push(sep, `[C]${title}`, `العدد|${group.count}`, `[B]الإجمالي|${money(group.total)}`)
+    for (const l of group.lines) {
+      lines.push(`فاتورة #${text(l.saleId, 12)} ${text(l.customer, 26)}|${money(l.total)}`)
+      small([
+        paidLabel && `${paidLabel} ${money(l.paidNow)}`,
+        `المتبقي على العميل ${money(l.unpaid)}`,
+        timeOf(l.at),
+        l.username && text(l.username, 16)
+      ])
+    }
+  }
+  saleList('مبيعات آجل (على حساب العميل)', rep.creditSales, null)
+  saleList('مبيعات دفع جزئي', rep.partialSales, 'مدفوع الآن')
+  const si = rep.supplierInvoices
+  const invoiceList = (title, group) => {
+    if (!group || !group.count) return
+    lines.push(
+      sep,
+      `[C]${title}`,
+      `العدد|${group.count}`,
+      `[B]إجمالي الفواتير|${money(group.total)}`,
+      `المدفوع الآن|${money(group.paid)}`,
+      `المتبقي للموردين|${money(group.remaining)}`
+    )
+    for (const p of group.lines) {
+      lines.push(`${text(p.ref, 14)} ${text(p.supplier, 22)}|${money(p.total)}`)
+      small([
+        p.status,
+        `مدفوع ${money(p.paid)}`,
+        `متبقي ${money(p.remaining)}`,
+        p.stateLabel,
+        timeOf(p.at)
+      ])
+    }
+  }
+  if (si) {
+    invoiceList('فواتير شراء من الموردين', si.purchases)
+    invoiceList('فواتير موردين مبدئية', si.preliminary)
+  }
+  const pr = rep.purchaseReturns
+  if (pr && pr.count > 0) {
+    lines.push(
+      sep,
+      '[C]مرتجعات للموردين',
+      `العدد|${pr.count}`,
+      `[B]المستلم من الموردين|${money(pr.refund)}`
+    )
+    for (const r of pr.lines) {
+      lines.push(`${text(r.ref, 14)} ${text(r.supplier, 22)}|${money(r.refund)}`)
+      small([`قيمة الأصناف ${money(r.value)}`, `خُصم من المستحق ${money(r.credit)}`, timeOf(r.at)])
+      small([itemsText(r.items)])
+    }
+  }
+  const te = rep.treasuryEntries
+  if (te && te.count > 0) {
+    lines.push(sep, '[C]حركات الخزنة الخاصة بالوردية')
+    for (const e of te.lines) {
+      // A short name with the amount, then the full description, wrapped (never cut).
+      lines.push(`${text(e.short || 'حركة خزنة', 26)}|${money(Math.abs(e.amount))}`)
+      small([e.label, e.method && e.method !== 'cash' && METHOD_LABELS[e.method]])
+    }
   }
   const md = rep.manualDiscounts
   if (md && md.count > 0) {

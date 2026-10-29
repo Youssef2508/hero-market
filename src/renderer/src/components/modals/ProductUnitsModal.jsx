@@ -38,6 +38,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
             id: u.id,
             name: u.name,
             factor: String(Number(u.factor)),
+            retail_auto: u.retail_auto !== false,
             retail_price: u.retail_price === null ? '' : String(Number(u.retail_price)),
             purchase_cost: u.purchase_cost === null ? '' : String(Number(u.purchase_cost)),
             sellable: u.sellable,
@@ -67,7 +68,9 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
           id: u.id ?? null,
           name: u.name.trim(),
           factor: parseFloat(u.factor),
-          retail_price: u.retail_price === '' ? null : parseFloat(u.retail_price),
+          // D-096: automatic follows the piece price × the factor; otherwise the typed price.
+          retail_auto: u.retail_auto,
+          retail_price: u.retail_auto || u.retail_price === '' ? null : parseFloat(u.retail_price),
           purchase_cost: u.purchase_cost === '' ? null : parseFloat(u.purchase_cost),
           sellable: u.sellable,
           purchasable: u.purchasable,
@@ -118,8 +121,10 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
           <p className="cell-muted">
             {KIND_HINT[kind] ||
               `المعامل بال${kindInfo(kind).unit || 'وحدة الأساسية'} (${decimals === 0 ? 'عدد صحيح' : `حتى ${decimals} خانات عشرية`}).`}{' '}
-            سعر بيع العبوة يكتبه المالك (لا يُحسب تلقائياً). سعر شراء العبوة اختياري ويظهر تلقائياً
-            في فاتورة الشراء. المخزون كمية واحدة بالوحدة الأساسية: بيع عبوة يخصم المعامل منها.
+            سعر بيع العبوة «تلقائي» = سعر بيع الوحدة × المعامل، ويتغير معه دائماً؛ ألغِ «تلقائي»
+            لتكتب سعراً خاصاً يبقى كما كتبته، وعلّمه مرة أخرى لاستعادة السعر التلقائي. سعر شراء
+            العبوة يتحدّث مع كل فاتورة شراء (بالقطعة أو بالعبوة). المخزون كمية واحدة بالوحدة
+            الأساسية: بيع عبوة يخصم المعامل منها.
           </p>
 
           {units === null ? (
@@ -178,20 +183,44 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                         />
                       </td>
                       <td>
-                        <NumberField
-                          className="input num"
-                          min="0"
-                          step="0.01"
-                          required={u.sellable}
-                          value={u.retail_price}
-                          onChange={(e) => update(i, { retail_price: e.target.value })}
-                          title={
-                            derived !== null
-                              ? `للمقارنة: سعر القطعة × المعامل = ${formatMoney(derived)}`
-                              : undefined
-                          }
-                          aria-label={`سعر بيع ${u.name}`}
-                        />
+                        <label className="check-row unit-auto">
+                          <input
+                            type="checkbox"
+                            checked={u.retail_auto}
+                            onChange={(e) =>
+                              update(i, {
+                                retail_auto: e.target.checked,
+                                // Typing starts from the automatic price.
+                                retail_price:
+                                  !e.target.checked && u.retail_price === '' && derived !== null
+                                    ? String(derived)
+                                    : u.retail_price
+                              })
+                            }
+                            aria-label={`سعر بيع ${u.name} تلقائي`}
+                          />
+                          تلقائي
+                        </label>
+                        {u.retail_auto ? (
+                          <output className="num cell-muted" aria-label={`سعر بيع ${u.name}`}>
+                            {derived !== null ? formatMoney(derived) : '—'}
+                          </output>
+                        ) : (
+                          <NumberField
+                            className="input num"
+                            min="0"
+                            step="0.01"
+                            required
+                            value={u.retail_price}
+                            onChange={(e) => update(i, { retail_price: e.target.value })}
+                            title={
+                              derived !== null
+                                ? `السعر التلقائي: سعر القطعة × المعامل = ${formatMoney(derived)}`
+                                : undefined
+                            }
+                            aria-label={`سعر بيع ${u.name}`}
+                          />
+                        )}
                       </td>
                       <td>
                         <NumberField
@@ -254,6 +283,7 @@ export default function ProductUnitsModal({ product, onClose, onSaved }) {
                   id: null,
                   name: '',
                   factor: '',
+                  retail_auto: true,
                   retail_price: '',
                   purchase_cost: '',
                   sellable: true,

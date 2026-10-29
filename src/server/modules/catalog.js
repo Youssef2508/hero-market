@@ -5,6 +5,7 @@ const { validateFactor, kindRule, checkStockValue } = require('../inventory/unit
 const { postMovement, adjustTo, verifyLedger } = require('../inventory/stock')
 
 const PER_PAGE = 12
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 const SORTABLE = ['name', 'barcode', 'stock_qty', 'retail_price', 'cost_price', 'reorder_limit'] // legacy whitelist
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 
@@ -25,7 +26,6 @@ const productSchema = {
     name: { type: 'string', minLength: 1, maxLength: 200 },
     cost_price: { type: 'number', minimum: 0 },
     retail_price: { type: 'number', minimum: 0 },
-    wholesale_price: { type: 'number', minimum: 0 },
     // Negative stock is allowed (owner decision). On update, stock_qty is the target and
     // stock_base the stock the form showed when it was opened (K-37).
     stock_qty: { type: 'number' },
@@ -145,14 +145,14 @@ module.exports = function catalogModule(app) {
         if (Number(p.stock_qty)) checkStockValue(rule, p.stock_qty)
         const category = await categoryRef(db, p.category_id)
         await db.query(
-          `INSERT INTO products (barcode, name, cost_price, retail_price, wholesale_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
-           VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11)`,
+          // Two prices per unit (D-096): purchase and selling. The old wholesale column stays 0.
+          `INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
+           VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9, $10)`,
           [
             barcode,
             p.name,
             p.cost_price || 0,
             p.retail_price || 0,
-            p.wholesale_price || 0,
             p.reorder_limit || 0,
             p.unit || '',
             kind,
@@ -212,15 +212,15 @@ module.exports = function catalogModule(app) {
               : await categoryRef(db, p.category_id)
         const active = p.is_active === undefined ? before.is_active : p.is_active
         await db.query(
-          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, wholesale_price = $5, reorder_limit = $6, unit = $7, unit_kind = $8,
-                  category_id = $9, category = $10, is_active = $11
+          // The old wholesale price is no longer written (D-096): its stored value is kept as it is.
+          `UPDATE products SET name = $2, cost_price = $3, retail_price = $4, reorder_limit = $5, unit = $6, unit_kind = $7,
+                  category_id = $8, category = $9, is_active = $10
            WHERE barcode = $1`,
           [
             p.barcode,
             p.name,
             p.cost_price || 0,
             p.retail_price || 0,
-            p.wholesale_price || 0,
             p.reorder_limit || 0,
             p.unit || '',
             kind,
@@ -252,7 +252,6 @@ module.exports = function catalogModule(app) {
           'name',
           'cost_price',
           'retail_price',
-          'wholesale_price',
           'reorder_limit',
           'unit',
           'unit_kind'
@@ -397,7 +396,7 @@ module.exports.registerInventory = function inventoryOperations(app) {
       if (!product) throw notFound('الصنف غير موجود.')
       const units = (
         await ctx.pool.query(
-          'SELECT id, name, factor, retail_price, wholesale_price, purchase_cost, sellable, purchasable FROM product_units WHERE product_barcode = $1 AND is_active ORDER BY factor, id',
+          'SELECT id, name, factor, retail_price, retail_auto, purchase_cost, sellable, purchasable FROM product_units WHERE product_barcode = $1 AND is_active ORDER BY factor, id',
           [barcode]
         )
       ).rows
@@ -412,6 +411,8 @@ module.exports.registerInventory = function inventoryOperations(app) {
         baseBarcodes: codes.filter((c) => c.unit_id === null).map((c) => c.barcode),
         units: units.map((u) => ({
           ...u,
+          // The automatic price (D-096): the piece's selling price × the factor, now.
+          auto_price: round2((Number(product.retail_price) || 0) * Number(u.factor)),
           barcodes: codes.filter((c) => c.unit_id === u.id).map((c) => c.barcode)
         }))
       }
@@ -444,7 +445,9 @@ module.exports.registerInventory = function inventoryOperations(app) {
               name: { type: 'string', minLength: 1, maxLength: 40 },
               factor: { type: 'number', exclusiveMinimum: 0 },
               retail_price: { type: ['number', 'null'], minimum: 0 },
-              wholesale_price: { type: ['number', 'null'], minimum: 0 },
+              // true: the selling price follows the piece price × factor (D-096); false: typed.
+              // Omitted: automatic when no price is given, typed otherwise.
+              retail_auto: { type: 'boolean' },
               // The price the owner pays for one package (D-065), the default cost in purchases.
               purchase_cost: { type: ['number', 'null'], minimum: 0 },
               sellable: { type: 'boolean' },
@@ -488,14 +491,18 @@ module.exports.registerInventory = function inventoryOperations(app) {
             throw badRequest(
               `الوحدة "${name}" بمعامل 1 مطابقة للوحدة الأساسية؛ استخدم باركوداً إضافياً بدلاً منها.`
             )
-          // The owner sets the package's selling price; it is never derived from the loose price
-          // (owner, 2026-10-21, D-065).
-          if (u.sellable !== false && (u.retail_price === null || u.retail_price === undefined))
-            throw badRequest(`اكتب سعر بيع "${name}" (سعر العبوة كاملة).`)
+          // The package's selling price (owner, 1.5.2, D-096): automatic (the piece price × the
+          // factor, following both) unless the owner typed his own, which is then kept.
+          const given = u.retail_price !== null && u.retail_price !== undefined
+          const auto = u.retail_auto === undefined ? !given : u.retail_auto
+          if (!auto && !given)
+            throw badRequest(`اكتب سعر بيع "${name}" أو اختر «تلقائي» (سعر القطعة × المعامل).`)
           return {
             ...u,
             name,
             factor,
+            retail_auto: auto,
+            retail_price: auto ? null : round2(u.retail_price),
             sellable: u.sellable !== false,
             purchasable: u.purchasable !== false,
             barcodes: (u.barcodes || []).map(addCode).filter(Boolean)
@@ -517,14 +524,14 @@ module.exports.registerInventory = function inventoryOperations(app) {
           if (id && !prev) throw badRequest(`الوحدة رقم ${id} لا تخص هذا الصنف.`)
           if (prev) {
             await db.query(
-              `UPDATE product_units SET name = $2, factor = $3, retail_price = $4, wholesale_price = $5, sellable = $6, purchasable = $7, purchase_cost = $8, updated_at = LOCALTIMESTAMP(0)
+              `UPDATE product_units SET name = $2, factor = $3, retail_price = $4, retail_auto = $5, sellable = $6, purchasable = $7, purchase_cost = $8, updated_at = LOCALTIMESTAMP(0)
                WHERE id = $1`,
               [
                 id,
                 u.name,
                 u.factor,
-                u.retail_price ?? null,
-                u.wholesale_price ?? null,
+                u.retail_price,
+                u.retail_auto,
                 u.sellable,
                 u.purchasable,
                 u.purchase_cost ?? null
@@ -535,7 +542,7 @@ module.exports.registerInventory = function inventoryOperations(app) {
               'name',
               'factor',
               'retail_price',
-              'wholesale_price',
+              'retail_auto',
               'sellable',
               'purchasable',
               'purchase_cost'
@@ -548,14 +555,14 @@ module.exports.registerInventory = function inventoryOperations(app) {
           } else {
             id = (
               await db.query(
-                `INSERT INTO product_units (product_barcode, name, factor, retail_price, wholesale_price, sellable, purchasable, purchase_cost)
+                `INSERT INTO product_units (product_barcode, name, factor, retail_price, retail_auto, sellable, purchasable, purchase_cost)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
                 [
                   b.barcode,
                   u.name,
                   u.factor,
-                  u.retail_price ?? null,
-                  u.wholesale_price ?? null,
+                  u.retail_price,
+                  u.retail_auto,
                   u.sellable,
                   u.purchasable,
                   u.purchase_cost ?? null

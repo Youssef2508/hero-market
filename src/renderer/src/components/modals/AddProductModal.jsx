@@ -106,23 +106,6 @@ const AddProductModal = ({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div className="form-group">
-              <label>
-                سعر الجملة{' '}
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  (للتجار والكميات)
-                </span>
-              </label>
-              <NumberField
-                step="any"
-                className="form-input"
-                value={newProduct.wholesale_price}
-                onChange={(e) =>
-                  setNewProduct((prev) => ({ ...prev, wholesale_price: e.target.value }))
-                }
-                placeholder="0.00"
-              />
-            </div>
-            <div className="form-group">
               <label>الكمية الحالية بالمخزن</label>
               <NumberField
                 step="any"

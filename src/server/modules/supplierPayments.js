@@ -14,6 +14,7 @@ const treasury = require('../money/treasury')
 const { addMovement } = require('../money/shiftLedger')
 const { METHODS, round2 } = require('../money/methods')
 const { drawerFigures } = require('./shifts').helpers
+const reservations = require('../money/reservations')
 
 const ref = { type: 'string', minLength: 8, maxLength: 120 }
 const note = { type: ['string', 'null'], maxLength: 300 }
@@ -31,21 +32,27 @@ const SETTLEMENT_LABELS = {
 
 /** A request with its supplier, shift and people. */
 async function requestRow(db, id, lock = false) {
-  return (
+  const row = (
     await db.query(
       `SELECT r.*, r.amount::float8 AS amount, s.name AS supplier_name, s.debt_balance::float8 AS supplier_debt,
               cu.username AS created_by_name, du.username AS decided_by_name, su.username AS settled_by_name,
-              sh.status AS shift_status
+              sh.status AS shift_status, ru.username AS reserved_by_name,
+              to_char(r.reserved_until, 'YYYY-MM-DD HH24:MI:SS') AS reserved_until_text,
+              COALESCE(r.reserved_until > LOCALTIMESTAMP(0) + make_interval(secs => $2::double precision), false) AS reserved_active
          FROM supplier_payment_requests r
          JOIN suppliers s ON s.id = r.supplier_id
          JOIN shifts sh ON sh.id = r.shift_id
          LEFT JOIN users cu ON cu.id = r.created_by
          LEFT JOIN users du ON du.id = r.decided_by
          LEFT JOIN users su ON su.id = r.settled_by
+         LEFT JOIN users ru ON ru.id = r.reserved_by
         WHERE r.id = $1${lock ? ' FOR UPDATE OF r' : ''}`,
-      [id]
+      [id, reservations.offset()]
     )
   ).rows[0]
+  // The reservation's token is given only to its holder, by supplierPayments.reserve (D-099).
+  if (row) delete row.reserve_token
+  return row
 }
 
 /** What a supplier is still owed, less the requests waiting for approval (never paid twice). */
@@ -213,7 +220,10 @@ module.exports = function supplierPaymentsModule(app) {
         )
       ).rows
       const out = []
-      for (const { id } of rows) out.push(withLabels(await requestRow(ctx.pool, id)))
+      for (const { id } of rows) {
+        const r = withLabels(await requestRow(ctx.pool, id))
+        out.push({ ...r, reserved_mine: r.reserved_active && r.reserved_by === ctx.user.id })
+      }
       return out
     }
   })
@@ -236,7 +246,12 @@ module.exports = function supplierPaymentsModule(app) {
   const decision = {
     type: 'object',
     required: ['requestId'],
-    properties: { requestId: { type: 'integer' }, note }
+    properties: {
+      requestId: { type: 'integer' },
+      note,
+      // The reservation taken when the request was opened (supplierPayments.reserve, D-099).
+      reservationToken: { type: ['string', 'null'], maxLength: 64 }
+    }
   }
 
   app.operation({
@@ -251,9 +266,10 @@ module.exports = function supplierPaymentsModule(app) {
         if (r.status === 'approved') return { request: withLabels(r), duplicate: true }
         if (r.status !== 'pending')
           throw conflict(`طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: لا يمكن اعتماده.`)
+        await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
         await payBalance(db, r, `سداد معتمد – طلب #${r.id} من درج الوردية #${r.shift_id}`)
         await db.query(
-          `UPDATE supplier_payment_requests SET status = 'approved', decided_by = $2, decided_at = LOCALTIMESTAMP(0), decision_note = $3 WHERE id = $1`,
+          `UPDATE supplier_payment_requests SET status = 'approved', decided_by = $2, decided_at = LOCALTIMESTAMP(0), decision_note = $3, ${reservations.CLEAR} WHERE id = $1`,
           [r.id, ctx.user.id, (b.note || '').trim() || null]
         )
         await ctx.audit(
@@ -281,11 +297,12 @@ module.exports = function supplierPaymentsModule(app) {
         if (r.status === 'disputed') return { request: withLabels(r), duplicate: true }
         if (r.status !== 'pending')
           throw conflict(`طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: لا يمكن رفضه.`)
+        await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
         const reason = b.note.trim()
         if (reason.length < 3) throw badRequest('اكتب سبب الرفض.')
         // The cash was handed over: nothing goes back into the drawer by itself (D-090).
         await db.query(
-          `UPDATE supplier_payment_requests SET status = 'disputed', decided_by = $2, decided_at = LOCALTIMESTAMP(0), decision_note = $3 WHERE id = $1`,
+          `UPDATE supplier_payment_requests SET status = 'disputed', decided_by = $2, decided_at = LOCALTIMESTAMP(0), decision_note = $3, ${reservations.CLEAR} WHERE id = $1`,
           [r.id, ctx.user.id, reason]
         )
         await ctx.audit(
@@ -311,7 +328,8 @@ module.exports = function supplierPaymentsModule(app) {
         // returned: how and where the money came back.
         method: { type: 'string', enum: METHODS },
         destination: { type: 'string', enum: ['shift', 'treasury'] },
-        currentShiftId: { type: ['integer', 'null'] }
+        currentShiftId: { type: ['integer', 'null'] },
+        reservationToken: { type: ['string', 'null'], maxLength: 64 }
       }
     },
     handler: async (ctx, b) =>
@@ -326,6 +344,7 @@ module.exports = function supplierPaymentsModule(app) {
           throw conflict(
             `طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: التسوية للطلب المرفوض بعد الدفع فقط.`
           )
+        await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
         const text = b.note.trim()
         let ledgerId = null
         let treasuryId = null
@@ -367,7 +386,7 @@ module.exports = function supplierPaymentsModule(app) {
         }
         await db.query(
           `UPDATE supplier_payment_requests SET status = 'settled', settlement = $2, settled_by = $3, settled_at = LOCALTIMESTAMP(0),
-                  settlement_note = $4, settlement_ledger_id = $5, settlement_treasury_id = $6 WHERE id = $1`,
+                  settlement_note = $4, settlement_ledger_id = $5, settlement_treasury_id = $6, ${reservations.CLEAR} WHERE id = $1`,
           [r.id, b.outcome, ctx.user.id, text, ledgerId, treasuryId]
         )
         await ctx.audit(
@@ -378,6 +397,36 @@ module.exports = function supplierPaymentsModule(app) {
         )
         return { request: withLabels(await requestRow(db, r.id)) }
       })
+  })
+
+  // Open a request to decide on it: reserve it for 5 minutes (D-099), or renew the user's own
+  // reservation. Refused, naming the holder, while another user's is valid. A reservation never
+  // approves anything nor changes a balance.
+  app.operation({
+    name: 'supplierPayments.reserve',
+    permission: 'suppliers.payment_approve',
+    schema: {
+      type: 'object',
+      required: ['requestId'],
+      properties: { requestId: { type: 'integer' } }
+    },
+    handler: async (ctx, { requestId }) =>
+      ctx.tx(async (db) => {
+        const r = await reservations.acquire(db, ctx, 'request', requestId)
+        return { ...r, request: withLabels(await requestRow(db, requestId)) }
+      })
+  })
+
+  app.operation({
+    name: 'supplierPayments.release',
+    permission: 'suppliers.payment_approve',
+    schema: {
+      type: 'object',
+      required: ['requestId', 'token'],
+      properties: { requestId: { type: 'integer' }, token: { type: 'string', maxLength: 64 } }
+    },
+    handler: async (ctx, { requestId, token }) =>
+      ctx.tx((db) => reservations.release(db, ctx, 'request', requestId, token))
   })
 }
 

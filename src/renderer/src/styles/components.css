@@ -1699,3 +1699,23 @@ label.btn.is-disabled {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+
+/* Packages window: the selling price's «تلقائي» switch above its value (D-096). */
+.unit-auto {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+}
+
+/* A record another user is editing now (D-099): visible, its actions wait. */
+.row-reserved td {
+  background: var(--info-soft, rgba(59, 130, 246, 0.08));
+}
+.reserved-why {
+  max-width: 260px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  white-space: normal;
+}

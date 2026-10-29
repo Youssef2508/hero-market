@@ -7,8 +7,8 @@
 //   kinds the owner adds (migration 0014) – their own number of decimals, 0 to 3.
 // A kind is passed either as its key (the three built-in kinds) or as a rule { key, decimals }
 // read with kindRule().
-// Extra units convert with a factor (base units per unit). A line's price is the unit's own price,
-// or the base price × factor. Line totals are rounded to 0.01 per line; there is no cash rounding.
+// Extra units convert with a factor (base units per unit). A line's price is the unit's typed
+// price, or – automatic (D-096) – the base price × factor. Line totals are rounded to 0.01 per line; there is no cash rounding.
 const { badRequest } = require('../errors')
 
 const KINDS = ['count', 'weight', 'volume']
@@ -108,19 +108,21 @@ function baseUnit(product) {
     name: product.unit || '',
     factor: 1,
     retail_price: Number(product.retail_price) || 0,
-    wholesale_price: Number(product.wholesale_price) || 0,
     sellable: true,
     purchasable: true,
     is_active: true
   }
 }
 
-/** Selling price of one unit: its own price, or the base price × factor. */
+/**
+ * Selling price of one unit (D-096): the base unit's own price; a package's typed price, or – when
+ * it is automatic (retail_auto) – the piece's current price × the factor, so it follows both.
+ */
 function unitPrice(product, unit) {
   // The base unit keeps the product's exact price (line totals round per line, as before).
   if (unit.id === null) return Number(product.retail_price) || 0
-  if (unit.retail_price !== null && unit.retail_price !== undefined)
-    return round2(unit.retail_price)
+  const typed = unit.retail_price !== null && unit.retail_price !== undefined
+  if (unit.retail_auto !== true && typed) return round2(unit.retail_price)
   return round2((Number(product.retail_price) || 0) * Number(unit.factor))
 }
 
@@ -141,8 +143,7 @@ async function loadUnit(db, product, unitId, { purpose = 'sell' } = {}) {
   return {
     ...u,
     factor: Number(u.factor),
-    retail_price: u.retail_price === null ? null : Number(u.retail_price),
-    wholesale_price: u.wholesale_price === null ? null : Number(u.wholesale_price)
+    retail_price: u.retail_price === null ? null : Number(u.retail_price)
   }
 }
 
