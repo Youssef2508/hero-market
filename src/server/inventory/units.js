@@ -147,12 +147,16 @@ async function loadUnit(db, product, unitId, { purpose = 'sell' } = {}) {
 }
 
 // ── Scale labels ─────────────────────────────────────────────
+// The one place the defaults live (settings.scale_labels falls back to it; the settings screen shows
+// it). Positions are offsets from the label's first digit, counted from 0 (owner, 1.5.2, D-084):
+// on 2000001001257 the item code is 000001 (offsets 1–6, registered as 2000001), the weight 00125
+// grams (offsets 7–11) and 7 the check digit.
 const DEFAULT_SCALE = {
   // Off by default: the store weighs on an ordinary scale and types the weight (owner, 2026-10-15).
   enabled: false,
   length: 13,
-  codeStart: 2,
-  codeLength: 5,
+  codeStart: 1,
+  codeLength: 6,
   valueStart: 7,
   valueLength: 5,
   prefixes: { 20: 'weight', 21: 'weight', 25: 'weight', 22: 'price' },
@@ -203,6 +207,19 @@ function normalizeScaleLabels(raw) {
   out.checkDigit = check
   if (out.codeStart + out.codeLength > out.length || out.valueStart + out.valueLength > out.length)
     throw badRequest('مواضع الكود أو القيمة تتجاوز طول الملصق.')
+  // The code and the weight/price are two separate parts of the label.
+  if (
+    out.codeStart < out.valueStart + out.valueLength &&
+    out.valueStart < out.codeStart + out.codeLength
+  )
+    throw badRequest('كود الصنف والوزن/السعر يتداخلان في الملصق: اجعل كل جزء في موضع مختلف.')
+  if (
+    check === 'ean13' &&
+    (out.codeStart + out.codeLength > 12 || out.valueStart + out.valueLength > 12)
+  )
+    throw badRequest(
+      'آخر رقم في الملصق هو رقم التحقق: لا يمكن أن يكون جزءاً من الكود أو الوزن/السعر.'
+    )
   for (const [p, kind] of Object.entries(v.prefixes || {})) {
     if (!/^\d{1,3}$/.test(p)) throw badRequest(`بادئة غير صالحة: ${p}`)
     if (!['weight', 'price'].includes(kind)) throw badRequest(`نوع غير صالح للبادئة ${p}`)
@@ -217,7 +234,7 @@ function normalizeScaleLabels(raw) {
  * prefix not configured, labels off), so normal barcodes are never read as labels. A code that
  * IS a label of these settings but cannot be used returns { error: 'check_digit' | 'zero_value' }.
  * Otherwise { prefix, code, fullCode, kind: 'weight'|'price', value }: `code` is the product-code
- * digits (e.g. 00001) and `fullCode` the digits up to the end of the code (e.g. 2000001) – a
+ * digits (e.g. 000001) and `fullCode` the digits up to the end of the code (e.g. 2000001) – a
  * product may be registered under either.
  */
 function parseScaleLabel(settings, raw) {

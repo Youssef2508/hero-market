@@ -31,6 +31,8 @@ const FIELDS = {
  */
 export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
   const [values, setValues] = useState(null)
+  // Each setting's definition from the service, with its default (scale labels: D-084).
+  const [definitions, setDefinitions] = useState(null)
   const [saved, setSaved] = useState(null)
   const [device, setDevice] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -45,6 +47,7 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
       .then((r) => {
         setValues(r.settings)
         setSaved(r.settings)
+        setDefinitions(r.definitions || null)
       })
       .catch((e) => triggerCustomAlert(e.message))
     window.api?.backend
@@ -299,7 +302,11 @@ export default function SettingsTab({ triggerCustomAlert, onSettingsChanged }) {
       </section>
 
       {values.scale_labels && (
-        <ScaleLabelsSection value={values.scale_labels} onChange={(v) => set('scale_labels', v)} />
+        <ScaleLabelsSection
+          value={values.scale_labels}
+          defaults={definitions?.scale_labels?.default}
+          onChange={(v) => set('scale_labels', v)}
+        />
       )}
 
       {device && (

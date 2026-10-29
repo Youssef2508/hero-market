@@ -10,9 +10,9 @@ const parse = (text) => {
 
 const POSITIONS = [
   ['length', 'طول الملصق (رقم)'],
-  ['codeStart', 'بداية كود الصنف'],
+  ['codeStart', 'بداية كود الصنف (العدّ من 0)'],
   ['codeLength', 'طول كود الصنف'],
-  ['valueStart', 'بداية الوزن/السعر'],
+  ['valueStart', 'بداية الوزن/السعر (العدّ من 0)'],
   ['valueLength', 'طول الوزن/السعر'],
   ['weightDivisor', 'قسمة الوزن (1000 = جرام → كجم)'],
   ['priceDivisor', 'قسمة السعر (100 = قرش → جنيه)']
@@ -20,7 +20,7 @@ const POSITIONS = [
 
 // Scale labels printed by the store's scale: which prefixes carry a weight or a price, and where the
 // product code and value sit in the barcode. The service validates and applies them (pos.resolve).
-export default function ScaleLabelsSection({ value, onChange }) {
+export default function ScaleLabelsSection({ value, defaults, onChange }) {
   const cfg = parse(value)
   if (!cfg) return null
   const set = (patch) => onChange(JSON.stringify({ ...cfg, ...patch }))
@@ -127,12 +127,17 @@ export default function ScaleLabelsSection({ value, onChange }) {
             <option value="none">لا يوجد رقم تحقق</option>
           </select>
           <span className="field-hint">
-            مثال: الملصق 2000001001257 = بادئة 20، كود الصنف 00001 (يُسجَّل الصنف بالكود 2000001 أو
-            00001)، الوزن 00125 جرام = 0.125 كجم، و7 رقم التحقق.
+            مثال بالإعدادات الافتراضية: الملصق 2000001001257 = بادئة 20، كود الصنف 000001 من الموضع
+            1 (يُسجَّل الصنف بالكود 2000001)، الوزن 00125 جرام من الموضع 7 = 0.125 كجم، و7 رقم
+            التحقق.
           </span>
         </label>
         <details>
           <summary>مواضع الكود والقيمة داخل الملصق</summary>
+          <p className="field-hint">
+            المواضع تُعدّ من أول رقم في الملصق بدءاً من 0. الافتراضي: طول 13، الكود من 1 بطول 6،
+            الوزن/السعر من 7 بطول 5، قسمة الوزن 1000 وقسمة السعر 100.
+          </p>
           <div className="form-grid">
             {POSITIONS.map(([k, label]) => (
               <label className="field" key={k}>
@@ -147,6 +152,20 @@ export default function ScaleLabelsSection({ value, onChange }) {
               </label>
             ))}
           </div>
+          {defaults && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                // The program's defaults for the positions and divisors; the prefixes, the check
+                // digit and on/off stay as the owner set them.
+                const d = parse(defaults)
+                if (d) set(Object.fromEntries(POSITIONS.map(([k]) => [k, d[k]])))
+              }}
+            >
+              استعادة المواضع الافتراضية
+            </button>
+          )}
         </details>
       </details>
     </section>

@@ -1062,3 +1062,25 @@ Format: context → decision → reason → consequences (→ alternatives).
   - failed closes without it;
   - both administrator roles staying signed in and opening the next shift.
   - Checked in the running app: a cancelled close, a cashier's close signing out after the report, and the owner's close keeping him signed in.
+
+## D-084 Scale-label defaults: 13 / 1 / 6 / 7 / 5 / 1000 / 100 (owner, 1.5.2)
+
+- **Owner's defaults:** label length 13; item code from position 1, 6 digits; weight/price from position 7, 5 digits; weight ÷ 1000; price ÷ 100.
+- **Positions are offsets counted from 0**, as the parser has always read them. On the owner's label 2000001001257 this gives:
+  - code 000001; the product is registered as 2000001;
+  - weight 00125 g = 0.125 kg;
+  - 7 is the check digit.
+  - Read from 1, the same numbers would make it 10.012 kg. The settings screen says «العدّ من 0».
+- **One place:** `DEFAULT_SCALE` in `src/server/inventory/units.js`. The setting falls back to it, `settings.get` returns it as the default, and the screen's «استعادة المواضع الافتراضية» uses that answer.
+- **Existing installations (migration 0024):**
+  - saved settings still exactly at the previous defaults (code from 2, 5 digits) get the new code positions. The code still ends at offset 7, so the full product code and the weight read as before;
+  - changed settings, unreadable settings and no settings are left alone.
+- **Lookup:** a label's product is found under the full code (2000001), the code part (000001 or 1), or the digits after the prefix (00001, the code part before 1.5.2), so products registered either way keep working.
+- **Consistency checks added:**
+  - the code and the value may not overlap;
+  - with an EAN-13 check digit, neither may cover the last digit.
+  - Other layouts (other lengths, the code after the value, no check digit) are accepted.
+- **Tests:**
+  - `units.test.mjs`: the defaults, a customized 12-digit format, boundaries, invalid labels, consistency;
+  - `units.test.js`: labels at the till;
+  - `scaleDefaultsMigration.test.js`: migration 0024.

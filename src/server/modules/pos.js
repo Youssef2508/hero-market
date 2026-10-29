@@ -199,9 +199,21 @@ module.exports = function posModule(app) {
           )
         if (scale) {
           const c = scale.code
-          // The product may be registered under the code digits (00001 / 1) or under the label's
-          // digits up to the code (2000001, as the owner registers them).
-          const candidates = [...new Set([scale.fullCode, c, c.replace(/^0+/, '')].filter(Boolean))]
+          // The product may be registered under the label's digits up to the code (2000001, as the
+          // owner registers them), the code digits (000001 / 1), or the digits after the prefix
+          // (00001: the code part of the defaults before 1.5.2).
+          const afterPrefix = scale.fullCode.slice(scale.prefix.length)
+          const candidates = [
+            ...new Set(
+              [
+                scale.fullCode,
+                c,
+                afterPrefix,
+                c.replace(/^0+/, ''),
+                afterPrefix.replace(/^0+/, '')
+              ].filter(Boolean)
+            )
+          ]
           product = (
             await db.query(
               'SELECT * FROM products WHERE barcode = ANY($1::text[]) ORDER BY array_position($1::text[], barcode) LIMIT 1',
