@@ -176,6 +176,14 @@ const PERMISSIONS = [
     description: 'إضافة وتعديل وحذف العملاء'
   },
   {
+    // A code typed by hand instead of the automatic one, and changing a customer's code (D-086).
+    key: 'customers.code',
+    module: 'customers',
+    label: 'تحديد كود العميل يدوياً',
+    description:
+      'كتابة كود العميل بدلاً من الكود التلقائي عند الإضافة، وتغيير كود عميل موجود. بدونها يأخذ العميل الكود التلقائي'
+  },
+  {
     key: 'customers.payments',
     module: 'customers',
     label: 'تحصيل مديونيات العملاء',
@@ -341,6 +349,8 @@ const MANAGEMENT = ALL.filter(
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).
       'pos.manual_discount',
+      // Customer codes by hand: administrators by default (D-086).
+      'customers.code',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
       // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).

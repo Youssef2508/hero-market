@@ -1,6 +1,6 @@
 'use strict'
 // Customers (useClientsManager): directory, monthly report, profile, add/edit/delete, repayments.
-const { badRequest, conflict, notFound } = require('../errors')
+const { badRequest, conflict, notFound, forbidden } = require('../errors')
 const treasury = require('../money/treasury')
 const { addMovement, recorded } = require('../money/shiftLedger')
 const { METHODS } = require('../money/methods')
@@ -115,6 +115,8 @@ const clientSchema = {
   properties: {
     id: { type: 'integer' },
     name: { type: 'string', minLength: 1, maxLength: 120 },
+    // A code typed by hand (D-086); empty or absent = the automatic code. Needs customers.code.
+    code: { type: ['string', 'null'], maxLength: 60 },
     phone: { type: ['string', 'null'], maxLength: 40 },
     phone2: { type: ['string', 'null'], maxLength: 40 },
     // Preferred form: primary first; at most two numbers (also enforced by the database).
@@ -155,6 +157,40 @@ async function assertPhonesFree(db, list, exceptId = null) {
   if (r.rows.length) throw conflict('رقم الهاتف هذا مسجل لعميل آخر بالفعل!')
 }
 
+/**
+ * A customer code typed by hand (D-086): trimmed; 1–30 characters, no control characters. Returns
+ * null for an empty value (the automatic code). Refuses without customers.code.
+ */
+function manualCode(ctx, raw) {
+  const code = String(raw ?? '').trim()
+  if (!code) return null
+  if (!ctx.can('customers.code'))
+    throw forbidden('تحديد كود العميل يدوياً يتطلب صلاحية "تحديد كود العميل يدوياً".')
+  if (code.length > 30) throw badRequest('كود العميل 30 حرفاً على الأكثر.')
+  if (/\p{Cc}/u.test(code)) throw badRequest('كود العميل لا يقبل رموز التحكم.')
+  return code
+}
+
+/** The customer that already has this code, ignoring case (or null). */
+async function codeOwner(db, code, exceptId = null) {
+  return (
+    (
+      await db.query(
+        'SELECT id, name, code FROM clients WHERE upper(code) = upper($1) AND ($2::int IS NULL OR id <> $2) LIMIT 1',
+        [code, exceptId]
+      )
+    ).rows[0] || null
+  )
+}
+
+const codeTaken = (owner) =>
+  conflict(
+    `كود العميل "${owner.code}" مستخدم للعميل "${owner.name}". اكتب كوداً مختلفاً أو اترك الكود التلقائي.`,
+    {
+      code: 'code_taken'
+    }
+  )
+
 module.exports = function customersModule(app) {
   app.operation({
     name: 'clients.list',
@@ -166,7 +202,7 @@ module.exports = function customersModule(app) {
         await ctx.pool.query(
           // CUST-01: also by customer code; the exact code first.
           `SELECT * FROM clients WHERE name ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone ILIKE '%' || $1 || '%' ESCAPE '\\' OR phone2 ILIKE '%' || $1 || '%' ESCAPE '\\' OR code ILIKE '%' || $1 || '%' ESCAPE '\\'
-            ORDER BY (code = upper(trim($2))) DESC, name ASC, id`,
+            ORDER BY (upper(code) = upper(trim($2))) DESC, name ASC, id`,
           [likeEscape(search), search]
         )
       ).rows
@@ -265,18 +301,50 @@ module.exports = function customersModule(app) {
         const { phone, phone2 } = await bodyPhones(c)
         const addresses = await bodyAddresses(db, { ...c, id: undefined })
         await assertPhonesFree(db, [phone, phone2])
+        // A code typed by hand, or the automatic one (the trigger, migration 0025).
+        const code = manualCode(ctx, c.code)
+        if (code) {
+          const owner = await codeOwner(db, code)
+          if (owner) throw codeTaken(owner)
+        }
         const r = await db.query(
-          `INSERT INTO clients (name, phone, phone2, address, debt_balance, points, created_at) VALUES ($1, $2, $3, '', 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-          [c.name.trim(), phone, phone2]
+          `INSERT INTO clients (name, phone, phone2, address, debt_balance, points, created_at, code) VALUES ($1, $2, $3, '', 0, 0, LOCALTIMESTAMP(0), $4) RETURNING *`,
+          [c.name.trim(), phone, phone2, code]
         )
         if (addresses && addresses.length) await saveAddresses(db, r.rows[0].id, addresses)
-        await ctx.audit(db, 'client_create', `إضافة العميل "${c.name}"`)
+        await ctx.audit(
+          db,
+          'client_create',
+          `إضافة العميل "${c.name}" بالكود ${r.rows[0].code}${code ? ' (مكتوب يدوياً)' : ''}`
+        )
         return (
           await db.query(`SELECT c.*, ${ADDRESSES} AS addresses FROM clients c WHERE c.id = $1`, [
             r.rows[0].id
           ])
         ).rows[0]
       })
+  })
+
+  // The form warns before saving when a typed code is taken (D-086); saving checks again.
+  app.operation({
+    name: 'clients.codeAvailable',
+    permission: 'customers.code',
+    schema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', maxLength: 60 },
+        clientId: { type: ['integer', 'null'] }
+      }
+    },
+    handler: async (ctx, { code, clientId = null }) => {
+      const c = String(code).trim()
+      if (!c) return { available: true }
+      const owner = await codeOwner(ctx.pool, c, clientId)
+      return owner
+        ? { available: false, owner: { id: owner.id, name: owner.name, code: owner.code } }
+        : { available: true }
+    }
   })
 
   app.operation({
@@ -287,11 +355,27 @@ module.exports = function customersModule(app) {
       ctx.tx(async (db) => {
         const { phone, phone2 } = await bodyPhones(c)
         await assertPhonesFree(db, [phone, phone2], c.id)
-        const r = await db.query(
-          'UPDATE clients SET name = $2, phone = $3, phone2 = $4 WHERE id = $1 RETURNING *',
-          [c.id, c.name.trim(), phone, phone2]
+        const before = (await db.query('SELECT code FROM clients WHERE id = $1 FOR UPDATE', [c.id]))
+          .rows[0]
+        if (!before) throw notFound('العميل غير موجود.')
+        // A new code only when one is sent and differs (D-086); sales keep the code they were made with.
+        const typed = c.code === undefined ? null : String(c.code ?? '').trim()
+        const newCode = typed && typed !== before.code ? manualCode(ctx, typed) : null
+        if (newCode) {
+          const owner = await codeOwner(db, newCode, c.id)
+          if (owner) throw codeTaken(owner)
+        }
+        await db.query(
+          'UPDATE clients SET name = $2, phone = $3, phone2 = $4, code = COALESCE($5, code) WHERE id = $1',
+          [c.id, c.name.trim(), phone, phone2, newCode]
         )
-        if (!r.rowCount) throw notFound('العميل غير موجود.')
+        if (newCode)
+          await ctx.audit(
+            db,
+            'customer_code_change',
+            `تغيير كود العميل "${c.name}" من ${before.code} إلى ${newCode}`,
+            { clientId: c.id, from: before.code, to: newCode }
+          )
         const addresses = await bodyAddresses(db, c)
         if (addresses !== undefined) await saveAddresses(db, c.id, addresses)
         await ctx.audit(db, 'client_update', `تعديل بيانات العميل "${c.name}"`)

@@ -34,6 +34,7 @@ Every permission is checked by the service on every request, before the request 
 | `inventory.reorder`    | مساعد الطلبيات                                                |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
 | `customers.view`       | عرض العملاء                                                   |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
 | `customers.manage`     | إدارة العملاء                                                 |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `customers.code`       | تحديد كود العميل يدوياً                                       |      ✓      |      ✓      |      |       |                     |                   |
 | `customers.payments`   | تحصيل مديونيات العملاء                                        |      ✓      |      ✓      |  ✓   |       |                     |                   |
 | `suppliers.view`       | عرض الموردين                                                  |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
 | `suppliers.manage`     | إدارة الموردين والمشتريات                                     |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
@@ -81,6 +82,7 @@ Every permission is checked by the service on every request, before the request 
 | `categories.save`                | all of `categories.manage`                                                                        |
 | `categories.setActive`           | all of `categories.manage`                                                                        |
 | `checks.archive`                 | all of `checks.archive`                                                                           |
+| `clients.codeAvailable`          | all of `customers.code`                                                                           |
 | `clients.create`                 | all of `customers.manage`                                                                         |
 | `clients.delete`                 | all of `customers.manage`                                                                         |
 | `clients.list`                   | any of `customers.view`, `customers.manage`                                                       |

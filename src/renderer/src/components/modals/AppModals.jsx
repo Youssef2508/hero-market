@@ -191,6 +191,7 @@ export default function AppModals({
         newClientForm={newClientForm}
         setNewClientForm={setNewClientForm}
         handleAddClient={handleAddClient}
+        currentUser={currentUser}
       />
 
       <EditClientModal
@@ -199,6 +200,7 @@ export default function AppModals({
         editClientForm={editClientForm}
         setEditClientForm={setEditClientForm}
         handleEditClient={handleEditClient}
+        currentUser={currentUser}
       />
 
       <AddSupplierModal

@@ -271,6 +271,8 @@ export default function ClientsTab({
                     setEditClientForm({
                       id: c.id,
                       name: c.name,
+                      code: c.code || '',
+                      originalCode: c.code || '',
                       phone: c.phone || '',
                       phone2: c.phone2 || '',
                       hasPhone2: Boolean(c.phone2),

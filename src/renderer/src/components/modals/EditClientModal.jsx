@@ -1,13 +1,15 @@
 import { UserPen } from 'lucide-react'
 import PhoneFields from './PhoneFields'
 import AddressFields from './AddressFields'
+import CustomerCodeField from './CustomerCodeField'
 
 const EditClientModal = ({
   showEditClientModal,
   setShowEditClientModal,
   editClientForm,
   setEditClientForm,
-  handleEditClient
+  handleEditClient,
+  currentUser
 }) => {
   if (!showEditClientModal) return null
 
@@ -35,6 +37,13 @@ const EditClientModal = ({
               required
             />
           </div>
+          <CustomerCodeField
+            form={editClientForm}
+            setForm={setEditClientForm}
+            currentUser={currentUser}
+            clientId={editClientForm.id}
+            idPrefix="edit-client"
+          />
           <PhoneFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
           <AddressFields form={editClientForm} setForm={setEditClientForm} idPrefix="edit-client" />
           <div className="modal-footer">

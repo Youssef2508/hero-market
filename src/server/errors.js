@@ -28,6 +28,8 @@ const approvalRefused = (msg, details) => new ServiceError(403, 'approval_refuse
 // PostgreSQL error → message staff can act on. Same wording the renderer used for SQLite errors.
 const UNIQUE_MESSAGES = {
   clients_phone_key: 'خطأ: رقم هاتف العميل هذا مسجل بالفعل لعميل آخر.',
+  clients_code_unique:
+    'كود العميل هذا مستخدم لعميل آخر. اكتب كوداً مختلفاً أو اترك الكود التلقائي.',
   products_pkey: 'خطأ: هذا الباركود مسجل بالفعل لصنف آخر.',
   users_username_key: 'خطأ: اسم المستخدم هذا مسجل بالفعل.',
   users_pin_lookup_key: 'رمز المرور هذا مستخدم لحساب آخر، اختر رمزاً مختلفاً.',

@@ -1105,3 +1105,16 @@ Format: context → decision → reason → consequences (→ alternatives).
   - **A supplier's phone** now takes Arabic-Indic digits and several numbers written together, as a customer's does. The message says what is accepted.
 - **Customer codes** were limited to the `C00012` form; that is Phase 6 (D-086).
 - **Tests:** `numberInput.test.mjs`; `supplierOpening.test.js` (Arabic digits, two numbers).
+
+## D-086 Customer codes may be typed by hand; unique ignoring case (owner, 1.5.2, migration 0025)
+
+- **Owner's rule:** an authorized user may type a customer's code instead of taking the automatic one. A code used by another customer is refused with a clear message, by the service and by the database.
+- **Automatic stays the default:** C + the customer's number with at least five digits (C00012). If a typed code already took that value, the next free one is used (C00012-1, -2…). Imports and customers added at the till get automatic codes.
+- **Typed codes:** 1–30 characters, trimmed, no control characters; Arabic, English, digits and signs are all accepted. Unique ignoring upper and lower case (`clients_code_unique` on `upper(code)`), so two terminals saving the same code at once cannot both get it.
+- **New permission `customers.code` («تحديد كود العميل يدوياً»):** typing a code when adding a customer, and changing an existing customer's code. Administrators by default; supervisors and cashiers add customers with the automatic code.
+- **Changing a code** replaces the old rule of D-072 that a code never changes. The change is logged (`customer_code_change`, from and to). Past invoices keep the code they were sold with (`sales.client_code`). A code is never removed: clearing it keeps it.
+- **Screens:** the add-customer window offers «كود تلقائي» or «أكتب الكود»; the edit window shows the code and lets a holder change it. Both warn at once when the code is taken (`clients.codeAvailable`). Search finds a customer by code in any letter case.
+- **Migration 0025:** schema only. Every existing code and every sale's code is kept (tested).
+- **Tests:**
+  - `customerCodesManual.test.js` (8): the permission, typed and automatic codes, duplicates, simultaneous saves, the automatic code moving past a typed one, changing a code with past sales and the log, imports, the migration;
+  - `customerCodes.test.js` updated to the new rule.
