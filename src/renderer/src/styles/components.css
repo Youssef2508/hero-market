@@ -1699,3 +1699,12 @@ label.btn.is-disabled {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+
+/* Packages window: the selling price's «تلقائي» switch above its value (D-096). */
+.unit-auto {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+}

@@ -115,27 +115,58 @@ after(async () => {
   if (db) await db.dispose()
 })
 
-test("1. the owner's example: 200 → 220 bought, 260 retail, 240 wholesale; never an average", async (t) => {
+test("1. the owner's example: 200 → 220 bought, 260 selling; the package keeps its own price; never an average", async (t) => {
   if (!requireDb(t)) return
-  const r = ok(
-    await buy([
-      { barcode: 'ROUMY', qty: 5, unitCost: 220, newRetailPrice: 260, newWholesalePrice: 240 }
-    ])
+  // A typed package price (a 5 kg block) and an automatic one (a 2 kg roll).
+  ok(
+    await svc.call(
+      'productUnits.save',
+      {
+        barcode: 'ROUMY',
+        units: [
+          { name: 'قالب 5 كيلو', factor: 5, retail_price: 1150 },
+          { name: 'لفة 2 كيلو', factor: 2, retail_auto: true }
+        ]
+      },
+      owner
+    )
   )
-  assert.deepEqual(await product('ROUMY'), { s: 15, c: 220, r: 260, w: 240 })
+  const r = ok(await buy([{ barcode: 'ROUMY', qty: 5, unitCost: 220, newRetailPrice: 260 }]))
+  const p = await product('ROUMY')
+  assert.deepEqual([p.s, p.c, p.r], [15, 220, 260])
+  // The moving average would have been (10×200 + 5×220) ÷ 15 = 206.67 (and 207.69 for other
+  // quantities): never.
+  assert.notEqual(p.c, 206.6667)
   // The product screen shows the same: products.get answers the purchase price to the owner.
   const shown = ok(await svc.call('products.get', { barcode: 'ROUMY' }, owner))
+  assert.deepEqual([Number(shown.cost_price), Number(shown.retail_price)], [220, 260])
+  // Packages (D-096): the typed one keeps 1150; the automatic one follows 260 × 2; their
+  // purchase prices follow the purchase (220 × 5, 220 × 2).
+  const units = ok(await svc.call('productUnits.get', { barcode: 'ROUMY' }, owner)).units
+  const block = units.find((u) => u.name === 'قالب 5 كيلو')
+  const roll = units.find((u) => u.name === 'لفة 2 كيلو')
   assert.deepEqual(
-    [Number(shown.cost_price), Number(shown.retail_price), Number(shown.wholesale_price)],
-    [220, 260, 240]
+    [Number(block.retail_price), block.retail_auto, Number(block.purchase_cost)],
+    [1150, false, 1100]
   )
-  // The moving average would have been (10×200 + 5×220) ÷ 15 = 206.67.
-  assert.notEqual((await product('ROUMY')).c, 206.6667)
+  assert.deepEqual(
+    [roll.retail_price, roll.retail_auto, roll.auto_price, Number(roll.purchase_cost)],
+    [null, true, 520, 440]
+  )
+  const atTill = ok(await svc.call('pos.resolve', { code: 'ROUMY' }, owner)).units
+  assert.deepEqual(
+    atTill.map((u) => [u.name, u.price]),
+    [
+      ['كيلو', 260],
+      ['لفة 2 كيلو', 520],
+      ['قالب 5 كيلو', 1150]
+    ]
+  )
   const log = await q(
     "SELECT details FROM system_logs WHERE action_type = 'product_price_change' AND details::jsonb->>'purchaseId' = $1",
     [String(r.purchaseId)]
   )
-  assert.equal(log.length, 2, 'retail and wholesale changes are in the activity log')
+  assert.equal(log.length, 1, 'the selling price change is in the activity log')
 })
 
 test('2. repeated purchases: the latest price wins, cheaper or dearer, without averaging', async (t) => {
@@ -173,14 +204,15 @@ test('3. an empty purchase price keeps the current price; the line counts at it'
   ])
 })
 
-test('4. empty retail and wholesale fields keep those prices', async (t) => {
+test('4. an empty selling price keeps it; there is no wholesale price any more (D-096)', async (t) => {
   if (!requireDb(t)) return
   ok(await buy([{ barcode: 'KEEP', qty: 1, unitCost: 32 }]))
   assert.deepEqual(await product('KEEP'), { s: 8, c: 32, r: 45, w: 40 })
   ok(await buy([{ barcode: 'KEEP', qty: 1, unitCost: 33, newRetailPrice: 50 }]))
   assert.deepEqual(await product('KEEP'), { s: 9, c: 33, r: 50, w: 40 })
+  // The former wholesale field from an old client is dropped; the old column keeps 40.
   ok(await buy([{ barcode: 'KEEP', qty: 1, unitCost: 33, newWholesalePrice: 44 }]))
-  assert.deepEqual(await product('KEEP'), { s: 10, c: 33, r: 50, w: 44 })
+  assert.deepEqual(await product('KEEP'), { s: 10, c: 33, r: 50, w: 40 })
 })
 
 test('5. a preliminary, cancelled or failed purchase changes no price', async (t) => {
@@ -216,51 +248,53 @@ test('5. a preliminary, cancelled or failed purchase changes no price', async (t
 
 test('6. one confirmed purchase changes the prices exactly once', async (t) => {
   if (!requireDb(t)) return
-  const r = ok(
-    await buy([
-      { barcode: 'KEEP', qty: 3, unitCost: 34, newRetailPrice: 52, newWholesalePrice: 47 }
-    ])
-  )
+  const r = ok(await buy([{ barcode: 'KEEP', qty: 3, unitCost: 34, newRetailPrice: 52 }]))
   const logs = await q(
     "SELECT details::jsonb->>'price' p FROM system_logs WHERE action_type = 'product_price_change' AND details::jsonb->>'purchaseId' = $1 ORDER BY 1",
     [String(r.purchaseId)]
   )
   assert.deepEqual(
     logs.map((x) => x.p),
-    ['retail_price', 'wholesale_price']
+    ['retail_price']
   )
   const moves = await q(
     "SELECT qty::float8 n, unit_cost::float8 c FROM stock_movements WHERE ref_type = 'purchase' AND ref_id = $1",
     [r.purchaseId]
   )
   assert.deepEqual(moves, [{ n: 3, c: 34 }])
-  assert.deepEqual(await product('KEEP'), { s: 13, c: 34, r: 52, w: 47 })
+  assert.deepEqual(await product('KEEP'), { s: 13, c: 34, r: 52, w: 40 })
 })
 
-test('7. by the carton: the price per piece is the carton price ÷ 24; package prices stay', async (t) => {
+test('7. pieces or cartons (owner, D-096): carton = its price, piece = carton ÷ 24, and back', async (t) => {
   if (!requireDb(t)) return
+  const carton = () =>
+    one(
+      'SELECT purchase_cost::float8 c, retail_price::float8 r, retail_auto a FROM product_units WHERE id = $1',
+      [cartonId]
+    )
+  // Bought by the carton at 120: the carton costs exactly 120, the piece 5. Selling prices: the
+  // piece only where a new one was typed (6.5); the carton keeps its typed 140.
   ok(await buy([{ barcode: 'PACK', unitId: cartonId, qty: 2, unitCost: 120, newRetailPrice: 6.5 }]))
   const p = await product('PACK')
   assert.deepEqual([p.s, p.c, p.r], [48, 5, 6.5])
-  const carton = await one(
-    'SELECT purchase_cost::float8 c, retail_price::float8 r, wholesale_price::float8 w FROM product_units WHERE id = $1',
-    [cartonId]
-  )
-  assert.deepEqual(carton, { c: 90, r: 140, w: 130 })
-  // Loose pieces afterwards: the piece price itself.
+  assert.deepEqual(await carton(), { c: 120, r: 140, a: false })
+  // Bought by the piece at 5.5: the piece costs 5.5 and the carton 5.5 × 24 = 132.
   ok(await buy([{ barcode: 'PACK', qty: 12, unitCost: 5.5 }]))
   assert.equal((await product('PACK')).c, 5.5)
-  // A carton line with an empty price counts at 24 × the piece price, and keeps it.
+  assert.equal((await carton()).c, 132)
+  // A carton line with an empty price counts at 24 × the piece price and changes nothing.
   ok(await buy([{ barcode: 'PACK', unitId: cartonId, qty: 1, unitCost: null }], {}, { PACK: 132 }))
-  assert.equal((await product('PACK')).c, 5.5)
-  // Pieces and cartons in one invoice: the later line wins (per piece).
+  assert.deepEqual([(await product('PACK')).c, (await carton()).c], [5.5, 132])
+  // Pieces and cartons in one invoice: the later line wins (per piece and per carton).
   ok(
     await buy([
       { barcode: 'PACK', qty: 6, unitCost: 6 },
-      { barcode: 'PACK', unitId: cartonId, qty: 1, unitCost: 132 }
+      { barcode: 'PACK', unitId: cartonId, qty: 1, unitCost: 126 }
     ])
   )
-  assert.equal((await product('PACK')).c, 5.5)
+  assert.deepEqual([(await product('PACK')).c, (await carton()).c], [5.25, 126])
+  // The carton's selling price was never touched by any purchase price.
+  assert.equal((await carton()).r, 140)
 })
 
 test('8. completed sales keep their cost and profit after later price changes', async (t) => {

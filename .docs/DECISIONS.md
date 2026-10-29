@@ -1330,3 +1330,28 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Checked:**
   - `navigationLayout.test.mjs` (3): every screen placed exactly once, the groups, and what a cashier sees;
   - in the running app (`sidebar152.js`): the owner sees all 31; folding by Enter and click, remembered after signing in again; 1024 px and the compact rail; the cashier sees the till, tills and returns only.
+
+## D-096 Two prices per unit; package prices automatic or typed; purchases in pieces or cartons (owner, 1.5.2, migration 0029)
+
+- **No wholesale price.** The owner keeps only a purchase price and a selling price for each unit.
+  - The wholesale price is gone from the product forms, the products list, purchase lines, the units window, the Excel template and export, and owner commands (a command naming it is refused).
+  - The till never used it, so no selling price changes.
+  - The columns keep their old values for history; nothing writes them any more. Old filled templates still import: the column is ignored.
+- **Package selling price** (owner's answer):
+  - **Automatic** by default: the piece's current selling price × the package's count. It follows every change of either, at the till, in the units window and in reports.
+  - **Typed:** the owner unticks «تلقائي» and types a price, which is kept as typed, also when it happens to equal piece × count.
+  - Ticking «تلقائي» again restores the automatic price.
+  - The mode is stored explicitly (`product_units.retail_auto`), never inferred from equal numbers, and changes are logged.
+  - Migration 0029: packages with a price of their own stay typed; packages without one were already sold at piece × count and become automatic. Nothing changes price at the till on the day of the update.
+  - Import: an empty package price is automatic.
+- **Purchases in pieces or cartons** (owner's answer), with the purchase unit chosen per line:
+  - **In pieces at p:** the piece's purchase price is p, and every package costs p × its count.
+  - **In a package at c:** that package costs exactly c, the piece c ÷ its count, and every other package c × its count ÷ this one's. Money is rounded to 0.01 and the piece cost to 4 decimals.
+  - The same purchase gives the same stock, purchase price and stock value either way.
+  - The invoice line keeps the unit, factor and quantity as entered.
+  - A purchase price never changes a selling price. Only the line's «سعر البيع الجديد» does, explicitly.
+  - An empty or free line changes no price. The latest purchase price rule (D-087) and past costs are unchanged.
+- **Tests:**
+  - `twoPrices.test.js` (7): automatic default at the till; following the piece price; typed override kept, also when equal; restoring; a new package count; pieces against cartons (stock, cost, value, carton cost, rounding, lines); no wholesale; migration 0029;
+  - `latestPurchasePrice.test.js`: the Roumy example with a typed and an automatic package;
+  - `units`, `packaging`, `purchaseSalePrice`, `dataExport` and `sync` updated where they asserted a wholesale price, a required package price or package purchase prices that never moved.

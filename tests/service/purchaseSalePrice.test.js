@@ -1,5 +1,6 @@
 'use strict'
-// New selling and wholesale prices on purchase lines (owner, 2026-10-22, D-068). A filled field
+// New selling prices on purchase lines (owner, 2026-10-22, D-068; the wholesale price was removed
+// in 1.5.2, D-096). A filled field
 // sets the product's price when the purchase is confirmed, even over a price an earlier purchase
 // set; an empty field keeps it. Per product, the two prices independently; package prices never
 // change; the purchase price rule and the invoice discount are untouched; atomic; in the activity log.
@@ -86,11 +87,13 @@ test('a filled selling price is set; empty fields and the package prices stay; c
   assert.deepEqual(await product('B'), { r: 20, w: 18, c: 15, s: 5 }, 'no field: unchanged')
   const box = (
     await svc.pool.query(
-      'SELECT retail_price::float8 r, wholesale_price::float8 w FROM product_units WHERE id = $1',
+      'SELECT retail_price::float8 r, retail_auto a FROM product_units WHERE id = $1',
       [boxId]
     )
   ).rows[0]
-  assert.deepEqual(box, { r: 95, w: 90 }, 'package prices are never changed by a purchase')
+  // D-096: a package's selling price is never changed by a purchase (its purchase price is,
+  // purchaseUnits.test.js); the old wholesale column of the product is left as it was (9).
+  assert.deepEqual(box, { r: 95, a: false }, 'the typed package selling price stays')
   // The line keeps what it set and what it replaced; the change is in the activity log.
   const line = (
     await svc.pool.query(
@@ -107,14 +110,15 @@ test('a filled selling price is set; empty fields and the package prices stay; c
   assert.match(log[0].description, /سعر البيع "صنف أ" \(A\): 10\.00 ← 12\.00/)
 })
 
-test('wholesale alone, both together, and a later purchase overriding an earlier price', async (t) => {
+test('no wholesale price any more (D-096); a later purchase overrides an earlier selling price', async (t) => {
   if (!requireDb(t)) return
+  // An old client sending the former wholesale field: dropped, nothing changes but the stock.
   ok(await buy([{ barcode: 'B', qty: 1, unitCost: 15, newWholesalePrice: 17 }]))
-  assert.deepEqual([(await product('B')).r, (await product('B')).w], [20, 17])
+  assert.deepEqual([(await product('B')).r, (await product('B')).w], [20, 18])
   ok(
     await buy([{ barcode: 'A', qty: 1, unitCost: 7, newRetailPrice: 11.5, newWholesalePrice: 10 }])
   )
-  assert.deepEqual([(await product('A')).r, (await product('A')).w], [11.5, 10])
+  assert.deepEqual([(await product('A')).r, (await product('A')).w], [11.5, 9])
   // Bought in boxes: the field is still the price of one piece.
   ok(await buy([{ barcode: 'A', unitId: boxId, qty: 1, unitCost: 70, newRetailPrice: 13 }]))
   assert.equal((await product('A')).r, 13)
@@ -186,11 +190,12 @@ test('with an invoice discount and when completing a preliminary invoice', async
       'supplierInvoices.convert',
       {
         invoiceId: inv.id,
-        items: [{ barcode: 'B', qty: 1, unitCost: 15, newWholesalePrice: 19 }],
+        items: [{ barcode: 'B', qty: 1, unitCost: 15, newRetailPrice: 23, newWholesalePrice: 19 }],
         clientRef: ref()
       },
       owner
     )
   )
-  assert.equal((await product('B')).w, 19)
+  // Completing a preliminary invoice sets the selling price the same way; no wholesale (D-096).
+  assert.deepEqual([(await product('B')).r, (await product('B')).w], [23, 18])
 })

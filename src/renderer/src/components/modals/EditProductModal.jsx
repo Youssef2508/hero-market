@@ -92,22 +92,6 @@ const EditProductModal = ({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div className="form-group">
-              <label>
-                سعر الجملة{' '}
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  (للتجار والكميات)
-                </span>
-              </label>
-              <NumberField
-                step="any"
-                className="form-input"
-                value={editProduct.wholesale_price}
-                onChange={(e) =>
-                  setEditProduct((prev) => ({ ...prev, wholesale_price: e.target.value }))
-                }
-              />
-            </div>
-            <div className="form-group">
               <label>الكمية المتاحة بالمخزن</label>
               <NumberField
                 step="any"

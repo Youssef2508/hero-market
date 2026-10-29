@@ -327,8 +327,7 @@ module.exports = function supplierInvoicesModule(app) {
               // Omitted or null = keep the product's purchase price (D-087).
               unitCost: { type: ['number', 'null'], minimum: 0 },
               // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
-              newRetailPrice: { type: ['number', 'null'], minimum: 0 },
-              newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
+              newRetailPrice: { type: ['number', 'null'], minimum: 0 }
             }
           }
         },

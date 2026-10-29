@@ -132,12 +132,6 @@ export default function InventoryTab({
                 <SortableTh field="name" label="الصنف" {...sortProps} />
                 <SortableTh field="cost_price" label="التكلفة" className="num" {...sortProps} />
                 <SortableTh field="retail_price" label="سعر البيع" className="num" {...sortProps} />
-                <SortableTh
-                  field="wholesale_price"
-                  label="سعر الجملة"
-                  className="num"
-                  {...sortProps}
-                />
                 <SortableTh field="stock_qty" label="المتاح" className="num" {...sortProps} />
                 <SortableTh field="reorder_limit" label="حد الطلب" className="num" {...sortProps} />
                 <th>
@@ -148,7 +142,7 @@ export default function InventoryTab({
             <tbody>
               {adminProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="table-empty">
+                  <td colSpan="7" className="table-empty">
                     <EmptyState
                       icon={PackageSearch}
                       title="لا توجد أصناف"
@@ -168,7 +162,6 @@ export default function InventoryTab({
                       <td className="num money-strong text-accent">
                         {formatMoney(p.retail_price)}
                       </td>
-                      <td className="num">{formatMoney(p.wholesale_price)}</td>
                       <td className="num">
                         <span className={`badge ${low ? 'badge-danger' : 'badge-success'}`}>
                           {p.stock_qty} {p.unit}

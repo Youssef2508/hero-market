@@ -22,8 +22,9 @@ const { helpers: finance } = require('../modules/finance')
 
 const OWNER = 'المالك (عن بعد)'
 const PRODUCT_FIELDS = ['name', 'unit', 'reorder_limit', 'category_id']
-const PRICE_FIELDS = ['retail_price', 'wholesale_price', 'cost_price']
-const NUMERIC = new Set(['reorder_limit', 'retail_price', 'wholesale_price', 'cost_price'])
+// Two prices per unit (D-096): an owner command that names the old wholesale price is refused.
+const PRICE_FIELDS = ['retail_price', 'cost_price']
+const NUMERIC = new Set(['reorder_limit', 'retail_price', 'cost_price'])
 // Categories are compared by id (null = no category); the text column mirrors the name.
 const sameCategory = (a, b) => (a ?? null) === (b === undefined ? null : b)
 

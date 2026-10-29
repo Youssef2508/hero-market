@@ -68,9 +68,9 @@ test('the owner configures the box: own barcode, own selling and purchase price;
   assert.equal((await save([{ name: 'علبة الهوهوز', factor: 0, retail_price: 90 }])).status, 400)
   assert.equal((await save([{ name: 'علبة الهوهوز', factor: 2.5, retail_price: 90 }])).status, 400)
   assert.equal(
-    (await save([{ name: 'علبة الهوهوز', factor: 10 }])).status,
+    (await save([{ name: 'علبة الهوهوز', factor: 10, retail_auto: false }])).status,
     400,
-    'its price is required'
+    'a typed price is required when the price is not automatic (D-096)'
   )
   assert.equal(
     (await save([{ name: 'علبة الهوهوز', factor: 10, retail_price: 90, barcodes: ['PLAIN'] }]))

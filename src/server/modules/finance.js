@@ -18,10 +18,7 @@ const str = (max) => ({ type: ['string', 'null'], maxLength: max })
 // How a purchase's payment is named in the activity log (D-089).
 const PAID_FROM = { shift: 'من درج الوردية', treasury: 'من الخزنة', outside: 'خارج المتجر' }
 
-const NEW_PRICES = [
-  { key: 'newRetailPrice', column: 'retail_price', label: 'سعر البيع' },
-  { key: 'newWholesalePrice', column: 'wholesale_price', label: 'سعر الجملة' }
-]
+const NEW_PRICES = [{ key: 'newRetailPrice', column: 'retail_price', label: 'سعر البيع' }]
 
 /** A supplier's contact fields, trimmed and checked (SUP-03). */
 function supplierContact(b) {
@@ -206,7 +203,8 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     // Empty price (kept) or a free line (price 0: bonus goods): the product's price is kept.
     keepCost: i.keepCost || !(i.unitCost > 0),
     lineTotal: round2(Number(i.qty) * i.unitCost),
-    // New selling and wholesale prices for the product's base unit (D-068); empty = keep.
+    // A new selling price for the product's base unit (D-068); empty = keep. There is no
+    // wholesale price any more (D-096).
     ...Object.fromEntries(
       NEW_PRICES.map(({ key }) => [
         key,
@@ -305,8 +303,8 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         unit.factor,
         i.newRetailPrice,
         old('retail_price', 'newRetailPrice'),
-        i.newWholesalePrice,
-        old('wholesale_price', 'newWholesalePrice')
+        null,
+        null
       ]
     )
     // Stock and the purchase price work per base unit. The line's price becomes the product's
@@ -321,6 +319,19 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       refId: purchaseId,
       reason: `فاتورة شراء #${ref || purchaseId} من ${s.name}`
     })
+    // The packages' purchase prices follow the same purchase (owner, 1.5.2, D-096): bought in
+    // pieces at p, a package of f pieces costs p × f; bought in a package at c, that package
+    // costs exactly c and every other package c × its factor ÷ this one's. Selling prices are
+    // never touched by a purchase price.
+    if (!i.keepCost) {
+      await db.query(
+        `UPDATE product_units SET purchase_cost = CASE WHEN id IS NOT DISTINCT FROM $2::int THEN $3::numeric
+                                   ELSE round($3::numeric * factor / $4::numeric, 2) END,
+                updated_at = LOCALTIMESTAMP(0)
+          WHERE product_barcode = $1 AND is_active`,
+        [i.barcode, unit.id, i.unitCost, unit.factor]
+      )
+    }
   }
   if (payable && remaining > 0) {
     await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
@@ -356,7 +367,7 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       idemKey: p.clientRef ? `purchase:${p.clientRef}` : null
     })
   }
-  // New prices (D-068), in the purchase's transaction: the base unit's selling and wholesale
+  // New prices (D-068), in the purchase's transaction: the base unit's selling
   // prices only, each when its own field was filled; package prices are left as they are. Each
   // change is in the activity log.
   for (const c of priceChanges.values()) {
@@ -572,8 +583,7 @@ module.exports = function financeModule(app) {
               // Purchase price in that unit; omitted or null = keep the product's price (D-087).
               unitCost: { type: ['number', 'null'], minimum: 0 },
               // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
-              newRetailPrice: { type: ['number', 'null'], minimum: 0 },
-              newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
+              newRetailPrice: { type: ['number', 'null'], minimum: 0 }
             }
           }
         }

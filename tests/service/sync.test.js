@@ -570,8 +570,9 @@ test('conflicts: fields changed on the PC since the owner looked are kept and re
     await site.pc.pool.query("UPDATE products SET retail_price = 11 WHERE barcode = 'CAN'")
     const priceId = await site.command('price_edit', {
       barcode: 'CAN',
-      fields: { retail_price: 12, wholesale_price: 9.5 },
-      base: { retail_price: 10, wholesale_price: 9 }
+      // Two prices per unit (D-096): purchase and selling.
+      fields: { retail_price: 12, cost_price: 8.5 },
+      base: { retail_price: 10, cost_price: 8 }
     })
     const soda = ok(await site.pc.call('categories.save', { name: 'مياه غازية' }, site.owner))
     const nameId = await site.command('product_edit', {
@@ -587,14 +588,8 @@ test('conflicts: fields changed on the PC since the owner looked are kept and re
     await syncUntilConverged(site)
     const can = await one(site.pc.pool, "SELECT * FROM products WHERE barcode = 'CAN'")
     assert.deepEqual(
-      [
-        Number(can.retail_price),
-        Number(can.wholesale_price),
-        can.name,
-        can.category,
-        can.category_id
-      ],
-      [11, 9.5, 'كانز 330 مل', 'مياه غازية', soda.id]
+      [Number(can.retail_price), Number(can.cost_price), can.name, can.category, can.category_id],
+      [11, 8.5, 'كانز 330 مل', 'مياه غازية', soda.id]
     )
     const cmds = Object.fromEntries(
       (await q(site.cloud.pool, 'SELECT id::text, status, result FROM cloud_commands')).map((c) => [
@@ -603,7 +598,7 @@ test('conflicts: fields changed on the PC since the owner looked are kept and re
       ])
     )
     assert.equal(cmds[priceId].status, 'partially_applied')
-    assert.deepEqual(cmds[priceId].result.applied, ['wholesale_price'])
+    assert.deepEqual(cmds[priceId].result.applied, ['cost_price'])
     assert.deepEqual(
       cmds[priceId].result.conflicts.map((c) => [c.field, c.base, Number(c.local), c.remote]),
       [['retail_price', 10, 11, 12]]
