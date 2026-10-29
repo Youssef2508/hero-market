@@ -28,7 +28,7 @@ const KINDS = {
   request: {
     table: 'supplier_payment_requests',
     minutes: 5,
-    eligible: "status IN ('pending', 'disputed')",
+    eligible: "status = 'pending'",
     busy: (name, until) =>
       `«${name}» بيعدل طلب السداد حاليًا. يتاح عند انتهائه أو انتهاء الحجز (الساعة ${until}).`,
     notEligible: (row) => `طلب السداد #${row.id} تم البت فيه من قبل.`,

@@ -3,16 +3,18 @@
 // hands cash from the drawer to a supplier for an older debt: the cash leaves the drawer at once
 // (a supplier_payment_request movement of the shift), and the supplier's balance does not change.
 // An administrator with «اعتماد طلبات سداد الموردين» then:
-//   approves  → the balance falls by the amount, once; no cash moves again;
-//   rejects   → the request is disputed: the cash already left, so nothing is put back by itself.
-// A disputed request is settled by what really happened, explicitly and logged:
-//   returned  → the supplier gave the money back: an inflow where it arrives now (shift or treasury);
-//   applied   → it was a valid payment after all: the balance falls, as on approval;
-//   loss      → the money is lost: nothing moves; the request stays on record as a loss.
-const { badRequest, conflict, notFound, shiftRequired } = require('../errors')
+//   approves  → the balance falls by the amount, once; no cash moves again (and never by the
+//               cashier who recorded it, unless that is an administrator);
+//   rejects   → the whole transaction is reversed (D-100).
+// The cashier who recorded a pending request may also cancel it: reversed the same way.
+// A reversal puts the same cash back into the request's own shift drawer while that shift is open,
+// otherwise into the treasury against that shift and request. The supplier's balance never moved,
+// so it is not touched; nothing is an expense or a loss; the request and both movements stay.
+const { badRequest, conflict, forbidden, notFound, shiftRequired } = require('../errors')
 const treasury = require('../money/treasury')
 const { addMovement } = require('../money/shiftLedger')
-const { METHODS, round2 } = require('../money/methods')
+const { round2 } = require('../money/methods')
+const { ADMINS } = require('../auth/shiftRule')
 const { drawerFigures } = require('./shifts').helpers
 const reservations = require('../money/reservations')
 
@@ -21,13 +23,20 @@ const note = { type: ['string', 'null'], maxLength: 300 }
 const STATUS_LABELS = {
   pending: 'بانتظار الاعتماد',
   approved: 'معتمد',
-  disputed: 'مرفوض بعد الدفع (بانتظار التسوية)',
-  settled: 'تمت التسوية'
+  rejected: 'مرفوض – أُعيد المبلغ',
+  cancelled: 'ألغاه الكاشير – أُعيد المبلغ',
+  // Former states (D-090), kept only for records that already have them.
+  disputed: 'مرفوض (قديم)',
+  settled: 'تمت التسوية (قديم)'
 }
 const SETTLEMENT_LABELS = {
   returned: 'استُرد المبلغ من المورد',
   applied: 'احتُسب سداداً للمورد',
   loss: 'سُجّل خسارة'
+}
+const RESTORED_LABELS = {
+  shift: 'أُعيد إلى درج الوردية',
+  treasury: 'أُعيد إلى الخزنة (الوردية مغلقة)'
 }
 
 /** A request with its supplier, shift and people. */
@@ -36,6 +45,7 @@ async function requestRow(db, id, lock = false) {
     await db.query(
       `SELECT r.*, r.amount::float8 AS amount, s.name AS supplier_name, s.debt_balance::float8 AS supplier_debt,
               cu.username AS created_by_name, du.username AS decided_by_name, su.username AS settled_by_name,
+              vu.username AS reversed_by_name,
               sh.status AS shift_status, ru.username AS reserved_by_name,
               to_char(r.reserved_until, 'YYYY-MM-DD HH24:MI:SS') AS reserved_until_text,
               COALESCE(r.reserved_until > LOCALTIMESTAMP(0) + make_interval(secs => $2::double precision), false) AS reserved_active
@@ -45,6 +55,7 @@ async function requestRow(db, id, lock = false) {
          LEFT JOIN users cu ON cu.id = r.created_by
          LEFT JOIN users du ON du.id = r.decided_by
          LEFT JOIN users su ON su.id = r.settled_by
+         LEFT JOIN users vu ON vu.id = r.reversed_by
          LEFT JOIN users ru ON ru.id = r.reserved_by
         WHERE r.id = $1${lock ? ' FOR UPDATE OF r' : ''}`,
       [id, reservations.offset()]
@@ -69,7 +80,7 @@ async function openForRequests(db, supplierId) {
   )
 }
 
-/** The supplier's balance falls by the request, once (approval, or a disputed one applied). */
+/** The supplier's balance falls by the request, once, on approval. */
 async function payBalance(db, r, text) {
   await db.query('UPDATE suppliers SET debt_balance = debt_balance - $1 WHERE id = $2', [
     r.amount,
@@ -84,8 +95,80 @@ async function payBalance(db, r, text) {
 const withLabels = (r) => ({
   ...r,
   status_label: STATUS_LABELS[r.status],
-  settlement_label: r.settlement ? SETTLEMENT_LABELS[r.settlement] : null
+  settlement_label: r.settlement ? SETTLEMENT_LABELS[r.settlement] : null,
+  restored_label: r.reversed_to ? RESTORED_LABELS[r.reversed_to] : null
 })
+
+/**
+ * Reverse a pending request in full (D-100), in the caller's transaction, the request row locked:
+ * the cash back where it came from (its shift's drawer if open, else the treasury against that
+ * shift), the request marked rejected or cancelled with who, when, why and where. Once only: the
+ * state is checked under the lock, and a reversal movement is unique per request.
+ */
+async function reverse(db, ctx, r, { status, reason }) {
+  const open = (
+    await db.query("SELECT status = 'open' AS open FROM shifts WHERE id = $1 FOR SHARE", [
+      r.shift_id
+    ])
+  ).rows[0]?.open
+  const what = status === 'rejected' ? 'رفض' : 'إلغاء'
+  const description = `${what} طلب سداد مورد #${r.id}: ${r.supplier_name} – عودة المبلغ`
+  let ledgerId = null
+  let treasuryId = null
+  if (open) {
+    ledgerId = (
+      await addMovement(db, {
+        shiftId: r.shift_id,
+        type: 'inflow',
+        amount: r.amount,
+        description,
+        method: 'cash',
+        kind: 'supplier_payment_reversal',
+        refType: 'supplier_payment_request',
+        refId: r.id,
+        party: r.supplier_name,
+        userId: ctx.user.id
+      })
+    ).id
+  } else {
+    const entry = await treasury.post(db, ctx, {
+      kind: 'supplier_payment_reversal',
+      method: 'cash',
+      amount: r.amount,
+      shiftId: r.shift_id,
+      refType: 'supplier_payment_request',
+      refId: r.id,
+      description: `${description} (الوردية #${r.shift_id} مغلقة)`,
+      reason,
+      idemKey: `spr-reverse:${r.id}`
+    })
+    treasuryId = entry.id
+  }
+  await db.query(
+    `UPDATE supplier_payment_requests
+        SET status = $2, reversed_by = $3, reversed_at = LOCALTIMESTAMP(0), reversal_reason = $4,
+            reversed_to = $5, reversal_ledger_id = $6, reversal_treasury_id = $7,
+            decided_by = CASE WHEN $2 = 'rejected' THEN $3 ELSE decided_by END,
+            decided_at = CASE WHEN $2 = 'rejected' THEN LOCALTIMESTAMP(0) ELSE decided_at END,
+            decision_note = CASE WHEN $2 = 'rejected' THEN $4 ELSE decision_note END,
+            ${reservations.CLEAR}
+      WHERE id = $1 AND status = 'pending'`,
+    [r.id, status, ctx.user.id, reason, open ? 'shift' : 'treasury', ledgerId, treasuryId]
+  )
+  await ctx.audit(
+    db,
+    status === 'rejected' ? 'supplier_payment_reject' : 'supplier_payment_cancel',
+    `${what} طلب السداد #${r.id} (${r.amount.toFixed(2)} ج.م للمورد "${r.supplier_name}"): ${reason}. ${RESTORED_LABELS[open ? 'shift' : 'treasury']} #${open ? r.shift_id : treasuryId}؛ حساب المورد لم يتغير.`,
+    {
+      requestId: r.id,
+      amount: r.amount,
+      shiftId: r.shift_id,
+      restoredTo: open ? 'shift' : 'treasury',
+      ledgerId,
+      treasuryId
+    }
+  )
+}
 
 module.exports = function supplierPaymentsModule(app) {
   // The suppliers a request may be made for, with what is still owed to each.
@@ -199,7 +282,7 @@ module.exports = function supplierPaymentsModule(app) {
     handler: async (ctx, { status = 'all', shiftId = null }) => {
       const where = []
       const params = []
-      if (status === 'open') where.push("r.status IN ('pending', 'disputed')")
+      if (status === 'open') where.push("r.status = 'pending'")
       else if (status !== 'all') {
         params.push(status)
         where.push(`r.status = $${params.length}`)
@@ -215,7 +298,7 @@ module.exports = function supplierPaymentsModule(app) {
       const rows = (
         await ctx.pool.query(
           `SELECT r.id FROM supplier_payment_requests r ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-            ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'disputed' THEN 1 ELSE 2 END, r.id DESC LIMIT 500`,
+            ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.id DESC LIMIT 500`,
           params
         )
       ).rows
@@ -237,7 +320,7 @@ module.exports = function supplierPaymentsModule(app) {
         await ctx.pool.query(
           `SELECT COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
                   COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0)::float8 AS "pendingAmount",
-                  COUNT(*) FILTER (WHERE status = 'disputed')::int AS disputed
+                  0 AS disputed
              FROM supplier_payment_requests`
         )
       ).rows[0]
@@ -266,6 +349,9 @@ module.exports = function supplierPaymentsModule(app) {
         if (r.status === 'approved') return { request: withLabels(r), duplicate: true }
         if (r.status !== 'pending')
           throw conflict(`طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: لا يمكن اعتماده.`)
+        // The cashier who recorded it never approves it (D-100); an administrator may.
+        if (r.created_by === ctx.user.id && !ADMINS.includes(ctx.user.roleKey))
+          throw forbidden('لا يعتمد طلب السداد من سجّله؛ يعتمده المدير.')
         await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
         await payBalance(db, r, `سداد معتمد – طلب #${r.id} من درج الوردية #${r.shift_id}`)
         await db.query(
@@ -294,107 +380,43 @@ module.exports = function supplierPaymentsModule(app) {
       ctx.tx(async (db) => {
         const r = await requestRow(db, b.requestId, true)
         if (!r) throw notFound('طلب السداد غير موجود.')
-        if (r.status === 'disputed') return { request: withLabels(r), duplicate: true }
+        // A retry, a double click or two administrators at once: reversed once.
+        if (r.status === 'rejected') return { request: withLabels(r), duplicate: true }
         if (r.status !== 'pending')
           throw conflict(`طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: لا يمكن رفضه.`)
         await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
         const reason = b.note.trim()
         if (reason.length < 3) throw badRequest('اكتب سبب الرفض.')
-        // The cash was handed over: nothing goes back into the drawer by itself (D-090).
-        await db.query(
-          `UPDATE supplier_payment_requests SET status = 'disputed', decided_by = $2, decided_at = LOCALTIMESTAMP(0), decision_note = $3, ${reservations.CLEAR} WHERE id = $1`,
-          [r.id, ctx.user.id, reason]
-        )
-        await ctx.audit(
-          db,
-          'supplier_payment_reject',
-          `رفض طلب السداد #${r.id} (${r.amount.toFixed(2)} ج.م للمورد "${r.supplier_name}"): ${reason}. المبلغ خرج من الدرج وينتظر التسوية.`,
-          { requestId: r.id, amount: r.amount }
-        )
+        await reverse(db, ctx, r, { status: 'rejected', reason })
         return { request: withLabels(await requestRow(db, r.id)) }
       })
   })
 
+  // The cashier who recorded a pending request cancels it (D-100): reversed in full, as a rejection.
   app.operation({
-    name: 'supplierPayments.settle',
-    permission: 'suppliers.payment_approve',
+    name: 'supplierPayments.cancel',
+    permission: 'suppliers.payment_request',
     schema: {
       type: 'object',
-      required: ['requestId', 'outcome', 'note'],
+      required: ['requestId', 'note'],
       properties: {
         requestId: { type: 'integer' },
-        outcome: { type: 'string', enum: Object.keys(SETTLEMENT_LABELS) },
-        note: { type: 'string', minLength: 3, maxLength: 300 },
-        // returned: how and where the money came back.
-        method: { type: 'string', enum: METHODS },
-        destination: { type: 'string', enum: ['shift', 'treasury'] },
-        currentShiftId: { type: ['integer', 'null'] },
-        reservationToken: { type: ['string', 'null'], maxLength: 64 }
+        note: { type: 'string', minLength: 3, maxLength: 300 }
       }
     },
     handler: async (ctx, b) =>
       ctx.tx(async (db) => {
         const r = await requestRow(db, b.requestId, true)
-        if (!r) throw notFound('طلب السداد غير موجود.')
-        if (r.status === 'settled') {
-          if (r.settlement === b.outcome) return { request: withLabels(r), duplicate: true }
-          throw conflict(`طلب السداد #${r.id} سُوّي من قبل (${SETTLEMENT_LABELS[r.settlement]}).`)
-        }
-        if (r.status !== 'disputed')
-          throw conflict(
-            `طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: التسوية للطلب المرفوض بعد الدفع فقط.`
-          )
-        await reservations.check(db, ctx, 'request', r.id, b.reservationToken || null)
-        const text = b.note.trim()
-        let ledgerId = null
-        let treasuryId = null
-        if (b.outcome === 'returned') {
-          // Real money back, recorded where it arrives now (the original cash stays in its shift).
-          const method = b.method || 'cash'
-          const dest = await treasury.resolveDestination(db, ctx, b)
-          const description = `مبلغ أعاده المورد ${r.supplier_name} – طلب سداد مرفوض #${r.id}`
-          if (dest.destination === 'shift') {
-            ledgerId = (
-              await addMovement(db, {
-                shiftId: dest.shift.id,
-                type: 'inflow',
-                amount: r.amount,
-                description,
-                method,
-                kind: 'supplier_refund',
-                refType: 'supplier_payment_request',
-                refId: r.id,
-                party: r.supplier_name,
-                userId: ctx.user.id
-              })
-            ).id
-          } else {
-            treasuryId = (
-              await treasury.post(db, ctx, {
-                kind: 'supplier_refund',
-                method,
-                amount: r.amount,
-                refType: 'supplier_payment_request',
-                refId: r.id,
-                description,
-                idemKey: `spr-settle:${r.id}`
-              })
-            ).id
-          }
-        } else if (b.outcome === 'applied') {
-          await payBalance(db, r, `سداد طلب #${r.id} (احتُسب بعد الرفض): ${text}`.slice(0, 300))
-        }
-        await db.query(
-          `UPDATE supplier_payment_requests SET status = 'settled', settlement = $2, settled_by = $3, settled_at = LOCALTIMESTAMP(0),
-                  settlement_note = $4, settlement_ledger_id = $5, settlement_treasury_id = $6, ${reservations.CLEAR} WHERE id = $1`,
-          [r.id, b.outcome, ctx.user.id, text, ledgerId, treasuryId]
-        )
-        await ctx.audit(
-          db,
-          'supplier_payment_settle',
-          `تسوية طلب السداد #${r.id} (${r.amount.toFixed(2)} ج.م للمورد "${r.supplier_name}"): ${SETTLEMENT_LABELS[b.outcome]}. ${text}`,
-          { requestId: r.id, outcome: b.outcome, amount: r.amount, ledgerId, treasuryId }
-        )
+        // Only one's own request (an administrator rejects others').
+        if (!r || r.created_by !== ctx.user.id) throw notFound('طلب السداد غير موجود.')
+        if (r.status === 'cancelled') return { request: withLabels(r), duplicate: true }
+        if (r.status !== 'pending')
+          throw conflict(`طلب السداد #${r.id} ${STATUS_LABELS[r.status]}: لا يمكن إلغاؤه.`)
+        // Not while an administrator is deciding on it.
+        await reservations.check(db, ctx, 'request', r.id, null)
+        const reason = b.note.trim()
+        if (reason.length < 3) throw badRequest('اكتب سبب الإلغاء.')
+        await reverse(db, ctx, r, { status: 'cancelled', reason })
         return { request: withLabels(await requestRow(db, r.id)) }
       })
   })
@@ -430,4 +452,4 @@ module.exports = function supplierPaymentsModule(app) {
   })
 }
 
-module.exports.helpers = { STATUS_LABELS, SETTLEMENT_LABELS }
+module.exports.helpers = { STATUS_LABELS, SETTLEMENT_LABELS, RESTORED_LABELS }

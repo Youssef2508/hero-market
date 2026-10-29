@@ -1191,6 +1191,8 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 ## D-090 Supplier debt-payment requests with administrator approval (owner, 1.5.2, migration 0028)
 
+> Rejection (disputed → settled) superseded by D-100: a rejection now reverses the request in full.
+
 - **Owner's workflow:** a cashier allowed to do so hands cash from the drawer to a supplier for an older debt and records it in the active shift. The cash leaves the drawer at once. The supplier's balance falls only when an administrator approves.
 - **Permissions** (both administrators-only by default; the owner grants the first to a cashier's role in «الأدوار والصلاحيات»):
   - `suppliers.payment_request` «طلب سداد دين مورد من الدرج»;
@@ -1409,10 +1411,10 @@ The shift details, the closing window, the saved close and the printed close lis
 
 - **What is reserved:**
   - a preliminary supplier invoice opened to be completed: **30 minutes**, «[الاسم] بيعدل الفاتورة حاليًا»;
-  - a supplier debt-payment request opened to be decided on (approve, reject, settle): **5 minutes**, «[الاسم] بيعدل طلب السداد حاليًا».
+  - a supplier debt-payment request opened to be decided on (approve, reject): **5 minutes**, «[الاسم] بيعدل طلب السداد حاليًا».
 - **Stored in the record itself:** `reserved_by`, `reserved_at`, `reserved_until` and `reserve_token`. Never in a screen. Existing records start with none.
 - **Taking a reservation** (`supplierInvoices.reserve`, `supplierPayments.reserve`; the same permissions as completing or deciding, nothing new):
-  - one conditional `UPDATE`: the record must still be eligible (pending; for a request, pending or disputed) and not held by another user's valid reservation;
+  - one conditional `UPDATE`: the record must still be eligible (pending) and not held by another user's valid reservation;
   - two simultaneous attempts serialize on the row: exactly one owner, and the other is refused with the holder's name and the time it ends;
   - the holder opening it again renews it with the same token.
 - **Every write checks the reservation** in its own transaction:
@@ -1435,3 +1437,19 @@ The shift details, the closing window, the saved close and the printed close lis
 - **Tests:**
   - `reservations.test.js` (8): unreserved start, the first holder, the second refused by name, 30 and 5 minutes with a controllable clock (`HEROMARKET_TEST_CLOCK_OFFSET_SECONDS`, tests only), taking over after expiry, a stale holder refused, completion and cancellation clearing it, release by the holder only, a crashed session freed at the deadline, simultaneous attempts giving one owner, direct requests, unauthorized users, duplicates once, and unreserved records unchanged;
   - checked in the running app: a row held by another user, opening and cancelling one's own, and an expired one disappearing.
+
+## D-100 Rejecting a supplier debt-payment request reverses it in full (owner, 1.5.2, migration 0031)
+
+Replaces the rejection part of D-090 (rejected → disputed → settled as returned, applied or loss).
+
+- **Rejection is a full cancellation.** A pending request rejected by an administrator (with a reason) is reversed in one transaction, the request row locked:
+  - its shift still open → an inflow of the same amount into that shift's drawer (`safe_ledger`, kind `supplier_payment_reversal`, against the request);
+  - its shift closed → a treasury entry of the same amount (kind `supplier_payment_reversal`, `shift_id` of the original shift, against the request, idempotency key `spr-reverse:<id>`). The saved close of that shift is not rewritten.
+- **The supplier's balance is not touched** (it only ever moved on approval). Nothing is recorded as an expense or a loss. The request, its outflow and its reversal stay.
+- **Cancellation by the cashier:** `supplierPayments.cancel` (permission «طلب سداد دين مورد من الدرج»), only by the user who recorded it, only while pending, with a reason, refused while an administrator holds the request's reservation (D-099). Reversed exactly as a rejection; status `cancelled`.
+- **Approval:** never by the user who recorded the request unless they are an administrator (`super_admin`, `store_admin`); refused with «لا يعتمد طلب السداد من سجّله؛ يعتمده المدير.».
+- **Once only:** the state is checked under the row lock (a second reject is a duplicate; a cancel after a reject, or a reject after a cancel, is refused); each reversal id is unique per request; the treasury entry has its idempotency key; a check constraint requires a rejected or cancelled request to have exactly one reversal movement.
+- **Recorded:** `reversed_by`, `reversed_at`, `reversal_reason`, `reversed_to` (`shift` or `treasury`), `reversal_ledger_id` or `reversal_treasury_id`; the audit log has `supplier_payment_reject` or `supplier_payment_cancel` with where the money went.
+- **Reports:** the shift details, closing report and printed close show the request (with «مرفوض – أُعيد المبلغ» or «ألغاه الكاشير – أُعيد المبلغ») and, as its own list and category, «عودة مبالغ طلبات سداد مرفوضة أو ملغاة», included in the expected drawer cash. The treasury history shows «إلغاء طلب سداد مورد (عودة المبلغ)» with its shift and request.
+- **Removed:** the `disputed` → `settled` flow, `supplierPayments.settle` and the «خسارة» outcome. The `disputed`/`settled` states stay valid in the schema only as former states; 1.5.2 was never installed with them, so no shop record has them.
+- **Tests:** `supplierPaymentRequests.test.js` (rejection with the shift open, three rejections at once, cashier cancellation, rejection after the close to the treasury, no expense, audit), `supplierPaymentReversal.test.js` (4: own approval refused, administrator's own allowed, cancel against reject at once ×5, a reservation blocks a cancel, supplier balance reconciliation), `shiftReconciliation152.test.js` (the rejected 60 back in the drawer, the treasury untouched until the close).

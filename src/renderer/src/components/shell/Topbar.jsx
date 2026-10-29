@@ -17,7 +17,7 @@ function useClock() {
 }
 
 // The administrator's notice (owner, 1.5.2, D-090): supplier debt payments handed from a drawer and
-// waiting for approval, and rejected ones waiting for their settlement. Checked every 30 seconds.
+// waiting for approval. Checked every 30 seconds.
 function PaymentRequestsNotice({ currentUser, onOpen }) {
   const allowed = can(currentUser, 'suppliers.payment_approve')
   const [n, setN] = useState(null)
@@ -35,14 +35,8 @@ function PaymentRequestsNotice({ currentUser, onOpen }) {
       clearInterval(t)
     }
   }, [allowed])
-  if (!allowed || !n || n.pending + n.disputed === 0) return null
-  const label = [
-    n.pending > 0 &&
-      `${n.pending} طلب سداد مورد بانتظار الاعتماد (${formatMoney(n.pendingAmount)} ج.م)`,
-    n.disputed > 0 && `${n.disputed} مرفوض بانتظار التسوية`
-  ]
-    .filter(Boolean)
-    .join('، ')
+  if (!allowed || !n || n.pending === 0) return null
+  const label = `${n.pending} طلب سداد مورد بانتظار الاعتماد (${formatMoney(n.pendingAmount)} ج.م)`
   return (
     <button
       type="button"
@@ -52,7 +46,7 @@ function PaymentRequestsNotice({ currentUser, onOpen }) {
       aria-label={label}
     >
       <BellRing size={16} aria-hidden="true" />
-      <span className="num">{n.pending + n.disputed}</span>
+      <span className="num">{n.pending}</span>
       <span className="hide-sm">طلبات سداد</span>
     </button>
   )
