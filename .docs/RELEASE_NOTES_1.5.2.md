@@ -121,14 +121,14 @@ In «الأدوار والصلاحيات»:
 
 ## The installer
 
-|                  |                                                           |
-| ---------------- | --------------------------------------------------------- |
-| File             | `HeroMarket-Setup-1.5.2.exe`                              |
-| Size             | INSTALLER_SIZE bytes                                      |
-| SHA-256          | `INSTALLER_SHA256`                                        |
-| Built from       | INSTALLER_COMMIT                                          |
-| Package contents | INSTALLER_CONTENTS                                        |
-| Signed           | no ("Windows protected your PC" → More info → Run anyway) |
+|                  |                                                                                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File             | `HeroMarket-Setup-1.5.2.exe`                                                                                                                                   |
+| Size             | 181,181,781 bytes                                                                                                                                              |
+| SHA-256          | `2282f209de7d321b930a4b33cded0ece340a49492fd5b125c6392afbb4abb2a1`                                                                                             |
+| Built from       | the merge commit `bf48cbb` on `main` (PR #33), with no uncommitted change. Later commits change only `.docs`, which is never packaged                          |
+| Package contents | checked: only the program (`node_modules`, `out`, `src` with migrations 0001–0030, `resources`, `package.json`); no tests, documents, databases or local files |
+| Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                                                                      |
 
 Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must show the SHA-256 above ([UPGRADE_TO_1.5.2.md](UPGRADE_TO_1.5.2.md) step 8).
 

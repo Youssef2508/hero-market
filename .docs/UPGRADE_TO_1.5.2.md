@@ -39,7 +39,7 @@ Written for the shop owner, who installs the update himself on the shop PC. Prin
   The `Hash` must be exactly:
 
   ```
-  INSTALLER_SHA256_UPPER
+  2282F209DE7D321B930A4B33CDED0ECE340A49492FD5B125C6392AFBB4ABB2A1
   ```
 
   (the same as in `SHA256SUMS.txt` and the release notes). If it differs, **stop**: do not install that file.
