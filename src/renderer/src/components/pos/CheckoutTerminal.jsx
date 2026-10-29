@@ -443,7 +443,7 @@ function CheckoutTerminal({
     .join(' · ')
   // The list under the one field (D-092): its matches, or "no match" once a search has answered.
   const showResults =
-    searchResults.length > 0 || (searchInput.trim().length >= 2 && searchedTerm === searchInput)
+    searchResults.length > 0 || (searchInput.trim().length >= 1 && searchedTerm === searchInput)
   const discountNum = parseFloat(discount) || 0
   const creditNum = parseFloat(appliedCredit) || 0
 

@@ -1236,7 +1236,11 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 - **Before:** two fields, «امسح الباركود أو اكتبه» and «بحث بالاسم…» (F7).
 - **Now:** one field for a scan, a typed barcode or a name.
-  - **Typing** (two characters or more, after a 150 ms pause) opens the matches under it: name, barcode, price and stock. ↓ and ↑ move through them, and the field announces the highlighted one (`aria-activedescendant`).
+  - **Typing opens the list from the first character, and every character narrows it** (owner's follow-up request; 120 ms after the last key). It shows name, barcode, price and stock, up to 12 matches.
+    - **What it matches:** the name, the main barcode, and extra and packaging barcodes. Arabic-Indic digits count as digits.
+    - **Order:** the exact code first, then codes that start with the text, then names that start with it.
+    - **Checked in the app:** «ج» → 5 matches, «جب» → 3, «جبنة» → 2, «جبنة ر» → 1; «6» → 4, «6221» → 2; «٦٢٢٣» → 1.
+    - **Tests:** `tillSearch.test.js` (2). ↓ and ↑ move through them, and the field announces the highlighted one (`aria-activedescendant`).
   - **Enter** adds the highlighted product. With nothing highlighted, the text is resolved as a code, as before: product, extra and packaging barcodes, scale labels, and the suffix of a barcode. Text that is not all digits and is not a code adds its only match, or lists the matches with the first highlighted. An unknown code shows the same error as before and adds nothing.
   - **Esc** clears the text and the list first. Only an empty field lets Esc reach «تفريغ الفاتورة».
   - **F7** focuses the field.

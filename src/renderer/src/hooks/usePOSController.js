@@ -400,7 +400,7 @@ export function usePOSController({
   }
 
   // Live search from the same field (D-092). A scanner's characters are written by useBarcode, not
-  // typed: they never start a search, and a typed digit run is answered only after a 150 ms pause,
+  // typed: they never start a search, and a typed digit run is answered only after a 120 ms pause,
   // so a scan that ends with Enter never opens the list.
   const handleSearchChange = (e) => {
     const val = e.target.value
@@ -413,7 +413,8 @@ export function usePOSController({
       clearTimeout(searchDebounceRef.current)
     }
 
-    if (val.trim().length < 2) {
+    // From the first character (owner, 1.5.2): each one narrows the list.
+    if (!val.trim()) {
       setSearchResults([])
       setSearchedTerm('')
       return
@@ -429,7 +430,7 @@ export function usePOSController({
       } catch (err) {
         console.error('Search query error:', err)
       }
-    }, 150)
+    }, 120)
   }
 
   // Keys of the one field: ↓/↑ move in the list, Enter adds the highlighted product (otherwise the

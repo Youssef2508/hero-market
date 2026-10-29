@@ -308,14 +308,33 @@ module.exports = function posModule(app) {
       required: ['term'],
       properties: { term: { type: 'string', maxLength: 100 } }
     },
+    // The till's live list (owner, 1.5.2, D-092): from the first character, by name, main barcode,
+    // extra or packaging barcode; Arabic-Indic digits count as digits. Each character narrows it;
+    // the closest matches come first (the exact code, then codes and names that start with the text).
     handler: async (ctx, { term }) => {
-      const t = likeEscape(term)
+      const typed = String(term)
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .trim()
+      if (!typed) return []
+      const t = likeEscape(typed)
       return maskCost(
         ctx,
         (
           await ctx.pool.query(
-            `SELECT * FROM products WHERE (name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\') AND is_active ORDER BY name LIMIT 8`,
-            [t]
+            `SELECT p.* FROM products p
+              WHERE p.is_active AND (
+                    p.name ILIKE '%' || $1 || '%' ESCAPE '\\'
+                 OR p.barcode ILIKE '%' || $1 || '%' ESCAPE '\\'
+                 OR EXISTS (SELECT 1 FROM product_barcodes x WHERE x.product_barcode = p.barcode
+                              AND x.barcode ILIKE '%' || $1 || '%' ESCAPE '\\'))
+              ORDER BY (p.barcode = $2 OR EXISTS (SELECT 1 FROM product_barcodes x
+                                                  WHERE x.product_barcode = p.barcode AND x.barcode = $2)) DESC,
+                       (p.barcode ILIKE $1 || '%' ESCAPE '\\') DESC,
+                       (p.name ILIKE $1 || '%' ESCAPE '\\') DESC,
+                       p.name, p.barcode
+              LIMIT 12`,
+            [t, typed]
           )
         ).rows
       )
