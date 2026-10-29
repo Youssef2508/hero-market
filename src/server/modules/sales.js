@@ -197,6 +197,16 @@ const returnFields = {
   approver: approverSchema
 }
 
+/**
+ * The cost per base unit a sale line was sold at (its snapshot ÷ its unit factor), for the return
+ * that reverses it (D-087). A line without a cost (product never priced) moves at the current price.
+ */
+function soldCost(line) {
+  const cost = Number(line.cost_price) || 0
+  if (!(cost > 0)) return undefined
+  return Math.round((cost / (Number(line.unit_factor) || 1)) * 10000) / 10000
+}
+
 module.exports = function salesModule(app) {
   app.operation({
     name: 'sales.page',
@@ -436,10 +446,12 @@ module.exports = function salesModule(app) {
           approver,
           saleId: sale.id
         })
-        // Returned goods re-enter at the current average cost (the average does not change).
+        // Returned goods re-enter at the cost they were sold at (D-087); the product's purchase
+        // price does not change.
         await postMovement(db, ctx, {
           barcode: item.product_barcode,
           qty: baseQty,
+          unitCost: soldCost(item),
           kind: 'return',
           refType: 'sale_item',
           refId: item.id
@@ -545,6 +557,7 @@ module.exports = function salesModule(app) {
             await postMovement(db, ctx, {
               barcode: i.product_barcode,
               qty: Math.round(remaining * (Number(i.unit_factor) || 1) * 1000) / 1000,
+              unitCost: soldCost(i),
               kind: 'return',
               refType: 'sale_item',
               refId: i.id

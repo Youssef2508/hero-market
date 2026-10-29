@@ -2,7 +2,8 @@
 // Purchase returns (owner, 2026-10-22, D-066): goods of a recorded purchase sent back to the
 // supplier, in parts, never more than was bought. Separate from cancelling a preliminary invoice.
 //
-//   * Stock leaves at the cost the line was bought at (the moving average falls back accordingly).
+//   * Stock leaves at the cost the line was bought at (the product's purchase price is
+//     not changed: it stays the latest purchase price, D-087).
 //   * The supplier is credited the returned lines' value × net ÷ gross of the purchase, so an
 //     invoice discount is never credited twice; the payable falls by that amount (below zero, the
 //     supplier owes the store).

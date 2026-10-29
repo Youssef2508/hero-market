@@ -164,10 +164,14 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
 
 - **Ledger:** stock = sum of immutable movements (sale, return, purchase, adjustment, count, damaged, damaged reversal, opening). It is never written directly.
 - **Negative stock:** allowed (owner decision); listed on the inventory screen and by `inventory.negative`.
-- **Moving-average cost:**
-  - Receipts average in when stock is positive. When stock is zero or negative, the receipt cost becomes the average.
-  - Sales record the average at the time of sale and are not revalued later.
-  - Returns, damaged goods, counts and adjustments use the current average.
+- **Purchase price: the latest purchase price** (1.5.2, D-087; it replaced the moving average):
+  - A confirmed purchase line sets the product's purchase price (`cost_price`, per base unit) to the price on the line. Older purchases and the stock on hand do not count.
+  - An empty purchase-price field keeps the current price. A free line (price 0, bonus goods) keeps it too.
+  - Selling and wholesale prices are separate: a purchase changes them only when their own fields are filled (D-068).
+  - Each sale line records the purchase price of the moment it was sold, and later prices never change it. Profit is always computed from that recorded cost.
+  - A customer return comes back at the cost of the sale line it reverses. A purchase return leaves at the cost of its purchase line. Neither changes the purchase price.
+  - Damaged goods, counts and adjustments move at the current purchase price. Deleting a damaged record brings the goods back at the cost they were written off at.
+  - **Limitation:** stock batches are not tracked. The cost of a sale and the stock value at cost use the latest purchase price, not the cost of the particular units sold, so the stock value at cost is an estimate.
 - **Product form:** a changed stock posts the difference against the value the form showed. A count posts counted − the stock shown when counting started, with a mandatory reason.
 - **Purchase invoices:** item lines are received into stock; their total must equal the invoice total.
 
@@ -184,7 +188,7 @@ Every rule in this document now runs **in the HeroMarket service** (`src/server/
   - A scan resolves to a product **and** a unit: the product barcode, an extra barcode, a packaging barcode, or a scale label (configurable prefixes for weight or price).
   - A weighed product scanned from its plain barcode asks for the weight in grams or kilograms.
 - **Lines:** sale and purchase lines keep unit, factor, price and cost per unit. Stock moves by quantity × factor. Returns are in the line's unit, with its snapshot factor.
-- **Purchases:** a purchase in cartons feeds the moving average with cost per base unit = carton cost ÷ factor.
+- **Purchases:** a purchase in cartons sets the purchase price per base unit = carton cost ÷ factor. The carton's own purchase price (`product_units.purchase_cost`) is not changed.
 
 ## 11d. Automatic discounts (D-044)
 

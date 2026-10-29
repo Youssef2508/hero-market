@@ -100,7 +100,7 @@ async function buildLines(db, items, products) {
         }
       )
     }
-    const avg = Number(p.cost_price) || 0
+    const cost = Number(p.cost_price) || 0
     lines.push({
       barcode: p.barcode,
       name: p.name,
@@ -111,9 +111,9 @@ async function buildLines(db, items, products) {
       baseQty,
       price,
       total: round2(qty * price),
-      // Cost per selling unit (snapshot): the average per base unit × factor.
-      cost: round4(avg * unit.factor),
-      baseCost: avg
+      // Cost per selling unit (snapshot): the purchase price per base unit × factor.
+      cost: round4(cost * unit.factor),
+      baseCost: cost
     })
   }
   return lines

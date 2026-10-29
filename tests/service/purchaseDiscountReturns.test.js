@@ -122,7 +122,7 @@ test('a discount lowers the invoice and the payable; product prices and costs do
     [supplierId]
   )
   assert.deepEqual(ledger, [{ a: 54 }])
-  // The moving average follows the lines (6), never the discount; the owner's prices are untouched.
+  // The purchase price follows the lines (6), never the discount; the owner's prices are untouched.
   assert.deepEqual(await product('D1'), { s: 20, c: 6, r: 10, w: 9 })
   assert.deepEqual(
     await one(
@@ -261,17 +261,25 @@ test('a partial return in boxes: stock out at its cost, payable down, twice the 
   assert.equal(detail.returns.length, 2)
 })
 
-test('the moving average falls back by exactly what left at its cost', async (t) => {
+test('a purchase return leaves at the line cost and keeps the latest purchase price (D-087)', async (t) => {
   if (!requireDb(t)) return
   ok(await buy({ total_amount: 50, items: [{ barcode: 'A1', qty: 10, unitCost: 5 }] }))
   ok(await buy({ total_amount: 70, items: [{ barcode: 'A1', qty: 10, unitCost: 7 }] }))
-  assert.equal((await product('A1')).c, 6)
-  const pid = (await lastPurchase()).id
-  const [item] = await itemsOf(pid)
-  ok(await giveBack(pid, [{ purchaseItemId: item.id, qty: 5 }]))
+  assert.equal((await product('A1')).c, 7, 'the latest purchase price, not the average 6')
+  // Returning the older line: it leaves at 5, its own cost; the price stays 7.
+  const older = (
+    await q(
+      "SELECT purchase_id FROM supplier_purchase_items WHERE product_barcode = 'A1' AND unit_cost = 5 ORDER BY id DESC LIMIT 1"
+    )
+  )[0].purchase_id
+  const [line5] = await itemsOf(older)
+  ok(await giveBack(older, [{ purchaseItemId: line5.id, qty: 5 }]))
   const a = await product('A1')
-  // (20 × 6 − 5 × 7) ÷ 15 = 5.6667: the stock is worth 120 − 35 = 85.
-  assert.deepEqual([a.s, a.c], [15, 5.6667])
+  assert.deepEqual([a.s, a.c], [15, 7])
+  const mv = await q(
+    "SELECT unit_cost::float8 c, qty::float8 n FROM stock_movements WHERE product_barcode = 'A1' AND kind = 'purchase_return' ORDER BY id DESC LIMIT 1"
+  )
+  assert.deepEqual(mv, [{ c: 5, n: -5 }])
 })
 
 test('a return from a discounted invoice credits the net share and gives back that part of the gain', async (t) => {

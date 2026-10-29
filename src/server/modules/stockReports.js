@@ -3,7 +3,8 @@
 //
 // One rule for the value of stock, used by the report (PROD-02) and the dashboard (DASH-01):
 //   * quantities are the product's base unit (stock_qty); packages are never counted apart;
-//   * value at cost = stock × current moving-average cost; at selling price = stock × retail price;
+//   * value at cost = stock × latest purchase price (D-087; an estimate:
+//     no stock batches are kept); at selling price = stock × retail price;
 //   * negative stock counts as 0 in totals (it is listed and flagged: goods sold before receipt);
 //   * a product without a cost (0) adds 0 at cost and is counted as "بدون تكلفة";
 //   * stopped (inactive) products are left out unless asked for.

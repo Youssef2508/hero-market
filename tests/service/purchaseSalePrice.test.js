@@ -2,7 +2,7 @@
 // New selling and wholesale prices on purchase lines (owner, 2026-10-22, D-068). A filled field
 // sets the product's price when the purchase is confirmed, even over a price an earlier purchase
 // set; an empty field keeps it. Per product, the two prices independently; package prices never
-// change; the moving average and the invoice discount are untouched; atomic; in the activity log.
+// change; the purchase price rule and the invoice discount are untouched; atomic; in the activity log.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')

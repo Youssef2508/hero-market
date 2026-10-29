@@ -278,6 +278,8 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 ## D-041 Stock movement ledger, negative stock and moving-average cost (stage 4, phase 1)
 
+- **Costing superseded by D-087** (1.5.2): the latest purchase price replaces the moving average. The ledger and negative-stock rules stand.
+
 - **Decision**:
   - Stock is the sum of immutable `stock_movements`. `products.stock_qty` is a cached total maintained only by a trigger on the movements; a guard trigger refuses any other stock write.
   - Negative stock is allowed (owner decision).
@@ -1118,3 +1120,32 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Tests:**
   - `customerCodesManual.test.js` (8): the permission, typed and automatic codes, duplicates, simultaneous saves, the automatic code moving past a typed one, changing a code with past sales and the log, imports, the migration;
   - `customerCodes.test.js` updated to the new rule.
+
+## D-087 The latest purchase price replaces the moving average (owner, 1.5.2, migration 0026)
+
+- **Owner's rule:** a product's purchase price is the price of its latest confirmed purchase. Example: bought at 200, sold at 240 retail and 225 wholesale. A new invoice at 220, with 260 retail and 240 wholesale, leaves the product at exactly 220 / 260 / 240. The moving average would have made the price 206.67.
+- **Root cause:** `receiveStock` blended each receipt into a moving average (D-041). Purchase returns took the returned value out of that average. The profit reports used the product's current price for sale lines without a recorded cost.
+- **The rule now** (`inventory/stock.js`):
+  - **Purchases:** a confirmed purchase line sets `cost_price` (per base unit: the line price ÷ the unit factor) to its price. Of two lines of one product in an invoice, the later one wins.
+  - **Empty prices:** a line with an empty purchase price (`unitCost` null or omitted) counts at the current price × its unit factor and keeps it. A free line (price 0) keeps it too, so bonus goods never make a product cost 0.
+  - **Selling prices** change only through their own fields (D-068), and package prices never change.
+  - **Sales** record the price of the moment on each line. Profit uses only that recorded cost (`reports.js`), so later purchases never change a past sale's profit.
+  - **Returns:** a customer return moves at the sale line's cost ÷ its factor (an item or the whole invoice). A purchase return moves at its purchase line's cost. Deleting a damaged record moves at its write-off cost. None of them changes the purchase price.
+  - **Other movements:** damaged goods, counts and adjustments move at the current price.
+  - **Stock value at cost** = stock × the latest purchase price. It is shown as an estimate on the stock-value screen («سعر آخر شراء»), because no stock batches are kept.
+- **Purchases are recorded once per request:** `supplier_purchases.client_ref`, under an advisory lock. The purchase form sends one id per invoice, so a retry after a lost answer returns the first purchase. The same request sent five times at once is recorded once (tested).
+- **Atomic:** a failed or refused purchase changes nothing (one transaction). A preliminary invoice and its cancellation change no price. Only the conversion of a preliminary invoice, or a purchase, sets prices.
+- **Migration 0026 (data and schema):**
+  1. **Sale lines without a recorded cost** (NULL or 0) take the value the reports used for them until now: the product's current price × the line's factor. So no reported profit changes on the day of the upgrade, and later prices no longer reach those sales. Each such line is recorded in `sale_item_cost_backfill` with its old value. Lines of products with no price at all stay 0, as the reports showed them.
+  2. **Each product's purchase price** becomes the price of its latest purchase line with a price above 0, per base unit. "Latest" means by purchase time, then purchase number, then line. Each change is recorded in `product_cost_migration` (old price, new price, the purchase and the line it came from).
+     - A product never bought, or bought only free, keeps its price, which was typed by hand or imported.
+     - Stock, selling and package prices, purchases, balances, cash, the activity log and stock movements are not changed (tested with a fingerprint before and after).
+  3. Adds `supplier_purchases.client_ref`.
+- **Reconciliation:**
+  - **Stock value at cost** moves on the day of the upgrade, by Σ stock × (latest price − old average) for the products in `product_cost_migration`. This is deliberate, and those rows show the difference.
+  - **Sales, profit to date, supplier balances, the drawer and the treasury** do not change.
+  - The installer's data fingerprint does not include stock value, so Case B accepts the upgrade.
+- **Tests:**
+  - `latestPurchasePrice.test.js` (13);
+  - `stockCost.test.mjs` rewritten;
+  - `stockLedger`, `units`, `payablesReceivables` and `purchaseDiscountReturns` updated where they asserted averages.

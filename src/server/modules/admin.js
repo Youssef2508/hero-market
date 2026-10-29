@@ -430,6 +430,8 @@ module.exports = function adminModule(app) {
           'supplier_purchase_return_items',
           'supplier_purchase_returns',
           'supplier_purchase_items',
+          'sale_item_cost_backfill',
+          'product_cost_migration',
           'sale_items',
           'sales',
           'safe_ledger',
@@ -452,7 +454,9 @@ module.exports = function adminModule(app) {
         await db.query("SELECT set_config('hm.bulk_load', 'on', true)")
         for (const t of tables) await db.query(`DELETE FROM ${t}`)
         // Same as clearing sqlite_sequence: ids start again at 1.
-        for (const t of tables.filter((x) => x !== 'shift_closings'))
+        for (const t of tables.filter(
+          (x) => !['shift_closings', 'sale_item_cost_backfill'].includes(x)
+        ))
           await db.query(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), 1, false)`)
         // Stock history restarts too: negative stock becomes 0 (legacy behaviour) and the remaining
         // stock becomes a fresh opening balance.

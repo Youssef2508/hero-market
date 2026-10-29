@@ -107,7 +107,58 @@ async function ownOpenShift(db, ctx, shiftId) {
  */
 // `payable: false` (a preliminary invoice converted, D-064): the payment and the supplier's payable
 // were recorded with the preliminary invoice; only stock, cost and the purchase record are written.
+/**
+ * Purchase lines whose purchase price was left empty (unitCost null or omitted) take the product's
+ * current purchase price in the line's unit (per base unit × the unit's factor) and keep it: the
+ * owner's rule "an empty field keeps the price" (D-087). Unknown products are left to the caller.
+ */
+async function fillEmptyCosts(db, items) {
+  const out = []
+  for (const i of items) {
+    const given = i.unitCost !== null && i.unitCost !== undefined && i.unitCost !== ''
+    if (given) {
+      out.push({ ...i, unitCost: Number(i.unitCost), keepCost: false })
+      continue
+    }
+    const product = (
+      await db.query('SELECT * FROM products WHERE barcode = $1', [String(i.barcode).trim()])
+    ).rows[0]
+    if (!product) {
+      out.push({ ...i, unitCost: 0, keepCost: true })
+      continue
+    }
+    const unit = await loadUnit(db, product, i.unitId ?? null, { purpose: 'buy' })
+    out.push({
+      ...i,
+      unitCost: round4((Number(product.cost_price) || 0) * unit.factor),
+      keepCost: true
+    })
+  }
+  return out
+}
+
 async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}) {
+  // A retried confirmation (same request id) is recorded once (D-087).
+  if (p.clientRef) {
+    await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`purchase:${p.clientRef}`])
+    const prior = (
+      await db.query('SELECT id, supplier_id FROM supplier_purchases WHERE client_ref = $1', [
+        p.clientRef
+      ])
+    ).rows[0]
+    if (prior) {
+      const supplier = (
+        await db.query('SELECT * FROM suppliers WHERE id = $1', [prior.supplier_id])
+      ).rows[0]
+      const n = (
+        await db.query(
+          'SELECT count(*)::int AS n FROM supplier_purchase_items WHERE purchase_id = $1',
+          [prior.id]
+        )
+      ).rows[0].n
+      return { ...supplier, purchaseId: prior.id, receivedItems: n, duplicate: true }
+    }
+  }
   const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId]))
     .rows[0]
   if (!s) throw notFound('المورد غير موجود.')
@@ -124,12 +175,14 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   const shift = drawer ? await ownOpenShift(db, ctx, p.currentShiftId) : null
   if (drawer && paid > 0 && !shift)
     throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
-  const items = (p.items || []).map((i) => ({
+  const items = (await fillEmptyCosts(db, p.items || [])).map((i) => ({
     barcode: i.barcode.trim(),
     unitId: i.unitId ?? null,
     qty: Number(i.qty),
-    unitCost: Number(i.unitCost),
-    lineTotal: round2(Number(i.qty) * Number(i.unitCost)),
+    unitCost: i.unitCost,
+    // Empty price (kept) or a free line (price 0: bonus goods): the product's price is kept.
+    keepCost: i.keepCost || !(i.unitCost > 0),
+    lineTotal: round2(Number(i.qty) * i.unitCost),
     // New selling and wholesale prices for the product's base unit (D-068); empty = keep.
     ...Object.fromEntries(
       NEW_PRICES.map(({ key }) => [
@@ -173,9 +226,20 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     )
   const purchaseId = (
     await db.query(
-      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount)
-         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9) RETURNING id`,
-      [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '', gross, discount]
+      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount, client_ref)
+         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9, $10) RETURNING id`,
+      [
+        s.id,
+        ref,
+        total,
+        paid,
+        remaining,
+        p.payment_type || 'آجل',
+        p.notes || '',
+        gross,
+        discount,
+        p.clientRef || null
+      ]
     )
   ).rows[0].id
   // Lock the products in a stable order (concurrent sales lock the same rows).
@@ -220,11 +284,14 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         old('wholesale_price', 'newWholesalePrice')
       ]
     )
-    // Stock and the moving average work per base unit.
+    // Stock and the purchase price work per base unit. The line's price becomes the product's
+    // purchase price (the latest purchase price, D-087); of two lines of one product (pieces and
+    // boxes) the later one in the invoice wins.
     await receiveStock(db, ctx, {
       barcode: i.barcode,
       qty: baseQty,
       unitCost: round4(i.unitCost / unit.factor),
+      keepCost: i.keepCost,
       refType: 'purchase',
       refId: purchaseId,
       reason: `فاتورة شراء #${ref || purchaseId} من ${s.name}`
@@ -439,20 +506,23 @@ module.exports = function financeModule(app) {
         payment_type: str(40),
         notes: str(1000),
         currentShiftId: { type: ['integer', 'null'] },
+        // 1.5.2 (D-087): the request id; a retried confirmation is recorded once.
+        clientRef: { type: 'string', minLength: 8, maxLength: 120 },
         // Lines received into stock (K-38). When present, their total must equal total_amount.
         items: {
           type: 'array',
           maxItems: 500,
           items: {
             type: 'object',
-            required: ['barcode', 'qty', 'unitCost'],
+            required: ['barcode', 'qty'],
             properties: {
               barcode: { type: 'string', minLength: 1, maxLength: 64 },
               // Purchase unit (product_units.id); omitted or null = base unit. qty and unitCost
               // are in that unit (e.g. 3 cartons at 120 each).
               unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
-              unitCost: { type: 'number', minimum: 0 },
+              // Purchase price in that unit; omitted or null = keep the product's price (D-087).
+              unitCost: { type: ['number', 'null'], minimum: 0 },
               // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
               newRetailPrice: { type: ['number', 'null'], minimum: 0 },
               newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
@@ -971,6 +1041,8 @@ module.exports = function financeModule(app) {
         await postMovement(db, ctx, {
           barcode: r.product_barcode,
           qty: Number(r.quantity),
+          // Back at the cost it was written off at (D-087).
+          unitCost: Number(r.cost_price) > 0 ? Number(r.cost_price) : undefined,
           kind: 'damaged_reversal',
           refType: 'damaged',
           refId: damagedId
@@ -984,4 +1056,4 @@ module.exports = function financeModule(app) {
   })
 }
 
-module.exports.helpers = { recordPurchase }
+module.exports.helpers = { recordPurchase, fillEmptyCosts }

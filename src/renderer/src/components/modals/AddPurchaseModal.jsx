@@ -4,10 +4,12 @@ import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import ProductPicker from './ProductPicker'
 import { NumberField } from '../ui'
+import { currentCost, effectiveCost } from '../../lib/purchaseLines'
 
-const lineTotal = (l) => Math.round((Number(l.qty) || 0) * (Number(l.unitCost) || 0) * 100) / 100
+const lineTotal = (l) => Math.round((Number(l.qty) || 0) * effectiveCost(l) * 100) / 100
 
-// Purchase invoice. Item lines are received into stock at their cost (moving average, K-38);
+// Purchase invoice. Item lines are received into stock at their cost, which becomes the
+// product's purchase price (latest purchase price, K-38, D-087);
 // with lines, the invoice total is their sum. Without lines it records the amount only, as before.
 const AddPurchaseModal = ({
   showAddPurchaseModal,
@@ -149,7 +151,9 @@ const AddPurchaseModal = ({
                   <tr>
                     <th>الصنف</th>
                     <th>الكمية</th>
-                    <th>تكلفة الوحدة</th>
+                    <th title="سعر آخر شراء: يصبح سعر شراء الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      تكلفة الوحدة
+                    </th>
                     <th>الإجمالي</th>
                     <th title="اختياري: يغيّر سعر الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
                       سعر البيع الجديد (اختياري)
@@ -224,9 +228,10 @@ const AddPurchaseModal = ({
                           className="form-input num"
                           min="0"
                           step="0.0001"
-                          required
                           value={l.unitCost}
                           onChange={(e) => update(i, { unitCost: e.target.value })}
+                          placeholder={formatMoney(currentCost(l))}
+                          title="يصبح سعر الشراء الحالي للصنف عند حفظ الفاتورة؛ فارغ = يبقى السعر الحالي"
                           aria-label={`تكلفة وحدة ${l.name}`}
                         />
                       </td>
