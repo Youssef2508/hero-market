@@ -13,6 +13,7 @@ const { approverSchema } = require('../auth/approvals')
 const { METHODS, LABELS, TYPES, variance, varianceLabel, round2 } = require('../money/methods')
 const treasury = require('../money/treasury')
 const { signOutAfterClose } = require('../auth/shiftRule')
+const { shiftDetails } = require('./shiftDetails')
 
 // Owner decision 2026-10-14: closing with a cash difference above EGP 50 (over or short) needs a
 // supervisor's acknowledgement. A difference of exactly 50.00 does not.
@@ -301,6 +302,7 @@ async function shiftReport(
   )[0]
   const upfront = sumKind('sale_upfront')
   const events = await moneyEvents(db, shift)
+  const detail = await shiftDetails(db, shift)
   const report = {
     shiftId: shift.id,
     cashier: cashier?.username || '',
@@ -323,20 +325,31 @@ async function shiftReport(
       total: round2(expenses.reduce((s, e) => s + e.amount, 0)),
       lines: expenses
     },
+    // Each return with its invoice, customer, kind and what was returned (D-098).
     returns: {
       count: returns.length,
       total: round2(returns.reduce((s, r) => s + r.refund, 0)),
-      lines: returns
+      lines: detail.returns
     },
     manualDiscounts: await manualDiscounts(db, shift),
     movements,
-    creditSales: { count: credit.creditCount, total: round2(credit.creditTotal) },
+    creditSales: {
+      count: credit.creditCount,
+      total: round2(credit.creditTotal),
+      lines: detail.sales.credit
+    },
     partialSales: {
       count: credit.partialCount,
       total: round2(credit.partialTotal),
       paidNow: upfront,
-      unpaid: round2(credit.partialTotal - upfront)
+      unpaid: round2(credit.partialTotal - upfront),
+      lines: detail.sales.partial
     },
+    // Supplier invoices recorded in the shift, purchase returns with money back in it and the
+    // treasury entries of the shift (D-098).
+    supplierInvoices: detail.supplierInvoices,
+    purchaseReturns: detail.purchaseReturns,
+    treasuryEntries: detail.treasury,
     collections: sumKind('customer_payment'),
     supplierRefunds: sumKind('supplier_refund'),
     supplierPayments: {

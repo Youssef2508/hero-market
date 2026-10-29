@@ -365,8 +365,19 @@ test('credit and partial sales, later collections: receivables exact, collection
   )
   // The shift report keeps them apart.
   const rep = ok(await svc.call('shifts.details', { shiftId: shift.id }, owner)).report
-  assert.deepEqual(rep.creditSales, { count: 1, total: 30 })
-  assert.deepEqual(rep.partialSales, { count: 1, total: 30, paidNow: 10, unpaid: 20 })
+  const { lines: creditLines, ...creditTotals } = rep.creditSales
+  const { lines: partialLines, ...partialTotals } = rep.partialSales
+  assert.deepEqual(creditTotals, { count: 1, total: 30 })
+  assert.deepEqual(partialTotals, { count: 1, total: 30, paidNow: 10, unpaid: 20 })
+  // 1.5.2 (D-098): each sale listed with what its customer still owes.
+  assert.deepEqual(
+    creditLines.map((l) => [l.total, l.paidNow, l.unpaid]),
+    [[30, 0, 30]]
+  )
+  assert.deepEqual(
+    partialLines.map((l) => [l.total, l.paidNow, l.unpaid]),
+    [[30, 10, 20]]
+  )
   assert.equal(rep.supplierPayments.withInvoices, 400)
   assert.equal(rep.salesByMethod.cash, 30, 'only the paid-in-full sale counts as cash sales')
   assert.equal(rep.movements.visa.sale_upfront, 10)

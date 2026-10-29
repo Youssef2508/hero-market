@@ -76,6 +76,17 @@ module.exports = function supplierInvoicesModule(app) {
         const method = b.method || 'cash'
         // Where the money left from: the cashier's shift drawer, or (treasury managers) the treasury.
         const dest = paid > 0 ? await treasury.resolveDestination(db, ctx, b) : null
+        // The shift it was recorded in (D-098), also when nothing was paid, so the shift report
+        // lists every invoice; nothing moves for an unpaid one.
+        const ownShift =
+          dest?.shift ||
+          (
+            await db.query(
+              "SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY id LIMIT 1",
+              [ctx.user.id]
+            )
+          ).rows[0] ||
+          null
         const inv = (
           await db.query(
             `INSERT INTO supplier_pending_invoices (supplier_id, invoice_ref, total, paid, payment_mode, method, destination, shift_id, notes, created_by, client_ref)
@@ -88,7 +99,7 @@ module.exports = function supplierInvoicesModule(app) {
               b.paymentMode,
               paid > 0 ? method : null,
               dest ? dest.destination : null,
-              dest && dest.shift ? dest.shift.id : null,
+              dest && dest.destination === 'treasury' ? null : ownShift ? ownShift.id : null,
               (b.notes || '').trim() || null,
               ctx.user.id,
               b.clientRef

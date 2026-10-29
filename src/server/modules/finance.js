@@ -261,7 +261,8 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         discount,
         p.clientRef || null,
         paidFrom,
-        paidFrom === 'shift' ? shift.id : null
+        // The shift it was recorded in (D-098), also when nothing was paid from its drawer.
+        shift ? shift.id : null
       ]
     )
   ).rows[0].id

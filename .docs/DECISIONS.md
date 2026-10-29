@@ -1377,3 +1377,30 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `supplierScreens.test.js` (3): each permission alone works without `tills.operate`; the other feature and approval are refused; the roles catalogue hides `tills.operate` and explains both;
   - `navigationLayout.test.mjs`: the menu, the cashier's menu, each screen by its permission alone, no `tills` entry;
   - `uiInventory` and the matrix are updated.
+
+## D-098 The shift report lists every record that makes its figures (owner's review, 1.5.2)
+
+The shift details, the closing window, the saved close and the printed close list each of these one by one, from their own records (`modules/shiftDetails.js`):
+
+- **Expenses:** time, category and description, amount, who recorded it, reference (مصروف #n). They add up to the expense total.
+- **Customer returns:** time, invoice, kind («مرتجع جزئي» or «مرتجع الفاتورة كاملة»), customer, the products and quantities returned, amount and user. A partial return names the returned line; a whole return names the invoice's lines.
+- **Credit and partial sales:** invoice, customer, total, paid now and still owed. A customer without a name is «عميل بدون اسم – فاتورة #n». The lines' unpaid amounts are what the customer owes (tested). Collections stay a separate list (D-091) and are never sales.
+- **Supplier invoices of the shift**, final and preliminary:
+  - supplier, reference, the invoice's **real total**, paid now, remaining, and status: «آجل (لم يُدفع شيء)», «مدفوعة بالكامل» or «دفع جزئي»;
+  - a preliminary invoice also shows its state (بانتظار الأصناف / أُكملت / ملغاة);
+  - a credit invoice shows 0 paid, never a total of 0;
+  - an invoice belongs to the shift of the user who recorded it, also when nothing was paid. `supplier_purchases.shift_id` and `supplier_pending_invoices.shift_id` are set for unpaid ones from 1.5.2; older unpaid invoices have none;
+  - the amounts paid now add up to the shift's invoice payments, once each.
+- **Supplier purchase returns with money back in the shift:** supplier, purchase reference, products and quantities, money received, credit. They add up to the money returned by suppliers.
+- **Supplier debt payments:** each request with its status (D-090).
+- **The shift's treasury entries:** its opening float and its transfer at close. The treasury's own movements outside shifts are not shift events.
+- **Reconciliation** (tested in `shiftReportDetails.test.js` against the source rows): every drawer movement of the shift is listed exactly once, and the expected cash is the drawer formula.
+- **Printing:**
+  - every line is printed; none is dropped to shorten the receipt;
+  - details go on a small line under their amount, wrapped to the paper's width (48 characters on 80 mm, 32 on 58 mm) and never cut, with an amount kept with «ج.م»;
+  - drawn right to left by the printing code itself (`print_receipt.ps1 -PreviewFile`, `printPreview.test.mjs`); a long close continues on the next page of the roll;
+  - **not tested on the shop's thermal printer.**
+- **Tests:**
+  - `shiftReportDetails.test.js`: a shift with every kind of record, checked list by list against its source records and totals, the drawer, and the printed lines;
+  - `printPreview.test.mjs`: the detailed close drawn to PNG;
+  - `payablesReceivables.test.js`: checks the credit-sale lines too.
