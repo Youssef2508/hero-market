@@ -97,7 +97,30 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
 
 ## How this release was verified
 
-VERIFICATION_SUMMARY
+- **The full test suite: 463 of 463 pass** on the release code (disposable PostgreSQL databases). Lint: no errors. Formatting: clean. **CI:** the Linux, Docker and Windows (bundled PostgreSQL and packaging check) jobs passed on PR #32.
+- **New tests** include:
+  - `latestPurchasePrice.test.js` (13): your 200 → 220 / 260 / 240 example and migration 0026;
+  - `supplierPaymentRequests.test.js` (8): approval once, rejection and settlement, the itemized shift report, backup restore;
+  - `shiftReconciliation152.test.js`: one realistic shift with every kind of money movement and failed operations, reconciled to the drawer, treasury, supplier, customer, stock and the saved close;
+  - `purchaseViewEdit`, `adminPurchaseTreasury`, `tillSearch`, `permissionUpgrade`, `customerCodesManual` and `navigationLayout`.
+- **The update, in Windows Sandbox with the 1.5.2 installer**, on a made-up store (no real shop data):
+  - 1.4.0 → 1.5.2;
+  - going back to 1.4.0 as in step F;
+  - 1.4.0 → 1.5.0 → 1.5.2;
+  - going back to 1.5.0 → 1.5.1 → 1.5.2.
+
+  Each time, every figure was identical before and after: products, stock, customers and their debts, users, shifts with their closing figures, sales, the drawer, expenses, suppliers, their purchases and balances. The purchase prices became the latest purchase (a carton at 120 for 24 → 5; a product never bought kept its price), with each change recorded. The new permissions were on the right roles. The backup tasks were registered and a nightly copy was made and verified.
+
+- **In the running program** (development build, disposable database):
+  - the till's one field (a name narrows letter by letter, a fast "scanner" code opens no list, an unknown code adds nothing);
+  - the keyboard;
+  - the menu groups;
+  - a supplier request → the notice → approval (balance 200 → 150);
+  - a purchase invoice opened and its notes saved;
+  - the scale settings;
+  - the customer code choice.
+
+  The keys were simulated; the shop's scanner and keyboard should be tried once (step 16).
 
 ## Limits
 
