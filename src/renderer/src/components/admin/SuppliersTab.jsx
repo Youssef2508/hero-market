@@ -229,6 +229,7 @@ export default function SuppliersTab({
         <PurchaseDetailModal
           purchase={viewing}
           canManage={canManage}
+          canEdit={can(currentUser, 'suppliers.purchase_edit')}
           onClose={() => setViewing(null)}
           onSaved={() => fetchSupplierProfile(selectedSupplier)}
           onPrint={window.api?.printer?.printReport ? printPurchase : null}

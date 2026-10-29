@@ -1270,3 +1270,44 @@ Format: context → decision → reason → consequences (→ alternatives).
 - **Not touched:** the scanner (`useBarcode`), the F keys and the money forms' Enter rule.
 - **Checked in the running app:** `keys152.js`, 16 checks.
 - **Coverage per screen:** `.docs/KEYBOARD_COVERAGE.md`.
+
+## D-094 Permission review (owner, 1.5.2)
+
+- **Reviewed:** the actual catalogue (`auth/permissions.js`, 53 keys in 11 groups), the roles screen and the service's enforcement.
+- **Each requested capability has its own permission**, with an Arabic label and an explanation shown under it in «الأدوار والصلاحيات»:
+
+  | Capability                                     | Permission                                                                      |
+  | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+  | Invoice history                                | `sales.view` (own shift); `sales.view_all` (all, D-081)                         |
+  | Reprint                                        | `sales.reprint`                                                                 |
+  | Returns                                        | `sales.return`; `sales.return_request`                                          |
+  | Change payment method                          | `sales.change_payment`                                                          |
+  | Supplier invoices: view                        | `suppliers.view`                                                                |
+  | Supplier invoices: create                      | `suppliers.manage`; at the till `suppliers.pending`                             |
+  | Supplier invoices: correct reference and notes | `suppliers.purchase_edit` (**new**)                                             |
+  | Supplier debt-payment requests: register       | `suppliers.payment_request`                                                     |
+  | Supplier debt-payment requests: approve        | `suppliers.payment_approve`                                                     |
+  | Customer collections                           | `customers.payments`                                                            |
+  | Customer creation                              | `customers.manage`                                                              |
+  | Manual customer codes                          | `customers.code`                                                                |
+  | Treasury                                       | `treasury.view`, `treasury.manage`                                              |
+  | Shifts                                         | `shifts.operate`, `shifts.view_all`, `shifts.view_expected`                     |
+  | Expenses                                       | `expenses.manage`, `expenses.view_all`, `expenses.categories`                   |
+  | Products and inventory                         | `products.*`, `categories.manage`, `inventory.*`                                |
+  | Reports                                        | `reports.view`, `reports.valuation`                                             |
+  | Backups                                        | `backup.manage`                                                                 |
+  | Import and export                              | `data.import`, `data.export`                                                    |
+  | Everything else                                | the rest of the catalogue: users, roles, settings, discounts, logs, sync, reset |
+
+- **One change:** correcting a recorded purchase (D-088) has its own key, `suppliers.purchase_edit` «تعديل بيانات فاتورة شراء مسجلة», instead of riding on «إدارة الموردين والمشتريات». A role may correct invoices without buying, or buy without correcting.
+- **Grants on an upgrade** (`ensureAccessControl`):
+  - New keys are granted once, to the built-in roles that include them by default.
+  - A key may name a prerequisite (`requires`). It is then granted only to roles holding the prerequisite now. So a supervisor whose purchases the owner took away does not get the correction back.
+  - Custom roles get nothing new. Nothing the owner assigned or removed is changed. A key removed after its first grant stays removed.
+- **Enforcement:** every operation names its permission and the service refuses it otherwise. The menus only hide what cannot be used.
+- **Matrix:** `.docs/PERMISSION_MATRIX.md`, generated from the code and kept current by a test.
+- **Invoice rules kept:** the invoice visibility of D-081 and the action screens by invoice number of D-082 are unchanged.
+- **Tests:**
+  - `permissionsAudit.test.js`: every operation requires a permission, and each built-in role is refused every operation it lacks;
+  - `permissionUpgrade.test.js` (3): a fresh install, an upgrade with the owner's changes and prerequisites, allowed and denied;
+  - the feature tests for each new action: `customerCodesManual`, `supplierPaymentRequests`, `purchaseViewEdit`, `adminPurchaseTreasury`.

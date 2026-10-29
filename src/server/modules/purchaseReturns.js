@@ -79,7 +79,7 @@ module.exports = function purchaseReturnsModule(app) {
   // invoice, never edited in place. Logged with what changed.
   app.operation({
     name: 'suppliers.updatePurchase',
-    permission: 'suppliers.manage',
+    permission: 'suppliers.purchase_edit',
     schema: {
       type: 'object',
       required: ['purchaseId'],

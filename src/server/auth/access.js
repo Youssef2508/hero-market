@@ -1,6 +1,13 @@
 'use strict'
 // Roles, permissions and their invariants. All checks run in the service, never in the renderer.
-const { SYSTEM_ROLES, LEGACY_ROLE_MAP, KEYS, ALL, ROLE_TO_LEGACY } = require('./permissions')
+const {
+  SYSTEM_ROLES,
+  LEGACY_ROLE_MAP,
+  KEYS,
+  ALL,
+  ROLE_TO_LEGACY,
+  PERMISSIONS
+} = require('./permissions')
 
 /**
  * Idempotent start-up step:
@@ -46,9 +53,14 @@ async function ensureAccessControl(client) {
   if (!firstRun) {
     for (const r of SYSTEM_ROLES) {
       for (const p of fresh.filter((k) => r.permissions.includes(k))) {
+        // A key with a prerequisite goes only to roles that hold it now (an owner who took
+        // purchases away from a role does not get part of them back, D-094).
+        const requires = PERMISSIONS.find((x) => x.key === p)?.requires
         await client.query(
-          'INSERT INTO role_permissions (role_id, permission) SELECT id, $2 FROM roles WHERE key = $1 ON CONFLICT DO NOTHING',
-          [r.key, p]
+          `INSERT INTO role_permissions (role_id, permission) SELECT id, $2 FROM roles WHERE key = $1
+             AND ($3::text IS NULL OR EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = roles.id AND rp.permission = $3))
+           ON CONFLICT DO NOTHING`,
+          [r.key, p, requires || null]
         )
       }
     }

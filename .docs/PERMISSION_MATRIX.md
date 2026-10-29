@@ -40,6 +40,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.manage`          | إدارة الموردين والمشتريات                                     |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
 | `suppliers.opening`         | الرصيد الافتتاحي للموردين                                     |      ✓      |      ✓      |      |       |                     |                   |
 | `suppliers.pending`         | فاتورة مورد مبدئية                                            |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `suppliers.purchase_edit`   | تعديل بيانات فاتورة شراء مسجلة                                |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
 | `suppliers.payment_request` | طلب سداد دين مورد من الدرج                                    |      ✓      |      ✓      |      |       |                     |                   |
 | `suppliers.payment_approve` | اعتماد طلبات سداد الموردين                                    |      ✓      |      ✓      |      |       |                     |                   |
 | `checks.manage`             | الشيكات (متوقفة)                                              |      ✓      |      ✓      |  ✓   |       |                     |                   |
@@ -206,7 +207,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.returnPurchase`       | all of `suppliers.manage`                                                                         |
 | `suppliers.setOpening`           | all of `suppliers.opening`                                                                        |
 | `suppliers.update`               | all of `suppliers.manage`                                                                         |
-| `suppliers.updatePurchase`       | all of `suppliers.manage`                                                                         |
+| `suppliers.updatePurchase`       | all of `suppliers.purchase_edit`                                                                  |
 | `sync.configure`                 | all of `sync.manage`                                                                              |
 | `sync.recover`                   | all of `sync.manage`                                                                              |
 | `sync.runNow`                    | all of `sync.manage`                                                                              |

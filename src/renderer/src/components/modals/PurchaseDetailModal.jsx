@@ -6,7 +6,7 @@ import { Timestamp } from '../ui'
 
 /**
  * A recorded supplier invoice with its lines and returns (owner, 1.5.2, D-088). Everyone who sees
- * suppliers can open it. With «إدارة الموردين» its reference number and notes can be corrected:
+ * suppliers can open it. With «تعديل بيانات فاتورة شراء مسجلة» its reference and notes can be corrected:
  * they change no stock, cost or balance. Quantities and prices of a recorded purchase are corrected
  * by a purchase return and a new invoice, so stock, the supplier's balance and the purchase price
  * stay explained by their records.
@@ -14,6 +14,7 @@ import { Timestamp } from '../ui'
 export default function PurchaseDetailModal({
   purchase,
   canManage,
+  canEdit,
   onClose,
   onSaved,
   onReturn,
@@ -169,7 +170,7 @@ export default function PurchaseDetailModal({
                   </ul>
                 </>
               )}
-              {canManage ? (
+              {canEdit ? (
                 <>
                   <label className="field">
                     <span className="field-label">رقم الفاتورة (مرجع)</span>
@@ -215,7 +216,7 @@ export default function PurchaseDetailModal({
               مرتجع مشتريات
             </button>
           )}
-          {canManage && (
+          {canEdit && (
             <button
               type="submit"
               className="btn btn-primary"

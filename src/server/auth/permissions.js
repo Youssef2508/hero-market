@@ -217,6 +217,16 @@ const PERMISSIONS = [
     description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
   },
   {
+    // Correcting a recorded purchase's reference and notes (owner, 1.5.2, D-088, D-094). On an
+    // upgrade it is granted only to roles that already manage purchases (`requires`).
+    key: 'suppliers.purchase_edit',
+    module: 'suppliers',
+    label: 'تعديل بيانات فاتورة شراء مسجلة',
+    description:
+      'تصحيح رقم فاتورة الشراء وملاحظاتها بعد تسجيلها (يُسجَّل في سجل الأحداث). الكميات والأسعار تُصحَّح بمرتجع مشتريات وفاتورة جديدة',
+    requires: 'suppliers.manage'
+  },
+  {
     // Supplier debt-payment requests (owner, 1.5.2, D-090): cash from the drawer, the balance after
     // an administrator approves.
     key: 'suppliers.payment_request',
@@ -436,7 +446,8 @@ const SYSTEM_ROLES = [
       'inventory.adjust',
       'inventory.reorder',
       'suppliers.view',
-      'suppliers.manage'
+      'suppliers.manage',
+      'suppliers.purchase_edit'
     ]
   },
   {
