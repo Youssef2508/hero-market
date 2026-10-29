@@ -33,6 +33,13 @@ Written for the shop owner. 1.5.2 brings the changes you asked for after 1.5.1. 
   - Quantities and prices are corrected with «مرتجع مشتريات» and a new invoice.
 - **An administrator with no open shift** can record a purchase. The amount paid now is taken from the treasury automatically. With a shift open, the drawer pays, as before. Other users still need a shift.
 
+## Two people never edit the same invoice or request
+
+- When someone opens a **preliminary supplier invoice** to complete it, it is reserved for them for **30 minutes**. When an administrator opens a **supplier debt-payment request** to approve, reject or settle it, it is reserved for **5 minutes**.
+- Everyone else still sees it in the list, in blue, with «[الاسم] بيعدل الفاتورة حاليًا» or «[الاسم] بيعدل طلب السداد حاليًا». Its buttons are disabled, and the reason and the time it becomes free are shown under them. The program refuses the attempt itself, not only the screen.
+- It becomes free when the person finishes or closes the window, or when the time runs out (also if their PC was switched off). The lists update by themselves every 30 seconds.
+- A reservation never pays, approves, or changes stock or a balance.
+
 ## Two prices only: purchase and selling
 
 - **There is no wholesale price any more:** not in the product window, the products list, the purchase invoice, the packages window, the Excel file or the owner's remote edits. The till never used it, so no selling price changes. The old values stay stored, untouched, for history.

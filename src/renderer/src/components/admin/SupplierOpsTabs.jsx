@@ -112,7 +112,7 @@ function MyPendingInvoices({
             </thead>
             <tbody>
               {rows.map((p) => (
-                <tr key={p.id}>
+                <tr key={p.id} className={p.reserved_active ? 'row-reserved' : undefined}>
                   <td>
                     <span className="ltr-id">{p.id}</span>
                   </td>
@@ -120,13 +120,20 @@ function MyPendingInvoices({
                   <td className="num">{formatMoney(p.total)}</td>
                   <td className="num">{formatMoney(p.paid)}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => setCancelling(p)}
-                    >
-                      إلغاء
-                    </button>
+                    {/* D-099: the administrator completing it holds it for up to 30 minutes. */}
+                    {p.reserved_active && !p.reserved_mine ? (
+                      <span className="badge badge-info" role="status">
+                        «{p.reserved_by_name}» بيعدل الفاتورة حاليًا
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setCancelling(p)}
+                      >
+                        إلغاء
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

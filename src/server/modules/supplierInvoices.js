@@ -10,12 +10,13 @@ const treasury = require('../money/treasury')
 const { addMovement } = require('../money/shiftLedger')
 const { METHODS, LABELS, round2 } = require('../money/methods')
 const { recordPurchase, fillEmptyCosts } = require('./finance').helpers
+const reservations = require('../money/reservations')
 
 const ref = { type: 'string', minLength: 8, maxLength: 120 }
 const MODES = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جزئي' }
 
 async function pendingRow(db, id, lock = false) {
-  return (
+  const row = (
     await db.query(
       `SELECT p.*, s.name AS supplier_name, u.username AS created_by_name
          FROM supplier_pending_invoices p JOIN suppliers s ON s.id = p.supplier_id
@@ -24,6 +25,9 @@ async function pendingRow(db, id, lock = false) {
       [id]
     )
   ).rows[0]
+  // The reservation's token is given only to its holder, by supplierInvoices.reserve (D-099).
+  if (row) delete row.reserve_token
+  return row
 }
 
 module.exports = function supplierInvoicesModule(app) {
@@ -175,20 +179,26 @@ module.exports = function supplierInvoicesModule(app) {
     handler: async (ctx, { status, supplierId }) =>
       (
         await ctx.pool.query(
-          `SELECT p.*, p.total::float8 AS total, p.paid::float8 AS paid, s.name AS supplier_name,
-                  u.username AS created_by_name
-             FROM supplier_pending_invoices p JOIN suppliers s ON s.id = p.supplier_id
-             LEFT JOIN users u ON u.id = p.created_by
-            WHERE ($1::text IS NULL OR p.status = $1) AND ($2::int IS NULL OR p.supplier_id = $2)
-              AND ($3::int IS NULL OR p.created_by = $3)
-            ORDER BY p.id DESC LIMIT 500`,
+          `SELECT t.*, t.total::float8 AS total, t.paid::float8 AS paid, s.name AS supplier_name,
+                  u.username AS created_by_name, ${reservations.LIST_COLUMNS(4)}
+             FROM supplier_pending_invoices t JOIN suppliers s ON s.id = t.supplier_id
+             LEFT JOIN users u ON u.id = t.created_by
+             LEFT JOIN users ru ON ru.id = t.reserved_by
+            WHERE ($1::text IS NULL OR t.status = $1) AND ($2::int IS NULL OR t.supplier_id = $2)
+              AND ($3::int IS NULL OR t.created_by = $3)
+            ORDER BY t.id DESC LIMIT 500`,
           [
             status || null,
             supplierId || null,
-            ctx.can('suppliers.view') || ctx.can('suppliers.manage') ? null : ctx.user.id
+            ctx.can('suppliers.view') || ctx.can('suppliers.manage') ? null : ctx.user.id,
+            reservations.offset()
           ]
         )
-      ).rows
+      ).rows.map(({ reserve_token: _token, ...row }) => ({
+        ...row,
+        // D-099: who is completing it now; the token stays with its holder.
+        reserved_mine: row.reserved_active && row.reserved_by === ctx.user.id
+      }))
   })
 
   // Cancel a preliminary invoice entered by mistake (owner, 2026-10-21, D-065). It is kept, marked
@@ -227,6 +237,8 @@ module.exports = function supplierInvoicesModule(app) {
           throw conflict(
             `الفاتورة المبدئية #${inv.id} أُكملت بفاتورة الشراء #${inv.purchase_id} وأثّرت في المخزون والتكلفة؛ لا تُلغى من هنا. يلزم مرتجع مشتريات (غير متاح بعد): راجع الإدارة.`
           )
+        // Not while another user is completing it (D-099).
+        await reservations.check(db, ctx, 'pending', inv.id, null)
         const total = Number(inv.total)
         const paid = Number(inv.paid)
         const refund = paid > 0 ? b.refund : 'none'
@@ -290,7 +302,8 @@ module.exports = function supplierInvoicesModule(app) {
         }
         await db.query(
           `UPDATE supplier_pending_invoices SET status = 'cancelled', cancelled_by = $2, cancelled_at = LOCALTIMESTAMP(0),
-                  cancel_ref = $3, cancel_refund = $4, cancel_method = $5, cancel_reason = $6
+                  cancel_ref = $3, cancel_refund = $4, cancel_method = $5, cancel_reason = $6,
+                  ${reservations.CLEAR}
             WHERE id = $1`,
           [
             inv.id,
@@ -342,7 +355,9 @@ module.exports = function supplierInvoicesModule(app) {
             }
           }
         },
-        clientRef: ref
+        clientRef: ref,
+        // The reservation taken when the invoice was opened (supplierInvoices.reserve, D-099).
+        reservationToken: { type: ['string', 'null'], maxLength: 64 }
       }
     },
     handler: async (ctx, b) =>
@@ -357,6 +372,9 @@ module.exports = function supplierInvoicesModule(app) {
             `الفاتورة المبدئية #${inv.id} أُكملت من قبل (فاتورة الشراء #${inv.purchase_id}).`
           )
         }
+        // D-099: only the user holding the valid reservation (its token), or anyone while no one
+        // holds one; a screen whose reservation expired or passed to another user cannot write.
+        await reservations.check(db, ctx, 'pending', inv.id, b.reservationToken || null)
         // The detailed invoice: its lines, less an optional invoice-level discount (D-066). A line
         // with an empty purchase price counts at the product's current price (D-087).
         const lines = await fillEmptyCosts(db, b.items)
@@ -405,7 +423,8 @@ module.exports = function supplierInvoicesModule(app) {
         }
         await db.query(
           `UPDATE supplier_pending_invoices SET status = 'converted', purchase_id = $2, final_total = $3,
-                  difference = $4, converted_by = $5, converted_at = LOCALTIMESTAMP(0), convert_ref = $6
+                  difference = $4, converted_by = $5, converted_at = LOCALTIMESTAMP(0), convert_ref = $6,
+                  ${reservations.CLEAR}
             WHERE id = $1`,
           [inv.id, purchase.purchaseId, final, difference, ctx.user.id, b.clientRef]
         )
@@ -427,5 +446,35 @@ module.exports = function supplierInvoicesModule(app) {
           difference
         }
       })
+  })
+
+  // Open a preliminary invoice to complete it: reserve it for 30 minutes (D-099), or renew the
+  // user's own reservation. Refused, naming the holder, while another user's is valid.
+  app.operation({
+    name: 'supplierInvoices.reserve',
+    permission: 'suppliers.manage',
+    schema: {
+      type: 'object',
+      required: ['invoiceId'],
+      properties: { invoiceId: { type: 'integer' } }
+    },
+    handler: async (ctx, { invoiceId }) =>
+      ctx.tx(async (db) => {
+        const r = await reservations.acquire(db, ctx, 'pending', invoiceId)
+        return { ...r, invoice: await pendingRow(db, invoiceId) }
+      })
+  })
+
+  // Leave the completion screen without completing: give the reservation back.
+  app.operation({
+    name: 'supplierInvoices.release',
+    permission: 'suppliers.manage',
+    schema: {
+      type: 'object',
+      required: ['invoiceId', 'token'],
+      properties: { invoiceId: { type: 'integer' }, token: { type: 'string', maxLength: 64 } }
+    },
+    handler: async (ctx, { invoiceId, token }) =>
+      ctx.tx((db) => reservations.release(db, ctx, 'pending', invoiceId, token))
   })
 }

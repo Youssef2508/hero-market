@@ -1404,3 +1404,34 @@ The shift details, the closing window, the saved close and the printed close lis
   - `shiftReportDetails.test.js`: a shift with every kind of record, checked list by list against its source records and totals, the drawer, and the printed lines;
   - `printPreview.test.mjs`: the detailed close drawn to PNG;
   - `payablesReceivables.test.js`: checks the credit-sale lines too.
+
+## D-099 Reservations against concurrent editing (owner, 1.5.2, migration 0030)
+
+- **What is reserved:**
+  - a preliminary supplier invoice opened to be completed: **30 minutes**, «[الاسم] بيعدل الفاتورة حاليًا»;
+  - a supplier debt-payment request opened to be decided on (approve, reject, settle): **5 minutes**, «[الاسم] بيعدل طلب السداد حاليًا».
+- **Stored in the record itself:** `reserved_by`, `reserved_at`, `reserved_until` and `reserve_token`. Never in a screen. Existing records start with none.
+- **Taking a reservation** (`supplierInvoices.reserve`, `supplierPayments.reserve`; the same permissions as completing or deciding, nothing new):
+  - one conditional `UPDATE`: the record must still be eligible (pending; for a request, pending or disputed) and not held by another user's valid reservation;
+  - two simultaneous attempts serialize on the row: exactly one owner, and the other is refused with the holder's name and the time it ends;
+  - the holder opening it again renews it with the same token.
+- **Every write checks the reservation** in its own transaction:
+  - completion, cancellation, approval, rejection and settlement are refused while another user's reservation is valid;
+  - with a token, the caller must hold that valid reservation, so a screen left open past its expiry, or after the record passed to someone else, cannot write;
+  - a write without a token is allowed only while nobody else holds one (older screens, direct requests);
+  - finishing clears the reservation in the same `UPDATE`.
+  - A refused attempt changes nothing: no stock, payment, balance or record.
+- **Expiry and release:**
+  - expiry is checked on every action against the database clock; no timer is needed;
+  - closing the window without finishing gives it back (`release`, only by the holder's own token);
+  - closing the program gives it back if possible, and otherwise it expires at its deadline;
+  - another user's attempt never releases it.
+- **Screens:**
+  - the row stays in the list with its supplier, amount and date, in a distinct colour, with the holder's name;
+  - its actions are disabled, with the reason and the time underneath;
+  - the lists look again every 30 seconds, so a finished or expired reservation disappears by itself;
+  - the cashier's own pending list shows it too, without its cancel button.
+- **Untouched:** a reservation never moves money or stock, never approves, and never changes a balance. The approval permission stays separate, and idempotency and the audit trail are unchanged.
+- **Tests:**
+  - `reservations.test.js` (8): unreserved start, the first holder, the second refused by name, 30 and 5 minutes with a controllable clock (`HEROMARKET_TEST_CLOCK_OFFSET_SECONDS`, tests only), taking over after expiry, a stale holder refused, completion and cancellation clearing it, release by the holder only, a crashed session freed at the deadline, simultaneous attempts giving one owner, direct requests, unauthorized users, duplicates once, and unreserved records unchanged;
+  - checked in the running app: a row held by another user, opening and cancelling one's own, and an expired one disappearing.

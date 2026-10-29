@@ -189,12 +189,16 @@ Every permission is checked by the service on every request, before the request 
 | `supplierInvoices.convert`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.createPending` | all of `suppliers.pending`                                                                        |
 | `supplierInvoices.list`          | any of `suppliers.view`, `suppliers.manage`, `suppliers.pending`                                  |
+| `supplierInvoices.release`       | all of `suppliers.manage`                                                                         |
+| `supplierInvoices.reserve`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.suppliers`     | any of `suppliers.pending`, `suppliers.view`, `suppliers.manage`                                  |
 | `supplierPayments.approve`       | all of `suppliers.payment_approve`                                                                |
 | `supplierPayments.create`        | all of `suppliers.payment_request`                                                                |
 | `supplierPayments.list`          | any of `suppliers.payment_approve`, `suppliers.payment_request`                                   |
 | `supplierPayments.pendingCount`  | all of `suppliers.payment_approve`                                                                |
 | `supplierPayments.reject`        | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.release`       | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.reserve`       | all of `suppliers.payment_approve`                                                                |
 | `supplierPayments.settle`        | all of `suppliers.payment_approve`                                                                |
 | `supplierPayments.suppliers`     | all of `suppliers.payment_request`                                                                |
 | `suppliers.addPurchase`          | all of `suppliers.manage`                                                                         |
