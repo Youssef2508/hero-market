@@ -197,6 +197,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.returnPurchase`       | all of `suppliers.manage`                                                                         |
 | `suppliers.setOpening`           | all of `suppliers.opening`                                                                        |
 | `suppliers.update`               | all of `suppliers.manage`                                                                         |
+| `suppliers.updatePurchase`       | all of `suppliers.manage`                                                                         |
 | `sync.configure`                 | all of `sync.manage`                                                                              |
 | `sync.recover`                   | all of `sync.manage`                                                                              |
 | `sync.runNow`                    | all of `sync.manage`                                                                              |

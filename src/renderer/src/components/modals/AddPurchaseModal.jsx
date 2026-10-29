@@ -5,6 +5,7 @@ import { formatMoney } from '../../lib/utils'
 import ProductPicker from './ProductPicker'
 import { NumberField } from '../ui'
 import { currentCost, effectiveCost } from '../../lib/purchaseLines'
+import { isAdmin } from '../../lib/api'
 
 const lineTotal = (l) => Math.round((Number(l.qty) || 0) * effectiveCost(l) * 100) / 100
 
@@ -20,12 +21,17 @@ const AddPurchaseModal = ({
   setConvertingPending,
   newPurchaseForm,
   setNewPurchaseForm,
-  handleAddPurchase
+  handleAddPurchase,
+  currentUser,
+  currentShift
 }) => {
   const [lookupError, setLookupError] = useState('')
   if (!showAddPurchaseModal || !selectedSupplier) return null
 
   const items = newPurchaseForm.items || []
+  // An administrator with no open shift pays the supplier from the treasury, without a choice
+  // (owner, 1.5.2, D-089). With a shift, the drawer pays, as before.
+  const fromTreasury = isAdmin(currentUser) && !(currentShift && currentShift.status === 'open')
   const setItems = (fn) => setNewPurchaseForm((p) => ({ ...p, items: fn(p.items || []) }))
   const itemsTotal = Math.round(items.reduce((a, l) => a + lineTotal(l), 0) * 100) / 100
 
@@ -338,17 +344,28 @@ const AddPurchaseModal = ({
           {!convertingPending && (
             <>
               <div className="form-group">
-                <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
+                <label htmlFor="purchase-paid">
+                  {fromTreasury
+                    ? 'المبلغ المدفوع نقداً الآن من الخزنة (ج.م)'
+                    : 'المبلغ المدفوع نقداً الآن من درج الوردية (ج.م)'}
+                </label>
                 <NumberField
+                  id="purchase-paid"
                   className="form-input"
                   min="0"
                   step="0.01"
+                  aria-describedby="purchase-paid-hint"
                   value={newPurchaseForm.paid_amount}
                   onChange={(e) =>
                     setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
                   }
                   placeholder="0.00"
                 />
+                <p id="purchase-paid-hint" className="field-hint">
+                  {fromTreasury
+                    ? 'لا توجد وردية مفتوحة لك: يُسجَّل المدفوع على الخزنة تلقائياً.'
+                    : 'يخرج المدفوع من درج ورديتك المفتوحة.'}
+                </p>
               </div>
               <div className="form-group">
                 <label>نوع الدفع</label>

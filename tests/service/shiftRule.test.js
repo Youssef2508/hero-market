@@ -88,7 +88,7 @@ test('invalid role lists are refused', async (t) => {
   }
 })
 
-test('without a shift the owner can work, but drawer cash answers shift_required', async (t) => {
+test('without a shift the owner can work, drawer cash needs a shift (supplier payments go to the treasury, D-089)', async (t) => {
   if (!requireDb(t)) return
   // Work that does not touch the drawer.
   ok(await svc.call('products.page', { page: 1 }, ownerToken))
@@ -101,14 +101,21 @@ test('without a shift the owner can work, but drawer cash answers shift_required
       ownerToken
     )
   )
-  // Paying cash from the drawer needs a shift.
-  const paid = await svc.call(
-    'suppliers.addPurchase',
-    { supplierId, total_amount: 50, paid_amount: 50, payment_type: 'نقدي', currentShiftId: null },
-    ownerToken
+  // 1.5.2 (D-089): paying a supplier with no shift open is recorded on the treasury, never a
+  // drawer (adminPurchaseTreasury.test.js covers the cases; a non-administrator still needs one).
+  const paid = ok(
+    await svc.call(
+      'suppliers.addPurchase',
+      { supplierId, total_amount: 50, paid_amount: 50, payment_type: 'نقدي', currentShiftId: null },
+      ownerToken
+    )
   )
-  assert.equal(paid.status, 409)
-  assert.equal(paid.body.error.code, 'shift_required')
+  const src = (
+    await svc.pool.query('SELECT paid_from, shift_id FROM supplier_purchases WHERE id = $1', [
+      paid.purchaseId
+    ])
+  ).rows[0]
+  assert.deepEqual(src, { paid_from: 'treasury', shift_id: null })
   // 1.5.0 (EXP-03): the owner records an expense without a shift on the treasury; a manager
   // (no treasury rights) still needs an open drawer.
   const expense = ok(

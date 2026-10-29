@@ -1149,3 +1149,42 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `latestPurchasePrice.test.js` (13);
   - `stockCost.test.mjs` rewritten;
   - `stockLedger`, `units`, `payablesReceivables` and `purchaseDiscountReturns` updated where they asserted averages.
+
+## D-088 Recorded supplier invoices can be opened and corrected (owner, 1.5.2)
+
+- **Root cause:**
+  - The supplier's invoice list had no way to open an invoice: its row had only print and purchase-return buttons, and only for «إدارة الموردين». So users who may see suppliers could not see an invoice's lines at all.
+  - No operation existed to change anything on a recorded invoice.
+  - The detail query joined lines to products with an inner join, so a line whose product row was missing disappeared.
+- **Now:**
+  - Each invoice row has «عرض الفاتورة وأصنافها» for everyone with «عرض الموردين» or «إدارة الموردين».
+  - The window shows the totals (lines, discount, net, paid, remaining, where it was paid from), every line with its unit and factor, quantity, price, total and returned quantity, and the invoice's returns.
+  - Lines are kept when their product row is missing (LEFT JOIN).
+- **Editable** (`suppliers.updatePurchase`, «إدارة الموردين»):
+  - Only the reference number and the notes. Unknown fields are dropped by the service.
+  - Each change is logged (`supplier_purchase_edit`, from and to). Saving the same values changes and logs nothing.
+- **Not editable in place:** quantities, prices, amounts and payments. They already moved stock, the purchase price and the supplier's balance. The established correction is a purchase return (D-066) for what was wrong, then a new invoice with what is right. The window says so and opens the return directly.
+- **Tests:** `purchaseViewEdit.test.js` (4):
+  - viewing with lines, units and returns, by an administrator and an auditor;
+  - refusal without the permission;
+  - editing with the log;
+  - stock, cost, lines, amounts and balance unchanged;
+  - permissions and validation;
+  - an invoice completed from a preliminary one.
+
+## D-089 An administrator buying with no open shift pays from the treasury (owner, 1.5.2, migration 0027)
+
+- **Rule:** an administrator («مدير النظام» or «مدير المتجر») with **no open shift** records a supplier purchase without opening one. The amount paid now is recorded on the treasury automatically, as a `supplier_payment`, in cash, referring to the purchase. No choice is shown; the form says «يُسجَّل المدفوع على الخزنة تلقائياً».
+- **Unchanged:**
+  - **With an open shift:** the drawer pays, as before (purchases were always paid from the drawer). A request that does not name its open shift is still refused, never sent to the treasury.
+  - **Non-administrators** with no shift are refused as before when they pay something. On credit, nothing is paid and no shift is needed, as before.
+- **Records:**
+  - `supplier_purchases.paid_from` ('shift', 'treasury' or 'outside' for owner commands) and `shift_id`.
+  - The treasury row's `ref_type` is `supplier_purchase`, with no shift, so no drawer total can include it and no closed shift is touched.
+  - The activity log names the source.
+  - A retried confirmation (same request id) pays once.
+- **Tests:** `adminPurchaseTreasury.test.js` (4):
+  - both administrator roles with no shift: cash, partial and credit;
+  - a retry;
+  - an administrator with a shift;
+  - a non-administrator with no shift.

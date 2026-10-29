@@ -7,6 +7,7 @@ const { addMovement, recorded } = require('../money/shiftLedger')
 const { METHODS } = require('../money/methods')
 const { postMovement, receiveStock } = require('../inventory/stock')
 const { loadUnit, toBaseQty, round4, kindRule } = require('../inventory/units')
+const { ADMINS } = require('../auth/shiftRule')
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
@@ -14,6 +15,9 @@ const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 const str = (max) => ({ type: ['string', 'null'], maxLength: max })
 
 // Prices a purchase line may set on its product (D-068): request key, products column, label.
+// How a purchase's payment is named in the activity log (D-089).
+const PAID_FROM = { shift: 'من درج الوردية', treasury: 'من الخزنة', outside: 'خارج المتجر' }
+
 const NEW_PRICES = [
   { key: 'newRetailPrice', column: 'retail_price', label: 'سعر البيع' },
   { key: 'newWholesalePrice', column: 'wholesale_price', label: 'سعر الجملة' }
@@ -88,6 +92,17 @@ async function setOpening(db, ctx, s, target) {
 }
 
 /** The actor's own open shift (cash movements need one: safe_ledger.shift_id is required). */
+/** Has this user any open shift? */
+async function anyOpenShift(db, userId) {
+  return (
+    (
+      await db.query("SELECT 1 FROM shifts WHERE user_id = $1 AND status = 'open' LIMIT 1", [
+        userId
+      ])
+    ).rowCount > 0
+  )
+}
+
 async function ownOpenShift(db, ctx, shiftId) {
   if (!shiftId) return null
   return (
@@ -173,8 +188,16 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   const ref = p.invoice_ref || ''
   // A remote invoice (owner command) never touches the drawer: the owner paid outside it.
   const shift = drawer ? await ownOpenShift(db, ctx, p.currentShiftId) : null
-  if (drawer && paid > 0 && !shift)
-    throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
+  // Where the paid amount comes from (D-089): the user's open shift drawer; an administrator with
+  // no open shift at all pays from the treasury, without a choice; anyone else needs a shift.
+  let paidFrom = null
+  if (paid > 0) {
+    if (!drawer) paidFrom = 'outside'
+    else if (shift) paidFrom = 'shift'
+    else if (ADMINS.includes(ctx.user?.roleKey) && !(await anyOpenShift(db, ctx.user.id)))
+      paidFrom = 'treasury'
+    else throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
+  }
   const items = (await fillEmptyCosts(db, p.items || [])).map((i) => ({
     barcode: i.barcode.trim(),
     unitId: i.unitId ?? null,
@@ -226,8 +249,8 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     )
   const purchaseId = (
     await db.query(
-      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount, client_ref)
-         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9, $10) RETURNING id`,
+      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount, client_ref, paid_from, shift_id)
+         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9, $10, $11, $12) RETURNING id`,
       [
         s.id,
         ref,
@@ -238,7 +261,9 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         p.notes || '',
         gross,
         discount,
-        p.clientRef || null
+        p.clientRef || null,
+        paidFrom,
+        paidFrom === 'shift' ? shift.id : null
       ]
     )
   ).rows[0].id
@@ -307,13 +332,24 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       [s.id, remaining, `فاتورة شراء #${ref || purchaseId} - متبقي آجل`]
     )
   }
-  if (drawer && paid > 0) {
+  if (paidFrom === 'shift') {
     await addMovement(db, {
       shiftId: shift.id,
       type: 'outflow',
       amount: paid,
       description: `دفعة لمورد: ${s.name} - فاتورة #${ref || purchaseId}`,
       kind: 'supplier_payment'
+    })
+  } else if (paidFrom === 'treasury') {
+    // Never a shift's money: no shift is involved, so no drawer total can include it.
+    await treasury.post(db, ctx, {
+      kind: 'supplier_payment',
+      method: 'cash',
+      amount: -paid,
+      refType: 'supplier_purchase',
+      refId: purchaseId,
+      description: `دفعة لمورد: ${s.name} - فاتورة شراء #${ref || purchaseId}`,
+      idemKey: p.clientRef ? `purchase:${p.clientRef}` : null
     })
   }
   // New prices (D-068), in the purchase's transaction: the base unit's selling and wholesale
@@ -334,8 +370,16 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   await ctx.audit(
     db,
     'supplier_purchase',
-    `فاتورة شراء #${ref || purchaseId} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`,
-    { purchaseId, gross, discount, net: total, paid }
+    `فاتورة شراء #${ref || purchaseId} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}${paid > 0 ? ` – مدفوع ${Number(paid).toFixed(2)} ج.م ${PAID_FROM[paidFrom]}` : ''}`,
+    {
+      purchaseId,
+      gross,
+      discount,
+      net: total,
+      paid,
+      paidFrom,
+      shiftId: paidFrom === 'shift' ? shift.id : null
+    }
   )
   const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
   return { ...supplier, purchaseId, receivedItems: items.length }

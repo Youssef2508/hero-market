@@ -221,6 +221,8 @@ export default function AppModals({
         newPurchaseForm={newPurchaseForm}
         setNewPurchaseForm={setNewPurchaseForm}
         handleAddPurchase={handleAddPurchase}
+        currentUser={currentUser}
+        currentShift={currentShift}
       />
     </>
   )
