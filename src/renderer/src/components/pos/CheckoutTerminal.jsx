@@ -902,6 +902,17 @@ function CheckoutTerminal({
                   placeholder="اسم العميل أو رقمه أو كوده"
                   value={clientName}
                   onChange={(e) => handleClientNameChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    // ↓ goes into the matches (D-093); ↑ and ↓ then move, Enter picks.
+                    if (e.key !== 'ArrowDown') return
+                    const first = e.currentTarget
+                      .closest('.customer-fields')
+                      ?.querySelector('.client-result')
+                    if (first) {
+                      e.preventDefault()
+                      first.focus()
+                    }
+                  }}
                   aria-label="اسم العميل"
                   autoComplete="off"
                 />

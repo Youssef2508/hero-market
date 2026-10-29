@@ -1253,3 +1253,20 @@ Format: context → decision → reason → consequences (→ alternatives).
   - a slowly typed barcode is added; an unknown code adds nothing;
   - "no match" appears once the search has answered.
   - **Limitation:** this was simulated keyboard input, not a physical scanner.
+
+## D-093 Keyboard navigation completed across the app (owner, 1.5.2)
+
+- **Audit:**
+  - The shared keys of D-065 already covered every window, the money forms and the clickable table rows: focus in, Tab kept inside, Esc closes, focus returns, Enter steps, and rows by Tab, Enter and ↑ ↓.
+  - The gap: the window handler left radio groups, tab lists, menus and lists to "their own arrows", but none had them. The sidebar, the top-bar menu, the till's payment buttons and its customer matches could only be reached by Tab.
+- **Added** (`lib/keyboard.js` `roveArrows`, one bubbling listener after the components' own handlers):
+  - Arrow keys, Home and End move inside radio groups, tab lists, menus, the sidebar, button rows, the till's payment methods and the customer matches.
+  - Right to left: ← is the next item.
+  - Radios and tabs are chosen as they are reached. Menus, the sidebar and payment buttons only move: Enter or Space acts, so an arrow never changes a payment method.
+  - Text fields keep their own keys.
+- **Menus and fields:**
+  - The user menu opens on its first item, and Esc returns the focus to its button.
+  - ↓ in the till's customer field enters the matches, and Enter picks one.
+- **Not touched:** the scanner (`useBarcode`), the F keys and the money forms' Enter rule.
+- **Checked in the running app:** `keys152.js`, 16 checks.
+- **Coverage per screen:** `.docs/KEYBOARD_COVERAGE.md`.

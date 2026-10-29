@@ -64,13 +64,17 @@ function UserMenu({ currentUser, onChangePassword, onLock }) {
 
   useEffect(() => {
     if (!open) return undefined
+    // The menu takes the focus on its first item; ↑ ↓ move (lib/keyboard), Esc returns (D-093).
+    ref.current?.querySelector('[role=menuitem]')?.focus()
     const onDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false)
     }
     const onKey = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
+        e.preventDefault()
         setOpen(false)
+        ref.current?.querySelector('.user-menu-trigger')?.focus()
       }
     }
     document.addEventListener('mousedown', onDown)
