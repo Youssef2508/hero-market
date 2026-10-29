@@ -300,7 +300,12 @@ test('every event of the shift is itemized, reconciled and printed', async (t) =
     .report
   const report = typeof saved === 'string' ? JSON.parse(saved) : saved
   const { buildCloseReportLines } = await import('../../src/shared/reportLines.mjs')
-  const printed = buildCloseReportLines(report, { store: { name: 'Hero Market' } }).join('\n')
+  // Amounts keep their «ج.م» with a no-break space (drawn as a space).
+  const printed = buildCloseReportLines(report, { store: { name: 'Hero Market' } })
+    .join('\n')
+    .replace(/\u00a0/g, ' ')
+  // A detail wrapped to the paper's width continues on the next small line: read it as one.
+  const flat = printed.replace(/\n\[R\]\[N\] {2}/g, ' ')
   for (const needle of [
     'المصروفات',
     'بوفيه – شاي للعمال',
@@ -318,7 +323,7 @@ test('every event of the shift is itemized, reconciled and printed', async (t) =
     'شاي × 2',
     'مدفوعات الموردين'
   ])
-    assert.ok(printed.includes(needle), `printed: ${needle}`)
+    assert.ok(flat.includes(needle), `printed: ${needle}`)
   // The credit invoice's printed line carries its total, never 0.
   assert.match(printed, /S-0 مورد التفاصيل\|300\.00 ج\.م/)
   // Every return, sale and invoice line is printed (none left out).
