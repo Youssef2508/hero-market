@@ -1311,3 +1311,22 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `permissionsAudit.test.js`: every operation requires a permission, and each built-in role is refused every operation it lacks;
   - `permissionUpgrade.test.js` (3): a fresh install, an upgrade with the owner's changes and prerequisites, allowed and denied;
   - the feature tests for each new action: `customerCodesManual`, `supplierPaymentRequests`, `purchaseViewEdit`, `adminPurchaseTreasury`.
+
+## D-095 The sidebar, reorganized (owner, 1.5.2)
+
+- **Before:** 31 screens in 8 groups. Two groups held a single screen («نظرة عامة», «الخزنة»). «الإدارة» held 11. The day's till operations (returns, reprint, payment change) sat under «الحسابات».
+- **Now:** the same 31 screens, with the same ids, routes and permissions, in 6 groups (`NAV_LAYOUT`):
+  - **البيع اليومي:** the till, tills, returns, reprint, payment change;
+  - **الحسابات:** invoices, customers, suppliers, expenses, treasury;
+  - **المخزون:** products, movements, categories, reorder assistant, damaged goods;
+  - **التقارير:** the dashboard, advanced reports, cashiers, products report, stock value;
+  - **الإدارة:** shifts, users, roles, discounts;
+  - **النظام:** settings, receipt design, backup, import and export, cloud sync, activity log, cheque archive.
+- **Shorter labels:** «الفواتير» (was «الفواتير والمرتجعات»; returns has its own entry), «العملاء», «استيراد وتصدير».
+- **Folding:** a group's heading folds or shows its screens. This is remembered on the terminal. The group of the open screen is always shown. The compact rail shows every icon.
+- **Spacing:** items are slightly shorter (36 px instead of 40 px) and the groups closer together.
+- **Keys:** ↑ ↓ Home End move through the headings and screens (D-093), and Enter opens or folds.
+- **Kept:** nothing is removed or hidden by default. Each user still sees only the screens their permissions allow. The top bar shows the screen's new group.
+- **Checked:**
+  - `navigationLayout.test.mjs` (3): every screen placed exactly once, the groups, and what a cashier sees;
+  - in the running app (`sidebar152.js`): the owner sees all 31; folding by Enter and click, remembered after signing in again; 1024 px and the compact rail; the cashier sees the till, tills and returns only.

@@ -105,7 +105,7 @@
   gap: 2px;
 }
 .nav-group + .nav-group {
-  margin-top: var(--sp-2);
+  margin-top: 2px;
 }
 .nav-group-label {
   padding: var(--sp-3) var(--sp-3) 6px;
@@ -113,6 +113,39 @@
   font-weight: var(--fw-bold);
   color: var(--sidebar-muted);
   letter-spacing: 0.02em;
+}
+/* A group's heading folds or shows its screens (D-095). */
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3) 4px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--sidebar-muted);
+  font-size: 0.6875rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
+  text-align: start;
+  cursor: pointer;
+}
+.nav-group-toggle:hover:not(:disabled) {
+  color: var(--sidebar-text-strong);
+}
+.nav-group-toggle:disabled {
+  cursor: default;
+}
+.nav-group-toggle:focus-visible {
+  outline: 2px solid var(--sidebar-active-bar);
+  outline-offset: -2px;
+}
+.nav-group-chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.nav-group-chevron.is-folded {
+  transform: rotate(90deg);
 }
 .nav-group-sep {
   height: 1px;
@@ -129,7 +162,7 @@
   align-items: center;
   gap: var(--sp-3);
   width: 100%;
-  min-height: 40px;
+  min-height: 36px;
   padding: 0 var(--sp-3);
   border: none;
   border-radius: var(--r-sm);

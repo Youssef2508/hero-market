@@ -42,7 +42,7 @@ const GROUPS = [
   { group: '[role=radiogroup]', item: '[role=radio]', choose: true },
   { group: '[role=tablist]', item: '[role=tab]', choose: true },
   { group: '[role=menu]', item: '[role=menuitem]', choose: false, vertical: true },
-  { group: '.sidebar-nav', item: '.nav-item', choose: false, vertical: true },
+  { group: '.sidebar-nav', item: '.nav-item, .nav-group-toggle', choose: false, vertical: true },
   // The till: payment methods (a press chooses; arrows only move) and the customer matches.
   // Quick-period buttons and similar button rows (role=group).
   { group: '.segmented[role=group]', item: 'button', choose: false },

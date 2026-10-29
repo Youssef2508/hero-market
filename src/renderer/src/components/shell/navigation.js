@@ -41,7 +41,8 @@ import {
   Landmark
 } from 'lucide-react'
 
-export const NAV_GROUPS = [
+// The screens, each defined once (grouped here as they were added; NAV_LAYOUT orders them).
+const DEFINED_GROUPS = [
   {
     id: 'sell',
     label: 'البيع',
@@ -203,7 +204,7 @@ export const NAV_GROUPS = [
       {
         id: 'sales',
         permission: ['sales.view'],
-        label: 'الفواتير والمرتجعات',
+        label: 'الفواتير',
         icon: ReceiptText,
         view: 'admin',
         tab: 'sales',
@@ -241,7 +242,7 @@ export const NAV_GROUPS = [
       {
         id: 'clients',
         permission: ['customers.view', 'customers.manage'],
-        label: 'العملاء والحسابات',
+        label: 'العملاء',
         icon: Users,
         view: 'admin',
         tab: 'clients',
@@ -360,7 +361,7 @@ export const NAV_GROUPS = [
         // Separate permissions for import and export (ROLE-01, D-067); the screen shows each part
         // to whoever holds it.
         permission: ['data.import', 'data.export'],
-        label: 'استيراد وتصدير البيانات',
+        label: 'استيراد وتصدير',
         icon: FileSpreadsheet,
         view: 'admin',
         tab: 'import',
@@ -389,6 +390,53 @@ export const NAV_GROUPS = [
     ]
   }
 ]
+
+// The sidebar's groups (owner, 1.5.2, D-095): the day's selling together, then accounts, stock,
+// reports, administration and the system's settings. Every screen appears exactly once; ids,
+// routes and permissions are those of its definition above.
+const NAV_LAYOUT = [
+  {
+    id: 'sell',
+    label: 'البيع اليومي',
+    items: ['pos', 'tills', 'returns', 'reprint', 'payment-change']
+  },
+  {
+    id: 'accounts',
+    label: 'الحسابات',
+    items: ['sales', 'clients', 'suppliers', 'expenses', 'treasury']
+  },
+  {
+    id: 'stock',
+    label: 'المخزون',
+    items: ['inventory', 'movements', 'categories', 'reordering', 'damaged']
+  },
+  {
+    id: 'reports',
+    label: 'التقارير',
+    items: ['menu', 'advanced-stats', 'cashier-performance', 'bestsellers', 'stockvalue']
+  },
+  { id: 'admin', label: 'الإدارة', items: ['shifts', 'users', 'roles', 'discounts'] },
+  {
+    id: 'system',
+    label: 'النظام',
+    items: ['settings', 'receipts', 'backup', 'import', 'sync', 'logs', 'checks']
+  }
+]
+
+const DEFINED = new Map(DEFINED_GROUPS.flatMap((g) => g.items).map((i) => [i.id, i]))
+export const NAV_GROUPS = NAV_LAYOUT.map((g) => ({
+  ...g,
+  items: g.items.map((id) => DEFINED.get(id)).filter(Boolean)
+}))
+/** Screens defined but not placed, or placed twice (a unit test keeps this empty). */
+export const LAYOUT_PROBLEMS = (() => {
+  const placed = NAV_LAYOUT.flatMap((g) => g.items)
+  return [
+    ...[...DEFINED.keys()].filter((id) => !placed.includes(id)).map((id) => `not placed: ${id}`),
+    ...placed.filter((id) => !DEFINED.has(id)).map((id) => `unknown: ${id}`),
+    ...placed.filter((id, i) => placed.indexOf(id) !== i).map((id) => `twice: ${id}`)
+  ]
+})()
 
 export const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g })))
 
