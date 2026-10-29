@@ -176,6 +176,14 @@ const PERMISSIONS = [
     description: 'إضافة وتعديل وحذف العملاء'
   },
   {
+    // A code typed by hand instead of the automatic one, and changing a customer's code (D-086).
+    key: 'customers.code',
+    module: 'customers',
+    label: 'تحديد كود العميل يدوياً',
+    description:
+      'كتابة كود العميل بدلاً من الكود التلقائي عند الإضافة، وتغيير كود عميل موجود. بدونها يأخذ العميل الكود التلقائي'
+  },
+  {
     key: 'customers.payments',
     module: 'customers',
     label: 'تحصيل مديونيات العملاء',
@@ -207,6 +215,32 @@ const PERMISSIONS = [
     module: 'suppliers',
     label: 'فاتورة مورد مبدئية',
     description: 'تسجيل فاتورة مورد بإجماليها والمدفوع منها بدون أصناف (تُكمل لاحقاً من الإدارة)'
+  },
+  {
+    // Correcting a recorded purchase's reference and notes (owner, 1.5.2, D-088, D-094). On an
+    // upgrade it is granted only to roles that already manage purchases (`requires`).
+    key: 'suppliers.purchase_edit',
+    module: 'suppliers',
+    label: 'تعديل بيانات فاتورة شراء مسجلة',
+    description:
+      'تصحيح رقم فاتورة الشراء وملاحظاتها بعد تسجيلها (يُسجَّل في سجل الأحداث). الكميات والأسعار تُصحَّح بمرتجع مشتريات وفاتورة جديدة',
+    requires: 'suppliers.manage'
+  },
+  {
+    // Supplier debt-payment requests (owner, 1.5.2, D-090): cash from the drawer, the balance after
+    // an administrator approves.
+    key: 'suppliers.payment_request',
+    module: 'suppliers',
+    label: 'طلب سداد دين مورد من الدرج',
+    description:
+      'دفع مبلغ من درج الوردية لمورد عن دين سابق. يخرج المبلغ من الدرج فوراً، ولا يُخصم من حساب المورد إلا بعد اعتماد المدير'
+  },
+  {
+    key: 'suppliers.payment_approve',
+    module: 'suppliers',
+    label: 'اعتماد طلبات سداد الموردين',
+    description:
+      'اعتماد أو رفض طلبات سداد الموردين المدفوعة من الأدراج، وتسوية الطلب المرفوض بعد دفعه (استرداد أو احتساب أو خسارة)'
   },
   {
     key: 'checks.manage',
@@ -341,6 +375,12 @@ const MANAGEMENT = ALL.filter(
       'discounts.manage',
       // Manual invoice discount: administrators by default; the owner assigns it (D-057).
       'pos.manual_discount',
+      // Customer codes by hand: administrators by default (D-086).
+      'customers.code',
+      // Supplier debt-payment requests and their approval: administrators by default; the owner
+      // grants the request to a cashier (D-090).
+      'suppliers.payment_request',
+      'suppliers.payment_approve',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
       // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).
@@ -406,7 +446,8 @@ const SYSTEM_ROLES = [
       'inventory.adjust',
       'inventory.reorder',
       'suppliers.view',
-      'suppliers.manage'
+      'suppliers.manage',
+      'suppliers.purchase_edit'
     ]
   },
   {

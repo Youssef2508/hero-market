@@ -2,17 +2,17 @@
 // Stock movements (stage 4, phase 1). The only way stock changes: insert a movement; the
 // apply_stock_movement trigger updates products.stock_qty and records the balance after it.
 //
-// Costing: moving average, kept in products.cost_price (owner decision 2026-10-14).
-//   * Receipt of q units at cost c with stock s and average a:
-//       s > 0           → a' = (s·a + q·c) / (s + q)
-//       s ≤ 0 (none or negative) → a' = c
-//     Units sold while stock was zero or negative were costed at the average of that moment and are
-//     not revalued afterwards; the receipt that covers them sets the average to its own cost.
-//   * A purchase return (D-066) sends q units back at the cost they were bought at, c:
-//       s − q > 0 → a' = (s·a − q·c) / (s − q)   (the stock's value falls by exactly q·c)
-//       otherwise, or if that would be negative, the average is kept.
-//   * Sales leave at the current average (recorded on the sale line); returns, damaged goods,
-//     counts and adjustments move at the current average and do not change it.
+// Costing: the latest purchase price, kept in products.cost_price per base unit (owner, 1.5.2,
+// D-087; it replaces the moving average of 2026-10-14).
+//   * A confirmed purchase line sets the product's purchase price to that line's price (per base
+//     unit), whatever was paid before: never an average of older purchases or of the stock.
+//   * A purchase return (D-066) sends the units back at the cost they were bought at; the product's
+//     purchase price does not change.
+//   * Sales leave at the current purchase price, recorded on the sale line (a snapshot that later
+//     prices never change). A customer's return comes back at the cost of the sale line it reverses.
+//     Damaged goods, counts and adjustments move at the current purchase price and do not change it.
+//   * No stock batches are kept: a sale's cost is the latest purchase price, not the cost of the
+//     particular units sold.
 
 const { notFound } = require('../errors')
 
@@ -23,30 +23,17 @@ function roundCost(n) {
   return Math.round((Number(n) + Number.EPSILON) * f) / f
 }
 
-/** New moving-average cost after receiving `qty` at `cost` (see the rule above). */
-function movingAverage(stockBefore, avgBefore, qty, cost) {
-  const s = Number(stockBefore) || 0
-  const a = Number(avgBefore) || 0
+/** The product's purchase price after receiving `qty` at `cost`: that cost (see the rule above). */
+function latestPurchaseCost(qty, cost) {
   const q = Number(qty)
   const c = Number(cost)
   if (!(q > 0)) throw new Error('receipt quantity must be positive')
   if (!(c >= 0)) throw new Error('receipt cost must not be negative')
-  if (s <= 0) return roundCost(c)
-  return roundCost((s * a + q * c) / (s + q))
-}
-
-/** Moving-average cost after sending `qty` back to the supplier at `cost` (see the rule above). */
-function averageAfterReturn(stockBefore, avgBefore, qty, cost) {
-  const s = Number(stockBefore) || 0
-  const a = Number(avgBefore) || 0
-  const left = s - Number(qty)
-  if (!(left > 0)) return roundCost(a)
-  const v = (s * a - Number(qty) * Number(cost)) / left
-  return v >= 0 ? roundCost(v) : roundCost(a)
+  return roundCost(c)
 }
 
 /**
- * Record one movement. `qty` is signed. `unitCost` defaults to the product's current average.
+ * Record one movement. `qty` is signed. `unitCost` defaults to the product's current purchase price.
  * Returns { id, balanceAfter, unitCost }.
  */
 async function postMovement(db, ctx, m) {
@@ -71,16 +58,21 @@ async function postMovement(db, ctx, m) {
   }
 }
 
-/** Receive stock at a cost: updates the moving average, then posts a 'purchase' movement. */
-async function receiveStock(db, ctx, { barcode, qty, unitCost, refType, refId, reason }) {
+/**
+ * Receive stock at a cost: the product's purchase price becomes that cost (the latest purchase
+ * price, D-087), then a 'purchase' movement is posted. `keepCost`: the line had no price of its own
+ * (the purchase price was left empty), so the product's price is kept.
+ */
+async function receiveStock(db, ctx, { barcode, qty, unitCost, refType, refId, reason, keepCost }) {
   const p = (
     await db.query('SELECT stock_qty, cost_price FROM products WHERE barcode = $1 FOR UPDATE', [
       barcode
     ])
   ).rows[0]
   if (!p) throw notFound(`الصنف (${barcode}) غير مسجل.`)
-  const avg = movingAverage(p.stock_qty, p.cost_price, qty, unitCost)
-  await db.query('UPDATE products SET cost_price = $2 WHERE barcode = $1', [barcode, avg])
+  const cost = keepCost ? roundCost(Number(p.cost_price) || 0) : latestPurchaseCost(qty, unitCost)
+  if (!keepCost)
+    await db.query('UPDATE products SET cost_price = $2 WHERE barcode = $1', [barcode, cost])
   const mv = await postMovement(db, ctx, {
     barcode,
     qty,
@@ -90,10 +82,13 @@ async function receiveStock(db, ctx, { barcode, qty, unitCost, refType, refId, r
     refId,
     reason
   })
-  return { ...mv, averageCost: avg }
+  return { ...mv, purchaseCost: cost, previousCost: Number(p.cost_price) || 0 }
 }
 
-/** Send stock back to its supplier at the cost it was bought at (purchase return, D-066). */
+/**
+ * Send stock back to its supplier at the cost it was bought at (purchase return, D-066). The
+ * product's purchase price is not changed (D-087).
+ */
 async function returnToSupplier(db, ctx, { barcode, qty, unitCost, refId, reason }) {
   const p = (
     await db.query('SELECT stock_qty, cost_price FROM products WHERE barcode = $1 FOR UPDATE', [
@@ -101,8 +96,6 @@ async function returnToSupplier(db, ctx, { barcode, qty, unitCost, refId, reason
     ])
   ).rows[0]
   if (!p) throw notFound(`الصنف (${barcode}) غير مسجل.`)
-  const avg = averageAfterReturn(p.stock_qty, p.cost_price, qty, unitCost)
-  await db.query('UPDATE products SET cost_price = $2 WHERE barcode = $1', [barcode, avg])
   const mv = await postMovement(db, ctx, {
     barcode,
     qty: -qty,
@@ -112,7 +105,7 @@ async function returnToSupplier(db, ctx, { barcode, qty, unitCost, refId, reason
     refId,
     reason
   })
-  return { ...mv, averageCost: avg }
+  return { ...mv, purchaseCost: Number(p.cost_price) || 0 }
 }
 
 /**
@@ -155,8 +148,7 @@ async function verifyLedger(db) {
 }
 
 module.exports = {
-  movingAverage,
-  averageAfterReturn,
+  latestPurchaseCost,
   postMovement,
   receiveStock,
   returnToSupplier,

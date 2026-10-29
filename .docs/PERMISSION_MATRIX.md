@@ -6,57 +6,61 @@ Every permission is checked by the service on every request, before the request 
 
 ## Permissions and the built-in roles
 
-| Permission             | Name                                                          | مدير النظام | مدير المتجر | مشرف | كاشير | أمين مخزن / مشتريات | مراجع (قراءة فقط) |
-| ---------------------- | ------------------------------------------------------------- | :---------: | :---------: | :--: | :---: | :-----------------: | :---------------: |
-| `pos.sell`             | البيع على شاشة الكاشير                                        |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `pos.credit`           | البيع الآجل والدفع الجزئي                                     |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `pos.manual_discount`  | خصم يدوي على الفاتورة                                         |      ✓      |      ✓      |      |       |                     |                   |
-| `pos.approve`          | اعتماد عمليات الكاشير                                         |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `shifts.operate`       | فتح وإغلاق الوردية الخاصة                                     |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `shifts.multi_till`    | أرصدة مكن والمحافظ (غير مستخدمة) (hidden in the roles screen) |      ✓      |      ✓      |      |       |                     |                   |
-| `shifts.view_all`      | الورديات                                                      |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
-| `shifts.view_expected` | عرض المبالغ المتوقعة قبل الإغلاق                              |      ✓      |      ✓      |      |       |                     |                   |
-| `tills.operate`        | الأدراج والتحويلات                                            |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `tills.manage`         | حركات مكن والمحافظ (غير مستخدمة) (hidden in the roles screen) |      ✓      |      ✓      |      |       |                     |                   |
-| `sales.view`           | عرض الفواتير                                                  |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
-| `sales.view_all`       | كل الفواتير                                                   |      ✓      |      ✓      |      |       |                     |         ✓         |
-| `sales.reprint`        | إعادة طباعة الفواتير                                          |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `sales.return`         | المرتجعات                                                     |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `sales.return_request` | طلب مرتجع بموافقة المشرف                                      |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `sales.change_payment` | تغيير طريقة دفع فاتورة                                        |      ✓      |      ✓      |      |       |                     |                   |
-| `products.view`        | عرض الأصناف والمخزون                                          |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
-| `products.manage`      | إدارة الأصناف                                                 |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `products.view_cost`   | عرض سعر التكلفة والربح                                        |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
-| `inventory.damaged`    | التوالف والهوالك                                              |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `categories.manage`    | إدارة تصنيفات الأصناف                                         |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `discounts.manage`     | إدارة الخصومات                                                |      ✓      |      ✓      |      |       |                     |                   |
-| `inventory.adjust`     | جرد وتسوية المخزون                                            |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `inventory.reorder`    | مساعد الطلبيات                                                |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `customers.view`       | عرض العملاء                                                   |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
-| `customers.manage`     | إدارة العملاء                                                 |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `customers.payments`   | تحصيل مديونيات العملاء                                        |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `suppliers.view`       | عرض الموردين                                                  |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
-| `suppliers.manage`     | إدارة الموردين والمشتريات                                     |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
-| `suppliers.opening`    | الرصيد الافتتاحي للموردين                                     |      ✓      |      ✓      |      |       |                     |                   |
-| `suppliers.pending`    | فاتورة مورد مبدئية                                            |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
-| `checks.manage`        | الشيكات (متوقفة)                                              |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `checks.archive`       | أرشيف الشيكات (عرض فقط)                                       |      ✓      |      ✓      |      |       |                     |                   |
-| `expenses.manage`      | المصروفات                                                     |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `expenses.view_all`    | كل المصروفات                                                  |      ✓      |      ✓      |      |       |                     |                   |
-| `expenses.categories`  | تصنيفات المصروفات                                             |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `treasury.view`        | عرض الخزنة                                                    |      ✓      |      ✓      |      |       |                     |                   |
-| `treasury.manage`      | حركات الخزنة                                                  |      ✓      |      ✓      |      |       |                     |                   |
-| `reports.view`         | التقارير والإحصاءات                                           |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
-| `logs.view`            | سجل الأحداث                                                   |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
-| `backup.manage`        | النسخ الاحتياطي والاستعادة                                    |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `reports.valuation`    | قيمة المخزون والأرصدة                                         |      ✓      |      ✓      |      |       |                     |                   |
-| `data.import`          | استيراد البيانات                                              |      ✓      |      ✓      |      |       |                     |                   |
-| `data.export`          | تصدير البيانات                                                |      ✓      |      ✓      |      |       |                     |                   |
-| `users.manage`         | إدارة المستخدمين                                              |      ✓      |      ✓      |      |       |                     |                   |
-| `roles.manage`         | إدارة الأدوار والصلاحيات                                      |      ✓      |      ✓      |      |       |                     |                   |
-| `settings.manage`      | إعدادات المتجر                                                |      ✓      |      ✓      |  ✓   |       |                     |                   |
-| `system.reset`         | إعادة ضبط بيانات التشغيل                                      |      ✓      |             |      |       |                     |                   |
-| `sync.manage`          | المزامنة السحابية                                             |      ✓      |      ✓      |      |       |                     |                   |
+| Permission                  | Name                                                          | مدير النظام | مدير المتجر | مشرف | كاشير | أمين مخزن / مشتريات | مراجع (قراءة فقط) |
+| --------------------------- | ------------------------------------------------------------- | :---------: | :---------: | :--: | :---: | :-----------------: | :---------------: |
+| `pos.sell`                  | البيع على شاشة الكاشير                                        |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `pos.credit`                | البيع الآجل والدفع الجزئي                                     |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `pos.manual_discount`       | خصم يدوي على الفاتورة                                         |      ✓      |      ✓      |      |       |                     |                   |
+| `pos.approve`               | اعتماد عمليات الكاشير                                         |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `shifts.operate`            | فتح وإغلاق الوردية الخاصة                                     |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `shifts.multi_till`         | أرصدة مكن والمحافظ (غير مستخدمة) (hidden in the roles screen) |      ✓      |      ✓      |      |       |                     |                   |
+| `shifts.view_all`           | الورديات                                                      |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
+| `shifts.view_expected`      | عرض المبالغ المتوقعة قبل الإغلاق                              |      ✓      |      ✓      |      |       |                     |                   |
+| `tills.operate`             | الأدراج والتحويلات                                            |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `tills.manage`              | حركات مكن والمحافظ (غير مستخدمة) (hidden in the roles screen) |      ✓      |      ✓      |      |       |                     |                   |
+| `sales.view`                | عرض الفواتير                                                  |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
+| `sales.view_all`            | كل الفواتير                                                   |      ✓      |      ✓      |      |       |                     |         ✓         |
+| `sales.reprint`             | إعادة طباعة الفواتير                                          |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `sales.return`              | المرتجعات                                                     |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `sales.return_request`      | طلب مرتجع بموافقة المشرف                                      |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `sales.change_payment`      | تغيير طريقة دفع فاتورة                                        |      ✓      |      ✓      |      |       |                     |                   |
+| `products.view`             | عرض الأصناف والمخزون                                          |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
+| `products.manage`           | إدارة الأصناف                                                 |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `products.view_cost`        | عرض سعر التكلفة والربح                                        |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
+| `inventory.damaged`         | التوالف والهوالك                                              |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `categories.manage`         | إدارة تصنيفات الأصناف                                         |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `discounts.manage`          | إدارة الخصومات                                                |      ✓      |      ✓      |      |       |                     |                   |
+| `inventory.adjust`          | جرد وتسوية المخزون                                            |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `inventory.reorder`         | مساعد الطلبيات                                                |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `customers.view`            | عرض العملاء                                                   |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
+| `customers.manage`          | إدارة العملاء                                                 |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `customers.code`            | تحديد كود العميل يدوياً                                       |      ✓      |      ✓      |      |       |                     |                   |
+| `customers.payments`        | تحصيل مديونيات العملاء                                        |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `suppliers.view`            | عرض الموردين                                                  |      ✓      |      ✓      |  ✓   |       |          ✓          |         ✓         |
+| `suppliers.manage`          | إدارة الموردين والمشتريات                                     |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `suppliers.opening`         | الرصيد الافتتاحي للموردين                                     |      ✓      |      ✓      |      |       |                     |                   |
+| `suppliers.pending`         | فاتورة مورد مبدئية                                            |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
+| `suppliers.purchase_edit`   | تعديل بيانات فاتورة شراء مسجلة                                |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `suppliers.payment_request` | طلب سداد دين مورد من الدرج                                    |      ✓      |      ✓      |      |       |                     |                   |
+| `suppliers.payment_approve` | اعتماد طلبات سداد الموردين                                    |      ✓      |      ✓      |      |       |                     |                   |
+| `checks.manage`             | الشيكات (متوقفة)                                              |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `checks.archive`            | أرشيف الشيكات (عرض فقط)                                       |      ✓      |      ✓      |      |       |                     |                   |
+| `expenses.manage`           | المصروفات                                                     |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `expenses.view_all`         | كل المصروفات                                                  |      ✓      |      ✓      |      |       |                     |                   |
+| `expenses.categories`       | تصنيفات المصروفات                                             |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `treasury.view`             | عرض الخزنة                                                    |      ✓      |      ✓      |      |       |                     |                   |
+| `treasury.manage`           | حركات الخزنة                                                  |      ✓      |      ✓      |      |       |                     |                   |
+| `reports.view`              | التقارير والإحصاءات                                           |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
+| `logs.view`                 | سجل الأحداث                                                   |      ✓      |      ✓      |  ✓   |       |                     |         ✓         |
+| `backup.manage`             | النسخ الاحتياطي والاستعادة                                    |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `reports.valuation`         | قيمة المخزون والأرصدة                                         |      ✓      |      ✓      |      |       |                     |                   |
+| `data.import`               | استيراد البيانات                                              |      ✓      |      ✓      |      |       |                     |                   |
+| `data.export`               | تصدير البيانات                                                |      ✓      |      ✓      |      |       |                     |                   |
+| `users.manage`              | إدارة المستخدمين                                              |      ✓      |      ✓      |      |       |                     |                   |
+| `roles.manage`              | إدارة الأدوار والصلاحيات                                      |      ✓      |      ✓      |      |       |                     |                   |
+| `settings.manage`           | إعدادات المتجر                                                |      ✓      |      ✓      |  ✓   |       |                     |                   |
+| `system.reset`              | إعادة ضبط بيانات التشغيل                                      |      ✓      |             |      |       |                     |                   |
+| `sync.manage`               | المزامنة السحابية                                             |      ✓      |      ✓      |      |       |                     |                   |
 
 ## Operations and the permission each requires
 
@@ -81,6 +85,7 @@ Every permission is checked by the service on every request, before the request 
 | `categories.save`                | all of `categories.manage`                                                                        |
 | `categories.setActive`           | all of `categories.manage`                                                                        |
 | `checks.archive`                 | all of `checks.archive`                                                                           |
+| `clients.codeAvailable`          | all of `customers.code`                                                                           |
 | `clients.create`                 | all of `customers.manage`                                                                         |
 | `clients.delete`                 | all of `customers.manage`                                                                         |
 | `clients.list`                   | any of `customers.view`, `customers.manage`                                                       |
@@ -185,6 +190,13 @@ Every permission is checked by the service on every request, before the request 
 | `supplierInvoices.createPending` | all of `suppliers.pending`                                                                        |
 | `supplierInvoices.list`          | any of `suppliers.view`, `suppliers.manage`, `suppliers.pending`                                  |
 | `supplierInvoices.suppliers`     | any of `suppliers.pending`, `suppliers.view`, `suppliers.manage`                                  |
+| `supplierPayments.approve`       | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.create`        | all of `suppliers.payment_request`                                                                |
+| `supplierPayments.list`          | any of `suppliers.payment_approve`, `suppliers.payment_request`                                   |
+| `supplierPayments.pendingCount`  | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.reject`        | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.settle`        | all of `suppliers.payment_approve`                                                                |
+| `supplierPayments.suppliers`     | all of `suppliers.payment_request`                                                                |
 | `suppliers.addPurchase`          | all of `suppliers.manage`                                                                         |
 | `suppliers.create`               | all of `suppliers.manage`                                                                         |
 | `suppliers.delete`               | all of `suppliers.manage`                                                                         |
@@ -195,6 +207,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.returnPurchase`       | all of `suppliers.manage`                                                                         |
 | `suppliers.setOpening`           | all of `suppliers.opening`                                                                        |
 | `suppliers.update`               | all of `suppliers.manage`                                                                         |
+| `suppliers.updatePurchase`       | all of `suppliers.purchase_edit`                                                                  |
 | `sync.configure`                 | all of `sync.manage`                                                                              |
 | `sync.recover`                   | all of `sync.manage`                                                                              |
 | `sync.runNow`                    | all of `sync.manage`                                                                              |

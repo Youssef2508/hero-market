@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, newClientRef } from '../lib/api'
+import { effectiveCost } from '../lib/purchaseLines'
 
 export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerCustomConfirm }) {
   const [suppliersList, setSuppliersList] = useState([])
@@ -107,7 +108,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       barcode: l.barcode,
       unitId: l.unitId ?? null,
       qty: parseFloat(l.qty) || 0,
-      unitCost: parseFloat(l.unitCost) || 0,
+      // D-087: empty = keep the product's current purchase price.
+      unitCost: String(l.unitCost ?? '').trim() === '' ? null : parseFloat(l.unitCost) || 0,
       // D-068: empty = keep the product's current selling price.
       newRetailPrice:
         l.newRetailPrice === '' || l.newRetailPrice === undefined
@@ -124,7 +126,10 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     }
     const gross = items.length
       ? Math.round(
-          items.reduce((a, l) => a + Math.round(l.qty * l.unitCost * 100) / 100, 0) * 100
+          (newPurchaseForm.items || []).reduce(
+            (a, l) => a + Math.round((parseFloat(l.qty) || 0) * effectiveCost(l) * 100) / 100,
+            0
+          ) * 100
         ) / 100
       : parseFloat(newPurchaseForm.total_amount) || 0
     // Optional invoice-level discount (D-066): the supplier is owed the net.
@@ -139,8 +144,12 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       triggerCustomAlert('الخصم يجب أن يكون أقل من إجمالي الفاتورة.')
       return
     }
+    // One request id per invoice: a retry after a lost answer records it once (D-087).
+    const clientRef = newPurchaseForm.clientRef || newClientRef()
+    setNewPurchaseForm((f) => ({ ...f, clientRef }))
     try {
       const updated = await api('suppliers.addPurchase', {
+        clientRef,
         supplierId: selectedSupplier.id,
         invoice_ref: newPurchaseForm.invoice_ref || '',
         total_amount: total,
@@ -173,7 +182,8 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
       barcode: l.barcode,
       unitId: l.unitId ?? null,
       qty: parseFloat(l.qty) || 0,
-      unitCost: parseFloat(l.unitCost) || 0,
+      // D-087: empty = keep the product's current purchase price.
+      unitCost: String(l.unitCost ?? '').trim() === '' ? null : parseFloat(l.unitCost) || 0,
       // D-068: empty = keep the product's current selling price.
       newRetailPrice:
         l.newRetailPrice === '' || l.newRetailPrice === undefined

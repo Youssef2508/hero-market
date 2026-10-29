@@ -145,7 +145,7 @@ treasury_balance = Σ treasury_ledger.amount        (may be negative: shown in r
   - The payment is a `supplier_payment` of the shift by its method, or a treasury `supplier_payment`.
   - No stock movement.
 - **Supplier payable, conversion.**
-  - Stock and moving-average cost from the lines (`receiveStock`), with no payment.
+  - Stock and the latest purchase price from the lines (`receiveStock`), with no payment.
   - Payable += final − preliminary, as a supplier ledger `adjustment` row (negative when the final total is lower).
   - Exactly once: a converted invoice refuses a second conversion, and the same request id returns the first result.
 - **Later settlement.** Payable −= amount; a `supplier_settlement` of the shift by its method, or a treasury `supplier_payment`.
@@ -174,22 +174,22 @@ One transaction, once per request (`cancel_ref`); the invoice is kept with statu
 **Discount.** For a purchase with lines L (Σ line value = gross G) and discount D:
 
 - net N = G − D = `total_amount`; payable += N − paid; the drawer or treasury pays at most N;
-- stock and moving average use the line costs (G), never N;
+- stock and the purchase price use the line costs (G), never N;
 - purchase gain of the period = Σ D (purchases dated in it) − Σ (gross_value − credit_value) of purchase returns dated in it; net profit = sales profit − damaged − expenses + purchase gain.
 
 **Return** of quantities q from lines of a purchase:
 
-| Item                                   | Value                                                                             |
-| -------------------------------------- | --------------------------------------------------------------------------------- |
-| Return value V                         | Σ q × line unit cost                                                              |
-| Supplier credit C                      | V × N ÷ G (V when no discount); never more than N less earlier credits            |
-| Stock                                  | − q × unit factor, at the line cost per base unit                                 |
-| Moving average with stock s, average a | (s·a − q·c) ÷ (s − q); kept when nothing is left or it would be negative          |
-| Payable                                | − C (`supplier_ledger` `return`)                                                  |
-| Money received now R ≤ C               | inflow `supplier_refund` by its method, shift or treasury; payable + R (`refund`) |
+| Item                     | Value                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| Return value V           | Σ q × line unit cost                                                              |
+| Supplier credit C        | V × N ÷ G (V when no discount); never more than N less earlier credits            |
+| Stock                    | − q × unit factor, at the line cost per base unit                                 |
+| Product purchase price   | unchanged (latest purchase price, D-087)                                          |
+| Payable                  | − C (`supplier_ledger` `return`)                                                  |
+| Money received now R ≤ C | inflow `supplier_refund` by its method, shift or treasury; payable + R (`refund`) |
 
 Tested with exact balances in `tests/service/purchaseDiscountReturns.test.js` (10 tests).
 
 ## 13. New prices on purchase lines (D-068, migration 0021)
 
-A purchase line may set the product's selling or wholesale price (base unit). This moves no money, stock or cost: the payable, payments, discount and moving average are exactly as in §12. A sale made after the change uses the new price.
+A purchase line may set the product's selling or wholesale price (base unit). This moves no money, stock or cost: the payable, payments, discount and purchase price are exactly as in §12. A sale made after the change uses the new price.

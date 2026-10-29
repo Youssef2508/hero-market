@@ -181,4 +181,18 @@ test('editing the contact keeps invoices, payments and balances; bad input is re
     ).status,
     400
   )
+  // Arabic-Indic digits are taken as typed, and two numbers may be written together (D-085).
+  const two = ok(
+    await svc.call(
+      'suppliers.update',
+      { supplierId: supplier.id, name: 'مورد الأرقام', phone: '٠١٠٠١٢٣٤٥٦٧ / 0122 333 4444' },
+      owner
+    )
+  )
+  assert.equal(
+    (await svc.pool.query('SELECT phone FROM suppliers WHERE id = $1', [supplier.id])).rows[0]
+      .phone,
+    '01001234567 / 0122 333 4444'
+  )
+  assert.ok(two)
 })

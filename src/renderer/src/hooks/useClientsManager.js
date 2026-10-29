@@ -162,6 +162,10 @@ export function useClientsManager({
     try {
       await api('clients.create', {
         name: name.trim(),
+        // A code typed by hand (D-086); otherwise the automatic one.
+        ...(newClientForm.codeMode === 'manual' && String(newClientForm.code || '').trim()
+          ? { code: newClientForm.code.trim() }
+          : {}),
         phones: formPhones(newClientForm),
         addresses: formAddresses(newClientForm)
       })
@@ -195,6 +199,12 @@ export function useClientsManager({
       const updated = await api('clients.update', {
         id,
         name: name.trim(),
+        // A changed code only (D-086); the service refuses it without the permission.
+        ...(editClientForm.code !== undefined &&
+        String(editClientForm.code).trim() &&
+        String(editClientForm.code).trim() !== editClientForm.originalCode
+          ? { code: String(editClientForm.code).trim() }
+          : {}),
         phones: formPhones(editClientForm),
         addresses: formAddresses(editClientForm)
       })

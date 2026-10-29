@@ -158,6 +158,7 @@ const HANDLERS = {
         barcode: String(i.barcode),
         qty: baseQty,
         unitCost: round4(cost),
+        keepCost: !(cost > 0),
         refType: 'remote_receipt',
         refId: null,
         reason: p.reason || 'استلام بضاعة مسجل عن بعد من المالك'

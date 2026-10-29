@@ -278,6 +278,8 @@ Format: context → decision → reason → consequences (→ alternatives).
 
 ## D-041 Stock movement ledger, negative stock and moving-average cost (stage 4, phase 1)
 
+- **Costing superseded by D-087** (1.5.2): the latest purchase price replaces the moving average. The ledger and negative-stock rules stand.
+
 - **Decision**:
   - Stock is the sum of immutable `stock_movements`. `products.stock_qty` is a cached total maintained only by a trigger on the movements; a guard trigger refuses any other stock write.
   - Negative stock is allowed (owner decision).
@@ -1062,3 +1064,269 @@ Format: context → decision → reason → consequences (→ alternatives).
   - failed closes without it;
   - both administrator roles staying signed in and opening the next shift.
   - Checked in the running app: a cancelled close, a cashier's close signing out after the report, and the owner's close keeping him signed in.
+
+## D-084 Scale-label defaults: 13 / 1 / 6 / 7 / 5 / 1000 / 100 (owner, 1.5.2)
+
+- **Owner's defaults:** label length 13; item code from position 1, 6 digits; weight/price from position 7, 5 digits; weight ÷ 1000; price ÷ 100.
+- **Positions are offsets counted from 0**, as the parser has always read them. On the owner's label 2000001001257 this gives:
+  - code 000001; the product is registered as 2000001;
+  - weight 00125 g = 0.125 kg;
+  - 7 is the check digit.
+  - Read from 1, the same numbers would make it 10.012 kg. The settings screen says «العدّ من 0».
+- **One place:** `DEFAULT_SCALE` in `src/server/inventory/units.js`. The setting falls back to it, `settings.get` returns it as the default, and the screen's «استعادة المواضع الافتراضية» uses that answer.
+- **Existing installations (migration 0024):**
+  - saved settings still exactly at the previous defaults (code from 2, 5 digits) get the new code positions. The code still ends at offset 7, so the full product code and the weight read as before;
+  - changed settings, unreadable settings and no settings are left alone.
+- **Lookup:** a label's product is found under the full code (2000001), the code part (000001 or 1), or the digits after the prefix (00001, the code part before 1.5.2), so products registered either way keep working.
+- **Consistency checks added:**
+  - the code and the value may not overlap;
+  - with an EAN-13 check digit, neither may cover the last digit.
+  - Other layouts (other lengths, the code after the value, no check digit) are accepted.
+- **Tests:**
+  - `units.test.mjs`: the defaults, a customized 12-digit format, boundaries, invalid labels, consistency;
+  - `units.test.js`: labels at the till;
+  - `scaleDefaultsMigration.test.js`: migration 0024.
+
+## D-085 Input validation audit: no arbitrary character limits; amount fields take Arabic digits (owner, 1.5.2)
+
+- **Audited:** the service's schemas (patterns and lengths), the checks in its code, the database constraints, and the screens' input handling.
+- **Kept, because each protects something real:**
+  - dates as dates;
+  - internal keys of measurement kinds;
+  - a printer name without quotes or shell characters (it goes to the printing script);
+  - phone numbers as phone numbers (customers: 7–15 digits, Egyptian mobiles 11; separators and Arabic digits accepted);
+  - the logo as a PNG;
+  - the cloud address over HTTPS;
+  - numbers as numbers;
+  - unique barcodes, codes and usernames.
+  - Names, descriptions, units, addresses and reasons take any characters (Arabic, English, digits, punctuation), with length limits of 40–300 that fit the screens and receipts.
+- **Fixed:**
+  - **Amount and quantity fields** (47 in the app) were the browser's number field. It drops Arabic-Indic digits (typing «١٥٠» gave an empty value) and the Arabic decimal sign: typing «12٫5» gave **125**, a silently wrong amount.
+    - They are now `NumberField` (`components/ui`): text fields that convert Arabic-Indic and Persian digits, read ٫ and a comma as the decimal point, drop the thousands sign and spaces, and keep only what can be part of a number (`lib/numberInput.js`).
+    - Checked in the running app: «١٥٠» → 150, «12٫5» → 12.5.
+  - **A supplier's phone** now takes Arabic-Indic digits and several numbers written together, as a customer's does. The message says what is accepted.
+- **Customer codes** were limited to the `C00012` form; that is Phase 6 (D-086).
+- **Tests:** `numberInput.test.mjs`; `supplierOpening.test.js` (Arabic digits, two numbers).
+
+## D-086 Customer codes may be typed by hand; unique ignoring case (owner, 1.5.2, migration 0025)
+
+- **Owner's rule:** an authorized user may type a customer's code instead of taking the automatic one. A code used by another customer is refused with a clear message, by the service and by the database.
+- **Automatic stays the default:** C + the customer's number with at least five digits (C00012). If a typed code already took that value, the next free one is used (C00012-1, -2…). Imports and customers added at the till get automatic codes.
+- **Typed codes:** 1–30 characters, trimmed, no control characters; Arabic, English, digits and signs are all accepted. Unique ignoring upper and lower case (`clients_code_unique` on `upper(code)`), so two terminals saving the same code at once cannot both get it.
+- **New permission `customers.code` («تحديد كود العميل يدوياً»):** typing a code when adding a customer, and changing an existing customer's code. Administrators by default; supervisors and cashiers add customers with the automatic code.
+- **Changing a code** replaces the old rule of D-072 that a code never changes. The change is logged (`customer_code_change`, from and to). Past invoices keep the code they were sold with (`sales.client_code`). A code is never removed: clearing it keeps it.
+- **Screens:** the add-customer window offers «كود تلقائي» or «أكتب الكود»; the edit window shows the code and lets a holder change it. Both warn at once when the code is taken (`clients.codeAvailable`). Search finds a customer by code in any letter case.
+- **Migration 0025:** schema only. Every existing code and every sale's code is kept (tested).
+- **Tests:**
+  - `customerCodesManual.test.js` (8): the permission, typed and automatic codes, duplicates, simultaneous saves, the automatic code moving past a typed one, changing a code with past sales and the log, imports, the migration;
+  - `customerCodes.test.js` updated to the new rule.
+
+## D-087 The latest purchase price replaces the moving average (owner, 1.5.2, migration 0026)
+
+- **Owner's rule:** a product's purchase price is the price of its latest confirmed purchase. Example: bought at 200, sold at 240 retail and 225 wholesale. A new invoice at 220, with 260 retail and 240 wholesale, leaves the product at exactly 220 / 260 / 240. The moving average would have made the price 206.67.
+- **Root cause:** `receiveStock` blended each receipt into a moving average (D-041). Purchase returns took the returned value out of that average. The profit reports used the product's current price for sale lines without a recorded cost.
+- **The rule now** (`inventory/stock.js`):
+  - **Purchases:** a confirmed purchase line sets `cost_price` (per base unit: the line price ÷ the unit factor) to its price. Of two lines of one product in an invoice, the later one wins.
+  - **Empty prices:** a line with an empty purchase price (`unitCost` null or omitted) counts at the current price × its unit factor and keeps it. A free line (price 0) keeps it too, so bonus goods never make a product cost 0.
+  - **Selling prices** change only through their own fields (D-068), and package prices never change.
+  - **Sales** record the price of the moment on each line. Profit uses only that recorded cost (`reports.js`), so later purchases never change a past sale's profit.
+  - **Returns:** a customer return moves at the sale line's cost ÷ its factor (an item or the whole invoice). A purchase return moves at its purchase line's cost. Deleting a damaged record moves at its write-off cost. None of them changes the purchase price.
+  - **Other movements:** damaged goods, counts and adjustments move at the current price.
+  - **Stock value at cost** = stock × the latest purchase price. It is shown as an estimate on the stock-value screen («سعر آخر شراء»), because no stock batches are kept.
+- **Purchases are recorded once per request:** `supplier_purchases.client_ref`, under an advisory lock. The purchase form sends one id per invoice, so a retry after a lost answer returns the first purchase. The same request sent five times at once is recorded once (tested).
+- **Atomic:** a failed or refused purchase changes nothing (one transaction). A preliminary invoice and its cancellation change no price. Only the conversion of a preliminary invoice, or a purchase, sets prices.
+- **Migration 0026 (data and schema):**
+  1. **Sale lines without a recorded cost** (NULL or 0) take the value the reports used for them until now: the product's current price × the line's factor. So no reported profit changes on the day of the upgrade, and later prices no longer reach those sales. Each such line is recorded in `sale_item_cost_backfill` with its old value. Lines of products with no price at all stay 0, as the reports showed them.
+  2. **Each product's purchase price** becomes the price of its latest purchase line with a price above 0, per base unit. "Latest" means by purchase time, then purchase number, then line. Each change is recorded in `product_cost_migration` (old price, new price, the purchase and the line it came from).
+     - A product never bought, or bought only free, keeps its price, which was typed by hand or imported.
+     - Stock, selling and package prices, purchases, balances, cash, the activity log and stock movements are not changed (tested with a fingerprint before and after).
+  3. Adds `supplier_purchases.client_ref`.
+- **Reconciliation:**
+  - **Stock value at cost** moves on the day of the upgrade, by Σ stock × (latest price − old average) for the products in `product_cost_migration`. This is deliberate, and those rows show the difference.
+  - **Sales, profit to date, supplier balances, the drawer and the treasury** do not change.
+  - The installer's data fingerprint does not include stock value, so Case B accepts the upgrade.
+- **Tests:**
+  - `latestPurchasePrice.test.js` (13);
+  - `stockCost.test.mjs` rewritten;
+  - `stockLedger`, `units`, `payablesReceivables` and `purchaseDiscountReturns` updated where they asserted averages.
+
+## D-088 Recorded supplier invoices can be opened and corrected (owner, 1.5.2)
+
+- **Root cause:**
+  - The supplier's invoice list had no way to open an invoice: its row had only print and purchase-return buttons, and only for «إدارة الموردين». So users who may see suppliers could not see an invoice's lines at all.
+  - No operation existed to change anything on a recorded invoice.
+  - The detail query joined lines to products with an inner join, so a line whose product row was missing disappeared.
+- **Now:**
+  - Each invoice row has «عرض الفاتورة وأصنافها» for everyone with «عرض الموردين» or «إدارة الموردين».
+  - The window shows the totals (lines, discount, net, paid, remaining, where it was paid from), every line with its unit and factor, quantity, price, total and returned quantity, and the invoice's returns.
+  - Lines are kept when their product row is missing (LEFT JOIN).
+- **Editable** (`suppliers.updatePurchase`, «إدارة الموردين»):
+  - Only the reference number and the notes. Unknown fields are dropped by the service.
+  - Each change is logged (`supplier_purchase_edit`, from and to). Saving the same values changes and logs nothing.
+- **Not editable in place:** quantities, prices, amounts and payments. They already moved stock, the purchase price and the supplier's balance. The established correction is a purchase return (D-066) for what was wrong, then a new invoice with what is right. The window says so and opens the return directly.
+- **Tests:** `purchaseViewEdit.test.js` (4):
+  - viewing with lines, units and returns, by an administrator and an auditor;
+  - refusal without the permission;
+  - editing with the log;
+  - stock, cost, lines, amounts and balance unchanged;
+  - permissions and validation;
+  - an invoice completed from a preliminary one.
+
+## D-089 An administrator buying with no open shift pays from the treasury (owner, 1.5.2, migration 0027)
+
+- **Rule:** an administrator («مدير النظام» or «مدير المتجر») with **no open shift** records a supplier purchase without opening one. The amount paid now is recorded on the treasury automatically, as a `supplier_payment`, in cash, referring to the purchase. No choice is shown; the form says «يُسجَّل المدفوع على الخزنة تلقائياً».
+- **Unchanged:**
+  - **With an open shift:** the drawer pays, as before (purchases were always paid from the drawer). A request that does not name its open shift is still refused, never sent to the treasury.
+  - **Non-administrators** with no shift are refused as before when they pay something. On credit, nothing is paid and no shift is needed, as before.
+- **Records:**
+  - `supplier_purchases.paid_from` ('shift', 'treasury' or 'outside' for owner commands) and `shift_id`.
+  - The treasury row's `ref_type` is `supplier_purchase`, with no shift, so no drawer total can include it and no closed shift is touched.
+  - The activity log names the source.
+  - A retried confirmation (same request id) pays once.
+- **Tests:** `adminPurchaseTreasury.test.js` (4):
+  - both administrator roles with no shift: cash, partial and credit;
+  - a retry;
+  - an administrator with a shift;
+  - a non-administrator with no shift.
+
+## D-090 Supplier debt-payment requests with administrator approval (owner, 1.5.2, migration 0028)
+
+- **Owner's workflow:** a cashier allowed to do so hands cash from the drawer to a supplier for an older debt and records it in the active shift. The cash leaves the drawer at once. The supplier's balance falls only when an administrator approves.
+- **Permissions** (both administrators-only by default; the owner grants the first to a cashier's role in «الأدوار والصلاحيات»):
+  - `suppliers.payment_request` «طلب سداد دين مورد من الدرج»;
+  - `suppliers.payment_approve` «اعتماد طلبات سداد الموردين».
+- **States** (`supplier_payment_requests`):
+  - **pending:** the cash is out of the drawer as a `supplier_payment_request` shift movement. The balance is unchanged.
+  - **approved:** the balance falls by the amount and a supplier-ledger `payment` row is written, once. No cash moves again.
+  - **disputed:** rejected with a reason after the cash was handed. Nothing goes back into the drawer by itself.
+  - **settled:** a disputed request settled by what really happened, with a required note:
+    - `returned`: the supplier gave the money back. It is an inflow (`supplier_refund`) where it arrives now: the administrator's shift, or the treasury.
+    - `applied`: it was a valid payment after all. The balance falls, as on approval.
+    - `loss`: nothing moves. The request stays on record as a loss.
+- **Guards:**
+  - The request needs the requester's own open shift.
+  - The amount may not exceed what is owed less the pending requests, so a debt is never paid twice.
+  - The amount may not exceed the cash the drawer is expected to hold.
+- **Exactly once:**
+  - A request id (`client_ref`, under an advisory lock) records a double click once.
+  - Approval and settlement lock the row. A second approval, or the same settlement again, returns the first result. A different settlement is refused.
+- **Notice:** administrators see «طلبات سداد» with the count and amount in the top bar, checked every 30 seconds. It opens the suppliers page, where the requests section lists pending, disputed, approved and settled requests and has the approve, reject and settle actions.
+- **Reports:**
+  - The shift details, the closing report and the printed close list each request with its supplier, amount, time, cashier, reference and status.
+  - The drawer counts it as a supplier payment.
+  - The closing report keeps the count and total per status (`supplierRequests`).
+- **Audit:** `supplier_payment_request`, `supplier_payment_approve`, `supplier_payment_reject` and `supplier_payment_settle`.
+- **Backup and sync:**
+  - The table is in the backup (restored row for row, tested) and in the reset.
+  - It is sent to the owner's cloud copy.
+- **Tests:** `supplierPaymentRequests.test.js` (8): permissions, creation and notice, retry, limits, concurrent approval, rejection and the three settlements, shift report reconciliation, and backup restore.
+
+## D-091 Every money event of a shift itemized (owner, 1.5.2, migration 0028)
+
+- **Before:** the shift details, closing report and receipt listed expenses and returns one by one. Customer collections, supplier payments and supplier refunds were totals only.
+- **Now:**
+  - Each shift money movement records its reference (`ref_type`, `ref_id`), who it was with (`party`: the customer's name and code, or the supplier) and who recorded it (`user_id`). Customer collections, sale upfront payments, kept change, refunds, supplier payments (invoices, preliminary invoices, settlements, requests), supplier refunds and expenses are all covered.
+  - The report has `events`: collections, supplier payments, supplier refunds and other. Each line carries the time, the party (or the description for movements recorded before 1.5.2), the method, the amount, the user, the reference and a request's status. Each group's total equals the corresponding figure of the report (tested), so nothing is counted twice and collections are never sales.
+  - Expenses and returns show their time and user.
+  - **An unnamed customer:** sale-related movements carry the invoice reference (فاتورة #n).
+- **Printed** (80 mm and 58 mm): one line per event (time, party, method, amount), then the user, the reference and the status on a small line, right to left.
+- **Screens:** the shift details page and the closing window show the same lines (`MoneyEvents`).
+
+## D-092 One product field at the till (owner, 1.5.2)
+
+- **Before:** two fields, «امسح الباركود أو اكتبه» and «بحث بالاسم…» (F7).
+- **Now:** one field for a scan, a typed barcode or a name.
+  - **Typing opens the list from the first character, and every character narrows it** (owner's follow-up request; 120 ms after the last key). It shows name, barcode, price and stock, up to 12 matches.
+    - **What it matches:** the name, the main barcode, and extra and packaging barcodes. Arabic-Indic digits count as digits.
+    - **Order:** the exact code first, then codes that start with the text, then names that start with it.
+    - **Checked in the app:** «ج» → 5 matches, «جب» → 3, «جبنة» → 2, «جبنة ر» → 1; «6» → 4, «6221» → 2; «٦٢٢٣» → 1.
+    - **Tests:** `tillSearch.test.js` (2). ↓ and ↑ move through them, and the field announces the highlighted one (`aria-activedescendant`).
+  - **Enter** adds the highlighted product. With nothing highlighted, the text is resolved as a code, as before: product, extra and packaging barcodes, scale labels, and the suffix of a barcode. Text that is not all digits and is not a code adds its only match, or lists the matches with the first highlighted. An unknown code shows the same error as before and adds nothing.
+  - **Esc** clears the text and the list first. Only an empty field lets Esc reach «تفريغ الفاتورة».
+  - **F7** focuses the field.
+- **Scanner timing is unchanged** (`useBarcode`, `scannerTiming`). A scan is written into the field by the scanner hook, not typed, and it ends with Enter before the search pause, so no list opens during or after a scan.
+- **Checked in the running app** (Playwright, `till-search.js`, 20 checks):
+  - one field; F7;
+  - a name lists matches; ↓ highlights; Enter adds;
+  - Esc with text keeps the invoice;
+  - a 10 ms/key "scanner" code is added with no list;
+  - a slowly typed barcode is added; an unknown code adds nothing;
+  - "no match" appears once the search has answered.
+  - **Limitation:** this was simulated keyboard input, not a physical scanner.
+
+## D-093 Keyboard navigation completed across the app (owner, 1.5.2)
+
+- **Audit:**
+  - The shared keys of D-065 already covered every window, the money forms and the clickable table rows: focus in, Tab kept inside, Esc closes, focus returns, Enter steps, and rows by Tab, Enter and ↑ ↓.
+  - The gap: the window handler left radio groups, tab lists, menus and lists to "their own arrows", but none had them. The sidebar, the top-bar menu, the till's payment buttons and its customer matches could only be reached by Tab.
+- **Added** (`lib/keyboard.js` `roveArrows`, one bubbling listener after the components' own handlers):
+  - Arrow keys, Home and End move inside radio groups, tab lists, menus, the sidebar, button rows, the till's payment methods and the customer matches.
+  - Right to left: ← is the next item.
+  - Radios and tabs are chosen as they are reached. Menus, the sidebar and payment buttons only move: Enter or Space acts, so an arrow never changes a payment method.
+  - Text fields keep their own keys.
+- **Menus and fields:**
+  - The user menu opens on its first item, and Esc returns the focus to its button.
+  - ↓ in the till's customer field enters the matches, and Enter picks one.
+- **Not touched:** the scanner (`useBarcode`), the F keys and the money forms' Enter rule.
+- **Checked in the running app:** `keys152.js`, 16 checks.
+- **Coverage per screen:** `.docs/KEYBOARD_COVERAGE.md`.
+
+## D-094 Permission review (owner, 1.5.2)
+
+- **Reviewed:** the actual catalogue (`auth/permissions.js`, 53 keys in 11 groups), the roles screen and the service's enforcement.
+- **Each requested capability has its own permission**, with an Arabic label and an explanation shown under it in «الأدوار والصلاحيات»:
+
+  | Capability                                     | Permission                                                                      |
+  | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+  | Invoice history                                | `sales.view` (own shift); `sales.view_all` (all, D-081)                         |
+  | Reprint                                        | `sales.reprint`                                                                 |
+  | Returns                                        | `sales.return`; `sales.return_request`                                          |
+  | Change payment method                          | `sales.change_payment`                                                          |
+  | Supplier invoices: view                        | `suppliers.view`                                                                |
+  | Supplier invoices: create                      | `suppliers.manage`; at the till `suppliers.pending`                             |
+  | Supplier invoices: correct reference and notes | `suppliers.purchase_edit` (**new**)                                             |
+  | Supplier debt-payment requests: register       | `suppliers.payment_request`                                                     |
+  | Supplier debt-payment requests: approve        | `suppliers.payment_approve`                                                     |
+  | Customer collections                           | `customers.payments`                                                            |
+  | Customer creation                              | `customers.manage`                                                              |
+  | Manual customer codes                          | `customers.code`                                                                |
+  | Treasury                                       | `treasury.view`, `treasury.manage`                                              |
+  | Shifts                                         | `shifts.operate`, `shifts.view_all`, `shifts.view_expected`                     |
+  | Expenses                                       | `expenses.manage`, `expenses.view_all`, `expenses.categories`                   |
+  | Products and inventory                         | `products.*`, `categories.manage`, `inventory.*`                                |
+  | Reports                                        | `reports.view`, `reports.valuation`                                             |
+  | Backups                                        | `backup.manage`                                                                 |
+  | Import and export                              | `data.import`, `data.export`                                                    |
+  | Everything else                                | the rest of the catalogue: users, roles, settings, discounts, logs, sync, reset |
+
+- **One change:** correcting a recorded purchase (D-088) has its own key, `suppliers.purchase_edit` «تعديل بيانات فاتورة شراء مسجلة», instead of riding on «إدارة الموردين والمشتريات». A role may correct invoices without buying, or buy without correcting.
+- **Grants on an upgrade** (`ensureAccessControl`):
+  - New keys are granted once, to the built-in roles that include them by default.
+  - A key may name a prerequisite (`requires`). It is then granted only to roles holding the prerequisite now. So a supervisor whose purchases the owner took away does not get the correction back.
+  - Custom roles get nothing new. Nothing the owner assigned or removed is changed. A key removed after its first grant stays removed.
+- **Enforcement:** every operation names its permission and the service refuses it otherwise. The menus only hide what cannot be used.
+- **Matrix:** `.docs/PERMISSION_MATRIX.md`, generated from the code and kept current by a test.
+- **Invoice rules kept:** the invoice visibility of D-081 and the action screens by invoice number of D-082 are unchanged.
+- **Tests:**
+  - `permissionsAudit.test.js`: every operation requires a permission, and each built-in role is refused every operation it lacks;
+  - `permissionUpgrade.test.js` (3): a fresh install, an upgrade with the owner's changes and prerequisites, allowed and denied;
+  - the feature tests for each new action: `customerCodesManual`, `supplierPaymentRequests`, `purchaseViewEdit`, `adminPurchaseTreasury`.
+
+## D-095 The sidebar, reorganized (owner, 1.5.2)
+
+- **Before:** 31 screens in 8 groups. Two groups held a single screen («نظرة عامة», «الخزنة»). «الإدارة» held 11. The day's till operations (returns, reprint, payment change) sat under «الحسابات».
+- **Now:** the same 31 screens, with the same ids, routes and permissions, in 6 groups (`NAV_LAYOUT`):
+  - **البيع اليومي:** the till, tills, returns, reprint, payment change;
+  - **الحسابات:** invoices, customers, suppliers, expenses, treasury;
+  - **المخزون:** products, movements, categories, reorder assistant, damaged goods;
+  - **التقارير:** the dashboard, advanced reports, cashiers, products report, stock value;
+  - **الإدارة:** shifts, users, roles, discounts;
+  - **النظام:** settings, receipt design, backup, import and export, cloud sync, activity log, cheque archive.
+- **Shorter labels:** «الفواتير» (was «الفواتير والمرتجعات»; returns has its own entry), «العملاء», «استيراد وتصدير».
+- **Folding:** a group's heading folds or shows its screens. This is remembered on the terminal. The group of the open screen is always shown. The compact rail shows every icon.
+- **Spacing:** items are slightly shorter (36 px instead of 40 px) and the groups closer together.
+- **Keys:** ↑ ↓ Home End move through the headings and screens (D-093), and Enter opens or folds.
+- **Kept:** nothing is removed or hidden by default. Each user still sees only the screens their permissions allow. The top bar shows the screen's new group.
+- **Checked:**
+  - `navigationLayout.test.mjs` (3): every screen placed exactly once, the groups, and what a cashier sees;
+  - in the running app (`sidebar152.js`): the owner sees all 31; folding by Enter and click, remembered after signing in again; 1024 px and the compact rail; the cashier sees the till, tills and returns only.

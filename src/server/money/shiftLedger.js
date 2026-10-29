@@ -11,6 +11,8 @@ const KINDS = [
   'customer_payment',
   'supplier_payment',
   'supplier_settlement',
+  // Cash handed to a supplier for an older debt, waiting for an administrator (D-090).
+  'supplier_payment_request',
   'supplier_refund',
   'expense',
   'refund',
@@ -25,12 +27,16 @@ async function recorded(db, clientRef) {
   )
 }
 
-/** Write one movement in the caller's transaction; returns its row. */
+/**
+ * Write one movement in the caller's transaction; returns its row. `refType`/`refId`: the record it
+ * belongs to (a sale, a customer, a supplier, an expense…); `party`: the customer's or supplier's
+ * name; `userId`: who recorded it (D-091). The shift report itemizes movements by these.
+ */
 async function addMovement(db, m) {
   if (!KINDS.includes(m.kind)) throw new Error(`unknown movement kind ${m.kind}`)
   const { rows } = await db.query(
-    `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method, kind, client_ref)
-     VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0), $5, $6, $7) RETURNING *`,
+    `INSERT INTO safe_ledger (shift_id, type, amount, description, timestamp, method, kind, client_ref, ref_type, ref_id, party, user_id)
+     VALUES ($1, $2, $3, $4, LOCALTIMESTAMP(0), $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
       m.shiftId,
       m.type,
@@ -38,7 +44,11 @@ async function addMovement(db, m) {
       m.description,
       m.method || 'cash',
       m.kind,
-      m.clientRef || null
+      m.clientRef || null,
+      m.refType || null,
+      m.refId ?? null,
+      m.party ? String(m.party).slice(0, 200) : null,
+      m.userId ?? null
     ]
   )
   return rows[0]

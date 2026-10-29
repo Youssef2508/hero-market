@@ -100,7 +100,7 @@ async function buildLines(db, items, products) {
         }
       )
     }
-    const avg = Number(p.cost_price) || 0
+    const cost = Number(p.cost_price) || 0
     lines.push({
       barcode: p.barcode,
       name: p.name,
@@ -111,9 +111,9 @@ async function buildLines(db, items, products) {
       baseQty,
       price,
       total: round2(qty * price),
-      // Cost per selling unit (snapshot): the average per base unit × factor.
-      cost: round4(avg * unit.factor),
-      baseCost: avg
+      // Cost per selling unit (snapshot): the purchase price per base unit × factor.
+      cost: round4(cost * unit.factor),
+      baseCost: cost
     })
   }
   return lines
@@ -199,9 +199,21 @@ module.exports = function posModule(app) {
           )
         if (scale) {
           const c = scale.code
-          // The product may be registered under the code digits (00001 / 1) or under the label's
-          // digits up to the code (2000001, as the owner registers them).
-          const candidates = [...new Set([scale.fullCode, c, c.replace(/^0+/, '')].filter(Boolean))]
+          // The product may be registered under the label's digits up to the code (2000001, as the
+          // owner registers them), the code digits (000001 / 1), or the digits after the prefix
+          // (00001: the code part of the defaults before 1.5.2).
+          const afterPrefix = scale.fullCode.slice(scale.prefix.length)
+          const candidates = [
+            ...new Set(
+              [
+                scale.fullCode,
+                c,
+                afterPrefix,
+                c.replace(/^0+/, ''),
+                afterPrefix.replace(/^0+/, '')
+              ].filter(Boolean)
+            )
+          ]
           product = (
             await db.query(
               'SELECT * FROM products WHERE barcode = ANY($1::text[]) ORDER BY array_position($1::text[], barcode) LIMIT 1',
@@ -296,14 +308,33 @@ module.exports = function posModule(app) {
       required: ['term'],
       properties: { term: { type: 'string', maxLength: 100 } }
     },
+    // The till's live list (owner, 1.5.2, D-092): from the first character, by name, main barcode,
+    // extra or packaging barcode; Arabic-Indic digits count as digits. Each character narrows it;
+    // the closest matches come first (the exact code, then codes and names that start with the text).
     handler: async (ctx, { term }) => {
-      const t = likeEscape(term)
+      const typed = String(term)
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .trim()
+      if (!typed) return []
+      const t = likeEscape(typed)
       return maskCost(
         ctx,
         (
           await ctx.pool.query(
-            `SELECT * FROM products WHERE (name ILIKE '%' || $1 || '%' ESCAPE '\\' OR barcode ILIKE '%' || $1 || '%' ESCAPE '\\') AND is_active ORDER BY name LIMIT 8`,
-            [t]
+            `SELECT p.* FROM products p
+              WHERE p.is_active AND (
+                    p.name ILIKE '%' || $1 || '%' ESCAPE '\\'
+                 OR p.barcode ILIKE '%' || $1 || '%' ESCAPE '\\'
+                 OR EXISTS (SELECT 1 FROM product_barcodes x WHERE x.product_barcode = p.barcode
+                              AND x.barcode ILIKE '%' || $1 || '%' ESCAPE '\\'))
+              ORDER BY (p.barcode = $2 OR EXISTS (SELECT 1 FROM product_barcodes x
+                                                  WHERE x.product_barcode = p.barcode AND x.barcode = $2)) DESC,
+                       (p.barcode ILIKE $1 || '%' ESCAPE '\\') DESC,
+                       (p.name ILIKE $1 || '%' ESCAPE '\\') DESC,
+                       p.name, p.barcode
+              LIMIT 12`,
+            [t, typed]
           )
         ).rows
       )
@@ -878,7 +909,11 @@ module.exports = function posModule(app) {
                     ? `مقدم نقدي بيع دفع جزئي فاتورة رقم #${saleId}`
                     : `مقدم بيع دفع جزئي (${LABELS[m]}) فاتورة رقم #${saleId}`,
                 method: m,
-                kind: 'sale_upfront'
+                kind: 'sale_upfront',
+                refType: 'sale',
+                refId: saleId,
+                party: clientName || null,
+                userId: ctx.user?.id
               })
             }
           }
@@ -903,7 +938,11 @@ module.exports = function posModule(app) {
                 type: 'inflow',
                 amount: deposit,
                 description: `باقي محفوظ كرصيد للعميل فاتورة رقم #${saleId}`,
-                kind: 'kept_change'
+                kind: 'kept_change',
+                refType: 'sale',
+                refId: saleId,
+                party: clientName || null,
+                userId: ctx.user?.id
               })
             }
           }

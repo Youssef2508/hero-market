@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Landmark, Plus, Minus, Scale, Undo2, RefreshCw } from 'lucide-react'
-import { EmptyState, Timestamp } from '../ui'
+import { EmptyState, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { api, can, newClientRef } from '../../lib/api'
 
@@ -404,8 +404,7 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
               </label>
               <label className="field">
                 <span className="field-label">المبلغ (ج.م) *</span>
-                <input
-                  type="number"
+                <NumberField
                   step="0.01"
                   min={form.kind === 'adjustment' ? undefined : '0.01'}
                   required

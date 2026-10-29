@@ -20,7 +20,7 @@ import {
   X
 } from 'lucide-react'
 import { api } from '../../lib/api'
-import { EmptyState, SortableTh, StatCard, Timestamp } from '../ui'
+import { EmptyState, SortableTh, StatCard, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
@@ -271,6 +271,8 @@ export default function ClientsTab({
                     setEditClientForm({
                       id: c.id,
                       name: c.name,
+                      code: c.code || '',
+                      originalCode: c.code || '',
                       phone: c.phone || '',
                       phone2: c.phone2 || '',
                       hasPhone2: Boolean(c.phone2),
@@ -371,8 +373,7 @@ export default function ClientsTab({
                   <PaymentMethodSelect value={repayMethod} onChange={setRepayMethod} />
                   <label className="field" style={{ flex: 1 }}>
                     <span className="field-label">سداد مديونية (ج.م)</span>
-                    <input
-                      type="number"
+                    <NumberField
                       step="0.01"
                       placeholder="أدخل المبلغ المسدد"
                       className="input num"

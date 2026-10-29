@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { History, ClipboardCheck } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
-import { Timestamp } from '../ui'
+import { Timestamp, NumberField } from '../ui'
 
 const KIND_LABELS = {
   opening: 'رصيد افتتاحي',
@@ -103,8 +103,7 @@ export default function StockHistoryModal({ product, onClose, onChanged }) {
               الفرق فقط، فلا تضيع المبيعات التي تتم أثناء الجرد.
             </p>
             <div className="row row-wrap">
-              <input
-                type="number"
+              <NumberField
                 step="0.001"
                 className="form-input num"
                 required

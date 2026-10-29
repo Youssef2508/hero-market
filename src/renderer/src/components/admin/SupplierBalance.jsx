@@ -1,5 +1,6 @@
 import { formatMoney } from '../../lib/utils'
 import { balanceLabel } from '../../lib/supplierBalance'
+import { NumberField } from '../ui'
 
 export function BalanceText({ value }) {
   const v = Number(value) || 0
@@ -23,8 +24,7 @@ export function OpeningBalanceField({ value, onChange, name = 'opening-dir' }) {
   return (
     <fieldset className="field">
       <legend className="field-label">الرصيد الافتتاحي (قبل البرنامج، اختياري)</legend>
-      <input
-        type="number"
+      <NumberField
         className="input num"
         min="0"
         step="0.01"

@@ -7,6 +7,7 @@ const { addMovement, recorded } = require('../money/shiftLedger')
 const { METHODS } = require('../money/methods')
 const { postMovement, receiveStock } = require('../inventory/stock')
 const { loadUnit, toBaseQty, round4, kindRule } = require('../inventory/units')
+const { ADMINS } = require('../auth/shiftRule')
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 
@@ -14,6 +15,9 @@ const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`)
 const str = (max) => ({ type: ['string', 'null'], maxLength: max })
 
 // Prices a purchase line may set on its product (D-068): request key, products column, label.
+// How a purchase's payment is named in the activity log (D-089).
+const PAID_FROM = { shift: 'من درج الوردية', treasury: 'من الخزنة', outside: 'خارج المتجر' }
+
 const NEW_PRICES = [
   { key: 'newRetailPrice', column: 'retail_price', label: 'سعر البيع' },
   { key: 'newWholesalePrice', column: 'wholesale_price', label: 'سعر الجملة' }
@@ -22,15 +26,24 @@ const NEW_PRICES = [
 /** A supplier's contact fields, trimmed and checked (SUP-03). */
 function supplierContact(b) {
   const t = (v) => String(v ?? '').trim()
+  // A supplier's phone may hold one number or several ("0100… / 0122…"); Arabic-Indic and Persian
+  // digits are taken as typed, as for customers (D-085).
+  const latin = (s) =>
+    s &&
+    s
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
   const c = {
     name: t(b.name),
-    phone: t(b.phone),
+    phone: latin(t(b.phone)),
     address: t(b.address),
     contact_person: t(b.contact_person)
   }
   if (!c.name) throw badRequest('اسم المورد مطلوب.')
-  if (c.phone && !/^[0-9+\-\s()/]{3,40}$/.test(c.phone))
-    throw badRequest('رقم الهاتف يحتوي على حروف غير مسموحة.')
+  if (c.phone && !/^[0-9+\-\s()/.,،]{3,40}$/.test(c.phone))
+    throw badRequest(
+      'رقم هاتف المورد يقبل الأرقام والمسافات والعلامات + - ( ) / فقط، من 3 إلى 40 حرفاً.'
+    )
   return c
 }
 
@@ -79,6 +92,17 @@ async function setOpening(db, ctx, s, target) {
 }
 
 /** The actor's own open shift (cash movements need one: safe_ledger.shift_id is required). */
+/** Has this user any open shift? */
+async function anyOpenShift(db, userId) {
+  return (
+    (
+      await db.query("SELECT 1 FROM shifts WHERE user_id = $1 AND status = 'open' LIMIT 1", [
+        userId
+      ])
+    ).rowCount > 0
+  )
+}
+
 async function ownOpenShift(db, ctx, shiftId) {
   if (!shiftId) return null
   return (
@@ -98,7 +122,58 @@ async function ownOpenShift(db, ctx, shiftId) {
  */
 // `payable: false` (a preliminary invoice converted, D-064): the payment and the supplier's payable
 // were recorded with the preliminary invoice; only stock, cost and the purchase record are written.
+/**
+ * Purchase lines whose purchase price was left empty (unitCost null or omitted) take the product's
+ * current purchase price in the line's unit (per base unit × the unit's factor) and keep it: the
+ * owner's rule "an empty field keeps the price" (D-087). Unknown products are left to the caller.
+ */
+async function fillEmptyCosts(db, items) {
+  const out = []
+  for (const i of items) {
+    const given = i.unitCost !== null && i.unitCost !== undefined && i.unitCost !== ''
+    if (given) {
+      out.push({ ...i, unitCost: Number(i.unitCost), keepCost: false })
+      continue
+    }
+    const product = (
+      await db.query('SELECT * FROM products WHERE barcode = $1', [String(i.barcode).trim()])
+    ).rows[0]
+    if (!product) {
+      out.push({ ...i, unitCost: 0, keepCost: true })
+      continue
+    }
+    const unit = await loadUnit(db, product, i.unitId ?? null, { purpose: 'buy' })
+    out.push({
+      ...i,
+      unitCost: round4((Number(product.cost_price) || 0) * unit.factor),
+      keepCost: true
+    })
+  }
+  return out
+}
+
 async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}) {
+  // A retried confirmation (same request id) is recorded once (D-087).
+  if (p.clientRef) {
+    await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`purchase:${p.clientRef}`])
+    const prior = (
+      await db.query('SELECT id, supplier_id FROM supplier_purchases WHERE client_ref = $1', [
+        p.clientRef
+      ])
+    ).rows[0]
+    if (prior) {
+      const supplier = (
+        await db.query('SELECT * FROM suppliers WHERE id = $1', [prior.supplier_id])
+      ).rows[0]
+      const n = (
+        await db.query(
+          'SELECT count(*)::int AS n FROM supplier_purchase_items WHERE purchase_id = $1',
+          [prior.id]
+        )
+      ).rows[0].n
+      return { ...supplier, purchaseId: prior.id, receivedItems: n, duplicate: true }
+    }
+  }
   const s = (await db.query('SELECT * FROM suppliers WHERE id = $1 FOR UPDATE', [p.supplierId]))
     .rows[0]
   if (!s) throw notFound('المورد غير موجود.')
@@ -113,14 +188,24 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   const ref = p.invoice_ref || ''
   // A remote invoice (owner command) never touches the drawer: the owner paid outside it.
   const shift = drawer ? await ownOpenShift(db, ctx, p.currentShiftId) : null
-  if (drawer && paid > 0 && !shift)
-    throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
-  const items = (p.items || []).map((i) => ({
+  // Where the paid amount comes from (D-089): the user's open shift drawer; an administrator with
+  // no open shift at all pays from the treasury, without a choice; anyone else needs a shift.
+  let paidFrom = null
+  if (paid > 0) {
+    if (!drawer) paidFrom = 'outside'
+    else if (shift) paidFrom = 'shift'
+    else if (ADMINS.includes(ctx.user?.roleKey) && !(await anyOpenShift(db, ctx.user.id)))
+      paidFrom = 'treasury'
+    else throw shiftRequired('يجب فتح وردية لتسجيل المبلغ المدفوع من الخزينة.')
+  }
+  const items = (await fillEmptyCosts(db, p.items || [])).map((i) => ({
     barcode: i.barcode.trim(),
     unitId: i.unitId ?? null,
     qty: Number(i.qty),
-    unitCost: Number(i.unitCost),
-    lineTotal: round2(Number(i.qty) * Number(i.unitCost)),
+    unitCost: i.unitCost,
+    // Empty price (kept) or a free line (price 0: bonus goods): the product's price is kept.
+    keepCost: i.keepCost || !(i.unitCost > 0),
+    lineTotal: round2(Number(i.qty) * i.unitCost),
     // New selling and wholesale prices for the product's base unit (D-068); empty = keep.
     ...Object.fromEntries(
       NEW_PRICES.map(({ key }) => [
@@ -164,9 +249,22 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     )
   const purchaseId = (
     await db.query(
-      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount)
-         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9) RETURNING id`,
-      [s.id, ref, total, paid, remaining, p.payment_type || 'آجل', p.notes || '', gross, discount]
+      `INSERT INTO supplier_purchases (supplier_id, invoice_ref, total_amount, paid_amount, remaining, payment_type, timestamp, notes, gross_amount, discount, client_ref, paid_from, shift_id)
+         VALUES ($1, $2, $3, $4, $5, $6, LOCALTIMESTAMP(0), $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [
+        s.id,
+        ref,
+        total,
+        paid,
+        remaining,
+        p.payment_type || 'آجل',
+        p.notes || '',
+        gross,
+        discount,
+        p.clientRef || null,
+        paidFrom,
+        paidFrom === 'shift' ? shift.id : null
+      ]
     )
   ).rows[0].id
   // Lock the products in a stable order (concurrent sales lock the same rows).
@@ -211,11 +309,14 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
         old('wholesale_price', 'newWholesalePrice')
       ]
     )
-    // Stock and the moving average work per base unit.
+    // Stock and the purchase price work per base unit. The line's price becomes the product's
+    // purchase price (the latest purchase price, D-087); of two lines of one product (pieces and
+    // boxes) the later one in the invoice wins.
     await receiveStock(db, ctx, {
       barcode: i.barcode,
       qty: baseQty,
       unitCost: round4(i.unitCost / unit.factor),
+      keepCost: i.keepCost,
       refType: 'purchase',
       refId: purchaseId,
       reason: `فاتورة شراء #${ref || purchaseId} من ${s.name}`
@@ -231,13 +332,28 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
       [s.id, remaining, `فاتورة شراء #${ref || purchaseId} - متبقي آجل`]
     )
   }
-  if (drawer && paid > 0) {
+  if (paidFrom === 'shift') {
     await addMovement(db, {
       shiftId: shift.id,
       type: 'outflow',
       amount: paid,
       description: `دفعة لمورد: ${s.name} - فاتورة #${ref || purchaseId}`,
-      kind: 'supplier_payment'
+      kind: 'supplier_payment',
+      refType: 'supplier_purchase',
+      refId: purchaseId,
+      party: s.name,
+      userId: ctx.user?.id
+    })
+  } else if (paidFrom === 'treasury') {
+    // Never a shift's money: no shift is involved, so no drawer total can include it.
+    await treasury.post(db, ctx, {
+      kind: 'supplier_payment',
+      method: 'cash',
+      amount: -paid,
+      refType: 'supplier_purchase',
+      refId: purchaseId,
+      description: `دفعة لمورد: ${s.name} - فاتورة شراء #${ref || purchaseId}`,
+      idemKey: p.clientRef ? `purchase:${p.clientRef}` : null
     })
   }
   // New prices (D-068), in the purchase's transaction: the base unit's selling and wholesale
@@ -258,8 +374,16 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
   await ctx.audit(
     db,
     'supplier_purchase',
-    `فاتورة شراء #${ref || purchaseId} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}`,
-    { purchaseId, gross, discount, net: total, paid }
+    `فاتورة شراء #${ref || purchaseId} من "${s.name}" بقيمة ${total.toFixed(2)} ج.م${discount > 0 ? ` (إجمالي ${gross.toFixed(2)} − خصم ${discount.toFixed(2)})` : ''}${items.length ? ` (${items.length} صنف استُلم للمخزن)` : ''}${paid > 0 ? ` – مدفوع ${Number(paid).toFixed(2)} ج.م ${PAID_FROM[paidFrom]}` : ''}`,
+    {
+      purchaseId,
+      gross,
+      discount,
+      net: total,
+      paid,
+      paidFrom,
+      shiftId: paidFrom === 'shift' ? shift.id : null
+    }
   )
   const supplier = (await db.query('SELECT * FROM suppliers WHERE id = $1', [s.id])).rows[0]
   return { ...supplier, purchaseId, receivedItems: items.length }
@@ -430,20 +554,23 @@ module.exports = function financeModule(app) {
         payment_type: str(40),
         notes: str(1000),
         currentShiftId: { type: ['integer', 'null'] },
+        // 1.5.2 (D-087): the request id; a retried confirmation is recorded once.
+        clientRef: { type: 'string', minLength: 8, maxLength: 120 },
         // Lines received into stock (K-38). When present, their total must equal total_amount.
         items: {
           type: 'array',
           maxItems: 500,
           items: {
             type: 'object',
-            required: ['barcode', 'qty', 'unitCost'],
+            required: ['barcode', 'qty'],
             properties: {
               barcode: { type: 'string', minLength: 1, maxLength: 64 },
               // Purchase unit (product_units.id); omitted or null = base unit. qty and unitCost
               // are in that unit (e.g. 3 cartons at 120 each).
               unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
-              unitCost: { type: 'number', minimum: 0 },
+              // Purchase price in that unit; omitted or null = keep the product's price (D-087).
+              unitCost: { type: ['number', 'null'], minimum: 0 },
               // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
               newRetailPrice: { type: ['number', 'null'], minimum: 0 },
               newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
@@ -536,7 +663,11 @@ module.exports = function financeModule(app) {
             description: `سداد دين مورد: ${s.name}`,
             method,
             kind: 'supplier_settlement',
-            clientRef: clientRef ? `supplier-pay:${clientRef}` : null
+            clientRef: clientRef ? `supplier-pay:${clientRef}` : null,
+            refType: 'supplier',
+            refId: s.id,
+            party: s.name,
+            userId: ctx.user?.id
           })
         }
         await ctx.audit(db, 'supplier_payment', `سداد ${amount.toFixed(2)} ج.م للمورد "${s.name}"`)
@@ -725,7 +856,9 @@ module.exports = function financeModule(app) {
           description: text,
           method,
           kind: 'expense',
-          clientRef: e.clientRef ? `expense:${e.clientRef}` : null
+          clientRef: e.clientRef ? `expense:${e.clientRef}` : null,
+          refType: 'expense',
+          userId: ctx.user?.id
         })
         const x = (
           await db.query(
@@ -734,6 +867,7 @@ module.exports = function financeModule(app) {
             [shift.id, e.amount, category, note, ctx.user.id, categoryId, ledger.id]
           )
         ).rows[0]
+        await db.query('UPDATE safe_ledger SET ref_id = $1 WHERE id = $2', [x.id, ledger.id])
         await ctx.audit(
           db,
           'expense_create',
@@ -962,6 +1096,8 @@ module.exports = function financeModule(app) {
         await postMovement(db, ctx, {
           barcode: r.product_barcode,
           qty: Number(r.quantity),
+          // Back at the cost it was written off at (D-087).
+          unitCost: Number(r.cost_price) > 0 ? Number(r.cost_price) : undefined,
           kind: 'damaged_reversal',
           refType: 'damaged',
           refId: damagedId
@@ -975,4 +1111,4 @@ module.exports = function financeModule(app) {
   })
 }
 
-module.exports.helpers = { recordPurchase }
+module.exports.helpers = { recordPurchase, fillEmptyCosts }

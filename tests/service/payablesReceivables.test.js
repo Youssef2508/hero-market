@@ -1,7 +1,7 @@
 'use strict'
 // Supplier payables and customer receivables (owner, 2026-10-21, D-064), end to end with exact
 // balances: preliminary supplier invoices (paid, partial, credit), their conversion into detailed
-// purchases (stock and moving-average cost, never a second payment), later settlements, credit and
+// purchases (stock and the latest purchase price, never a second payment), later settlements, credit and
 // partial sales, later collections, retries, and how the shift report tells them apart.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
@@ -153,7 +153,7 @@ test('preliminary invoices: paid, partial and credit move money and payable only
   t.diagnostic(`invoices ${full.id}, ${partial.id}, ${credit.id}`)
 })
 
-test('conversion moves stock and moving-average cost once, never the payment; a different total adjusts the payable', async (t) => {
+test('conversion moves stock and sets the latest purchase price once, never the payment; a different total adjusts the payable', async (t) => {
   if (!requireDb(t)) return
   const list = ok(await svc.call('supplierInvoices.list', { status: 'pending' }, owner))
   const byTotal = (n) => list.find((x) => Number(x.total) === n)
@@ -174,7 +174,11 @@ test('conversion moves stock and moving-average cost once, never the payment; a 
   assert.equal(conv.difference, 0)
   const rice = await product('RICE')
   assert.equal(rice.stock, 20)
-  assert.equal(rice.cost, 25, 'moving average: (10×20 + 10×30) / 20')
+  assert.equal(
+    rice.cost,
+    30,
+    'latest purchase price (D-087): the converted line, not (10×20 + 10×30) / 20'
+  )
   assert.equal(await debt(), 450, 'payable unchanged')
   assert.equal((await moves(shift.id)).length, cashBefore, 'no second payment')
   // Retried conversion returns the first result; a different request is refused.

@@ -20,24 +20,24 @@ Defined once in `src/shared/storeImport.mjs` (`SHEETS`), used by the template do
 
 ### الأصناف (products)
 
-| Column                | Key               | Required       | Notes                                                                                |
-| --------------------- | ----------------- | -------------- | ------------------------------------------------------------------------------------ |
-| الباركود              | `barcode`         | no             | Text (leading zeros kept). Empty: an internal code HM000001… is given                |
-| اسم الصنف             | `name`            | yes            |                                                                                      |
-| سعر البيع             | `retail_price`    | yes            | Price of one base unit                                                               |
-| سعر الشراء            | `cost_price`      | no             | Cost of one base unit. The export writes the current moving-average cost             |
-| سعر الجملة            | `wholesale_price` | no             | Wholesale price of one base unit                                                     |
-| الكمية الحالية        | `stock_qty`       | no             | In the base unit; written as an opening stock movement                               |
-| الوحدة                | `unit`            | no             | The base unit's name                                                                 |
-| طريقة القياس          | `unit_kind`       | no             | بالعدد / بالوزن / بالحجم or a kind the owner added; empty = from the unit            |
-| التصنيف               | `category`        | no             | Created when new                                                                     |
-| حد الطلب              | `reorder_limit`   | no             |                                                                                      |
-| اسم العبوة            | `pack_name`       | no (v2)        | One package of the product (carton, box…). All package columns are optional together |
-| عدد الوحدات في العبوة | `pack_factor`     | with a package | Whole number for counted products; > 1                                               |
-| باركود العبوة         | `pack_barcode`    | no             | Text; unique in the file and the store                                               |
-| سعر بيع العبوة        | `pack_price`      | with a package | The owner's price for the whole package, never derived (D-065)                       |
-| سعر جملة العبوة       | `pack_wholesale`  | no             |                                                                                      |
-| سعر شراء العبوة       | `pack_cost`       | no             | Default cost when buying that package                                                |
+| Column                | Key               | Required       | Notes                                                                                        |
+| --------------------- | ----------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| الباركود              | `barcode`         | no             | Text (leading zeros kept). Empty: an internal code HM000001… is given                        |
+| اسم الصنف             | `name`            | yes            |                                                                                              |
+| سعر البيع             | `retail_price`    | yes            | Price of one base unit                                                                       |
+| سعر الشراء            | `cost_price`      | no             | Cost of one base unit. The export writes the current purchase price (latest purchase, D-087) |
+| سعر الجملة            | `wholesale_price` | no             | Wholesale price of one base unit                                                             |
+| الكمية الحالية        | `stock_qty`       | no             | In the base unit; written as an opening stock movement                                       |
+| الوحدة                | `unit`            | no             | The base unit's name                                                                         |
+| طريقة القياس          | `unit_kind`       | no             | بالعدد / بالوزن / بالحجم or a kind the owner added; empty = from the unit                    |
+| التصنيف               | `category`        | no             | Created when new                                                                             |
+| حد الطلب              | `reorder_limit`   | no             |                                                                                              |
+| اسم العبوة            | `pack_name`       | no (v2)        | One package of the product (carton, box…). All package columns are optional together         |
+| عدد الوحدات في العبوة | `pack_factor`     | with a package | Whole number for counted products; > 1                                                       |
+| باركود العبوة         | `pack_barcode`    | no             | Text; unique in the file and the store                                                       |
+| سعر بيع العبوة        | `pack_price`      | with a package | The owner's price for the whole package, never derived (D-065)                               |
+| سعر جملة العبوة       | `pack_wholesale`  | no             |                                                                                              |
+| سعر شراء العبوة       | `pack_cost`       | no             | Default cost when buying that package                                                        |
 
 ### العملاء (customers)
 

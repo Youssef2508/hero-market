@@ -44,6 +44,11 @@ export function can(user, permission) {
   return !!user && Array.isArray(user.permissions) && user.permissions.includes(permission)
 }
 
+/** The administrators («مدير النظام», «مدير المتجر»), as the service's ADMINS (shiftRule.js). */
+export function isAdmin(user) {
+  return !!user && ['super_admin', 'store_admin'].includes(user.roleKey)
+}
+
 /** Client-generated idempotency key for one checkout attempt. */
 export function newClientRef() {
   return (

@@ -3,6 +3,7 @@ import { Scale, Ruler } from 'lucide-react'
 import { formatMoney } from '../../lib/utils'
 import { parseWeight } from '../../lib/weight'
 import { kindInfo } from '../../lib/measureKinds'
+import { NumberField } from '../ui'
 
 const PRESETS = [100, 250, 500, 1000]
 
@@ -69,8 +70,7 @@ function QuantityEntry({ pending, onDone, kind }) {
         <div className="modal-body">
           <label className="field">
             <span className="field-label">الكمية ({unitName})</span>
-            <input
-              type="number"
+            <NumberField
               inputMode="decimal"
               step={10 ** -kind.decimals}
               min="0"
@@ -154,8 +154,7 @@ function WeightEntry({ pending, onDone }) {
         </div>
         <div className="modal-body">
           <div className="row">
-            <input
-              type="number"
+            <NumberField
               inputMode="decimal"
               step="any"
               min="0"

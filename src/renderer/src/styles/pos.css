@@ -22,10 +22,10 @@
   min-height: 0;
 }
 
-/* ── Entry row: scanner + search ─────────────────────────────── */
+/* ── Entry: one field for scans, barcodes and names (D-092) ───── */
 .pos-entry {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-3);
   flex-shrink: 0;
 }
@@ -44,7 +44,8 @@
 .scan-input {
   width: 100%;
   height: var(--ctl-xl);
-  padding-inline: 48px 44px;
+  /* Room for the product counter, the F7 hint and the Enter mark at the end. */
+  padding-inline: 48px 176px;
   border: 2px solid var(--accent-border);
   border-radius: var(--r-md);
   background: var(--surface-raised);
@@ -93,7 +94,7 @@
 }
 .search-meta {
   position: absolute;
-  inset-inline-end: 12px;
+  inset-inline-end: 46px;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1189,4 +1190,13 @@
   gap: var(--sp-2);
   justify-content: flex-start;
   margin-top: var(--sp-2);
+}
+
+@media (max-width: 720px) {
+  .scan-input {
+    padding-inline-end: 44px;
+  }
+  .scan-field .search-meta {
+    display: none;
+  }
 }

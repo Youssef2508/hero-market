@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { LogOut, Calculator } from 'lucide-react'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import { NumberField } from '../ui'
 
 const m = (n) => formatMoney(n)
 
@@ -28,8 +29,7 @@ function CashlessCount({ values, onChange, cash }) {
         {CASHLESS.map((c) => (
           <label className="field" key={c.key}>
             <span className="field-label">{c.label} (ج.م)</span>
-            <input
-              type="number"
+            <NumberField
               min="0"
               step="0.01"
               className="input input-money"
@@ -106,8 +106,7 @@ const BlindCloseShiftModal = ({
           </div>
           <label className="field">
             <span className="field-label">النقدية الموجودة في الدرج (ج.م) *</span>
-            <input
-              type="number"
+            <NumberField
               min="0"
               step="0.01"
               className="input input-lg input-money"
@@ -238,8 +237,7 @@ const OwnerCloseShiftModal = ({
 
           <label className="field">
             <span className="field-label">النقدية الموجودة في الدرج (ج.م) *</span>
-            <input
-              type="number"
+            <NumberField
               min="0"
               step="0.01"
               className="input input-lg input-money"

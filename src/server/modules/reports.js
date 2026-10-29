@@ -4,8 +4,11 @@
 // hooks keep their own post-processing unchanged. SQLite functions are mapped 1:1:
 // DATE(ts) → to_char(ts, 'YYYY-MM-DD'), strftime('%H', ts) → EXTRACT(HOUR …).
 // Line net = gross − its discount shares (automatic discounts; 0 on legacy invoices).
-const PROFIT = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - si.returned_qty) * COALESCE(NULLIF(si.cost_price, 0), p.cost_price * si.unit_factor))`
-const PROFIT_SAFE = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - COALESCE(si.returned_qty, 0)) * COALESCE(NULLIF(si.cost_price, 0), COALESCE(p.cost_price, 0) * si.unit_factor))`
+// Cost = the line's own snapshot (D-087): the purchase price when it was sold. Lines sold before
+// 1.5.2 without one were given the price the reports used for them by migration 0026, so later
+// purchase prices never change a past sale's profit.
+const PROFIT = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - si.returned_qty) * COALESCE(si.cost_price, 0))`
+const PROFIT_SAFE = `si.total_price - si.line_discount - si.cart_discount - ((si.quantity - COALESCE(si.returned_qty, 0)) * COALESCE(si.cost_price, 0))`
 const PERIOD_DAYS = { daily: 1, weekly: 7, monthly: 30 }
 const TS = '^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$'
 const rangeSchema = {

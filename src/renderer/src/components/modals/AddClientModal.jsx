@@ -1,13 +1,15 @@
 import { UserPlus } from 'lucide-react'
 import PhoneFields from './PhoneFields'
 import AddressFields from './AddressFields'
+import CustomerCodeField from './CustomerCodeField'
 
 const AddClientModal = ({
   showAddClientModal,
   setShowAddClientModal,
   newClientForm,
   setNewClientForm,
-  handleAddClient
+  handleAddClient,
+  currentUser
 }) => {
   if (!showAddClientModal) return null
 
@@ -36,6 +38,12 @@ const AddClientModal = ({
               placeholder="مثال: محمد أحمد علي"
             />
           </div>
+          <CustomerCodeField
+            form={newClientForm}
+            setForm={setNewClientForm}
+            currentUser={currentUser}
+            idPrefix="add-client"
+          />
           <PhoneFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
           <AddressFields form={newClientForm} setForm={setNewClientForm} idPrefix="add-client" />
           <div className="modal-footer">

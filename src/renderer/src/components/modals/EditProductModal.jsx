@@ -1,6 +1,7 @@
 import { PackageOpen } from 'lucide-react'
 import CategorySelect from './CategorySelect'
 import KindSelect from './KindSelect'
+import { NumberField } from '../ui'
 
 const EditProductModal = ({
   showEditModal,
@@ -62,8 +63,7 @@ const EditProductModal = ({
                   (شراء من المورد)
                 </span>
               </label>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 className="form-input"
                 value={editProduct.cost_price}
@@ -79,8 +79,7 @@ const EditProductModal = ({
                   (للجمهور بالقطعة)
                 </span>
               </label>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 className="form-input"
                 value={editProduct.retail_price}
@@ -99,8 +98,7 @@ const EditProductModal = ({
                   (للتجار والكميات)
                 </span>
               </label>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 className="form-input"
                 value={editProduct.wholesale_price}
@@ -111,8 +109,7 @@ const EditProductModal = ({
             </div>
             <div className="form-group">
               <label>الكمية المتاحة بالمخزن</label>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 className="form-input"
                 value={editProduct.stock_qty}
@@ -127,8 +124,7 @@ const EditProductModal = ({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div className="form-group">
               <label>حد الطلب (إنذار النقص)</label>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 className="form-input"
                 value={editProduct.reorder_limit}

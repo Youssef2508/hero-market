@@ -34,6 +34,25 @@ function frame(title, { store = {}, paper = '80mm', shift = {}, printedAt, copy 
 }
 
 const METHODS = ['cash', 'visa', 'wallet', 'instapay']
+// HH:MM of a stored local time ('2026-10-29 14:05:00' or an ISO string).
+const timeOf = (at) => {
+  const m = String(at ?? '').match(/(\d{2}):(\d{2})/)
+  return m ? `${m[1]}:${m[2]}` : ''
+}
+const REF_LABELS = {
+  client: 'عميل',
+  sale: 'فاتورة',
+  supplier: 'مورد',
+  supplier_purchase: 'فاتورة شراء',
+  supplier_pending_invoice: 'فاتورة مبدئية',
+  supplier_purchase_return: 'مرتجع مشتريات',
+  supplier_payment_request: 'طلب سداد',
+  expense: 'مصروف'
+}
+const refOf = (e) =>
+  e.refType && e.refId !== null && e.refId !== undefined
+    ? `${REF_LABELS[e.refType] || e.refType} #${e.refId}`
+    : ''
 const METHOD_LABELS = { cash: 'نقدي', visa: 'فيزا', wallet: 'محفظة', instapay: 'انستا باي' }
 const verdictOf = (v) => {
   const n = Number(v) || 0
@@ -112,7 +131,32 @@ export function buildCloseReportLines(rep, opts = {}) {
     cat.push(`مدفوعات فواتير موردين|${money(rep.supplierPayments.withInvoices)}`)
   if (Number(rep.supplierPayments?.settlements) > 0)
     cat.push(`سداد مديونيات موردين|${money(rep.supplierPayments.settlements)}`)
+  if (Number(rep.supplierPayments?.requests) > 0)
+    cat.push(`طلبات سداد موردين من الدرج|${money(rep.supplierPayments.requests)}`)
+  if (Number(rep.supplierRefunds) > 0) cat.push(`مبالغ أعادها موردون|${money(rep.supplierRefunds)}`)
   if (cat.length) lines.push(sep, '[C]حركات أخرى (ليست مبيعات)', ...cat)
+  // Each of those, one line (D-091): time, with whom, how and how much; the signed-in user, the
+  // reference and a request's status on the next line.
+  const ev = rep.events || {}
+  const eventLines = (title, group) => {
+    if (!group || !group.count) return
+    lines.push(sep, `[C]${title}`, `العدد|${group.count}`, `[B]الإجمالي|${money(group.total)}`)
+    for (const e of group.lines || []) {
+      const who = e.party || e.description
+      const how = e.method && e.method !== 'cash' ? ` (${METHOD_LABELS[e.method] || ''})` : ''
+      lines.push(`${text(timeOf(e.at), 5)} ${text(who, 26)}${how}|${money(e.amount)}`)
+      const meta = [
+        e.username && text(e.username, 16),
+        refOf(e) && text(refOf(e), 16),
+        e.requestStatusLabel && text(e.requestStatusLabel, 18)
+      ].filter(Boolean)
+      if (meta.length) lines.push(`[R][N]  ${meta.join(' · ')}`)
+    }
+  }
+  eventLines('تحصيلات ديون العملاء', ev.collections)
+  eventLines('مدفوعات الموردين', ev.supplierPayments)
+  eventLines('مبالغ أعادها موردون', ev.supplierRefunds)
+  eventLines('حركات أخرى', ev.other)
   if (rep.treasuryTransfers)
     lines.push(
       sep,
@@ -124,13 +168,16 @@ export function buildCloseReportLines(rep, opts = {}) {
     lines.push(sep, '[C]المصروفات', `العدد|${ex.count}`, `[B]الإجمالي|${money(ex.total)}`)
     for (const e of ex.lines || [])
       lines.push(
-        `${text(e.category, 20)}${e.description ? ` – ${text(e.description, 18)}` : ''}|${money(e.amount)}`
+        `${e.at ? `${text(timeOf(e.at), 5)} ` : ''}${text(e.category, 18)}${e.description ? ` – ${text(e.description, 16)}` : ''}|${money(e.amount)}`
       )
   }
   const rt = rep.returns
   if (rt && rt.count > 0) {
     lines.push(sep, '[C]المرتجعات', `العدد|${rt.count}`, `[B]الإجمالي|${money(rt.total)}`)
-    for (const r of rt.lines || []) lines.push(`فاتورة #${text(r.saleId, 12)}|${money(r.refund)}`)
+    for (const r of rt.lines || [])
+      lines.push(
+        `${r.at ? `${text(timeOf(r.at), 5)} ` : ''}فاتورة #${text(r.saleId, 12)}${r.username ? ` (${text(r.username, 16)})` : ''}|${money(r.refund)}`
+      )
   }
   const md = rep.manualDiscounts
   if (md && md.count > 0) {

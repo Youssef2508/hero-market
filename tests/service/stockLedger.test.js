@@ -1,5 +1,5 @@
 'use strict'
-// Stage 4, phase 1: stock movement ledger, negative stock, purchase receipts, moving-average cost.
+// Stage 4, phase 1: stock movement ledger, negative stock, purchase receipts, purchase price (latest purchase price since 1.5.2, D-087).
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('crypto')
@@ -110,17 +110,17 @@ test('owner example: stock 1, sell 10 → −9, receive 24 → 15, with the full
   assert.ok(!ok(await svc.call('inventory.negative', {}, admin)).some((p) => p.barcode === 'PEPSI'))
 })
 
-test('moving average: receipts average in; a receipt while stock is zero or negative sets the average', async (t) => {
+test('latest purchase price (D-087): each receipt sets the price; sales keep theirs; returns come back at the sale cost', async (t) => {
   if (!requireDb(t)) return
-  // 10 @ 5, receive 10 @ 7 → (50 + 70) / 20 = 6
+  // 10 @ 5, receive 10 @ 7 → the price is 7 (no longer the average 6).
   ok(await purchase([{ barcode: 'AVG', qty: 10, unitCost: 7 }]))
-  assert.equal(await cost('AVG'), 6)
-  // Sell 25: stock 20 → −5; every unit leaves at the current average 6.
+  assert.equal(await cost('AVG'), 7)
+  // Sell 25: stock 20 → −5; every unit leaves at the current price 7.
   const s1 = await sell('AVG', 25)
   const line = await one('SELECT cost_price FROM sale_items WHERE sale_id = $1', [s1.saleId])
-  assert.equal(Number(line.cost_price), 6)
+  assert.equal(Number(line.cost_price), 7)
   assert.equal(await stock('AVG'), -5)
-  // Receipt while negative: average becomes the receipt cost; the 5 units already sold stay at 6.
+  // Receipt while negative: the price becomes 8; the units already sold stay at 7.
   ok(await purchase([{ barcode: 'AVG', qty: 20, unitCost: 8 }]))
   assert.equal(await stock('AVG'), 15)
   assert.equal(await cost('AVG'), 8)
@@ -128,14 +128,15 @@ test('moving average: receipts average in; a receipt while stock is zero or nega
     Number(
       (await one('SELECT cost_price FROM sale_items WHERE sale_id = $1', [s1.saleId])).cost_price
     ),
-    6,
+    7,
     'past sales are not revalued'
   )
-  // Next receipt with positive stock: (15·8 + 5·10) / 20 = 8.5
+  // Next receipt with stock on hand: the price is 10, not (15·8 + 5·10) / 20.
   ok(await purchase([{ barcode: 'AVG', qty: 5, unitCost: 10 }]))
-  assert.equal(await cost('AVG'), 8.5)
-  // A return re-enters at the current average and does not change it.
+  assert.equal(await cost('AVG'), 10)
+  // Sold at 10, then the price moves to 12: the return re-enters at 10 and keeps the price 12.
   const s2 = await sell('AVG', 2)
+  ok(await purchase([{ barcode: 'AVG', qty: 1, unitCost: 12 }]))
   const item = await one('SELECT id FROM sale_items WHERE sale_id = $1', [s2.saleId])
   ok(
     await svc.call(
@@ -144,11 +145,11 @@ test('moving average: receipts average in; a receipt while stock is zero or nega
       admin
     )
   )
-  assert.equal(await cost('AVG'), 8.5)
+  assert.equal(await cost('AVG'), 12)
   const ret = await one(
     "SELECT unit_cost, qty FROM stock_movements WHERE product_barcode = 'AVG' AND kind = 'return'"
   )
-  assert.deepEqual([Number(ret.qty), Number(ret.unit_cost)], [1, 8.5])
+  assert.deepEqual([Number(ret.qty), Number(ret.unit_cost)], [1, 10])
 })
 
 test('K-37: the product form never overwrites stock; sales made while it is open are kept', async (t) => {

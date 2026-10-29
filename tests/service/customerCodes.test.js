@@ -121,7 +121,7 @@ test('new customers get unique codes, also when created at the same moment', asy
   for (const c of codes) assert.match(c, /^C\d{5,}$/)
 })
 
-test('a deleted customer’s code is never given again, and a code cannot be changed', async (t) => {
+test('a deleted customer’s code is never given again, and a code is never removed', async (t) => {
   if (!requireDb(t)) return
   const a = ok(await svc.call('clients.create', { name: 'سيحذف', phone: '01099990001' }, owner))
   const id = a.id ?? a.client?.id
@@ -133,9 +133,13 @@ test('a deleted customer’s code is never given again, and a code cannot be cha
   ).rows[0].code
   assert.notEqual(next, code)
   assert.ok(Number(next.slice(1)) > Number(code.slice(1)))
-  await assert.rejects(
-    svc.pool.query("UPDATE clients SET code = 'C99999' WHERE id = $1", [b.id ?? b.client?.id]),
-    /كود العميل لا يتغير/
+  // 1.5.2 (D-086): a code may be changed through the service with its permission
+  // (customerCodesManual.test.js); clearing it keeps the code, so a customer always has one.
+  await svc.pool.query('UPDATE clients SET code = NULL WHERE id = $1', [b.id ?? b.client?.id])
+  assert.equal(
+    (await svc.pool.query('SELECT code FROM clients WHERE id = $1', [b.id ?? b.client?.id])).rows[0]
+      .code,
+    next
   )
 })
 

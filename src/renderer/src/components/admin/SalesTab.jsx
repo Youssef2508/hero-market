@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Search, Printer, Undo2, ReceiptText, X } from 'lucide-react'
-import { EmptyState, Pagination, SortableTh, Timestamp } from '../ui'
+import { EmptyState, Pagination, SortableTh, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import { splitStamp } from '../../lib/time'
 import { can } from '../../lib/api'
@@ -426,8 +426,7 @@ export default function SalesTab({
                 </span>
                 )
               </span>
-              <input
-                type="number"
+              <NumberField
                 step="any"
                 min="0.001"
                 max={activeReturnItem.quantity - (activeReturnItem.returned_qty || 0)}

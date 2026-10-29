@@ -3,13 +3,13 @@
 // invoice total, how much was paid now and how; the payment is recorded once in the current shift
 // (or the treasury) and the rest becomes the supplier's payable – nothing reaches stock or cost.
 // Stage B, by an administrator: the actual lines are entered and the invoice becomes a purchase
-// (stock and moving-average cost), linked to the preliminary one, without paying again; a
+// (stock and the latest purchase price), linked to the preliminary one, without paying again; a
 // different final total adjusts the payable by an explicit ledger row.
 const { badRequest, conflict, notFound } = require('../errors')
 const treasury = require('../money/treasury')
 const { addMovement } = require('../money/shiftLedger')
 const { METHODS, LABELS, round2 } = require('../money/methods')
-const { recordPurchase } = require('./finance').helpers
+const { recordPurchase, fillEmptyCosts } = require('./finance').helpers
 
 const ref = { type: 'string', minLength: 8, maxLength: 120 }
 const MODES = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جزئي' }
@@ -103,7 +103,11 @@ module.exports = function supplierInvoicesModule(app) {
             amount: paid,
             description: `دفعة لمورد: ${s.name} - ${label}`,
             method,
-            kind: 'supplier_payment'
+            kind: 'supplier_payment',
+            refType: 'supplier_pending_invoice',
+            refId: inv.id,
+            party: s.name,
+            userId: ctx.user?.id
           })
           await db.query('UPDATE supplier_pending_invoices SET ledger_id = $1 WHERE id = $2', [
             m.id,
@@ -243,7 +247,11 @@ module.exports = function supplierInvoicesModule(app) {
               description: `مبلغ أعاده المورد ${inv.supplier_name} – إلغاء ${label}`,
               method,
               kind: 'supplier_refund',
-              clientRef: `cancel-pending:${b.clientRef}`
+              clientRef: `cancel-pending:${b.clientRef}`,
+              refType: 'supplier_pending_invoice',
+              refId: inv.id,
+              party: inv.supplier_name,
+              userId: ctx.user?.id
             })
           } else {
             await treasury.post(db, ctx, {
@@ -311,12 +319,13 @@ module.exports = function supplierInvoicesModule(app) {
           maxItems: 500,
           items: {
             type: 'object',
-            required: ['barcode', 'qty', 'unitCost'],
+            required: ['barcode', 'qty'],
             properties: {
               barcode: { type: 'string', minLength: 1, maxLength: 64 },
               unitId: { type: ['integer', 'null'] },
               qty: { type: 'number', exclusiveMinimum: 0 },
-              unitCost: { type: 'number', minimum: 0 },
+              // Omitted or null = keep the product's purchase price (D-087).
+              unitCost: { type: ['number', 'null'], minimum: 0 },
               // A new selling price for the product's base unit (D-068); omitted or null = unchanged.
               newRetailPrice: { type: ['number', 'null'], minimum: 0 },
               newWholesalePrice: { type: ['number', 'null'], minimum: 0 }
@@ -338,9 +347,11 @@ module.exports = function supplierInvoicesModule(app) {
             `الفاتورة المبدئية #${inv.id} أُكملت من قبل (فاتورة الشراء #${inv.purchase_id}).`
           )
         }
-        // The detailed invoice: its lines, less an optional invoice-level discount (D-066).
+        // The detailed invoice: its lines, less an optional invoice-level discount (D-066). A line
+        // with an empty purchase price counts at the product's current price (D-087).
+        const lines = await fillEmptyCosts(db, b.items)
         const gross = round2(
-          b.items.reduce((a, i) => a + round2(Number(i.qty) * Number(i.unitCost)), 0)
+          lines.reduce((a, i) => a + round2(Number(i.qty) * Number(i.unitCost)), 0)
         )
         const discount = round2(b.discount || 0)
         if (discount > gross) throw badRequest('الخصم أكبر من إجمالي الأصناف.')

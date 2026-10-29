@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ScanBarcode,
-  Search,
   Trash2,
   Minus,
   Plus,
@@ -28,7 +27,7 @@ import {
   FolderTree,
   List
 } from 'lucide-react'
-import { Kbd } from '../ui'
+import { Kbd, NumberField } from '../ui'
 import CategoryBrowser from './CategoryBrowser'
 import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
@@ -216,6 +215,7 @@ function CheckoutTerminal({
   searchInput,
   handleSearchChange,
   handleSearchKeyDown,
+  searchedTerm,
   searchResults,
   selectedSearchIndex,
   addToCart,
@@ -379,6 +379,7 @@ function CheckoutTerminal({
 
   const pickResult = (item) => {
     addToCart(item)
+    setBarcodeInput('')
     setSearchInput('')
     setSearchResults([])
     setSelectedSearchIndex(-1)
@@ -440,7 +441,9 @@ function CheckoutTerminal({
   ]
     .filter(Boolean)
     .join(' · ')
-  const showResults = !!searchInput || searchResults.length > 0
+  // The list under the one field (D-092): its matches, or "no match" once a search has answered.
+  const showResults =
+    searchResults.length > 0 || (searchInput.trim().length >= 1 && searchedTerm === searchInput)
   const discountNum = parseFloat(discount) || 0
   const creditNum = parseFloat(appliedCredit) || 0
 
@@ -456,43 +459,36 @@ function CheckoutTerminal({
           cartTotal={cartTotal}
         />
         <div className="pos-entry">
-          <form onSubmit={handleBarcodeSubmit} className="scan-field" role="search">
-            <ScanBarcode className="scan-icon" size={22} aria-hidden="true" />
-            <input
-              type="text"
-              className="scan-input"
-              ref={barcodeInputRef}
-              onFocus={(e) => e.target.select()}
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="امسح الباركود أو اكتبه"
-              aria-label="باركود الصنف"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="scan-enter" aria-hidden="true">
-              <CornerDownLeft size={14} />
-            </span>
-          </form>
-
+          {/* One field (owner, 1.5.2, D-092): scan, type a barcode or a name. The scanner hook
+              writes scans into it as before; typing opens the matches below it. */}
           <div className="product-search">
-            <div className="search-field">
-              <Search size={17} aria-hidden="true" />
+            <form onSubmit={handleBarcodeSubmit} className="scan-field" role="search">
+              <ScanBarcode className="scan-icon" size={22} aria-hidden="true" />
               <input
                 type="text"
-                className="input search-input"
-                ref={searchInputRef}
-                value={searchInput}
+                className="scan-input"
+                ref={(el) => {
+                  barcodeInputRef.current = el
+                  searchInputRef.current = el
+                }}
+                onFocus={(e) => e.target.select()}
+                value={barcodeInput}
                 onChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="بحث بالاسم…"
+                placeholder="امسح الباركود أو اكتب الباركود أو اسم الصنف"
                 role="combobox"
                 aria-autocomplete="list"
-                aria-label="البحث في الأصناف"
+                aria-label="الصنف: باركود أو اسم"
                 aria-expanded={showResults}
                 aria-controls="pos-search-results"
+                aria-activedescendant={
+                  showResults && selectedSearchIndex >= 0 && searchResults[selectedSearchIndex]
+                    ? `pos-result-${selectedSearchIndex}`
+                    : undefined
+                }
                 aria-describedby="pos-search-count"
                 autoComplete="off"
+                spellCheck={false}
               />
               <span className="search-meta">
                 <span className="search-count" id="pos-search-count">
@@ -503,7 +499,10 @@ function CheckoutTerminal({
                   <Kbd>F7</Kbd>
                 </span>
               </span>
-            </div>
+              <span className="scan-enter" aria-hidden="true">
+                <CornerDownLeft size={14} />
+              </span>
+            </form>
 
             {showResults && (
               <div
@@ -533,6 +532,7 @@ function CheckoutTerminal({
                     return (
                       <div
                         key={item.barcode}
+                        id={`pos-result-${index}`}
                         role="option"
                         aria-selected={index === selectedSearchIndex}
                         className={`result-item ${index === selectedSearchIndex ? 'is-active' : ''}`}
@@ -613,7 +613,7 @@ function CheckoutTerminal({
                   <ShoppingBasket size={30} />
                 </span>
                 <strong>الفاتورة فارغة</strong>
-                <span>امسح باركود الصنف، أو ابحث بالاسم بالضغط على F7.</span>
+                <span>امسح الباركود، أو اكتب الباركود أو اسم الصنف في نفس الخانة (F7).</span>
               </div>
             ) : (
               <table className="cart-table">
@@ -852,8 +852,7 @@ function CheckoutTerminal({
               <span className="field-label">
                 {paymentType === 'دفع جزئي' ? 'المدفوع مقدماً' : 'المدفوع من العميل'}
               </span>
-              <input
-                type="number"
+              <NumberField
                 className="input input-amount num"
                 value={paidAmount}
                 placeholder="0.00"
@@ -903,6 +902,17 @@ function CheckoutTerminal({
                   placeholder="اسم العميل أو رقمه أو كوده"
                   value={clientName}
                   onChange={(e) => handleClientNameChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    // ↓ goes into the matches (D-093); ↑ and ↓ then move, Enter picks.
+                    if (e.key !== 'ArrowDown') return
+                    const first = e.currentTarget
+                      .closest('.customer-fields')
+                      ?.querySelector('.client-result')
+                    if (first) {
+                      e.preventDefault()
+                      first.focus()
+                    }
+                  }}
                   aria-label="اسم العميل"
                   autoComplete="off"
                 />
@@ -1091,8 +1101,7 @@ function CheckoutTerminal({
             {changeRemaining > 0 && selectedClient && (
               <label className="deposit-row">
                 <span>حفظ جزء من الباقي كرصيد للعميل</span>
-                <input
-                  type="number"
+                <NumberField
                   id="deposit-change-input"
                   className="input num"
                   value={depositChange}

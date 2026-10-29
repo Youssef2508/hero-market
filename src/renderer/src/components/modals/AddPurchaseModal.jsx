@@ -3,10 +3,14 @@ import { ReceiptText, Trash2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import ProductPicker from './ProductPicker'
+import { NumberField } from '../ui'
+import { currentCost, effectiveCost } from '../../lib/purchaseLines'
+import { isAdmin } from '../../lib/api'
 
-const lineTotal = (l) => Math.round((Number(l.qty) || 0) * (Number(l.unitCost) || 0) * 100) / 100
+const lineTotal = (l) => Math.round((Number(l.qty) || 0) * effectiveCost(l) * 100) / 100
 
-// Purchase invoice. Item lines are received into stock at their cost (moving average, K-38);
+// Purchase invoice. Item lines are received into stock at their cost, which becomes the
+// product's purchase price (latest purchase price, K-38, D-087);
 // with lines, the invoice total is their sum. Without lines it records the amount only, as before.
 const AddPurchaseModal = ({
   showAddPurchaseModal,
@@ -17,12 +21,17 @@ const AddPurchaseModal = ({
   setConvertingPending,
   newPurchaseForm,
   setNewPurchaseForm,
-  handleAddPurchase
+  handleAddPurchase,
+  currentUser,
+  currentShift
 }) => {
   const [lookupError, setLookupError] = useState('')
   if (!showAddPurchaseModal || !selectedSupplier) return null
 
   const items = newPurchaseForm.items || []
+  // An administrator with no open shift pays the supplier from the treasury, without a choice
+  // (owner, 1.5.2, D-089). With a shift, the drawer pays, as before.
+  const fromTreasury = isAdmin(currentUser) && !(currentShift && currentShift.status === 'open')
   const setItems = (fn) => setNewPurchaseForm((p) => ({ ...p, items: fn(p.items || []) }))
   const itemsTotal = Math.round(items.reduce((a, l) => a + lineTotal(l), 0) * 100) / 100
 
@@ -148,7 +157,9 @@ const AddPurchaseModal = ({
                   <tr>
                     <th>الصنف</th>
                     <th>الكمية</th>
-                    <th>تكلفة الوحدة</th>
+                    <th title="سعر آخر شراء: يصبح سعر شراء الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
+                      تكلفة الوحدة
+                    </th>
                     <th>الإجمالي</th>
                     <th title="اختياري: يغيّر سعر الصنف عند حفظ الفاتورة؛ فارغ = بدون تغيير">
                       سعر البيع الجديد (اختياري)
@@ -164,8 +175,7 @@ const AddPurchaseModal = ({
                         <div className="cell-muted num">{l.barcode}</div>
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0.001"
                           step="0.001"
@@ -220,14 +230,14 @@ const AddPurchaseModal = ({
                         })()}
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.0001"
-                          required
                           value={l.unitCost}
                           onChange={(e) => update(i, { unitCost: e.target.value })}
+                          placeholder={formatMoney(currentCost(l))}
+                          title="يصبح سعر الشراء الحالي للصنف عند حفظ الفاتورة؛ فارغ = يبقى السعر الحالي"
                           aria-label={`تكلفة وحدة ${l.name}`}
                         />
                       </td>
@@ -236,8 +246,7 @@ const AddPurchaseModal = ({
                         {/* D-068: the product's own selling price (its base unit), set when the
                             invoice is saved; empty keeps the current price. */}
                         <span className="price-pair-label">بيع</span>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.01"
@@ -249,8 +258,7 @@ const AddPurchaseModal = ({
                         />
                         {/* D-068: the product's wholesale price (its base unit), the same way. */}
                         <span className="price-pair-label">جملة</span>
-                        <input
-                          type="number"
+                        <NumberField
                           className="form-input num"
                           min="0"
                           step="0.01"
@@ -288,8 +296,7 @@ const AddPurchaseModal = ({
                 {formatMoney(itemsTotal)}
               </output>
             ) : (
-              <input
-                type="number"
+              <NumberField
                 className="form-input"
                 required
                 min="0.01"
@@ -306,9 +313,8 @@ const AddPurchaseModal = ({
               keep their prices, so no product cost or price changes. */}
           <div className="form-group">
             <label htmlFor="purchase-discount">خصم الفاتورة (ج.م، اختياري)</label>
-            <input
+            <NumberField
               id="purchase-discount"
-              type="number"
               className="form-input"
               min="0"
               step="0.01"
@@ -338,18 +344,28 @@ const AddPurchaseModal = ({
           {!convertingPending && (
             <>
               <div className="form-group">
-                <label>المبلغ المدفوع نقداً الآن (ج.م)</label>
-                <input
-                  type="number"
+                <label htmlFor="purchase-paid">
+                  {fromTreasury
+                    ? 'المبلغ المدفوع نقداً الآن من الخزنة (ج.م)'
+                    : 'المبلغ المدفوع نقداً الآن من درج الوردية (ج.م)'}
+                </label>
+                <NumberField
+                  id="purchase-paid"
                   className="form-input"
                   min="0"
                   step="0.01"
+                  aria-describedby="purchase-paid-hint"
                   value={newPurchaseForm.paid_amount}
                   onChange={(e) =>
                     setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
                   }
                   placeholder="0.00"
                 />
+                <p id="purchase-paid-hint" className="field-hint">
+                  {fromTreasury
+                    ? 'لا توجد وردية مفتوحة لك: يُسجَّل المدفوع على الخزنة تلقائياً.'
+                    : 'يخرج المدفوع من درج ورديتك المفتوحة.'}
+                </p>
               </div>
               <div className="form-group">
                 <label>نوع الدفع</label>

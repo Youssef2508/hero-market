@@ -321,12 +321,9 @@ test("the owner's tomato label 2000001001257 sells 0.125 kg for 2.50; bad labels
   assert.equal(ok(await svc.call('pos.resolve', { code: '2000001' }, admin)).qty, null)
 })
 
-test('purchase by the carton: stock and moving average per piece; line keeps the carton snapshot', async (t) => {
+test('purchase by the carton: stock and purchase price per piece; line keeps the carton snapshot', async (t) => {
   if (!requireDb(t)) return
   const s = await stock('CAKE')
-  const avg = Number(
-    (await one("SELECT cost_price FROM products WHERE barcode = 'CAKE'")).cost_price
-  )
   const r = ok(
     await svc.call(
       'suppliers.addPurchase',
@@ -340,11 +337,11 @@ test('purchase by the carton: stock and moving average per piece; line keeps the
     )
   )
   assert.equal(await stock('CAKE'), s + 48)
-  const expectedAvg = s > 0 ? (s * avg + 48 * (50 / 24)) / (s + 48) : 50 / 24
-  const newAvg = Number(
+  // The latest purchase price per piece (D-087): 50 ÷ 24, whatever the stock held before.
+  const cost = Number(
     (await one("SELECT cost_price FROM products WHERE barcode = 'CAKE'")).cost_price
   )
-  assert.equal(newAvg, Math.round(expectedAvg * 10000) / 10000)
+  assert.equal(cost, Math.round((50 / 24) * 10000) / 10000)
   const line = await one(
     'SELECT unit_name, unit_factor, qty, unit_cost, line_total FROM supplier_purchase_items WHERE purchase_id = $1',
     [r.purchaseId]

@@ -52,14 +52,14 @@ test('scale labels: off by default; when enabled, default layout, unknown prefix
   const ON = { ...DEFAULT_SCALE, enabled: true }
   assert.deepEqual(parseScaleLabel(ON, '2000777002502'), {
     prefix: '20',
-    code: '00777',
+    code: '000777',
     fullCode: '2000777',
     kind: 'weight',
     value: 0.25
   })
   assert.deepEqual(parseScaleLabel(ON, '2200777045008'), {
     prefix: '22',
-    code: '00777',
+    code: '200777',
     fullCode: '2200777',
     kind: 'price',
     value: 45
@@ -78,13 +78,97 @@ test('scale labels: off by default; when enabled, default layout, unknown prefix
   })
 })
 
+test('scale defaults (owner, 1.5.2): 13 / 1 / 6 / 7 / 5 / 1000 / 100, offsets counted from 0', () => {
+  assert.deepEqual(
+    [
+      DEFAULT_SCALE.length,
+      DEFAULT_SCALE.codeStart,
+      DEFAULT_SCALE.codeLength,
+      DEFAULT_SCALE.valueStart,
+      DEFAULT_SCALE.valueLength,
+      DEFAULT_SCALE.weightDivisor,
+      DEFAULT_SCALE.priceDivisor
+    ],
+    [13, 1, 6, 7, 5, 1000, 100]
+  )
+  // The defaults are valid as they are.
+  assert.equal(JSON.parse(normalizeScaleLabels(JSON.stringify(DEFAULT_SCALE))).codeLength, 6)
+  // A price label: 22 + code 000777 + 04500 piastres = 45.00 EGP.
+  const ON = { ...DEFAULT_SCALE, enabled: true }
+  const priceLabel = '220077704500'
+  assert.deepEqual(parseScaleLabel(ON, priceLabel + ean13CheckDigit(priceLabel)), {
+    prefix: '22',
+    code: '200777',
+    fullCode: '2200777',
+    kind: 'price',
+    value: 45
+  })
+})
+
+test('a customized scale format: another length, positions and divisors, no check digit', () => {
+  // A 12-digit scale: prefix 27, item code at offsets 2–5 (4 digits), weight in tenths of a gram
+  // at offsets 6–11 (6 digits), no check digit.
+  const custom = JSON.parse(
+    normalizeScaleLabels(
+      JSON.stringify({
+        enabled: true,
+        length: 12,
+        codeStart: 2,
+        codeLength: 4,
+        valueStart: 6,
+        valueLength: 6,
+        weightDivisor: 10000,
+        priceDivisor: 1000,
+        checkDigit: 'none',
+        prefixes: { 27: 'weight', 28: 'price' }
+      })
+    )
+  )
+  assert.deepEqual(parseScaleLabel(custom, '270042012500'), {
+    prefix: '27',
+    code: '0042',
+    fullCode: '270042',
+    kind: 'weight',
+    value: 1.25
+  })
+  // Price in thousandths: 28 0042 045500 → 45.5.
+  assert.equal(parseScaleLabel(custom, '280042045500').value, 45.5)
+  // Boundaries: the smallest and largest value of the field.
+  assert.equal(parseScaleLabel(custom, '270042000001').value, 0.0001)
+  assert.equal(parseScaleLabel(custom, '270042999999').value, 99.9999)
+  // Invalid labels: wrong length, letters, unknown prefix, zero value.
+  assert.equal(parseScaleLabel(custom, '2700420125000'), null)
+  assert.equal(parseScaleLabel(custom, '27004201250A'), null)
+  assert.equal(parseScaleLabel(custom, '290042012500'), null)
+  assert.deepEqual(parseScaleLabel(custom, '270042000000'), {
+    error: 'zero_value',
+    prefix: '27',
+    kind: 'weight'
+  })
+})
+
+test('scale settings are checked for consistency, without refusing legitimate formats', () => {
+  const base = { ...DEFAULT_SCALE, enabled: true }
+  const check = (patch) => () => normalizeScaleLabels(JSON.stringify({ ...base, ...patch }))
+  // The code and the value overlap.
+  assert.throws(check({ codeStart: 1, codeLength: 7 }), /يتداخلان/)
+  // EAN-13: the last digit is the check digit, not part of the value.
+  assert.throws(check({ valueStart: 8, valueLength: 5 }), /رقم التحقق/)
+  // Past the end of the label.
+  assert.throws(check({ checkDigit: 'none', valueStart: 9, valueLength: 5 }), /تتجاوز طول الملصق/)
+  // The same layout without a check digit may use the last digit.
+  assert.doesNotThrow(check({ checkDigit: 'none', valueStart: 8, valueLength: 5 }))
+  // The code before the value, or after it: both are formats some scales use.
+  assert.doesNotThrow(check({ codeStart: 7, codeLength: 5, valueStart: 2, valueLength: 5 }))
+})
+
 test("the owner's scale label 2000001001257 (SCALE-01): 0.125 kg of product 2000001, EAN-13 checked", () => {
   const ON = { ...DEFAULT_SCALE, enabled: true }
   // Check digit by hand: 2·1+0·3+0·1+0·3+0·1+0·3+1·1+0·3+0·1+1·3+2·1+5·3 = 23 → (10 − 3) mod 10 = 7.
   assert.equal(ean13CheckDigit('200000100125'), 7)
   assert.deepEqual(parseScaleLabel(ON, '2000001001257'), {
     prefix: '20',
-    code: '00001',
+    code: '000001',
     fullCode: '2000001',
     kind: 'weight',
     value: 0.125

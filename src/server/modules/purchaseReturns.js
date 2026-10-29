@@ -2,7 +2,8 @@
 // Purchase returns (owner, 2026-10-22, D-066): goods of a recorded purchase sent back to the
 // supplier, in parts, never more than was bought. Separate from cancelling a preliminary invoice.
 //
-//   * Stock leaves at the cost the line was bought at (the moving average falls back accordingly).
+//   * Stock leaves at the cost the line was bought at (the product's purchase price is
+//     not changed: it stays the latest purchase price, D-087).
 //   * The supplier is credited the returned lines' value × net ÷ gross of the purchase, so an
 //     invoice discount is never credited twice; the payable falls by that amount (below zero, the
 //     supplier owes the store).
@@ -21,11 +22,11 @@ const ref = { type: 'string', minLength: 8, maxLength: 120 }
 async function purchaseLines(db, purchaseId) {
   return (
     await db.query(
-      `SELECT i.id, i.product_barcode AS barcode, p.name, p.unit AS base_unit, i.qty::float8 AS qty,
+      `SELECT i.id, i.product_barcode AS barcode, COALESCE(p.name, i.product_barcode) AS name, p.unit AS base_unit, i.qty::float8 AS qty,
               i.unit_cost::float8 AS unit_cost, i.line_total::float8 AS line_total,
               i.unit_name, COALESCE(i.unit_factor, 1)::float8 AS unit_factor,
               COALESCE((SELECT SUM(r.qty) FROM supplier_purchase_return_items r WHERE r.purchase_item_id = i.id), 0)::float8 AS returned
-         FROM supplier_purchase_items i JOIN products p ON p.barcode = i.product_barcode
+         FROM supplier_purchase_items i LEFT JOIN products p ON p.barcode = i.product_barcode
         WHERE i.purchase_id = $1 ORDER BY i.id`,
       [purchaseId]
     )
@@ -71,6 +72,66 @@ module.exports = function purchaseReturnsModule(app) {
         returns: await returnsOf(ctx.pool, purchaseId)
       }
     }
+  })
+
+  // Correct a recorded purchase's reference number and notes (owner, 1.5.2, D-088). They move no
+  // stock, cost or money; quantities and prices are corrected by a purchase return and a new
+  // invoice, never edited in place. Logged with what changed.
+  app.operation({
+    name: 'suppliers.updatePurchase',
+    permission: 'suppliers.purchase_edit',
+    schema: {
+      type: 'object',
+      required: ['purchaseId'],
+      // Only these fields (others are dropped): amounts, lines and payments are never edited.
+      additionalProperties: false,
+      properties: {
+        purchaseId: { type: 'integer' },
+        invoiceRef: { type: ['string', 'null'], maxLength: 80 },
+        notes: { type: ['string', 'null'], maxLength: 1000 }
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const old = (
+          await db.query(
+            `SELECT sp.*, s.name AS supplier_name FROM supplier_purchases sp JOIN suppliers s ON s.id = sp.supplier_id
+              WHERE sp.id = $1 FOR UPDATE OF sp`,
+            [b.purchaseId]
+          )
+        ).rows[0]
+        if (!old) throw notFound('فاتورة الشراء غير موجودة.')
+        const next = {
+          invoice_ref:
+            b.invoiceRef === undefined ? old.invoice_ref || '' : (b.invoiceRef || '').trim(),
+          notes: b.notes === undefined ? old.notes || '' : (b.notes || '').trim()
+        }
+        const changes = ['invoice_ref', 'notes'].filter((k) => next[k] !== (old[k] || ''))
+        if (changes.length) {
+          await db.query(
+            'UPDATE supplier_purchases SET invoice_ref = $2, notes = $3 WHERE id = $1',
+            [old.id, next.invoice_ref, next.notes]
+          )
+          const label = { invoice_ref: 'رقم الفاتورة', notes: 'الملاحظات' }
+          await ctx.audit(
+            db,
+            'supplier_purchase_edit',
+            `تعديل فاتورة الشراء #${old.id} من "${old.supplier_name}": ${changes
+              .map((k) => `${label[k]} «${old[k] || ''}» ← «${next[k]}»`)
+              .join('، ')}`,
+            {
+              purchaseId: old.id,
+              changes: Object.fromEntries(
+                changes.map((k) => [k, { from: old[k] || '', to: next[k] }])
+              )
+            }
+          )
+        }
+        return {
+          purchase: { id: old.id, ...next },
+          changed: changes.length > 0
+        }
+      })
   })
 
   app.operation({
@@ -243,7 +304,11 @@ module.exports = function purchaseReturnsModule(app) {
               description: text,
               method,
               kind: 'supplier_refund',
-              clientRef: `purchase-return:${b.clientRef}`
+              clientRef: `purchase-return:${b.clientRef}`,
+              refType: 'supplier_purchase_return',
+              refId: returnId,
+              party: purchase.supplier_name,
+              userId: ctx.user?.id
             })
           else
             await treasury.post(db, ctx, {

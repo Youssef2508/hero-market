@@ -28,12 +28,14 @@ const TABLES = [
   'shift_closings',
   'sales',
   'sale_items',
+  'sale_item_cost_backfill',
   'sale_discounts',
   'sale_returns',
   'suppliers',
   'supplier_ledger',
   'supplier_purchases',
   'supplier_purchase_items',
+  'product_cost_migration',
   'supplier_pending_invoices',
   'supplier_purchase_returns',
   'supplier_purchase_return_items',
@@ -47,6 +49,7 @@ const TABLES = [
   'momkn_transactions',
   'mobile_money_transactions',
   'safe_ledger',
+  'supplier_payment_requests',
   'sale_payment_corrections',
   'receipt_templates'
 ]

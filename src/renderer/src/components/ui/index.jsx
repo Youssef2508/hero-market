@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Moon, Sun, Inbox } from 'lucide-react'
 import { useTheme } from '../../theme/ThemeProvider'
 import { formatStamp } from '../../lib/time'
+import { toLatinNumber } from '../../lib/numberInput'
 
 export function PageHeader({ icon: Icon, title, description, actions, children }) {
   return (
@@ -233,4 +234,34 @@ export function Timestamp({ value }) {
 export function BidiText({ text }) {
   const parts = String(text ?? '').split(/("[^"]*"|\([^)]*\))/)
   return parts.map((p, i) => (i % 2 ? <bdi key={i}>{p}</bdi> : p))
+}
+
+/**
+ * An amount or quantity field (D-085): a text field that takes Arabic-Indic digits and the Arabic
+ * decimal sign as typed (the browser's number field dropped them: ١٥٠ became empty, 12٫5 became
+ * 125). The value handed to onChange is plain digits with a decimal point. Use it with the same
+ * props as an <input type="number">; min, max and step stay as hints for the screen readers.
+ */
+export function NumberField({ onChange, onInput, ...props }) {
+  delete props.type
+  const fix = (e) => {
+    const v = toLatinNumber(e.target.value)
+    if (v !== e.target.value) e.target.value = v
+  }
+  return (
+    <input
+      {...props}
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      onInput={(e) => {
+        fix(e)
+        onInput?.(e)
+      }}
+      onChange={(e) => {
+        fix(e)
+        onChange?.(e)
+      }}
+    />
+  )
 }
