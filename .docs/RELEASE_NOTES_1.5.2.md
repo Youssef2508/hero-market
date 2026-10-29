@@ -134,9 +134,13 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
 
 ## How this release was verified
 
-- **The full test suite: 463 of 463 pass** on the release code (disposable PostgreSQL databases). Lint: no errors. Formatting: clean. **CI:** the Linux, Docker and Windows (bundled PostgreSQL and packaging check) jobs passed on PR #32.
+- **The full test suite: 483 of 483 pass** on the release code (disposable PostgreSQL databases). Lint: no errors. Formatting: clean. **CI:** the Linux, Docker and Windows (bundled PostgreSQL and packaging check) jobs passed on PRs #32 and #33.
 - **New tests** include:
-  - `latestPurchasePrice.test.js` (13): your 200 → 220 / 260 / 240 example and migration 0026;
+  - `latestPurchasePrice.test.js` (13): your 200 → 220 / 260 example with a typed and an automatic package, and migration 0026;
+  - `twoPrices.test.js` (7): automatic and typed package prices, pieces against cartons, no wholesale price, migration 0029;
+  - `shiftReportDetails.test.js`: every list of the shift report checked against its records and printed;
+  - `reservations.test.js` (8): who may edit an invoice or a request, for how long, two people at once;
+  - `supplierScreens.test.js` (3): each supplier screen with its own permission alone;
   - `supplierPaymentRequests.test.js` (8): approval once, rejection and settlement, the itemized shift report, backup restore;
   - `shiftReconciliation152.test.js`: one realistic shift with every kind of money movement and failed operations, reconciled to the drawer, treasury, supplier, customer, stock and the saved close;
   - `purchaseViewEdit`, `adminPurchaseTreasury`, `tillSearch`, `permissionUpgrade`, `customerCodesManual` and `navigationLayout`.
@@ -145,6 +149,8 @@ Check the file before installing: `Get-FileHash HeroMarket-Setup-1.5.2.exe` must
   - going back to 1.4.0 as in step F;
   - 1.4.0 → 1.5.0 → 1.5.2;
   - going back to 1.5.0 → 1.5.1 → 1.5.2.
+
+  Repeated with the final code (migrations up to 0030): the same results, and packages with their own price stayed typed while those without one became automatic. No record was left reserved.
 
   Each time, every figure was identical before and after: products, stock, customers and their debts, users, shifts with their closing figures, sales, the drawer, expenses, suppliers, their purchases and balances. The purchase prices became the latest purchase (a carton at 120 for 24 → 5; a product never bought kept its price), with each change recorded. The new permissions were on the right roles. The backup tasks were registered and a nightly copy was made and verified.
 
