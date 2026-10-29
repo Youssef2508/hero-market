@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Single source of truth for navigation.
 // Every destination maps onto the original App state values
-// (currentView: 'pos' | 'tills' | 'admin', adminTab: …) because useBarcode
+// (currentView: 'pos' | 'admin', adminTab: …) because useBarcode
 // routes scanner input by those values. `onEnter` reproduces the data loads
 // the original management menu cards triggered (see AdminDashboard history).
 // `permission` lists the permissions that grant access (any of them). The defaults of the built-in
@@ -10,7 +10,6 @@
 // ─────────────────────────────────────────────────────────────
 import {
   ScanBarcode,
-  Wallet,
   LayoutDashboard,
   ChartLine,
   Award,
@@ -54,12 +53,25 @@ const DEFINED_GROUPS = [
         icon: ScanBarcode,
         view: 'pos'
       },
+      // «الأدراج والتحويلات» was removed (owner, 1.5.2, D-097): its live figures are in the open
+      // shift's details («الورديات»), its supplier actions have their own screens below.
       {
-        id: 'tills',
-        permission: ['tills.operate'],
-        label: 'الأدراج والتحويلات',
-        icon: Wallet,
-        view: 'tills'
+        id: 'supplier-pending',
+        permission: ['suppliers.pending'],
+        label: 'فواتير الموردين المبدئية',
+        icon: ReceiptText,
+        view: 'admin',
+        tab: 'supplier-pending',
+        description: 'فاتورة مورد بإجماليها والمدفوع منها الآن؛ الأصناف تُكمل لاحقاً.'
+      },
+      {
+        id: 'supplier-payments',
+        permission: ['suppliers.payment_request', 'suppliers.payment_approve'],
+        label: 'سداد ديون الموردين',
+        icon: HandCoins,
+        view: 'admin',
+        tab: 'supplier-payments',
+        description: 'سداد دين مورد من درج الوردية، واعتماد المدير للطلبات.'
       }
     ]
   },
@@ -398,12 +410,20 @@ const NAV_LAYOUT = [
   {
     id: 'sell',
     label: 'البيع اليومي',
-    items: ['pos', 'tills', 'returns', 'reprint', 'payment-change']
+    items: ['pos', 'returns', 'reprint', 'payment-change']
   },
   {
     id: 'accounts',
     label: 'الحسابات',
-    items: ['sales', 'clients', 'suppliers', 'expenses', 'treasury']
+    items: [
+      'sales',
+      'clients',
+      'suppliers',
+      'supplier-pending',
+      'supplier-payments',
+      'expenses',
+      'treasury'
+    ]
   },
   {
     id: 'stock',
@@ -466,8 +486,6 @@ export function canOpenTab(user, tab) {
 /** The nav item matching the current App state. */
 export function activeItem(currentView, adminTab) {
   if (currentView === 'admin') {
-    // The legacy admin "tills" tab renders the same screen as the top-level tills view.
-    if (adminTab === 'tills') return ALL_NAV_ITEMS.find((i) => i.id === 'tills')
     return ALL_NAV_ITEMS.find((i) => i.view === 'admin' && i.tab === adminTab)
   }
   return ALL_NAV_ITEMS.find((i) => i.view === currentView)

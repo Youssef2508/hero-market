@@ -76,8 +76,8 @@ export default function AppShell({
           onLock={onLock}
           onChangePassword={onChangePassword}
           onOpenPaymentRequests={() => {
-            const suppliers = ALL_NAV_ITEMS.find((i) => i.id === 'suppliers')
-            if (suppliers) onNavigate(suppliers)
+            const page = ALL_NAV_ITEMS.find((i) => i.id === 'supplier-payments')
+            if (page) onNavigate(page)
           }}
         />
         <main className="app-content" id="main-content">

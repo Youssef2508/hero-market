@@ -23,7 +23,6 @@ import AppShell from './components/shell/AppShell'
 
 // Import Admin Dashboard Components
 import AdminDashboard from './components/admin/AdminDashboard'
-import TillsManagerTab from './components/admin/TillsManagerTab'
 
 // Import Modals Components
 import AppModals from './components/modals/AppModals'
@@ -695,15 +694,6 @@ function App() {
             onOpenShift={() => setOpenShiftModal('optional')}
             {...adminController}
           />
-        ) : currentView === 'tills' ? (
-          <div className="admin-container">
-            <TillsManagerTab
-              currentUser={currentUser}
-              currentShift={currentShift}
-              triggerCustomAlert={triggerCustomAlert}
-              triggerCustomConfirm={triggerCustomConfirm}
-            />
-          </div>
         ) : (
           <CheckoutTerminal
             cart={cart}

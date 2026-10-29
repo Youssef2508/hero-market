@@ -1355,3 +1355,25 @@ Format: context → decision → reason → consequences (→ alternatives).
   - `twoPrices.test.js` (7): automatic default at the till; following the piece price; typed override kept, also when equal; restoring; a new package count; pieces against cartons (stock, cost, value, carton cost, rounding, lines); no wholesale; migration 0029;
   - `latestPurchasePrice.test.js`: the Roumy example with a typed and an automatic package;
   - `units`, `packaging`, `purchaseSalePrice`, `dataExport` and `sync` updated where they asserted a wholesale price, a required package price or package purchase prices that never moved.
+
+## D-097 Supplier screens of their own; «الأدراج والتحويلات» removed (owner, 1.5.2)
+
+- **Audit of «الأدراج والتحويلات» before removing it:**
+  - **The open shift's expected amounts per method:** shown only with «عرض المبالغ المتوقعة»; cashiers saw only a notice. The same live figures, itemized, are in «الورديات» → the open shift → «تفاصيل» (`shifts.details`) and in the closing window.
+  - **«فاتورة مورد مبدئية» and the user's pending invoices:** moved to their own screen.
+  - **«سداد دين مورد» and the user's requests:** moved to their own screen.
+  - **Nothing else** was reachable only there. Its backend (`tills.*`, the Momkn and wallet tills of D-063, unused by the store), the records, the tables and the audit are kept.
+- **New screens**, in «الحسابات» after «الموردون والمشتريات»:
+  - **«فواتير الموردين المبدئية»** (`supplier-pending`), with «فواتير الموردين المبدئية» (`suppliers.pending`, renamed from «فاتورة مورد مبدئية»): record a preliminary invoice; the user's pending ones, with cancel.
+  - **«سداد ديون الموردين»** (`supplier-payments`), with «طلب سداد دين مورد من الدرج» or «اعتماد طلبات سداد الموردين»: record a payment; the user's requests; for approvers, approve, reject and settle. The top-bar notice opens it.
+- **Permissions:**
+  - Each screen needs only its own permission. The service never asked for the drawers permission (`tills.operate`), and granting either permission grants nothing else.
+  - Approval stays a separate permission.
+  - The built-in cashier keeps «فواتير الموردين المبدئية», so the cashier's menu gains that screen in place of the drawers one.
+- **Removed:**
+  - the menu entry and the screen (`TillsManagerTab`);
+  - `tills.operate` is hidden in «الأدوار والصلاحيات», like the other unused till permissions. Its label now says it opens nothing. The key stays valid and no role's grants change.
+- **Tests:**
+  - `supplierScreens.test.js` (3): each permission alone works without `tills.operate`; the other feature and approval are refused; the roles catalogue hides `tills.operate` and explains both;
+  - `navigationLayout.test.mjs`: the menu, the cashier's menu, each screen by its permission alone, no `tills` entry;
+  - `uiInventory` and the matrix are updated.
