@@ -55,14 +55,15 @@ export default function LinkStatus() {
 
   if (!web || !state) return null
   const kind = state.freshness
+  const waiting = state.waitingOperations > 0 && (
+    <WaitingOperations count={state.waitingOperations} seq={state.seq} />
+  )
   if (kind === 'live')
     return (
       <div className="link-status is-live" role="status">
         <Wifi size={15} aria-hidden="true" />
         <span>متصل بالمتجر – البيانات محدّثة</span>
-        {state.waitingOperations > 0 && (
-          <strong>{state.waitingOperations} عملية بانتظار تأكيد المتجر</strong>
-        )}
+        {waiting}
       </div>
     )
   if (kind === 'delayed')
@@ -82,6 +83,81 @@ export default function LinkStatus() {
       </span>
       {kind !== 'offline' && state.lastSyncedAt && <strong>{when(state.lastSyncedAt)}</strong>}
       {kind !== 'offline' && <span>ولا يمكن تسجيل عمليات حتى يعود الاتصال.</span>}
+      {waiting}
     </div>
+  )
+}
+
+const OPERATION_STATUS = {
+  queued: 'لم تُرسل بعد',
+  sent: 'أُرسلت – بانتظار تأكيد المتجر',
+  not_executed: 'لم تُنفَّذ – لم يتغير شيء'
+}
+
+/**
+ * Operations handed to the shop whose outcome is not known yet (the answer was lost on the way).
+ * They are never carried out twice and never carried out by the cloud instead (D-101): each one
+ * becomes "applied" or "not executed" when the shop next reports. Until then, do not repeat it.
+ */
+function WaitingOperations({ count, seq }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState([])
+  useEffect(() => {
+    if (!open) return
+    api('link.operations')
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [open, seq])
+  return (
+    <>
+      <button type="button" className="link-status-waiting" onClick={() => setOpen(true)}>
+        {count} عملية بانتظار تأكيد المتجر
+      </button>
+      {open && (
+        <div className="modal-overlay" role="presentation">
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="waiting-ops-title"
+          >
+            <div className="modal-header">
+              <h2 id="waiting-ops-title">عمليات بانتظار تأكيد المتجر</h2>
+              <p>
+                أُرسلت هذه العمليات إلى المتجر ولم يصل تأكيد تنفيذها بعد. لن تُنفَّذ مرتين؛ ستظهر
+                نتيجتها هنا عند اتصال المتجر. لا تكررها.
+              </p>
+            </div>
+            <div className="modal-body">
+              {!rows.length ? (
+                <p className="cell-muted">لا توجد عمليات معلقة الآن.</p>
+              ) : (
+                <ul className="waiting-ops">
+                  {rows.map((r) => (
+                    <li key={r.id}>
+                      <strong>{r.operation}</strong>
+                      <span>{OPERATION_STATUS[r.status] || r.status}</span>
+                      <span className="cell-muted">
+                        {r.username} · {when(r.created_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                data-modal-close
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setOpen(false)}
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

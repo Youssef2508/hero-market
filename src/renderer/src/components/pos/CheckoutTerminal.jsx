@@ -36,6 +36,8 @@ import { api } from '../../lib/api'
 import { kindInfo } from '../../lib/measureKinds'
 import { qtyFromText } from '../../lib/qtyText'
 import ManualDiscountModal from './ManualDiscountModal'
+import CameraScanner from './CameraScanner'
+import { cameraScanAvailable } from '../../lib/cameraScan'
 
 // Payment types are business values written to sales.payment_type – do not rename. The payment
 // methods are cash, Visa, wallet and InstaPay (owner, 2026-10-21, D-061); آجل and دفع جزئي put the
@@ -296,6 +298,16 @@ function CheckoutTerminal({
   const [browsing, setBrowsing] = useState(false)
   // Manual invoice discount window (D-057).
   const [manualOpen, setManualOpen] = useState(false)
+  // A code read by the phone's camera goes into the field and is submitted like a scanner's,
+  // once the field holds it (the till reads the field's text).
+  const scanForm = useRef(null)
+  const cameraCode = useRef(null)
+  useEffect(() => {
+    if (cameraCode.current && barcodeInput === cameraCode.current) {
+      cameraCode.current = null
+      scanForm.current?.requestSubmit()
+    }
+  }, [barcodeInput])
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'F6' && !document.querySelector('.modal-overlay')) {
@@ -462,7 +474,12 @@ function CheckoutTerminal({
           {/* One field (owner, 1.5.2, D-092): scan, type a barcode or a name. The scanner hook
               writes scans into it as before; typing opens the matches below it. */}
           <div className="product-search">
-            <form onSubmit={handleBarcodeSubmit} className="scan-field" role="search">
+            <form
+              ref={scanForm}
+              onSubmit={handleBarcodeSubmit}
+              className="scan-field"
+              role="search"
+            >
               <ScanBarcode className="scan-icon" size={22} aria-hidden="true" />
               <input
                 type="text"
@@ -503,6 +520,14 @@ function CheckoutTerminal({
                 <CornerDownLeft size={14} />
               </span>
             </form>
+            {cameraScanAvailable() && (
+              <CameraScanner
+                onCode={(code) => {
+                  cameraCode.current = code
+                  setBarcodeInput(code)
+                }}
+              />
+            )}
 
             {showResults && (
               <div
