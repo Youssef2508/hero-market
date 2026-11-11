@@ -146,7 +146,9 @@ module.exports = function cloudLink(app, cfg) {
             code: { type: 'string', minLength: 8, maxLength: 40 },
             storeId: { type: 'string', minLength: 36, maxLength: 36 },
             secretHash: { type: 'string', minLength: 64, maxLength: 64 },
-            name: { type: 'string', maxLength: 120 }
+            name: { type: 'string', maxLength: 120 },
+            // The installation has no sales or shifts of its own (may take over a store).
+            fresh: { type: 'boolean' }
           }
         }
       }

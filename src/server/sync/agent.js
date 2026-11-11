@@ -257,8 +257,23 @@ class SyncAgent {
       afterEpoch = page[page.length - 1].epoch
       afterVersion = page[page.length - 1].version
     }
+    const replacement = st.recover_from?.reason === 'replacement'
     const summary = await withTransaction(this.pool, async (db) => {
+      if (replacement) {
+        // A replacement PC (D-102) becomes the store: what its own first-run setup made (the first
+        // administrator, the built-in roles) gives way to the store's records, and everyone signs
+        // in again with their store account. It had no sales or shifts (checked when pairing).
+        const tables = (await db.query('SELECT table_name FROM sync_tables')).rows.map(
+          (r) => `"${r.table_name}"`
+        )
+        await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
+        await db.query(`TRUNCATE ${tables.join(', ')}, sessions CASCADE`)
+      }
       const s = await applyRecovered(db, rows)
+      if (replacement)
+        await db.query(
+          'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE revoked_at IS NULL'
+        )
       const detail = { ...s, rows: rows.length, from: point }
       await db.query(
         `UPDATE sync_state SET recovery_pending = false, recovered_at = LOCALTIMESTAMP(0),
@@ -269,7 +284,9 @@ class SyncAgent {
         `INSERT INTO system_logs (timestamp, user_id, username, action_type, description, details)
          VALUES (LOCALTIMESTAMP(0), NULL, NULL, 'sync_recovery', $1, $2)`,
         [
-          `استرجاع ${rows.length} تغييراً من السحابة بعد استعادة النسخة الاحتياطية`,
+          replacement
+            ? `استلام بيانات المتجر من السحابة على الجهاز البديل (${rows.length} سجلاً)`
+            : `استرجاع ${rows.length} تغييراً من السحابة بعد استعادة النسخة الاحتياطية`,
           JSON.stringify(detail)
         ]
       )

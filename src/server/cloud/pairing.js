@@ -51,7 +51,7 @@ const WRONG = 'رمز الربط غير صحيح أو انتهت صلاحيته.
  * A shop PC presents a code. `secretHash` is the SHA-256 (hex) of the secret it made.
  * Returns { storeId, name, fingerprint, replaced }.
  */
-async function pair(pool, { code, storeId, secretHash, name }) {
+async function pair(pool, { code, storeId, secretHash, name, fresh = false }) {
   if (!/^[0-9a-f]{64}$/.test(String(secretHash)) || !/^[0-9a-f-]{36}$/i.test(String(storeId)))
     throw new ServiceError(400, 'bad_request', 'بيانات الربط غير صالحة.')
   const out = await withTransaction(pool, async (db) => {
@@ -63,12 +63,21 @@ async function pair(pool, { code, storeId, secretHash, name }) {
       )
     ).rows[0]
     if (!c) return null
+    const existing = (await db.query('SELECT * FROM cloud_stores ORDER BY created_at LIMIT 1'))
+      .rows[0]
+    // Taking over a store from another installation needs an installation with no business of
+    // its own: its records will be replaced by the store's. Refused before the code is used, so
+    // the same code can then be entered on the right PC.
+    if (existing && existing.store_id !== storeId && !fresh)
+      throw new ServiceError(
+        409,
+        'not_fresh',
+        'هذه السحابة تخدم متجراً آخر، وهذا الجهاز عليه مبيعات أو ورديات. الجهاز البديل يجب أن يكون تثبيتاً جديداً بلا عمليات. لم يُستخدم رمز الربط.'
+      )
     await db.query('UPDATE cloud_pairing_codes SET used_at = now(), used_by = $2 WHERE id = $1', [
       c.id,
       storeId
     ])
-    const existing = (await db.query('SELECT * FROM cloud_stores ORDER BY created_at LIMIT 1'))
-      .rows[0]
     if (existing) {
       // A replacement device for the same store: the old secret stops working now. The store's
       // records, its epoch and its copy here stay exactly as they are.

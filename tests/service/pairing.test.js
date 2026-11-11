@@ -152,9 +152,29 @@ test('pairing: one code, one use, 15 minutes; the secret is the PC’s own; a re
       'cancelled by the wrong attempts'
     )
 
+    // A replacement onto a PC that has business of its own is refused, and the code stays usable.
+    const second = await newPairingCode(cloud.pool)
+    const busyPc = await shopPc(cloud, '4444', 'busy')
+    try {
+      await seedProducts(
+        busyPc.pc,
+        "INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, unit) VALUES ('X', 'صنف', 1, 2, 5, 'قطعة')"
+      )
+      ok(await busyPc.pc.call('shifts.open', { startingCash: 0 }, busyPc.owner))
+      const notFresh = await busyPc.pc.call(
+        'sync.pair',
+        { cloudUrl: url, code: second.code },
+        busyPc.owner
+      )
+      assert.deepEqual([notFresh.status, notFresh.body.error.code], [502, 'not_fresh'])
+      assert.equal(ok(await busyPc.pc.call('sync.status', {}, busyPc.owner)).linked, false)
+    } finally {
+      await busyPc.pc.close()
+      await busyPc.db.dispose()
+    }
+
     // A replacement PC: a new code. It continues the same store; the old PC is refused; the
     // cloud's records are exactly what they were; nothing is sent until the new PC has them.
-    const second = await newPairingCode(cloud.pool)
     const took = ok(await b.pc.call('sync.pair', { cloudUrl: url, code: second.code }, b.owner))
     assert.deepEqual(took.paired, {
       name: 'هيرو ماركت',
@@ -183,6 +203,14 @@ test('pairing: one code, one use, 15 minutes; the secret is the PC’s own; a re
       await n(b.pc.pool, "SELECT stock_qty AS n FROM products WHERE barcode = 'RICE'"),
       97
     )
+    // The new PC has the store's accounts, not its own first-run one; everyone signs in again.
+    assert.deepEqual(
+      (await b.pc.pool.query('SELECT username FROM users ORDER BY id')).rows.map((r) => r.username),
+      ['owner', 'cashier']
+    )
+    assert.equal((await b.pc.call('auth.me', {}, b.owner)).status, 401)
+    const storeOwner = await login(b.pc, '8642')
+    b.owner = storeOwner
     await syncNow(b.pc, b.owner)
     assert.deepEqual(
       {

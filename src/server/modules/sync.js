@@ -195,6 +195,10 @@ module.exports = function syncModule(app) {
       const secretHash = crypto.createHash('sha256').update(secret).digest('hex')
       const name = (await ctx.pool.query("SELECT value FROM settings WHERE key = 'store_name'"))
         .rows[0]?.value
+      // No business of its own yet: may become a replacement for a store the cloud holds.
+      const fresh = !(
+        await ctx.pool.query('SELECT 1 FROM sales UNION ALL SELECT 1 FROM shifts LIMIT 1')
+      ).rowCount
       let answer
       try {
         const send =
@@ -212,7 +216,8 @@ module.exports = function syncModule(app) {
           code: b.code,
           storeId: before.store_id,
           secretHash,
-          name: String(name || '').slice(0, 120)
+          name: String(name || '').slice(0, 120),
+          fresh
         })
       } catch (e) {
         throw new ServiceError(502, 'sync_failed', `تعذر الاتصال بالسحابة: ${e.message}`)
@@ -244,6 +249,8 @@ module.exports = function syncModule(app) {
         if (changesStore && paired.replaced && paired.epoch) {
           await db.query('UPDATE sync_state SET recovery_pending = true, recover_from = $1', [
             JSON.stringify({
+              // This installation becomes the store: its own first-run records are replaced.
+              reason: 'replacement',
               sync: { storeId: paired.storeId, epoch: paired.epoch - 1, version: 9007199254740991 }
             })
           ])
