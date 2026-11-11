@@ -1453,3 +1453,43 @@ Replaces the rejection part of D-090 (rejected → disputed → settled as retur
 - **Reports:** the shift details, closing report and printed close show the request (with «مرفوض – أُعيد المبلغ» or «ألغاه الكاشير – أُعيد المبلغ») and, as its own list and category, «عودة مبالغ طلبات سداد مرفوضة أو ملغاة», included in the expected drawer cash. The treasury history shows «إلغاء طلب سداد مورد (عودة المبلغ)» with its shift and request.
 - **Removed:** the `disputed` → `settled` flow, `supplierPayments.settle` and the «خسارة» outcome. The `disputed`/`settled` states stay valid in the schema only as former states; 1.5.2 was never installed with them, so no shop record has them.
 - **Tests:** `supplierPaymentRequests.test.js` (rejection with the shift open, three rejections at once, cashier cancellation, rejection after the close to the treasury, no expense, audit), `supplierPaymentReversal.test.js` (4: own approval refused, administrator's own allowed, cancel against reject at once ×5, a reservation blocks a cancel, supplier balance reconciliation), `shiftReconciliation152.test.js` (the rejected 60 back in the drawer, the treasury untouched until the close).
+
+## D-101 One business, two ways in: operations from the internet are carried out in the shop (owner, Phase 2 milestone 1, migration 0032)
+
+Replaces the remote part of D-042 and D-047 (four hand-written owner commands, "paid outside the drawer", an owner-only cloud account). Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md).
+
+- **Principle (owner, 2026-11-11):** HeroMarket is one business system with two ways to reach it. The way in never changes what an operation means: the same handler, the same user and permissions, the same shift, drawer, treasury and balances. No cloud drawer, cloud shift, cloud treasury or cloud rule exists.
+- **While the shop is reachable**, the cloud decides nothing about the business:
+  - it answers reads from its copy of the store's tables;
+  - every change is handed to the shop PC, which runs the operation through the service's own route (`app.inject`), so sign-in state, permission, validation and handler are those of a desktop call;
+  - the answer is sent after the changed rows, so the copy already shows the result.
+- **Where each operation runs** is declared in one table, `src/server/sync/operationKinds.js`. A test fails when a data-changing operation is not declared. The cloud answers 79 itself (77 reads, sign-in, sign-out), refuses 11 that belong to the shop PC (link settings, backup, reset, first-run setup, first password, recovery code), and carries the other 71 to the shop.
+- **At most once:**
+  - the operation's id is written to `remote_operations` inside the handler's own transaction (its first), so the effects and the record commit together;
+  - a second delivery finds the row and returns the stored outcome;
+  - a refusal by a business rule is stored too (nothing was changed);
+  - a failure before the commit leaves neither effects nor row.
+- **Hand-over states** (cloud, `cloud_operations`): queued → sent → applied, refused or not executed; queued → withdrawn.
+  - Shop unreachable when the operation starts: refused at once (503 `shop_unreachable`), nothing is queued.
+  - No answer in time and never handed over: withdrawn, nothing happened.
+  - Handed over and no answer: 504 `pending_confirmation` with the operation's id. The cloud never carries it out itself. On its next contact the shop PC is asked about every "sent" id and answers from `remote_operations`, or says it has no record (not executed).
+  - The same id sent again by the caller returns its one outcome.
+- **The copy.** The existing versioned rows stay the landing place (`cloud_rows`, unchanged rules). Each accepted row is also written into the cloud's own store tables in the same transaction (`applyRecovered`, the recovery writer). A new epoch empties the copy first. The cloud runs the store's migrations; its own few tables are recorded apart (`cloud_schema_migrations`).
+- **Speed.** PostgreSQL notifies the agent when a change is queued (`hm_sync_outbox`), and it is pushed at once. The shop PC keeps one request open to the cloud (`link.wait`, 25 seconds), which returns the moment an operation waits. That request is also the reachability signal. Screens keep one request open too (`link.watch`).
+- **Freshness is never implied.** `link.state` answers: live (reachable, nothing left to send), delayed (reachable, changes on their way) or unavailable (as of the last synchronisation, with its time).
+- **One identity.** The user row is sent whole, so the same username and password work on both sides. The password travels only as its scrypt hash inside the authenticated link; the old PIN columns stay on the PC. `role_permissions` and `receipt_templates` join the synchronised tables. A user disabled or given a new password in the shop is signed out of the cloud when the row arrives.
+- **Internet access** is its own permission, «الدخول عبر الإنترنت» (`internet.access`), administrators by default, in the existing roles screen. It opens the door only. Without it sign-in from the internet is refused and no session is kept.
+- **Passwords in transit.** Operations whose data holds a password are carried in memory only and never written to the operation records. Answers are stored without fields shown once (temporary password, recovery code, token).
+- **Audit.** The log line is the desktop's; its details also carry the remote operation's id.
+- **Not yet (later milestones):** the phone screens; the cloud working while the shop is unreachable; the Windows background service (the link runs inside the desktop program for now); choosing a first password and using the recovery code from the internet; the pairing code (D-102).
+- **Tests:** `cloudConnected.test.js` (5), `operationKinds.test.js` (3); the 21 existing sync scenarios pass with the user row sent whole.
+
+## D-102 Pairing a shop installation with its cloud (proposed; awaiting the owner's confirmation)
+
+- **Today:** nothing links by itself. The cloud holds one store record, made by a command on the server that prints a device token once. An administrator types the cloud's address, the store id and the token on the shop PC («المزامنة السحابية», `sync.manage`). An installation with no link settings contacts nothing. Link settings are not in backups, so a backup restored on another PC does not link it.
+- **Proposed, to replace typing a long token:**
+  1. On the cloud server, a command prints a **pairing code** (for example `7KQ2-9XTB-4MPD`): one use, valid 15 minutes, stored hashed.
+  2. On the shop PC, an administrator enters the cloud's address and the code. The PC creates its own random device secret, sends the code, its store id and the secret's hash over HTTPS, and keeps the secret in its database. It is never displayed.
+  3. The cloud checks the code, binds its one store to that installation, and burns the code. Both sides then show the store's name and a short fingerprint of the store id, so the administrator sees what was linked.
+  4. A cloud serves exactly one store. Any other installation is refused: it has no code and no token. A replacement PC needs a new code from the server, which replaces the old device's secret (the old PC is then refused, as today by epoch).
+- **Why this is enough:** the only way to link is physical access to both the server's console and an administrator's session on the shop PC, within 15 minutes. A development PC is never linked unless someone does that deliberately; it keeps using the local test cloud on 127.0.0.1.
