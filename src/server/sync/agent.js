@@ -15,9 +15,19 @@
 // cloud after the backup; until then nothing is pushed (the service pauses writes meanwhile).
 // All state is in the database (outbox, applied_commands, sync_state): a restarted agent continues
 // where the last one stopped. Selling never waits for any of this.
+//
+// Phase 2 milestone 1 (D-101) adds two things, so that both ways in show the same state within a
+// second or two:
+//   - listen(): PostgreSQL tells the agent the moment a change is queued, and it is pushed at
+//     once (the 15-second cycle stays as the fallback);
+//   - the link (linkOnce / startLink): one request kept open to the cloud returns the operations
+//     users started from the internet. Each is carried out here by its own handler
+//     (sync/remoteOps.js), its rows are pushed, and then its answer is sent – so the cloud's copy
+//     already shows the result when the user's screen gets the answer.
 const { withTransaction } = require('../db/pool')
 const { applyCommand } = require('./commands')
 const { applyRecovered } = require('./recovery')
+const { outcomeOf } = require('./remoteOps')
 
 const LOCK_KEY = 48151624 // one agent per database at a time
 const PRUNE_AFTER_DAYS = 7
@@ -49,13 +59,19 @@ class SyncAgent {
    *                                           an async function returning one (read every cycle)
    * @param {number} [o.batchSize]
    * @param {object} [o.commandHooks]          failure injection for tests
+   * @param {(op: object) => Promise<object>} [o.execute]  carries out one operation started from
+   *                                           the internet (sync/remoteOps.js executeRemote)
    * @param {(msg: string) => void} [o.log]
    */
-  constructor({ pool, transport, batchSize = 500, commandHooks, log = () => {} }) {
-    Object.assign(this, { pool, transport, batchSize, commandHooks, log })
+  constructor({ pool, transport, batchSize = 500, commandHooks, execute, log = () => {} }) {
+    Object.assign(this, { pool, transport, batchSize, commandHooks, execute, log })
     this.link = null
     this.timer = null
     this.failures = 0
+    this.linking = false
+    this.listener = null
+    this.dirty = false
+    this.pumping = null
   }
 
   async resolveLink() {
@@ -147,7 +163,15 @@ class SyncAgent {
         r: x.row_text,
         v: Number(x.version)
       }))
-      const res = await this.link.push({ epoch, rows: batch })
+      // What will still be waiting after this batch: the cloud shows its figures as "live" only
+      // when the shop has nothing left to send.
+      const w = await this.waiting()
+      const res = await this.link.push({
+        epoch,
+        rows: batch,
+        pending: Math.max(0, w.pending - batch.length),
+        seen: w.seen
+      })
       const mine = new Set(batch.map((b) => b.id))
       const acked = (res?.acked || []).filter((id) => mine.has(id))
       if (acked.length)
@@ -255,8 +279,170 @@ class SyncAgent {
     return { recovered: true, ...summary }
   }
 
-  /** One full cycle. Returns a summary; throws (and records the error) when the cloud is unreachable. */
-  async runOnce() {
+  /**
+   * How many changes still wait to be sent, and the newest change this count has seen. Two reports
+   * can reach the cloud out of order (the open link and a push): it keeps the one that saw more.
+   */
+  async waiting() {
+    const r = (
+      await this.pool.query(
+        `SELECT (SELECT count(*) FROM sync_outbox WHERE acked_at IS NULL)::int AS pending,
+                (SELECT COALESCE(max(id), 0) FROM sync_outbox)::float8 AS seen`
+      )
+    ).rows[0]
+    return { pending: r.pending, seen: Number(r.seen) }
+  }
+
+  /** What the shop reports about itself with every contact: can it carry out operations now? */
+  async health() {
+    try {
+      const w = await this.waiting()
+      const paused = !!(await syncState(this.pool))?.recovery_pending
+      // Reachable means: the database answers, operations can be carried out, work is not paused.
+      return { ok: !!this.execute && !paused, db: true, paused, ...w }
+    } catch (e) {
+      return { ok: false, db: false, error: String(e.message).slice(0, 200) }
+    }
+  }
+
+  /**
+   * One turn of the link: wait (up to timeoutMs) for operations started from the internet, carry
+   * them out, push their rows, then send their answers. Also accounts for operations the cloud
+   * handed over earlier and never heard about, from this database's own record.
+   */
+  async linkOnce({ timeoutMs = 25000 } = {}) {
+    await this.resolveLink()
+    const st = await syncState(this.pool)
+    if (st.recovery_pending) return { skipped: 'recovery_pending' }
+    const turn = await this.link.wait({ timeoutMs, health: await this.health() })
+    const results = []
+    const unknown = []
+    const pack = (o) => ({
+      id: o.id,
+      status: o.status,
+      httpStatus: o.httpStatus || undefined,
+      body: o.body ?? null,
+      error: o.error || undefined
+    })
+    for (const id of turn.check || []) {
+      const o = await outcomeOf(this.pool, id)
+      if (o) results.push(pack(o))
+      else unknown.push(id)
+    }
+    for (const op of turn.ops || []) {
+      let o
+      try {
+        o = this.execute
+          ? await this.execute(op)
+          : { id: op.id, status: 'failed', error: { code: 'no_executor', message: 'unavailable' } }
+      } catch (e) {
+        o = { id: op.id, status: 'failed', error: { code: 'error', message: e.message } }
+      }
+      results.push(pack(o))
+    }
+    // The rows first, then the answers: the cloud's copy shows the result before the user does.
+    if ((turn.ops || []).length) {
+      // Another cycle may hold the lock at this moment: wait for our own push (a few seconds at most).
+      for (let i = 0; i < 30; i++) {
+        const r = await this.runOnce({ check: false }).catch(() => ({ failed: true }))
+        if (!r.skipped || r.skipped !== 'another agent is running') break
+        await new Promise((res) => setTimeout(res, 100))
+      }
+    }
+    if (results.length || unknown.length) await this.link.results({ results, unknown })
+    return { carriedOut: (turn.ops || []).length, accounted: (turn.check || []).length }
+  }
+
+  /** Keep the link open until stopLink(); after a failure, wait longer each time (up to 1 minute). */
+  startLink({ timeoutMs = 25000 } = {}) {
+    if (this.linking) return
+    this.linking = true
+    let failures = 0
+    const loop = async () => {
+      while (this.linking) {
+        try {
+          const r = await this.linkOnce({ timeoutMs })
+          failures = 0
+          if (r.skipped) await new Promise((res) => setTimeout(res, 5000))
+        } catch (e) {
+          if (e.code !== 'not_linked') this.log(`link: ${e.message}`)
+          failures += 1
+          const wait = e.code === 'not_linked' ? 15000 : Math.min(2000 * 2 ** failures, 60000)
+          await new Promise((res) => {
+            this.linkSleep = setTimeout(res, wait)
+          })
+        }
+      }
+    }
+    loop()
+  }
+
+  stopLink() {
+    this.linking = false
+    if (this.linkSleep) clearTimeout(this.linkSleep)
+  }
+
+  /** Push as soon as possible; changes queued while a push runs are pushed right after it. */
+  kick() {
+    this.dirty = true
+    if (this.pumping) return this.pumping
+    this.pumping = (async () => {
+      try {
+        while (this.dirty) {
+          this.dirty = false
+          await this.runOnce({ check: false }).catch(() => {})
+        }
+      } finally {
+        this.pumping = null
+      }
+    })()
+    return this.pumping
+  }
+
+  /** PostgreSQL announces each queued change (migration 0032): push it without waiting. */
+  async listen() {
+    if (this.listener) return
+    const client = await this.pool.connect()
+    this.listener = client
+    let timer = null
+    client.on('notification', () => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = null
+        this.kick()
+      }, 150)
+    })
+    const lost = () => {
+      if (this.listener !== client) return
+      this.listener = null
+      try {
+        client.release(true)
+      } catch {
+        /* already gone */
+      }
+      // The connection dropped (PostgreSQL restarted): the 15-second cycle covers until it is back.
+      this.listenRetry = setTimeout(() => this.listen().catch(() => {}), 10000)
+    }
+    client.once('error', lost)
+    client.once('end', lost)
+    await client.query('LISTEN hm_sync_outbox')
+  }
+
+  async unlisten() {
+    if (this.listenRetry) clearTimeout(this.listenRetry)
+    const client = this.listener
+    this.listener = null
+    if (client) {
+      await client.query('UNLISTEN *').catch(() => {})
+      client.release()
+    }
+  }
+
+  /**
+   * One full cycle. Returns a summary; throws (and records the error) when the cloud is
+   * unreachable. `check: false` skips the whole-table comparison (the fast path after a change).
+   */
+  async runOnce({ check = true } = {}) {
     const lock = await this.pool.connect()
     try {
       const got = (await lock.query('SELECT pg_try_advisory_lock($1) AS ok', [LOCK_KEY])).rows[0].ok
@@ -274,14 +460,17 @@ class SyncAgent {
         let pushed = await this.push(epoch)
         const commands = await this.applyCommands()
         if (commands.some((c) => !c.duplicate)) pushed += await this.push(epoch)
-        const check = await this.check(epoch)
+        const checked = check ? await this.check(epoch) : undefined
+        if (check)
+          await this.pool.query(
+            `DELETE FROM sync_outbox WHERE acked_at < LOCALTIMESTAMP(0) - make_interval(days => $1)`,
+            [PRUNE_AFTER_DAYS]
+          )
         await this.pool.query(
-          `DELETE FROM sync_outbox WHERE acked_at < LOCALTIMESTAMP(0) - make_interval(days => $1)`,
-          [PRUNE_AFTER_DAYS]
+          'UPDATE sync_state SET last_error = NULL, last_error_at = NULL WHERE last_error IS NOT NULL'
         )
-        await this.pool.query('UPDATE sync_state SET last_error = NULL, last_error_at = NULL')
         this.failures = 0
-        return { epoch, pushed, commands, check }
+        return { epoch, pushed, commands, check: checked }
       } catch (e) {
         this.failures += 1
         await this.pool

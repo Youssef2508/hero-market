@@ -10,8 +10,14 @@ const { schemaState, assertNotNewer } = require('./db/upgrade')
 const { ensureAccessControl, describeUser } = require('./auth/access')
 const { ServiceError, unauthorized, forbidden, fromDatabaseError } = require('./errors')
 const { KEYS } = require('./auth/permissions')
+const { cloudRoute, CLOUD_REFUSED } = require('./sync/operationKinds')
+const { remoteTx } = require('./sync/remoteOps')
 
 const SESSION_HOURS = 12
+// Signing in through the internet needs this permission, on top of the user's own (D-101). It
+// opens the door only: what the user may do is decided by their other permissions, as in the shop.
+const INTERNET = 'internet.access'
+const NO_INTERNET = 'هذا الحساب غير مصرح له بالدخول عبر الإنترنت. اطلب الصلاحية من مدير النظام.'
 
 // While a restored database waits for recovery from the cloud (stage 4 phase 4), only these
 // operations run: signing in, the recovery itself, store settings, and backups.
@@ -31,6 +37,8 @@ function sha256(s) {
  *        applied by the installer after its verified copy, never by the program (code setup_incomplete)
  * @param {object|boolean} [cfg.logger] fastify/pino logger options
  * @param {string} [cfg.setupCode] one-time code required by auth.setup (networked servers)
+ * @param {'store'|'cloud'} [cfg.role] 'cloud': the internet way in (D-101). Reads are answered from
+ *        this copy; every change is carried out in the shop by the same operation (cloud/link.js)
  */
 async function createService(cfg) {
   if (!cfg.secret || String(cfg.secret).length < 32)
@@ -63,8 +71,13 @@ async function createService(cfg) {
 
   const operations = new Map()
   const loginGuard = new Map() // key → { failures, first, lockedUntil }
+  const cloud = cfg.role === 'cloud'
+  // Operations being carried out here for a user working from the internet (sync/remoteOps.js):
+  // one-time key → { id, operation, userId, terminal }. The key never leaves this process.
+  const remoteOperations = new Map()
 
   app.decorate('pool', pool)
+  app.decorate('remoteOperations', remoteOperations)
   app.decorate('config', { ...cfg, timeZone })
   app.decorate('loginGuard', loginGuard)
 
@@ -82,6 +95,15 @@ async function createService(cfg) {
 
   /** Resolve the bearer token to a session and user; refuses revoked, expired or disabled accounts. */
   async function authenticate(req) {
+    const remoteKey = req.headers['x-heromarket-remote']
+    if (remoteKey) {
+      // Carried out for a user of the cloud: no session here, the same user and permissions.
+      const remote = remoteOperations.get(String(remoteKey))
+      if (!remote) throw unauthorized()
+      const user = await describeUser(pool, remote.userId)
+      if (!user || !user.isActive) throw unauthorized('تم تعطيل هذا الحساب.')
+      return { sessionId: 0, user, remote }
+    }
     const header = req.headers.authorization || ''
     const token = header.startsWith('Bearer ') ? header.slice(7) : null
     if (!token) throw unauthorized()
@@ -94,6 +116,7 @@ async function createService(cfg) {
     if (!rows.length) throw unauthorized()
     const user = await describeUser(pool, rows[0].user_id)
     if (!user || !user.isActive) throw unauthorized('تم تعطيل هذا الحساب.')
+    if (cloud && !user.permissions.includes(INTERNET)) throw forbidden(NO_INTERNET)
     return { sessionId: rows[0].id, user }
   }
 
@@ -106,6 +129,9 @@ async function createService(cfg) {
     // Sign-in and permissions are checked before the request body is validated (preValidation):
     // a caller without access learns nothing about an operation's fields (audit 1.4.0).
     const authorize = async (req) => {
+      // What only the shop PC does is refused on the internet way in before anything else.
+      if (cloud && cloudRoute(def.name) === 'refused')
+        throw new ServiceError(409, 'shop_only', CLOUD_REFUSED[def.name])
       if (def.public) return
       const auth = await authenticate(req)
       // `permission` = all required; `anyPermission` = at least one.
@@ -129,18 +155,25 @@ async function createService(cfg) {
       },
       async (req) => {
         const auth = req.hmAuth || null
+        const remote = auth?.remote || null
+        if (cloud) {
+          // The internet way in: reads from this copy; a change is carried out in the shop.
+          if (cloudRoute(def.name) === 'shop')
+            return app.cloudLink.forward({ def, auth, body: req.body || {}, req })
+        }
         const ctx = {
           pool,
           user: auth?.user || null,
-          sessionId: auth?.sessionId || null,
+          sessionId: auth?.sessionId ?? null,
           ip: req.ip,
-          terminal: req.headers['x-heromarket-terminal'] || null,
+          terminal: remote ? remote.terminal : req.headers['x-heromarket-terminal'] || null,
           log: req.log,
           can: (p) => !!auth && auth.user.permissions.includes(p),
           require: (p) => {
             if (!auth || !auth.user.permissions.includes(p)) throw forbidden()
           },
-          tx: (fn) => withTransaction(pool, fn),
+          // A remote operation records its id in its own transaction: at most once (D-101).
+          tx: remote ? remoteTx(pool, remote) : (fn) => withTransaction(pool, fn),
           audit: (db, actionType, description, details) =>
             db.query(
               `INSERT INTO system_logs (timestamp, user_id, username, action_type, description, details)
@@ -150,7 +183,12 @@ async function createService(cfg) {
                 auth?.user.username ?? null,
                 actionType,
                 description,
-                details ? JSON.stringify(details) : null
+                // The record is the same as from the desktop; the log also says it came remotely.
+                remote
+                  ? JSON.stringify({ ...(details || {}), remoteOperation: remote.id })
+                  : details
+                    ? JSON.stringify(details)
+                    : null
               ]
             ),
           guard: loginGuard,
@@ -159,6 +197,14 @@ async function createService(cfg) {
           setupCode: cfg.setupCode || null
         }
         const result = await def.handler(ctx, req.body || {})
+        if (cloud && result?.token && result.user && !result.user.permissions.includes(INTERNET)) {
+          // Signed in with the right password but without the internet permission: no session.
+          await pool.query(
+            'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE token_hash = $1',
+            [sha256(result.token)]
+          )
+          throw forbidden(NO_INTERNET)
+        }
         return result === undefined ? { ok: true } : result
       }
     )
@@ -178,8 +224,10 @@ async function createService(cfg) {
     }))
   })
 
-  // Feature modules
-  for (const mod of require('./modules')) mod(app)
+  // Feature modules. The cloud has no link of its own to configure (shopOnly), and gains the
+  // other end of the shop's link.
+  for (const mod of require('./modules')) if (!(cloud && mod.shopOnly)) mod(app)
+  if (cloud) require('./cloud/link')(app, cfg)
 
   async function prepare() {
     const dir = cfg.migrationsDir || DEFAULT_DIR
@@ -203,7 +251,9 @@ async function createService(cfg) {
       throw e
     }
     await migrate(pool, { dir, logger: { info: (m) => app.log.info(m) } })
-    await withTransaction(pool, (c) => ensureAccessControl(c))
+    // The cloud's users, roles and permissions are the shop's, received through the link.
+    if (cloud) await app.cloudLink.prepare()
+    else await withTransaction(pool, (c) => ensureAccessControl(c))
   }
 
   app.addHook('onClose', async () => {

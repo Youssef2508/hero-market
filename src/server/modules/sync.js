@@ -5,6 +5,7 @@
 // (cfg.syncAgent) and the link is enabled. Selling never depends on it.
 const { SyncAgent, syncState } = require('../sync/agent')
 const { HttpTransport, TransportError } = require('../sync/transport')
+const { executeRemote } = require('../sync/remoteOps')
 const { badRequest, conflict, ServiceError } = require('../errors')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -70,9 +71,22 @@ module.exports = function syncModule(app) {
   const agent = new SyncAgent({
     pool: app.pool,
     transport,
+    // Operations started from the internet are carried out by this service's own handlers (D-101).
+    execute: (op) => executeRemote(app, op),
     log: (m) => app.log.info(m)
   })
   app.decorate('syncAgent', agent)
+  // The background work: the 15-second cycle, the push on every change, and the open link.
+  const startAgent = () => {
+    agent.start(cfg.syncIntervalMs || 15000)
+    agent.listen().catch((e) => app.log.warn(`sync listen: ${e.message}`))
+    agent.startLink()
+  }
+  const stopAgent = async () => {
+    agent.stop()
+    agent.stopLink()
+    await agent.unlisten().catch(() => {})
+  }
 
   // Writes pause after a restore of a synchronised store until recovery (or an explicit skip).
   const flags = { recoveryPending: false }
@@ -84,9 +98,10 @@ module.exports = function syncModule(app) {
 
   app.addHook('onReady', async () => {
     await refresh().catch(() => {})
-    if (cfg.syncAgent) agent.start(cfg.syncIntervalMs || 15000)
+    if (cfg.syncAgent) startAgent()
   })
-  app.addHook('onClose', async () => agent.stop())
+  // preClose: the listening connection goes back to the pool before the pool is closed.
+  app.addHook('preClose', async () => stopAgent())
 
   // Anyone signed in: is the till paused for recovery? (The screens show why writes are refused.)
   app.operation({
@@ -151,8 +166,8 @@ module.exports = function syncModule(app) {
         )
         return describe(db)
       })
-      if (cfg.syncAgent && b.enabled) agent.start(cfg.syncIntervalMs || 15000)
-      if (!b.enabled) agent.stop()
+      if (cfg.syncAgent && b.enabled) startAgent()
+      if (!b.enabled) await stopAgent()
       return result
     }
   })
@@ -161,7 +176,7 @@ module.exports = function syncModule(app) {
     name: 'sync.unlink',
     permission: 'sync.manage',
     handler: async (ctx) => {
-      agent.stop()
+      await stopAgent()
       return ctx.tx(async (db) => {
         await db.query(
           `UPDATE sync_state SET enabled = false, cloud_url = NULL, device_token = NULL, epoch = NULL,
@@ -239,3 +254,6 @@ module.exports = function syncModule(app) {
     }
   })
 }
+
+// The cloud has no link of its own to configure: it is the other end of this one (cloud/link.js).
+module.exports.shopOnly = true

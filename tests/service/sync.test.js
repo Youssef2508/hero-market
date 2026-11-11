@@ -119,17 +119,26 @@ test('capture: a change is queued in the same transaction; a failed sale queues 
       [site.storeId]
     )
     assert.ok(users.length >= 2)
-    for (const u of users)
-      assert.deepEqual(
-        Object.keys(u.row_data).sort(),
-        ['created_at', 'id', 'is_active', 'role', 'role_id', 'updated_at', 'username'],
-        'only the allow-listed user fields are sent'
-      )
+    // Owner, 2026-11-11 (D-101): the same username and password on both ways in. The user row is
+    // sent with its password as a scrypt hash – never a plain password, never the old PIN columns.
+    for (const u of users) {
+      assert.match(u.row_data.password_scrypt, /^scrypt\$/, 'the password travels only as its hash')
+      for (const k of ['pin_lookup', 'pin_hash', 'password_hash', 'password'])
+        assert.ok(!(k in u.row_data), `${k} stays on the PC`)
+    }
+    // Sessions and the link's own bookkeeping never leave the PC; roles and their permissions
+    // now do, so both sides authorise the same way.
     const secretTables = await q(
       site.cloud.pool,
-      "SELECT DISTINCT table_name FROM cloud_rows WHERE table_name IN ('sessions', 'role_permissions', 'receipt_templates', 'sync_outbox', 'schema_migrations')"
+      "SELECT DISTINCT table_name FROM cloud_rows WHERE table_name IN ('sessions', 'sync_state', 'sync_outbox', 'sync_row_versions', 'schema_migrations')"
     )
     assert.deepEqual(secretTables, [])
+    assert.ok(
+      (await count(
+        site.cloud.pool,
+        "SELECT count(*) AS n FROM cloud_rows WHERE table_name = 'role_permissions' AND NOT deleted"
+      )) > 0
+    )
     assert.deepEqual(await differences(site), [])
   } finally {
     await site.close()

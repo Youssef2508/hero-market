@@ -36,6 +36,14 @@ class BaseTransport {
   recoverRows(afterEpoch, afterVersion, limit = 2000) {
     return this.call('sync.recover', { afterEpoch, afterVersion, limit }).then((r) => r.rows)
   }
+  // The request kept open to the cloud (D-101): returns the operations to carry out here, and
+  // the ids of earlier ones whose outcome the cloud never heard.
+  wait(body) {
+    return this.call('link.wait', body, { timeoutMs: (body.timeoutMs ?? 25000) + 15000 })
+  }
+  results(body) {
+    return this.call('link.results', body)
+  }
 }
 
 class InProcessTransport extends BaseTransport {
@@ -66,7 +74,7 @@ class HttpTransport extends BaseTransport {
       throw new Error('The cloud address must use HTTPS.')
     Object.assign(this, { url: url.replace(/\/+$/, ''), storeId, token, timeoutMs, fetchImpl })
   }
-  async call(op, body) {
+  async call(op, body, { timeoutMs = this.timeoutMs } = {}) {
     let res
     try {
       res = await this.fetchImpl(`${this.url}/api/${op}`, {
@@ -77,7 +85,7 @@ class HttpTransport extends BaseTransport {
           'x-store-id': this.storeId
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeoutMs)
+        signal: AbortSignal.timeout(timeoutMs)
       })
     } catch (e) {
       throw new TransportError(e.message)

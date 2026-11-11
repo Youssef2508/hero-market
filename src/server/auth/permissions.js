@@ -357,6 +357,15 @@ const PERMISSIONS = [
     module: 'admin',
     label: 'المزامنة السحابية',
     description: 'ربط المتجر بالسحابة، حالة المزامنة، والاسترجاع بعد استعادة نسخة احتياطية'
+  },
+  {
+    // The internet way in (D-101). It opens the door only: what the user may do there is decided
+    // by their other permissions, exactly as on the shop PC. Administrators by default.
+    key: 'internet.access',
+    module: 'admin',
+    label: 'الدخول عبر الإنترنت',
+    description:
+      'تسجيل الدخول إلى HeroMarket من خارج المتجر (الهاتف أو المتصفح). لا يمنح أي صلاحية أخرى'
   }
 ]
 
@@ -398,7 +407,9 @@ const MANAGEMENT = ALL.filter(
       'treasury.manage',
       'sales.change_payment',
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
-      'sync.manage'
+      'sync.manage',
+      // Signing in through the internet: administrators by default; the owner grants it (D-101).
+      'internet.access'
     ].includes(k)
 )
 

@@ -61,6 +61,7 @@ Every permission is checked by the service on every request, before the request 
 | `settings.manage`           | إعدادات المتجر                                                        |      ✓      |      ✓      |  ✓   |       |                     |                   |
 | `system.reset`              | إعادة ضبط بيانات التشغيل                                              |      ✓      |             |      |       |                     |                   |
 | `sync.manage`               | المزامنة السحابية                                                     |      ✓      |      ✓      |      |       |                     |                   |
+| `internet.access`           | الدخول عبر الإنترنت                                                   |      ✓      |      ✓      |      |       |                     |                   |
 
 ## Operations and the permission each requires
 
