@@ -24,6 +24,7 @@ const { ServiceError, notFound } = require('../errors')
 const { applyRecovered } = require('../sync/recovery')
 const { SECRET_BODY, withoutSecrets } = require('../sync/operationKinds')
 const { registerSyncRoutes, MIGRATIONS } = require('./app')
+const { pair } = require('./pairing')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v))
@@ -130,6 +131,31 @@ module.exports = function cloudLink(app, cfg) {
       )
     })
   }
+
+  // ── Pairing (D-102): the only call a shop PC makes without a device token ──
+  app.post(
+    '/api/link.pair',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['code', 'storeId', 'secretHash'],
+          properties: {
+            code: { type: 'string', minLength: 8, maxLength: 40 },
+            storeId: { type: 'string', minLength: 36, maxLength: 36 },
+            secretHash: { type: 'string', minLength: 64, maxLength: 64 },
+            name: { type: 'string', maxLength: 120 }
+          }
+        }
+      }
+    },
+    async (req) => {
+      const r = await pair(pool, req.body)
+      live.lastContact = 0 // whoever held the link before must present the new secret
+      changed()
+      return r
+    }
+  )
 
   // ── The shop PC's side of the hand-over ──────────────────────
   async function settle(id, r) {

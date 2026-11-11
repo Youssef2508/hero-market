@@ -90,6 +90,26 @@ async function cloudRegister() {
   }
 }
 
+// Print a one-time pairing code for the shop PC (D-102): 15 minutes, one use, never stored plain.
+// Pairing a second PC replaces the first one's access; the store's data here is not touched.
+async function cloudPair() {
+  const { newPairingCode } = require('./cloud/pairing')
+  const svc = await createService({ ...cloudConfig(), logger: false })
+  try {
+    await svc.prepare()
+    const existing = (await svc.pool.query('SELECT store_id, name FROM cloud_stores')).rows[0]
+    const { code, minutes } = await newPairingCode(svc.pool, { name: process.argv[3] || '' })
+    console.log(`Pairing code (valid ${minutes} minutes, one use): ${code}`)
+    console.log('Enter it on the shop PC: المزامنة السحابية ← ربط برمز.')
+    if (existing)
+      console.log(
+        `This cloud already serves store ${existing.store_id}. The PC that uses this code replaces the PC linked now, which will be refused from then on. The store's data is kept.`
+      )
+  } finally {
+    await svc.app.close()
+  }
+}
+
 async function serve() {
   const host = process.env.HOST || '127.0.0.1'
   const port = Number(process.env.PORT || 8787)
@@ -158,6 +178,7 @@ const commands = {
   serve,
   cloud,
   'cloud-register': cloudRegister,
+  'cloud-pair': cloudPair,
   migrate: migrateOnly,
   health,
   'reset-password': resetPasswordCommand

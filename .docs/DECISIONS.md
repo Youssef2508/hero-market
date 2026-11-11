@@ -1484,10 +1484,10 @@ Replaces the remote part of D-042 and D-047 (four hand-written owner commands, "
 - **Not yet (later milestones):** the phone screens; the cloud working while the shop is unreachable; the Windows background service (the link runs inside the desktop program for now); choosing a first password and using the recovery code from the internet; the pairing code (D-102).
 - **Tests:** `cloudConnected.test.js` (5), `operationKinds.test.js` (3); the 21 existing sync scenarios pass with the user row sent whole.
 
-## D-102 Pairing a shop installation with its cloud (proposed; awaiting the owner's confirmation)
+## D-102 Pairing a shop installation with its cloud (owner approved 2026-11-11; service side implemented)
 
 - **Today:** nothing links by itself. The cloud holds one store record, made by a command on the server that prints a device token once. An administrator types the cloud's address, the store id and the token on the shop PC («المزامنة السحابية», `sync.manage`). An installation with no link settings contacts nothing. Link settings are not in backups, so a backup restored on another PC does not link it.
-- **Proposed, to replace typing a long token:**
+- **Implemented** (`cloud/pairing.js`, `sync.pair`, `cloud-pair` on the server; `pairing.test.js`). A replacement PC pauses and receives the store's records before it sends anything, so the cloud's data is never replaced by an empty or older database. The desktop screen for entering the code comes with milestone 2. The steps:
   1. On the cloud server, a command prints a **pairing code** (for example `7KQ2-9XTB-4MPD`): one use, valid 15 minutes, stored hashed.
   2. On the shop PC, an administrator enters the cloud's address and the code. The PC creates its own random device secret, sends the code, its store id and the secret's hash over HTTPS, and keeps the secret in its database. It is never displayed.
   3. The cloud checks the code, binds its one store to that installation, and burns the code. Both sides then show the store's name and a short fingerprint of the store id, so the administrator sees what was linked.

@@ -38,10 +38,10 @@ test('every operation that changes data is declared; nothing declared is missing
       'declared but not an operation'
     )
     const by = (route) => names.filter((x) => cloudRoute(x) === route).length
-    assert.equal(names.length, 161)
-    // 77 reads + sign-in and sign-out are answered by the cloud itself; 11 belong to the shop PC;
+    assert.equal(names.length, 162)
+    // 77 reads + sign-in and sign-out are answered by the cloud itself; 12 belong to the shop PC;
     // the other 71 are carried out in the shop by their own handler.
-    assert.deepEqual([by('local'), by('refused'), by('shop')], [79, 11, 71])
+    assert.deepEqual([by('local'), by('refused'), by('shop')], [79, 12, 71])
   } finally {
     await svc.app.close()
   }
@@ -59,6 +59,7 @@ test('the cloud has the same operations, minus the link settings, plus its view 
         'sync.state',
         'sync.status',
         'sync.configure',
+        'sync.pair',
         'sync.unlink',
         'sync.runNow',
         'sync.recover',

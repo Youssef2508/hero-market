@@ -214,6 +214,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.update`               | all of `suppliers.manage`                                                                         |
 | `suppliers.updatePurchase`       | all of `suppliers.purchase_edit`                                                                  |
 | `sync.configure`                 | all of `sync.manage`                                                                              |
+| `sync.pair`                      | all of `sync.manage`                                                                              |
 | `sync.recover`                   | all of `sync.manage`                                                                              |
 | `sync.runNow`                    | all of `sync.manage`                                                                              |
 | `sync.skipRecovery`              | all of `sync.manage`                                                                              |

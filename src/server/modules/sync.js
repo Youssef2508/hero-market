@@ -6,6 +6,7 @@
 const { SyncAgent, syncState } = require('../sync/agent')
 const { HttpTransport, TransportError } = require('../sync/transport')
 const { executeRemote } = require('../sync/remoteOps')
+const crypto = require('crypto')
 const { badRequest, conflict, ServiceError } = require('../errors')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -169,6 +170,97 @@ module.exports = function syncModule(app) {
       if (cfg.syncAgent && b.enabled) startAgent()
       if (!b.enabled) await stopAgent()
       return result
+    }
+  })
+
+  // Pair this installation with its cloud by a one-time code made on the server (D-102). The PC
+  // makes its own secret; only the secret's hash is sent, and the secret is never shown.
+  app.operation({
+    name: 'sync.pair',
+    permission: 'sync.manage',
+    schema: {
+      type: 'object',
+      required: ['cloudUrl', 'code'],
+      properties: {
+        cloudUrl: { type: 'string', minLength: 8, maxLength: 300 },
+        code: { type: 'string', minLength: 8, maxLength: 40 }
+      }
+    },
+    handler: async (ctx, b) => {
+      const url = b.cloudUrl.trim().replace(/\/+$/, '')
+      if (!/^https:\/\//i.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(url))
+        throw badRequest('عنوان السحابة يجب أن يبدأ بـ https://')
+      const before = await syncState(ctx.pool)
+      const secret = crypto.randomBytes(32).toString('base64url')
+      const secretHash = crypto.createHash('sha256').update(secret).digest('hex')
+      const name = (await ctx.pool.query("SELECT value FROM settings WHERE key = 'store_name'"))
+        .rows[0]?.value
+      let answer
+      try {
+        const send =
+          cfg.pairRequest ||
+          (async (body) => {
+            const res = await fetch(`${url}/api/link.pair`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(20000)
+            })
+            return { status: res.status, body: await res.json().catch(() => null) }
+          })
+        answer = await send({
+          code: b.code,
+          storeId: before.store_id,
+          secretHash,
+          name: String(name || '').slice(0, 120)
+        })
+      } catch (e) {
+        throw new ServiceError(502, 'sync_failed', `تعذر الاتصال بالسحابة: ${e.message}`)
+      }
+      if (answer.status !== 200)
+        throw new ServiceError(
+          answer.status === 403 ? 403 : 502,
+          answer.body?.error?.code || 'sync_failed',
+          answer.body?.error?.message || 'رفضت السحابة الربط.'
+        )
+      const paired = answer.body
+      const result = await ctx.tx(async (db) => {
+        const st = (await db.query('SELECT * FROM sync_state FOR UPDATE')).rows[0]
+        // The cloud already serves a store (this PC replaces an earlier one): continue that store.
+        const changesStore = st.store_id !== paired.storeId
+        if (changesStore) {
+          await db.query('DELETE FROM sync_outbox')
+          await db.query('DELETE FROM sync_row_versions')
+        }
+        await db.query(
+          `UPDATE sync_state SET cloud_url = $1, store_id = $2, device_token = $3, enabled = true,
+                  linked_at = LOCALTIMESTAMP(0), epoch = CASE WHEN $4 THEN NULL ELSE epoch END,
+                  last_error = NULL`,
+          [url, paired.storeId, secret, changesStore]
+        )
+        // A different PC taking over a store the cloud already holds must first receive that
+        // store's records from the cloud; until then nothing is sent, so an empty or older
+        // database can never replace what the cloud has (work pauses, as after a restore).
+        if (changesStore && paired.replaced && paired.epoch) {
+          await db.query('UPDATE sync_state SET recovery_pending = true, recover_from = $1', [
+            JSON.stringify({
+              sync: { storeId: paired.storeId, epoch: paired.epoch - 1, version: 9007199254740991 }
+            })
+          ])
+        }
+        await ctx.audit(
+          db,
+          'sync_configure',
+          `ربط المتجر بالسحابة برمز الربط: ${url} – ${paired.name || ''} (${paired.fingerprint})${paired.replaced ? ' – هذا الجهاز يحل محل جهاز سابق' : ''}`
+        )
+        return describe(db)
+      })
+      await refresh()
+      if (cfg.syncAgent) startAgent()
+      return {
+        ...result,
+        paired: { name: paired.name, fingerprint: paired.fingerprint, replaced: paired.replaced }
+      }
     }
   })
 
