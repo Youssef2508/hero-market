@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveTick } from '../../lib/live'
 import { Landmark, Plus, Minus, Scale, Undo2, RefreshCw } from 'lucide-react'
 import { EmptyState, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
@@ -49,9 +50,11 @@ export default function TreasuryTab({ currentUser, triggerCustomAlert, triggerCu
     }
   }, [filters, triggerCustomAlert])
 
+  // Also when the cloud announces a change from the shop (the internet way in).
+  const live = useLiveTick()
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, live])
 
   const openForm = (kind) =>
     setForm({ kind, amount: '', reason: '', method: 'cash', clientRef: newClientRef() })

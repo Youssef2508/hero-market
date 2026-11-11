@@ -47,7 +47,9 @@
   }
   .app-shell.is-phone .sidebar {
     position: fixed;
-    inset-block: 0;
+    top: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    height: auto;
     inset-inline-start: 0;
     z-index: calc(var(--z-modal) - 10);
     width: min(86vw, 320px);
@@ -109,7 +111,10 @@
   }
 
   /* ── Bottom bar ────────────────────────────────────────────── */
+  /* Above the open menu and its backdrop, so «المزيد» also closes it. */
   .phone-bar {
+    position: relative;
+    z-index: calc(var(--z-modal) - 9);
     display: flex;
     flex-shrink: 0;
     border-top: 1px solid var(--border);
@@ -165,6 +170,66 @@
   .modal-overlay select,
   .modal-overlay textarea {
     font-size: 16px;
+  }
+
+  /* ── Nothing may be wider than the screen ──────────────────── */
+  .app-shell.is-phone .app-content > *,
+  .app-shell.is-phone .card,
+  .app-shell.is-phone .card-header,
+  .app-shell.is-phone .card-body,
+  .app-shell.is-phone .toolbar,
+  .app-shell.is-phone .toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .app-shell.is-phone .card-body {
+    overflow-x: auto;
+  }
+  .app-shell.is-phone .app-content select,
+  .app-shell.is-phone .app-content input,
+  .app-shell.is-phone .filters,
+  .app-shell.is-phone .filter-bar {
+    max-width: 100%;
+  }
+  .app-shell.is-phone .filters,
+  .app-shell.is-phone .filter-bar,
+  .app-shell.is-phone .logs-filters {
+    flex-wrap: wrap;
+  }
+  .app-shell.is-phone .toolbar > * {
+    flex: 1 1 140px;
+  }
+  /* A labelled filter (label beside its field) stacks: label above, field full width. */
+  .app-shell.is-phone .field-inline {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .app-shell.is-phone .field-inline > select,
+  .app-shell.is-phone .field-inline > .input {
+    width: 100% !important;
+    min-width: 0;
+  }
+  .app-shell.is-phone .toolbar > .spacer {
+    display: none;
+  }
+  /* A filter takes its own line when it would not fit beside the others. */
+  .app-shell.is-phone .toolbar > select,
+  .app-shell.is-phone .toolbar > .input,
+  .app-shell.is-phone .toolbar > input {
+    flex: 1 1 100%;
+    width: 100% !important;
+  }
+  .app-shell.is-phone .card-header > * {
+    flex-shrink: 1;
+  }
+  .app-shell.is-phone .icon-btn,
+  .modal-overlay .icon-btn,
+  .app-shell.is-phone .category-pick,
+  .app-shell.is-phone .segmented button {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* ── Cards, headers and forms: one column ──────────────────── */

@@ -140,7 +140,8 @@ async function main() {
     logger: { level: 'warn' }
   })
   await shop.prepare()
-  await shop.app.ready()
+  // The shop's own API, as a second desktop terminal would reach it (this machine only).
+  await shop.app.listen({ host: '127.0.0.1', port: port + 1 })
   const call = caller(shop)
   const hasUsers = (await shop.pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n > 0
   const owner = hasUsers ? (await call('auth.login', OWNER)).token : await seed(shop, call)
@@ -155,6 +156,9 @@ async function main() {
   console.log(`  sign in: ${OWNER.username} / ${OWNER.password}`)
   console.log(
     `  (the cashier ${CASHIER.username} / ${CASHIER.password} has no internet permission)`
+  )
+  console.log(
+    `The shop's own service (what the desktop program talks to): http://127.0.0.1:${port + 1}`
   )
   console.log('Ctrl+C to stop.')
   const stop = async () => {

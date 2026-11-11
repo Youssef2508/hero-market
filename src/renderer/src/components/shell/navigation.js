@@ -466,10 +466,17 @@ const allowed = (item, user) =>
   (!item.permission || item.permission.some((p) => user.permissions.includes(p)))
 
 /** Navigation groups visible to the given user. */
+// Screens that belong to the shop PC itself: its link to the cloud and its backup files. From the
+// internet they are not offered (the service refuses their operations there too, D-101).
+const SHOP_PC_ONLY = ['sync', 'backup']
+const here = (i) =>
+  !(typeof window !== 'undefined' && window.api?.isWeb && SHOP_PC_ONLY.includes(i.id))
+
 export function visibleGroups(user) {
-  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => allowed(i, user)) })).filter(
-    (g) => g.items.length > 0
-  )
+  return NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => allowed(i, user) && here(i))
+  })).filter((g) => g.items.length > 0)
 }
 
 /** Whether the user can open at least one management screen. */
