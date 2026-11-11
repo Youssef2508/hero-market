@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 'use strict'
 // Writes .docs/PHASE2_CAPABILITY_MATRIX.md from the service's own operation registry and from
 // src/server/sync/operationKinds.js, the table the cloud really routes by. No database is opened.

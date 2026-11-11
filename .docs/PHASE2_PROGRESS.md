@@ -1,4 +1,4 @@
-﻿# Phase 2 progress
+# Phase 2 progress
 
 Written for the owner. Updated as each part is finished. Branch `feature/phase2-owner-cloud`; nothing is merged, released, deployed or bought. The shop stays on 1.5.2.
 
