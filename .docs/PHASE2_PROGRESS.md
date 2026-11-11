@@ -68,7 +68,9 @@ Updates without refreshing: the service side is done and tested (a change reache
 
 Today nothing links by itself: a person runs a command on the server that prints a token once, and an administrator types the address, the store id and the token on the shop PC. A cloud serves one store, and link settings are not in backups, so a development PC or a restored copy is never linked by accident.
 
-Proposed replacement (D-102): the server prints a short **pairing code** valid for 15 minutes and usable once; an administrator enters it on the shop PC; the PC creates its own secret, which is never shown; both sides display the store's name and a short fingerprint to confirm. A replacement PC needs a new code, which locks the old PC out. **Please confirm before I build it.**
+**Built (owner approved 2026-11-11, D-102), service side:** the server prints a short pairing code valid for 15 minutes and usable once (`cloud-pair`); an administrator enters it on the shop PC (`sync.pair`); the PC creates its own secret, which is never shown and of which the cloud holds only the hash; both sides get the store's name and a short fingerprint. Repeated wrong codes cancel the open code.
+
+A replacement PC needs a new code. Using it locks the old PC out at once, changes nothing in the cloud's records, and pauses the new PC until it has received the store's records, so an empty or older database can never replace what the cloud holds. Proven by `pairing.test.js`. The desktop screen for typing the code is not built yet; the operation is.
 
 ### Risks and open points
 
@@ -77,6 +79,36 @@ Proposed replacement (D-102): the server prints a short **pairing code** valid f
 3. The per-cycle comparison of every table (inherited from the earlier engine) still runs every 15 seconds; it will be moved to a schedule before the pilot.
 4. OVHcloud's checkout price, tax, billing term and regions are still to be confirmed on its order page (milestone 5). Nothing has been ordered.
 
-## Milestones 2 to 5
+## Milestone 2: the browser build and the phone interface
+
+**Status: started. The foundation works in a real browser at phone size; the individual screens have not been adapted yet.**
+
+### Done
+
+| Part                         | What it is                                                                                                                                                                                                                                               | Evidence                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Browser build                | The same screens built for a browser (`npm run build:web` → `out/web`). One small file stands in for the desktop bridge (`lib/webBridge.js`); no screen was copied or rewritten                                                                          | Both builds succeed                                                                                 |
+| Browser sessions             | An HTTP-only, same-site, secure cookie the page cannot read; every request must also carry our own header; the page never receives the token; sign-out clears it                                                                                         | `cloudWeb.test.js`                                                                                  |
+| Serving the pages            | The cloud serves the build next to the API and never a file outside it                                                                                                                                                                                   | `cloudWeb.test.js` (four path-escape attempts)                                                      |
+| Phone shell                  | Below 760 px: the menu slides in, a bottom bar holds the main areas (البيع، الورديات، الموردون، الأصناف، المزيد), dialogs fill the screen, wide tables scroll inside their own frame, fields do not make the phone zoom, the till stacks into one column | Seen in a browser at 390 × 844: sign-in, the till with the shop's open shift, no sideways scrolling |
+| Status strip                 | Always visible from the internet: connected and up to date, connected with changes arriving, or shop unreachable with the time of the last synchronisation. One open request tells the screens when something changed                                    | Seen showing «متصل بالمتجر – البيانات محدّثة»                                                       |
+| A trial stack on one machine | `node scripts/phase2-dev.js --fresh` starts a shop and its cloud on 127.0.0.1 with made-up data, pairs them with a code, and prints the address and sign-in                                                                                              | Used for the checks above                                                                           |
+
+### Checked by hand, in a browser at phone size, against the trial stack
+
+- Sign in with the shop's own username and password.
+- Land on the till, showing the shift that is open in the shop.
+- The page does not scroll sideways on the sign-in screen or the till.
+
+### Not done yet in this milestone
+
+1. **Screen by screen.** Only the shell and the general rules are in place. Each of the 37 administration screens and 33 dialogs still has to be opened at phone size and corrected where the general rules are not enough. Planned order: shifts and their reports, supplier invoices, prices and products, suppliers and customers; then returns, payments, collections, expenses, treasury; then the rest.
+2. **Screens refresh by themselves.** The signal exists (`heromarket:data-changed`); the screens do not listen to it yet.
+3. **"Waiting for the shop's confirmation"** has no screen yet; the service answers it correctly.
+4. **Camera barcode scanning, sharing a receipt, installing to the home screen** (PWA).
+5. **Automatic layout checks** for every screen at 360 × 740 and 390 × 844 in the test suite. Today's check was run by hand with a script outside the repository.
+6. **The pairing screen** on the desktop.
+
+## Milestones 3 to 5
 
 Not started.

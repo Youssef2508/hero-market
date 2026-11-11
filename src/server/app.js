@@ -27,6 +27,28 @@ function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex')
 }
 
+// The browser's session cookie (the internet way in). Never readable by page scripts.
+const SESSION_COOKIE = 'hm_session'
+function cookieOf(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=')
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || null
+  }
+  return null
+}
+function sessionCookie(token, { secure, hours }) {
+  return [
+    `${SESSION_COOKIE}=${token || ''}`,
+    'Path=/api',
+    'HttpOnly',
+    'SameSite=Strict',
+    secure ? 'Secure' : null,
+    `Max-Age=${token ? hours * 3600 : 0}`
+  ]
+    .filter(Boolean)
+    .join('; ')
+}
+
 /**
  * @param {object} cfg
  * @param {string} cfg.databaseUrl  PostgreSQL connection string
@@ -105,7 +127,13 @@ async function createService(cfg) {
       return { sessionId: 0, user, remote }
     }
     const header = req.headers.authorization || ''
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null
+    let token = header.startsWith('Bearer ') ? header.slice(7) : null
+    if (!token && cloud) {
+      // A browser's session is an HTTP-only cookie. A cookie is sent by the browser on its own, so
+      // the request must also carry a header only our own page can add (cross-site forgery).
+      token = cookieOf(req, SESSION_COOKIE)
+      if (token && req.headers['x-heromarket-web'] !== '1') throw unauthorized()
+    }
     if (!token) throw unauthorized()
     const { rows } = await pool.query(
       `UPDATE sessions SET last_seen_at = LOCALTIMESTAMP(0)
@@ -153,7 +181,7 @@ async function createService(cfg) {
         bodyLimit: def.bodyLimit,
         preValidation: authorize
       },
-      async (req) => {
+      async (req, reply) => {
         const auth = req.hmAuth || null
         const remote = auth?.remote || null
         if (cloud) {
@@ -204,6 +232,16 @@ async function createService(cfg) {
             [sha256(result.token)]
           )
           throw forbidden(NO_INTERNET)
+        }
+        if (cloud && req.headers['x-heromarket-web'] === '1') {
+          // A browser never holds the session token: it goes into the cookie, out of the answer.
+          const cookie = { secure: !cfg.insecureCookies, hours: SESSION_HOURS }
+          if (result?.token) {
+            reply.header('set-cookie', sessionCookie(result.token, cookie))
+            const { token: _kept, ...rest } = result
+            return rest
+          }
+          if (def.name === 'auth.logout') reply.header('set-cookie', sessionCookie(null, cookie))
         }
         return result === undefined ? { ok: true } : result
       }

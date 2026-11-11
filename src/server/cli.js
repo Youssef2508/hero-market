@@ -41,7 +41,11 @@ const cloudConfig = () => ({
   secret: setting('HEROMARKET_SECRET', { required: true }),
   // The shop's time zone: the copy holds the shop's local times.
   timeZone: process.env.HEROMARKET_TIMEZONE || 'Africa/Cairo',
-  role: 'cloud'
+  role: 'cloud',
+  // The browser build of the screens (npm run build:web), served next to the API.
+  webRoot: process.env.HEROMARKET_WEB_ROOT || undefined,
+  // Only for trying it on this machine over plain http: the session cookie without "Secure".
+  insecureCookies: process.env.HEROMARKET_INSECURE_COOKIES === '1'
 })
 
 // The internet way in (D-101): the same service on a copy of the store, fed by the shop PC's link.

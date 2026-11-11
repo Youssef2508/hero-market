@@ -16,7 +16,10 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { installModalChrome } from './lib/modalChrome'
 import { installKeyboard } from './lib/keyboard'
+import { installWebBridge } from './lib/webBridge'
 
+// In a browser (the internet way in) there is no preload bridge: provide the same one.
+installWebBridge()
 installModalChrome()
 installKeyboard()
 

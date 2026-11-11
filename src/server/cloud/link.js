@@ -18,6 +18,8 @@
 // the shop's confirmation – and is never carried out here instead. On its next contact the shop PC
 // is asked about every "sent" operation and answers from its own record.
 const crypto = require('crypto')
+const fs = require('fs')
+const path = require('path')
 const { withTransaction } = require('../db/pool')
 const { migrate } = require('../db/migrate')
 const { ServiceError, notFound } = require('../errors')
@@ -411,6 +413,11 @@ module.exports = function cloudLink(app, cfg) {
   }
 
   app.operation({ name: 'link.state', handler: async () => describe() })
+  // The screens ask every side whether work is paused for recovery: here it never is.
+  app.operation({
+    name: 'sync.state',
+    handler: async () => ({ recoveryPending: false, linked: !!(await theStore()) })
+  })
 
   // Returns when something changed (the copy, an operation's outcome, the shop's reachability) or
   // after timeoutMs: the screens keep one such request open instead of polling.
@@ -482,6 +489,49 @@ module.exports = function cloudLink(app, cfg) {
       ).rows
     }
   })
+
+  // ── The pages themselves (the browser build of the same screens) ──
+  if (cfg.webRoot) {
+    const root = path.resolve(cfg.webRoot)
+    const TYPES = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.webmanifest': 'application/manifest+json; charset=utf-8',
+      '.png': 'image/png',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.woff2': 'font/woff2',
+      '.woff': 'font/woff'
+    }
+    app.get('/*', async (req, reply) => {
+      let rel
+      try {
+        rel = decodeURIComponent(req.url.split('?')[0])
+      } catch {
+        return reply.code(400).send('bad request')
+      }
+      let file = path.join(root, rel)
+      // Never outside the build folder; an address without a file is the application itself.
+      if (file !== root && !file.startsWith(root + path.sep)) return reply.code(404).send('')
+      if (!path.extname(file)) file = path.join(root, 'index.html')
+      let data
+      try {
+        data = await fs.promises.readFile(file)
+      } catch {
+        return reply.code(404).send('')
+      }
+      const page = file.endsWith('index.html') || file.endsWith('sw.js')
+      return reply
+        .header('content-type', TYPES[path.extname(file)] || 'application/octet-stream')
+        .header('cache-control', page ? 'no-cache' : 'public, max-age=31536000, immutable')
+        .header('x-content-type-options', 'nosniff')
+        .header('referrer-policy', 'no-referrer')
+        .header('x-frame-options', 'DENY')
+        .send(data)
+    })
+  }
 
   app.decorate('cloudLink', {
     forward,

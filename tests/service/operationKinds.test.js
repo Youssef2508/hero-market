@@ -56,7 +56,6 @@ test('the cloud has the same operations, minus the link settings, plus its view 
     assert.deepEqual(
       a.filter((x) => !b.includes(x)),
       [
-        'sync.state',
         'sync.status',
         'sync.configure',
         'sync.pair',
@@ -70,8 +69,13 @@ test('the cloud has the same operations, minus the link settings, plus its view 
       b.filter((x) => !a.includes(x)),
       ['link.state', 'link.watch', 'link.operation', 'link.operations']
     )
+    // Asked by every screen on both sides; each side answers for itself.
+    assert.notEqual(
+      cloud.operations.get('sync.state').handler,
+      shop.operations.get('sync.state').handler
+    )
     // The same permission on every shared operation: one definition, two ways in.
-    for (const name of a.filter((x) => b.includes(x)))
+    for (const name of a.filter((x) => b.includes(x) && x !== 'sync.state'))
       assert.deepEqual(
         [cloud.operations.get(name).permission, cloud.operations.get(name).anyPermission],
         [shop.operations.get(name).permission, shop.operations.get(name).anyPermission],
