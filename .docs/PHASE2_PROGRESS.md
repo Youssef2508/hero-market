@@ -197,7 +197,7 @@ Full suite **507 of 507**; lint 0 errors; format clean; CI passed on `fdf0996`.
   - firewall: SSH, HTTP and HTTPS only;
   - automatic security updates;
   - Docker from Docker's own repository.
-- **The cloud:** at `https://109-123-240-94.sslip.io`, a test address that follows the server's IP. Its certificate is from Let's Encrypt, renewed automatically.
+- **The cloud:** at **`https://heromarket.duckdns.org`**, a free DuckDNS name in your account, pointed at the server. The first tests used a temporary address made from the IP. Its certificate is from Let's Encrypt, renewed automatically.
 - **What it holds:** only a disposable test store. Your shop is not linked.
 
 ### Checked on the server
@@ -235,7 +235,7 @@ Full suite **521 of 521**; lint 0 errors; format clean; CI passed.
 
 ### Still to do before the pilot
 
-1. **A permanent address:** a free DuckDNS name or your own domain. The test address contains the IP, so moving the server would need a new pairing.
+1. ~~**A permanent address**~~: done, `heromarket.duckdns.org`. A move to another server is a DNS change, with no new pairing.
 2. **The off-server copy:** a free Cloudflare R2 or Backblaze B2 bucket, in your account. Until then, copies stay on the server, which has no provider backup add-on.
 3. **Your backup key:** made on your computer. The test key is replaced.
 4. **The Windows Sandbox run** of an installer update over a running background service with unsent changes.
