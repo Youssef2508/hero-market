@@ -1535,3 +1535,29 @@ Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §3.2 and §6.
 - **Two defects found by these tests and fixed before commit:**
   - equal running totals on both sides were treated as already merged;
   - the purchase price was decided before its purchase had arrived.
+
+## D-104 A Windows background service keeps the shop linked with the program closed (Phase 2 milestone 4, migration 0034)
+
+Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §9.
+
+- **What runs:** the installed program itself, started as `HeroMarket-POS.exe --sync-service`. It opens no window and runs the store's own service against the store's database. It never changes the schema; the installer does that after its verified copy. Its log is `logs\sync.log` in the store folder, with no passwords and no customer data.
+- **Started by Task Scheduler, not as a Windows service:** the task `HeroMarket\HeroMarket Sync` runs as the system account:
+  - at Windows start, before anyone signs in;
+  - every five minutes as a watchdog that starts it again if it stopped (one copy at a time);
+  - restarted after a failure, with no time limit, also on battery.
+
+  **This is the architecture's fallback, not its first proposal (a Windows service).** The program cannot answer Windows' service manager by itself; a real service would need an extra third-party wrapper program in the installer. The task gives the same start before sign-in and restart after a stop, and reuses the mechanism the backup tasks already use on the shop's Windows (D-060, D-074). The Windows-service variant was not built or tested. Difference: after a crash, the restart comes at the next five-minute mark rather than at once.
+
+- **The installer** registers and starts the task after the backup task. Before files are replaced, it ends the task and disables it, and registering it again at the end of the install turns it back on. Uninstall removes the task; the store's data stays.
+- **One holder of the link per database:** the service and the desktop program may both run. The holder takes an advisory lock on its own connection and writes a heartbeat to `sync_state` every 30 seconds (who, process, version, since when, last seen). The other copy waits and takes over within half a minute when the holder stops. The sync screen shows who holds the link.
+- **A dropped link is noticed at once** by the cloud (about 0.8 s instead of up to 45 s). At a hand-over, an operation the new holder has never heard of is recorded as "not carried out" in the shop (a tombstone), so a late copy from the previous holder changes nothing.
+- **Tests:**
+  - `syncService.test.js` (2): one holder at a time and the hand-over; operations carried out once either way; the tombstone;
+  - `syncTask.test.mjs` (3): what Task Scheduler is told.
+- **Windows Sandbox, a clean Windows with a build of this code:**
+  - the installer registered the task and the windowless process started, holding the heartbeat;
+  - killed, it was started again by the watchdog at the next five-minute mark;
+  - the desktop program opened next to it, and the service kept the link;
+  - reinstalling over the running service gave a new process with its heartbeat.
+
+  Not verifiable there: an actual Windows restart, or a real cloud (no network).

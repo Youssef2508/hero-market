@@ -19,7 +19,7 @@ Written for the owner. Updated as each part is finished. Branch `feature/phase2-
 | 7. A price changed remotely is the till's price                      | Pass                                                                                                                 | Test 2: the next desktop sale charges the new price                                                                                |
 | 8. Permissions identical; internet access is its own permission      | Pass                                                                                                                 | Test 4                                                                                                                             |
 | 9. Duplicate delivery and lost answers never duplicate               | Pass                                                                                                                 | Test 5                                                                                                                             |
-| 10. The Windows service keeps syncing with the desktop closed        | **Not done** (milestone 4). The link runs inside the desktop program for now                                         |
+| 10. The Windows service keeps syncing with the desktop closed        | Pass (milestone 4): a background task, checked on a clean Windows; see Milestone 4                                   |
 | 11. Cloud operations with the shop PC off                            | **Not done** (milestone 3). A change is refused with a clear message; reading works and says how old the figures are |
 | 12. Recovery after long disconnections                               | Shop to cloud: pass (existing 21 scenarios). Cloud to shop: milestone 3                                              |
 | 13. Conflicts detected and listed                                    | Milestone 3                                                                                                          |
@@ -75,7 +75,7 @@ A replacement PC needs a new code and must be a fresh installation: the cloud re
 ### Risks and open points
 
 1. Everything so far ran in tests on one machine. A real server, real internet and a real phone come in the pilot.
-2. The link runs inside the desktop program until milestone 4, so with the program closed the shop counts as unreachable.
+2. ~~The link runs inside the desktop program until milestone 4.~~ Done in milestone 4: a background service keeps it with the program closed.
 3. The per-cycle comparison of every table (inherited from the earlier engine) still runs every 15 seconds; it will be moved to a schedule before the pilot.
 4. OVHcloud's checkout price, tax, billing term and regions are still to be confirmed on its order page (milestone 5). Nothing has been ordered.
 
@@ -148,6 +148,42 @@ Full suite **502 of 502**; lint 0 errors; format clean.
 3. Cloud invoice numbers look different (1,000,000,001 and up). The short `W-` display is not done yet.
 4. Restoring a backup on the shop while the cloud holds work the shop has not received waits until the shop has fetched it (the shop does that first in every cycle).
 
-## Milestones 4 and 5
+## Milestone 4: the Windows background service
 
-Not started.
+**Status: built, tested, and checked on a clean Windows (Windows Sandbox). Not yet tried through a real Windows restart, on the shop's PC, or with a real server.**
+
+### What happens now
+
+- **The shop stays linked with the program closed.** A windowless copy of the program (`--sync-service`) starts with Windows, before anyone signs in. It sends the shop's changes, receives the cloud's, and carries out operations started from the phone. Selling never depends on it.
+- **Started by Task Scheduler** (`HeroMarket\HeroMarket Sync`, as the system account), which also checks every five minutes and starts it again if it stopped. This is the approved fallback, not the Windows service first proposed: a real service would need an extra third-party wrapper in the installer (D-104).
+- **The program and the service together:** only one holds the link, with a heartbeat the sync screen shows («خدمة المزامنة في الخلفية» or «هذا البرنامج»). If one stops, the other takes over within half a minute.
+- **Installing and uninstalling:** the installer registers and starts the task; an update stops it before replacing files and starts it again afterwards; uninstalling removes it and keeps the data.
+
+### Evidence
+
+| Check                                                                                                                               | Result                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `syncService.test.js`: one holder at a time, hand-over, operations once either way, the "not carried out" record                    | Pass                                                                                                 |
+| `syncTask.test.mjs`: start with Windows as the system account, five-minute watchdog, one copy, no time limit                        | Pass                                                                                                 |
+| This PC, development mode: a phone expense carried out in the shop's database with the program closed                               | Pass                                                                                                 |
+| This PC: the service killed; the cloud shows the shop unreachable                                                                   | Pass, about 0.8 s                                                                                    |
+| **Clean Windows (Sandbox), installer built from this code:** task registered, windowless process, heartbeat in the store's database | Pass: process started within seconds of the install, no window, heartbeat every 30 s                 |
+| Sandbox: the process killed                                                                                                         | Pass: started again by the watchdog at the next five-minute mark (44 s in this run; up to 5 minutes) |
+| Sandbox: the desktop program opened next to it                                                                                      | Pass: program ready; the service kept the link                                                       |
+| Sandbox: reinstall over the running service                                                                                         | Pass: a new process with its heartbeat right after the install                                       |
+
+The first Sandbox run had mistakes in my check script (a missing helper, a broken database module copy, a wrong process count) so the heartbeat was not checked there; the second run, with the script fixed and the same installer, is the one reported above.
+
+### Test results
+
+Full suite **507 of 507**; lint 0 errors; format clean; CI passed on `fdf0996`.
+
+### Limits, plainly
+
+1. A real Windows restart was not tried (the Sandbox cannot restart); start at boot is checked as configured, not observed.
+2. The Sandbox has no network, so the service there had no cloud to talk to; the link itself was proven on this PC in development mode.
+3. After a crash, the service comes back at the next five-minute mark; in between, the desktop program takes over if it is open.
+
+## Milestone 5
+
+Not started: security review, production hosting setup, encrypted cloud backups, guides, pilot.
