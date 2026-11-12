@@ -186,7 +186,7 @@ Full suite **507 of 507**; lint 0 errors; format clean; CI passed on `fdf0996`.
 
 ## Milestone 5: ready for the internet, the server, and updates
 
-**Status: built, and checked on the real server with made-up data.** Not yet done: the pilot (your shop linked to the cloud), the off-server backup copy, the permanent address, and the Windows Sandbox run of an installer update over a running background service.
+**Status: built, and checked on the real server with made-up data.** Not yet done: the off-server backup copy (your choice pending) and the pilot (your shop linked to the cloud).
 
 ### The server
 
@@ -237,8 +237,15 @@ Full suite **521 of 521**; lint 0 errors; format clean; CI passed.
 
 1. ~~**A permanent address**~~: done, `heromarket.duckdns.org`. A move to another server is a DNS change, with no new pairing.
 2. **The off-server copy:** a free Cloudflare R2 or Backblaze B2 bucket, in your account. Until then, copies stay on the server, which has no provider backup add-on.
-3. **Your backup key:** made on your computer. The test key is replaced.
-4. **The Windows Sandbox run** of an installer update over a running background service with unsent changes.
+3. ~~**Your backup key**~~: done 2026-11-12. It was made for you and sent straight to this PC (`DocumentsHeroMarket-Backup-Key`, your Windows account only), with instructions for two USB copies. The server encrypts to it.
+   - **Restore drill with your key:** pass. The restored database was identical to the live one, and another key could not open the copy.
+4. ~~**The Windows Sandbox run**~~: done 2026-11-12. A clean Windows; installer A (current), then a paired shop with 285 changes waiting and two operations from the internet on record, then installer B (1.5.3, one more migration) over the running background service.
+   - **Pairing:** identical (store, device, address, epoch).
+   - **Waiting changes:** all 285 still waiting, the same ones.
+   - **Operation records:** both unchanged.
+   - **Migration and copy:** the migration applied after the installer's verified copy.
+   - **Background service:** back as 1.5.3 within seconds.
+   - **One real defect found and fixed:** every start of the program or the service rewrote the super-administrator's permission list, which queued 110 needless changes for the cloud. Now only what differs is written; a test guards it.
 5. **The pilot:**
    - a release built from this branch, after your approval to merge;
    - your shop PC updated and linked;

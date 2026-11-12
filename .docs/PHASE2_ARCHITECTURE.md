@@ -360,7 +360,7 @@ Pairing, device identity and checkpoints are never touched by an update, so an u
 **Built (2026-11-12) and still to do.** Items 1–4 below are built; item 2 and the update test pass in the suite:
 
 - **Item 3, `update.sh`:** has not run yet; its first run is on the server.
-- **The Windows Sandbox run of item 4:** not done yet.
+- **The Windows Sandbox run of item 4:** done 2026-11-12 (see the progress document): the pairing, every waiting change and the operation records were identical across the update.
 - **Item 5:** belongs to the first release.
 
 The items:

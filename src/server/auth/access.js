@@ -35,13 +35,18 @@ async function ensureAccessControl(client) {
       }
     }
     if (r.protected) {
-      await client.query('DELETE FROM role_permissions WHERE role_id = $1', [id])
-      for (const p of r.permissions) {
-        await client.query('INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)', [
-          id,
-          p
-        ])
-      }
+      // Exactly the catalogue, touching only what differs: an unchanged role writes nothing, so
+      // every start of the program or the background service does not send the whole role to the
+      // cloud again (found in the installer update test, D-105).
+      await client.query(
+        'DELETE FROM role_permissions WHERE role_id = $1 AND NOT (permission = ANY($2::text[]))',
+        [id, r.permissions]
+      )
+      await client.query(
+        `INSERT INTO role_permissions (role_id, permission)
+         SELECT $1, p FROM unnest($2::text[]) AS p ON CONFLICT DO NOTHING`,
+        [id, r.permissions]
+      )
     }
   }
   // Newly introduced permission keys: grant them once to built-in roles that include them by default.

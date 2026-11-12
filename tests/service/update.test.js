@@ -167,3 +167,34 @@ test('cloud first, then the shop: apart in between, then together; nothing lost 
     fs.rmSync(next, { recursive: true, force: true })
   }
 })
+
+test('starting again (after an update, or any start) sends nothing when nothing changed', async (t) => {
+  if (!requireDb(t)) return
+  const { freshDatabase } = require('./helpers')
+  const { PERMISSIONS } = require('../../src/server/auth/permissions')
+  const db = await freshDatabase()
+  try {
+    const waiting = async (svc) =>
+      Number((await svc.pool.query('SELECT count(*) AS n FROM sync_outbox')).rows[0].n)
+    const first = await startService(db.url)
+    const before = await waiting(first)
+    await first.close()
+    // The installer's update step and the background service each start the service once more.
+    for (let i = 0; i < 2; i++) {
+      const again = await startService(db.url)
+      assert.equal(await waiting(again), before, 'no change queued for the cloud by a start')
+      const held = await again.pool.query(
+        `SELECT array_agg(permission ORDER BY permission) AS p FROM role_permissions rp
+           JOIN roles r ON r.id = rp.role_id WHERE r.key = 'super_admin'`
+      )
+      assert.deepEqual(
+        held.rows[0].p,
+        PERMISSIONS.map((x) => x.key).sort(),
+        'still every permission'
+      )
+      await again.close()
+    }
+  } finally {
+    await db.dispose()
+  }
+})
