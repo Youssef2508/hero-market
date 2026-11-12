@@ -1583,3 +1583,31 @@ Deployment: [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md). Owner: [OWNER_CLOUD_GUID
   - `tests/unit/saleNumber.test.mjs` (3);
   - `tests/unit/syncSchedule.test.js` (2);
   - the password unit test is extended.
+
+## D-106 Security review, recovery without paid cloud backups, and the existing-installation rollout (owner priorities 2026-11-12, migration 0036)
+
+The owner's priorities:
+
+- security first;
+- the shop's local backups stay the primary recovery source;
+- the cloud is recovered from the shop;
+- no paid or complicated cloud backup infrastructure.
+
+Review: [SECURITY_REVIEW_PHASE2.md](SECURITY_REVIEW_PHASE2.md). Rollout: [ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md).
+
+- **Security fixes:**
+  - A password changed or reset on either side ends that user's sessions on the other side (trigger `users_end_sessions_on_credential_change`, by `password_changed_at` / `temp_password_expires_at`). It replaces the cloud's comparison of hashes, which would have signed users out after the D-105 hash renewal.
+  - The shop refuses a forwarded operation when, by its own records, the user lacks the internet permission.
+  - The recovery-code hash is no longer sent; a cloud copy clears what it held (cloud migration 0005).
+  - The session cookie and the internal operation key are redacted from logs.
+  - The backup container runs read-only without capabilities.
+  - Three package advisories are patched with compatible versions.
+- **Cloud backups stay minimal and free:** the nightly encrypted copy on the server, readable only with the owner's key (restore drill passed). No off-server storage service: R2 needs a payment method with no spending cap, and the owner chose no recurring cost.
+- **The cloud's database lost:** a new empty cloud and a new pairing code. The existing shop (not a fresh installation) pairs again, and **a new, empty cloud now starts a new epoch on the shop**, so the whole store is sent at once and is identical after one cycle. Only phone work the shop had not received is missing; the nightly copy brings it back.
+- **The shop's database lost:** restore a local backup, then recover. Everything after the backup returns once, including phone work done while the shop was offline, received or not (`recoveryTwoWay.test.js`).
+- **Existing installation upgrade and first pairing** (`existingInstall.test.js`):
+  - Stores are made by the released 1.4.0 and 1.5.2 programs themselves (`scripts/make-old-store-fixture.js`, `tests/fixtures/old-stores`). Each has 48 sales, 12 shifts, returns, credit, repayments, supplier invoices and payments, expenses, and the old program's unsent change queue.
+  - Each is updated in place. Every original record keeps every value and its number, except the named, approved changes: D-087's purchase price from 1.4.0, and D-105's renewed hash.
+  - Each is paired with a one-time code. The empty cloud receives the store and sends nothing back. The cloud is then identical, the website's invoice list is identical, a second sync changes nothing, and the store keeps its identity.
+- **The cloud is emptied for the real shop** with `deploy/cloud/reset-empty.sh`: it asks for the address to confirm and takes an encrypted copy first.
+- **Found by the installer update test and fixed:** every start rewrote the super administrator's permissions (110 needless changes to send).
