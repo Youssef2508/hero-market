@@ -14,7 +14,8 @@ const path = require('path')
 const https = require('https')
 const { execFileSync } = require('child_process')
 
-const URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+// Not called URL: that name would hide the URL class used to follow Microsoft's redirects.
+const SOURCE = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
 const target = path.join(__dirname, '..', 'build', 'vcredist', 'vc_redist.x64.exe')
 
 function download(url, to, redirects = 0) {
@@ -62,8 +63,8 @@ function verified(file) {
   }
   fs.mkdirSync(path.dirname(target), { recursive: true })
   const tmp = `${target}.download`
-  console.log(`[vcredist] downloading ${URL}`)
-  await download(URL, tmp)
+  console.log(`[vcredist] downloading ${SOURCE}`)
+  await download(SOURCE, tmp)
   if (!verified(tmp)) {
     fs.rmSync(tmp, { force: true })
     throw new Error('vc_redist.x64.exe is not validly signed by Microsoft Corporation; refused')
