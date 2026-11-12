@@ -83,7 +83,11 @@ async function createService(cfg) {
         'body.setupCode'
       ]
     },
-    bodyLimit: 2 * 1024 * 1024
+    bodyLimit: 2 * 1024 * 1024,
+    // Behind a reverse proxy (the cloud behind Caddy): the visitor's address comes from the proxy's
+    // X-Forwarded-For, trusted only from the addresses listed here (D-105). Without it every visitor
+    // would share the proxy's address, and one person's wrong guesses would lock out everyone.
+    trustProxy: cfg.trustProxy || false
   })
   const pool = createPool(cfg.databaseUrl, { logger: app.log, max: cfg.poolSize })
   // Every connection works in the store's local time: LOCALTIMESTAMP matches the legacy local-time text.
@@ -202,6 +206,7 @@ async function createService(cfg) {
           user: auth?.user || null,
           sessionId: auth?.sessionId ?? null,
           ip: req.ip,
+          cloud,
           terminal: remote ? remote.terminal : req.headers['x-heromarket-terminal'] || null,
           log: req.log,
           can: (p) => !!auth && auth.user.permissions.includes(p),

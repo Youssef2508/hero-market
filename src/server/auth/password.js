@@ -1,8 +1,15 @@
 'use strict'
 // Staff passwords (stage 4 phase 3): username + password replaces PIN-only login.
-// Hashes use the same scrypt format as PINs (scrypt$N$r$p$salt$hash).
+// Hashes use the same scrypt format as PINs (scrypt$N$r$p$salt$hash), with stronger parameters for
+// passwords since they are typed from the internet too (Phase 2 milestone 5, D-105): N=2^14, r=8,
+// p=5 – an OWASP-recommended scrypt setting at 16 MiB of memory. Hashing runs off the main thread
+// (crypto.scrypt), so a sign-in never holds up the tills. Hashes made with older parameters still
+// verify and are replaced at the next successful sign-in in the shop (needsRehash).
 const crypto = require('crypto')
-const { hashPin: hashSecret, verifyPin: verifySecret } = require('./pin')
+const { promisify } = require('util')
+
+const scrypt = promisify(crypto.scrypt)
+const PARAMS = { N: 16384, r: 8, p: 5, keylen: 32 }
 
 const MIN_LENGTH = 8
 const MAX_LENGTH = 128
@@ -72,14 +79,46 @@ const normalizeRecoveryCode = (code) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
 
+async function hashSecret(secret) {
+  const salt = crypto.randomBytes(16)
+  const { N, r, p, keylen } = PARAMS
+  const hash = await scrypt(String(secret), salt, keylen, { N, r, p })
+  return `scrypt$${N}$${r}$${p}$${salt.toString('base64')}$${hash.toString('base64')}`
+}
+
+/** Verifies with the parameters stored in the hash itself (older and current ones alike). */
+async function verifySecret(secret, stored) {
+  if (!stored || !String(stored).startsWith('scrypt$')) return false
+  const [, N, r, p, saltB64, hashB64] = String(stored).split('$')
+  const expected = Buffer.from(hashB64 || '', 'base64')
+  if (!expected.length) return false
+  const actual = await scrypt(String(secret), Buffer.from(saltB64, 'base64'), expected.length, {
+    N: Number(N),
+    r: Number(r),
+    p: Number(p),
+    maxmem: 64 * 1024 * 1024
+  }).catch(() => null)
+  return !!actual && crypto.timingSafeEqual(actual, expected)
+}
+
+/** True for a hash made with weaker parameters than today's. */
+function needsRehash(stored) {
+  const [kind, N, r, p] = String(stored || '').split('$')
+  return kind === 'scrypt' && Number(N) * Number(r) * Number(p) < PARAMS.N * PARAMS.r * PARAMS.p
+}
+
 const hashPassword = (password) => hashSecret(password)
 const verifyPassword = (password, stored) => verifySecret(String(password ?? ''), stored)
 const hashRecoveryCode = (code) => hashSecret(normalizeRecoveryCode(code))
 const verifyRecoveryCode = (code, stored) => verifySecret(normalizeRecoveryCode(code), stored)
 
 // Verifying against this when the username is unknown keeps response times alike.
-const DUMMY_HASH = hashSecret(crypto.randomBytes(16).toString('hex'))
-const burnTime = (password) => verifySecret(String(password ?? ''), DUMMY_HASH)
+let dummy = null
+const burnTime = async (password) => {
+  dummy = dummy || (await hashSecret(crypto.randomBytes(16).toString('hex')))
+  await verifySecret(String(password ?? ''), dummy)
+  return false
+}
 
 module.exports = {
   MIN_LENGTH,
@@ -91,5 +130,7 @@ module.exports = {
   hashRecoveryCode,
   verifyRecoveryCode,
   normalizeRecoveryCode,
-  burnTime
+  needsRehash,
+  burnTime,
+  PARAMS
 }

@@ -20,6 +20,7 @@
 //   HEROMARKET_SETUP_CODE           first-run code (default: random, printed to the log while no users exist)
 //   HEROMARKET_LOG_LEVEL            info | warn | error | debug
 //   HEROMARKET_SYNC_AGENT           1 = run the cloud sync agent here (once linked in the app)
+//   HEROMARKET_TRUST_PROXY          cloud: the reverse proxy's address or network (X-Forwarded-For)
 const fs = require('fs')
 const crypto = require('crypto')
 const { createService } = require('./app')
@@ -45,7 +46,10 @@ const cloudConfig = () => ({
   // The browser build of the screens (npm run build:web), served next to the API.
   webRoot: process.env.HEROMARKET_WEB_ROOT || undefined,
   // Only for trying it on this machine over plain http: the session cookie without "Secure".
-  insecureCookies: process.env.HEROMARKET_INSECURE_COOKIES === '1'
+  insecureCookies: process.env.HEROMARKET_INSECURE_COOKIES === '1',
+  // The reverse proxy's address(es) or network, comma separated (D-105), e.g. 172.16.0.0/12 in
+  // Docker: only these may say who the visitor is.
+  trustProxy: process.env.HEROMARKET_TRUST_PROXY || undefined
 })
 
 // The internet way in (D-101): the same service on a copy of the store, fed by the shop PC's link.

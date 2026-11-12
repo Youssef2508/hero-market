@@ -158,7 +158,7 @@ async function temporaryAdmin(svc) {
   await svc.pool.query(
     `INSERT INTO users (username, role, role_id, password_scrypt, is_active, created_at)
      VALUES ('golive-check', 'admin', (SELECT id FROM roles WHERE key = 'super_admin'), $1, true, LOCALTIMESTAMP(0))`,
-    [hashPassword(password)]
+    [await hashPassword(password)]
   )
   const r = await svc.call('auth.login', { username: 'golive-check', password })
   if (r.status !== 200) throw new Error(`temporary admin login failed: ${JSON.stringify(r.body)}`)

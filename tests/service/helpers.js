@@ -105,7 +105,7 @@ async function createUser(svc, { username, pin, roleKey, legacyPin = false }) {
     : await svc.pool.query(
         `INSERT INTO users (username, role, role_id, password_scrypt, is_active, created_at)
          VALUES ($1, $2, (SELECT id FROM roles WHERE key = $2), $3, true, LOCALTIMESTAMP(0)) RETURNING id`,
-        [username, roleKey, hashPassword(passwordFor(pin))]
+        [username, roleKey, await hashPassword(passwordFor(pin))]
       )
   usersByCode.set(String(pin), username)
   return rows[0].id
