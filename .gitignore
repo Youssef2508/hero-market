@@ -41,3 +41,6 @@ electron.vite.config.*.mjs
 
 # Owner receipt photo with a customer's name and phone: kept locally; the redacted copy is committed.
 .docs/reference-images/owner-sales-receipt.jpg
+
+# The cloud server: plain copies taken before an update (deploy/cloud/update.sh), never committed
+deploy/cloud/pre-update/

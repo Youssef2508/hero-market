@@ -88,13 +88,21 @@ Keep a copy of `HEROMARKET_SECRET` with the owner, apart from the server: a rest
 
 ## 7. Updating
 
+The order and the reasons are in [PHASE2_ARCHITECTURE.md §14.1](PHASE2_ARCHITECTURE.md): **the cloud first, then the shop**, with the same release.
+
 ```bash
-cd /opt/heromarket && git fetch --tags && git checkout <new approved tag>
-docker compose -f deploy/cloud/docker-compose.yml exec -e BACKUP_NOW=1 backup bash /backup/backup.sh
-docker compose -f deploy/cloud/docker-compose.yml up -d --build
+cd /opt/heromarket && deploy/cloud/update.sh v1.6.0      # the approved release tag
 ```
 
-The cloud applies its own database changes at start. Update the shop PC to the same version first: the cloud refuses to link a shop on an older schema.
+`update.sh` does the following:
+
+1. It stops the cloud service. Phones see "unreachable" for a minute or two.
+2. It takes a plain copy for going back, kept on the server only (`deploy/cloud/pre-update`, root-only, the last three), and the owner's encrypted copy.
+3. It builds and starts the release's image, tagged by version.
+4. It waits until the image reports healthy.
+5. If the image does not become healthy, the script puts the copy back, starts the previous image again and says so.
+
+Then the owner runs the same release's installer on the shop PC. Until then, if the database version changed, the sync screen shows «تحديث مطلوب»: the cloud refuses the shop's link, and both sides keep working apart. Afterwards, both sides' work comes together by itself, with the same pairing. Phones with a page open reload by themselves at their next change of screen.
 
 ## 8. Security, in short
 

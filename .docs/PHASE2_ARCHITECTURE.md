@@ -228,6 +228,10 @@ One always-on server with Docker Compose: the service, PostgreSQL, the HTTPS pro
 
 **Recommendation: OVHcloud VPS-1**, about **$4.5–5.2 per month** now (server $4.54 with its daily backup; off-server encrypted copy, certificate and a free host name at $0; Egyptian VAT of 14 % if the provider adds it, not confirmed). With a domain later (about $1 a month; my estimate) and the 7-day backup option ($1.40): about $7–7.6.
 
+- **Order day (2026-11-12):** every VPS plan in OVHcloud's "World" store had no European stock.
+  - VPS-1 was available only in Canada (Beauharnois), at $5.35 a month before tax, with no commitment and the daily backup included. The owner chose it.
+  - Measured from the development PC in Egypt: about 162 ms to Canada, against about 87 ms to OVH's French sites. The difference is small for phone use; the shop's sales never wait on the cloud.
+  - Moving to Europe later is the restore procedure. The store's address is a host name, so the move needs no new pairing.
 - **Fallbacks:** Contabo Cloud VPS 4 if a 24-month contract is acceptable; AWS Lightsail $7 if you prefer month-to-month with a large provider and accept 1 GB.
 - **To confirm on the order page before paying:** the monthly-billing price, the tax line, and a location in France or Germany.
 
@@ -352,7 +356,13 @@ The reverse order is equally safe: the shop keeps selling and its changes wait. 
 
 Pairing, device identity and checkpoints are never touched by an update, so an update never requires pairing again.
 
-**Still to build** (milestone 5, after the cloud has run on its server and before the pilot, so the pilot's first update uses it):
+**Built (2026-11-12) and still to do.** Items 1–4 below are built; item 2 and the update test pass in the suite:
+
+- **Item 3, `update.sh`:** has not run yet; its first run is on the server.
+- **The Windows Sandbox run of item 4:** not done yet.
+- **Item 5:** belongs to the first release.
+
+The items:
 
 1. **Both versions on the sync screen** (application and database, shop and cloud), and a clear «تحديث مطلوب» state while they differ, instead of a generic link error.
 2. **Phones reload by themselves:**

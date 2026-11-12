@@ -38,7 +38,8 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.cloud
-    image: heromarket-cloud:local
+    # Tagged by release (deploy/cloud/update.sh), so the previous one can always start again.
+    image: heromarket-cloud:${HEROMARKET_IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:
       db:
