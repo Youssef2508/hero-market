@@ -23,6 +23,7 @@ import { CHART_COLORS } from '../ui/chartColors'
 import { formatMoney } from '../../lib/utils'
 import { formatHour } from '../../lib/time'
 import { rowKeys } from '../../lib/keyboard'
+import { useLiveTick } from '../../lib/live'
 
 const fmt = (n) => formatMoney(n)
 const fmtI = (n) => Math.round(n || 0).toLocaleString('en-US')
@@ -373,9 +374,11 @@ export default function CashierPerformanceTab() {
   } = useCashierPerformance()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     runAnalysis()
-  }, [])
+  }, [live])
 
   const handleSelectCashier = (c) => {
     setSelectedCashier(c)

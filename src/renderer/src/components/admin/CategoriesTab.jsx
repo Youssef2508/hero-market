@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-react'
 import { api } from '../../lib/api'
+import { useLiveTick } from '../../lib/live'
 
 const UNCATEGORISED = 0
 
@@ -50,6 +51,8 @@ export default function CategoriesTab({ triggerCustomAlert, triggerCustomConfirm
     categoryId === null
       ? Promise.resolve()
       : fetchProducts(categoryId, page).then(showProducts, (e) => triggerCustomAlert(e.message))
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     let alive = true
     fetchList().then(
@@ -60,7 +63,7 @@ export default function CategoriesTab({ triggerCustomAlert, triggerCustomConfirm
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [live])
   useEffect(() => {
     if (selected === null) return
     let alive = true

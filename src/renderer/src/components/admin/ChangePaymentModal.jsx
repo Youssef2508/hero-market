@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowLeftRight } from 'lucide-react'
 import { api, newClientRef } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
+import { saleRef } from '../../../../shared/saleNumber.mjs'
 
 const METHODS = [
   ['cash', 'نقدي'],
@@ -44,7 +45,7 @@ export default function ChangePaymentModal({ sale, onDone, onClose, triggerCusto
           <span className="modal-icon" aria-hidden="true">
             <ArrowLeftRight size={22} />
           </span>
-          <h2 id="change-pay-title">تغيير طريقة دفع الفاتورة #{sale.id}</h2>
+          <h2 id="change-pay-title">تغيير طريقة دفع الفاتورة #{saleRef(sale.id)}</h2>
           <p>
             الحالية: {sale.payment_type} · {formatMoney(sale.total_amount)} ج.م. الإجمالي والمخزون
             لا يتغيران.

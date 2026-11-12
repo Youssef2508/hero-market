@@ -1,0 +1,415 @@
+/* ─────────────────────────────────────────────────────────────
+   Phone layout (Phase 2 milestone 2). The same screens as the desktop, laid out for a narrow
+   screen and a thumb: the menu slides in, the main areas sit in a bar at the bottom, wide tables
+   scroll inside their own frame, dialogs fill the screen, and nothing makes the page scroll
+   sideways. Applies below 760 px wherever the program runs; the desktop layout is untouched.
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Link status (the internet way in) ───────────────────────── */
+.link-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.link-status.is-live {
+  background: color-mix(in srgb, var(--success, #15803d) 10%, var(--surface));
+  color: var(--success, #15803d);
+}
+.link-status.is-delayed {
+  background: color-mix(in srgb, var(--warning, #b45309) 12%, var(--surface));
+  color: var(--warning, #b45309);
+}
+.link-status.is-off {
+  background: color-mix(in srgb, var(--danger, #b91c1c) 12%, var(--surface));
+  color: var(--danger, #b91c1c);
+  font-weight: 600;
+}
+
+.link-status-waiting {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  padding: 2px 10px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.waiting-ops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.waiting-ops li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Camera scanning beside the till's field (browsers that can read barcodes). */
+.product-search:has(.camera-scan-btn) {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.product-search:has(.camera-scan-btn) > .scan-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.camera-scan-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 64px;
+  font-size: 0.75rem;
+}
+.camera-scan-video {
+  width: 100%;
+  max-height: 60dvh;
+  border-radius: 12px;
+  background: #000;
+  object-fit: cover;
+}
+
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.attention-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--warning, #b45309);
+  border-radius: 10px;
+}
+.attention-item.resolved {
+  border-inline-start-color: var(--success, #15803d);
+  opacity: 0.85;
+}
+.attention-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+}
+.attention-cols {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+.attention-item .btn {
+  justify-self: start;
+}
+
+/* The bar and the backdrop exist only on a phone. */
+.phone-bar,
+.phone-menu-backdrop {
+  display: none;
+}
+
+@media (max-width: 759px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  /* ── Shell ─────────────────────────────────────────────────── */
+  .app-shell.is-phone {
+    height: 100dvh;
+  }
+  .app-shell.is-phone .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    height: auto;
+    inset-inline-start: 0;
+    z-index: calc(var(--z-modal) - 10);
+    width: min(86vw, 320px);
+    transform: translateX(105%);
+    transition: transform var(--dur-slow) var(--ease-out);
+    box-shadow: 0 0 40px rgb(0 0 0 / 35%);
+  }
+  [dir='ltr'] .app-shell.is-phone .sidebar {
+    transform: translateX(-105%);
+  }
+  .app-shell.is-phone.menu-open .sidebar {
+    transform: none;
+  }
+  .phone-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-modal) - 11);
+    border: 0;
+    background: rgb(0 0 0 / 45%);
+  }
+  .app-shell.is-phone .nav-item {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+  .app-shell.is-phone .app-main {
+    min-width: 0;
+    width: 100%;
+  }
+  .app-shell.is-phone .app-content {
+    padding: 12px;
+    padding-bottom: 12px;
+    overflow-x: hidden;
+  }
+
+  /* ── Top bar: title, shift, user; the clock and long labels give way ── */
+  .app-shell.is-phone .topbar {
+    padding-inline: 12px;
+    gap: 8px;
+  }
+  .app-shell.is-phone .topbar-clock,
+  .app-shell.is-phone .topbar-crumb,
+  .app-shell.is-phone .user-menu-text,
+  .app-shell.is-phone .hide-sm {
+    display: none;
+  }
+  .app-shell.is-phone .topbar-title h1 {
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .app-shell.is-phone .topbar-title {
+    min-width: 0;
+  }
+  .app-shell.is-phone .topbar-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Bottom bar ────────────────────────────────────────────── */
+  /* Above the open menu and its backdrop, so «المزيد» also closes it. */
+  .phone-bar {
+    position: relative;
+    z-index: calc(var(--z-modal) - 9);
+    display: flex;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .phone-bar-item {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .phone-bar-item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-inline: 2px;
+  }
+  .phone-bar-item.is-active {
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  /* ── Touch targets ─────────────────────────────────────────── */
+  .app-shell.is-phone .btn,
+  .app-shell.is-phone .input,
+  .app-shell.is-phone select,
+  .modal-overlay .btn,
+  .modal-overlay .input,
+  .modal-overlay select {
+    min-height: 44px;
+  }
+  .app-shell.is-phone .btn-sm {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+  /* 16 px keeps phones from zooming the page when a field is tapped. */
+  .app-shell.is-phone input,
+  .app-shell.is-phone select,
+  .app-shell.is-phone textarea,
+  .modal-overlay input,
+  .modal-overlay select,
+  .modal-overlay textarea {
+    font-size: 16px;
+  }
+
+  /* ── Nothing may be wider than the screen ──────────────────── */
+  .app-shell.is-phone .app-content > *,
+  .app-shell.is-phone .card,
+  .app-shell.is-phone .card-header,
+  .app-shell.is-phone .card-body,
+  .app-shell.is-phone .toolbar,
+  .app-shell.is-phone .toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .app-shell.is-phone .card-body {
+    overflow-x: auto;
+  }
+  .app-shell.is-phone .app-content select,
+  .app-shell.is-phone .app-content input,
+  .app-shell.is-phone .filters,
+  .app-shell.is-phone .filter-bar {
+    max-width: 100%;
+  }
+  .app-shell.is-phone .filters,
+  .app-shell.is-phone .filter-bar,
+  .app-shell.is-phone .logs-filters {
+    flex-wrap: wrap;
+  }
+  .app-shell.is-phone .toolbar > * {
+    flex: 1 1 140px;
+  }
+  /* A labelled filter (label beside its field) stacks: label above, field full width. */
+  .app-shell.is-phone .field-inline {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .app-shell.is-phone .field-inline > select,
+  .app-shell.is-phone .field-inline > .input {
+    width: 100% !important;
+    min-width: 0;
+  }
+  .app-shell.is-phone .toolbar > .spacer {
+    display: none;
+  }
+  /* A filter takes its own line when it would not fit beside the others. */
+  .app-shell.is-phone .toolbar > select,
+  .app-shell.is-phone .toolbar > .input,
+  .app-shell.is-phone .toolbar > input {
+    flex: 1 1 100%;
+    width: 100% !important;
+  }
+  .app-shell.is-phone .card-header > * {
+    flex-shrink: 1;
+  }
+  .app-shell.is-phone .icon-btn,
+  .modal-overlay .icon-btn,
+  .app-shell.is-phone .category-pick,
+  .app-shell.is-phone .segmented button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* ── Cards, headers and forms: one column ──────────────────── */
+  .app-shell.is-phone .card-header,
+  .app-shell.is-phone .page-header,
+  .app-shell.is-phone .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .app-shell.is-phone .form-grid,
+  .app-shell.is-phone .grid-2,
+  .app-shell.is-phone .grid-3,
+  .app-shell.is-phone .grid-4,
+  .modal-overlay .form-grid,
+  .modal-overlay .grid-2,
+  .modal-overlay .grid-3 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .app-shell.is-phone .stat-grid,
+  .app-shell.is-phone .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .app-shell.is-phone .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  /* ── Tables: scroll inside their own frame, never the page ─── */
+  .app-shell.is-phone .table-wrap,
+  .modal-overlay .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .app-shell.is-phone .table-wrap > table,
+  .modal-overlay .table-wrap > table {
+    min-width: 520px;
+  }
+
+  /* ── Dialogs: the whole screen, buttons at the bottom ──────── */
+  .modal-overlay {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  .modal-overlay .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100dvh !important;
+    height: 100dvh;
+    border-radius: 0 !important;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-overlay .modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .modal-overlay .modal-footer {
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  }
+  .modal-overlay .modal-footer .btn {
+    flex: 1 1 auto;
+  }
+
+  /* A phone has no function keys: their hints give the space back. */
+  .app-shell.is-phone kbd,
+  .app-shell.is-phone .kbd,
+  .app-shell.is-phone .shortcut-hints,
+  .app-shell.is-phone .cart-shortcuts {
+    display: none;
+  }
+
+  /* ── The till: search and cart first, payment below ────────── */
+  .app-shell.is-phone .pos {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: 12px;
+  }
+  .app-shell.is-phone[data-view='pos'] .app-content {
+    overflow-y: auto;
+  }
+  .app-shell.is-phone .pos-main,
+  .app-shell.is-phone .pos > * {
+    min-width: 0;
+    width: 100%;
+  }
+  .app-shell.is-phone .cart-scroll {
+    max-height: none;
+    overflow-x: auto;
+  }
+}

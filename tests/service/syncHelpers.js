@@ -182,7 +182,7 @@ async function pcRows(pool) {
   const out = {}
   for (const t of tables) {
     const { rows } = await pool.query(
-      `SELECT to_jsonb(x)->>$2 AS pk, hm_sync_row($1, to_jsonb(x))::text AS r FROM "${t.table_name}" x`,
+      `SELECT hm_sync_key($2, to_jsonb(x)) AS pk, hm_sync_row($1, to_jsonb(x))::text AS r FROM "${t.table_name}" x`,
       [t.table_name, t.key_column]
     )
     out[t.table_name] = new Map(rows.map((r) => [r.pk, r.r]))

@@ -1,4 +1,5 @@
 import { formatMoney } from '../../lib/utils'
+import { saleRef } from '../../../../shared/saleNumber.mjs'
 
 // The shift's money, as the shift details page and the closing report both show it (owner,
 // 2026-10-21, D-064): per payment method the expected amount, the amount the cashier counted and
@@ -197,7 +198,9 @@ export function MoneyEvents({ report: r }) {
                     {e.refType && e.refId != null ? (
                       <span>
                         {REF_LABELS[e.refType] || e.refType}{' '}
-                        <span className="ltr-id">#{e.refId}</span>
+                        <span className="ltr-id">
+                          #{e.refType === 'sale' ? saleRef(e.refId) : e.refId}
+                        </span>
                       </span>
                     ) : (
                       '—'
@@ -277,7 +280,7 @@ export function ShiftDetailLists({ report: r }) {
         head={['الوقت', 'الفاتورة', 'النوع', 'العميل', 'المرتجع', 'المبلغ', 'بواسطة']}
         rows={(r.returns?.lines || []).map((x) => [
           t(x.at),
-          `#${x.saleId}`,
+          `#${saleRef(x.saleId)}`,
           x.kindLabel || '—',
           x.customer || '—',
           items(x.items) || '—',
@@ -296,7 +299,7 @@ export function ShiftDetailLists({ report: r }) {
           head={['الوقت', 'الفاتورة', 'العميل', 'الإجمالي', 'مدفوع الآن', 'المتبقي على العميل']}
           rows={(g?.lines || []).map((x) => [
             t(x.at),
-            `#${x.saleId}`,
+            `#${saleRef(x.saleId)}`,
             x.customer,
             m(x.total),
             m(x.paidNow),

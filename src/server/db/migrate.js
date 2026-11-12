@@ -24,18 +24,27 @@ function listMigrations(dir = DEFAULT_DIR) {
     })
 }
 
-async function migrate(pool, { dir = DEFAULT_DIR, logger = console } = {}) {
+/**
+ * `table` names where applied files are recorded. The cloud's own few tables live in the same
+ * database as its copy of the store and are recorded apart ('cloud_schema_migrations'), so their
+ * numbers never meet the store's.
+ */
+async function migrate(
+  pool,
+  { dir = DEFAULT_DIR, logger = console, table = 'schema_migrations' } = {}
+) {
+  if (!/^[a-z_]+$/.test(table)) throw new Error('invalid migrations table name')
   const client = await pool.connect()
   const applied = []
   try {
     await client.query('SELECT pg_advisory_lock($1)', [LOCK_KEY])
-    await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    await client.query(`CREATE TABLE IF NOT EXISTS ${table} (
       version    text PRIMARY KEY,
       name       text NOT NULL,
       checksum   text NOT NULL,
       applied_at timestamp NOT NULL DEFAULT LOCALTIMESTAMP(0)
     )`)
-    const { rows } = await client.query('SELECT version, checksum FROM schema_migrations')
+    const { rows } = await client.query(`SELECT version, checksum FROM ${table}`)
     const done = new Map(rows.map((r) => [r.version, r.checksum]))
     for (const m of listMigrations(dir)) {
       if (done.has(m.version)) {
@@ -49,10 +58,11 @@ async function migrate(pool, { dir = DEFAULT_DIR, logger = console } = {}) {
       await client.query('BEGIN')
       try {
         await client.query(m.sql)
-        await client.query(
-          'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
-          [m.version, m.name, m.checksum]
-        )
+        await client.query(`INSERT INTO ${table} (version, name, checksum) VALUES ($1, $2, $3)`, [
+          m.version,
+          m.name,
+          m.checksum
+        ])
         await client.query('COMMIT')
       } catch (err) {
         await client.query('ROLLBACK')

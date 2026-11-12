@@ -40,11 +40,12 @@ async function findAccount(db, username) {
 async function checkCredentials(db, username, password) {
   const account = await findAccount(db, username)
   if (!account || !account.is_active) {
-    burnTime(password)
+    await burnTime(password)
     return { account: null, state: 'invalid' }
   }
   if (account.password_scrypt) {
-    if (!verifyPassword(password, account.password_scrypt)) return { account, state: 'invalid' }
+    if (!(await verifyPassword(password, account.password_scrypt)))
+      return { account, state: 'invalid' }
     if (account.must_change_password && account.temp_expired) return { account, state: 'expired' }
     return { account, state: account.must_change_password ? 'change_required' : 'ok' }
   }
@@ -55,7 +56,7 @@ async function checkCredentials(db, username, password) {
     if (account.pin_hash) ok = verifyPin(pin, account.pin_hash)
     else if (account.password_hash) ok = legacyCandidates(pin).includes(account.password_hash)
   }
-  if (!ok) burnTime(password)
+  if (!ok) await burnTime(password)
   return ok ? { account, state: 'change_required' } : { account, state: 'invalid' }
 }
 

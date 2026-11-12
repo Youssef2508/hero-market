@@ -6,3 +6,5 @@
 @import './pos.css';
 @import './screens.css';
 @import './legacy.css';
+/* Last: the phone layout overrides the layout rules above below 760 px. */
+@import './phone.css';

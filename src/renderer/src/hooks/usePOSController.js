@@ -5,6 +5,7 @@ import { checkoutFingerprint, outcomeUnknown, planCheckout } from '../lib/checko
 import { receiptQty } from '../lib/weight'
 import { kindInfo } from '../lib/measureKinds'
 import { formatClock, ltrText } from '../lib/time'
+import { saleNo, saleRef } from '../../../shared/saleNumber.mjs'
 
 /**
  * Custom hook to encapsulate the POS checkout/terminal workflow control logic,
@@ -552,7 +553,7 @@ export function usePOSController({
       const result = await api('pos.checkout', { clientRef: attempt.clientRef, ...payload })
       unresolvedCheckoutRef.current = null
 
-      const displaySaleId = parseInt(result.saleId) > 0 ? result.saleId : '—'
+      const displaySaleId = saleRef(result.saleId)
       playSound('chime')
 
       const datePart = new Date().toLocaleDateString('ar-EG')
@@ -689,7 +690,7 @@ export function usePOSController({
   const handleReprintSale = async (saleId) => {
     try {
       const { sale: s, items } = await api('sales.reprintData', { saleId })
-      const displaySaleId = parseInt(s.id) > 0 ? ((parseInt(s.id) - 1) % 10000) + 1 : '?'
+      const displaySaleId = saleNo(s.id)
       const when = s.timestamp ? new Date(String(s.timestamp).replace(' ', 'T')) : null
       const lines = items.map((item) => {
         const retQty = item.returned_qty || 0

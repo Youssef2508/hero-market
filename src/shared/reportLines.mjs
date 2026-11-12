@@ -448,6 +448,42 @@ export function buildPurchaseLines(d, opts = {}) {
   return lines
 }
 
+/**
+ * The stock shortages list (products at or under their reorder limit), for the receipt printer and
+ * the phone's on-screen printout (D-106). Moved here from the desktop's main process unchanged.
+ */
+export function buildShortagesLines(
+  items,
+  { storeName = '', branchName = '', now = new Date() } = {}
+) {
+  const sep = '------------------------------------------------'
+  const date = now.toLocaleDateString('ar-EG', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+  const time = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  return [
+    `[C]${storeName}`,
+    `[C]${branchName}`,
+    '[C]تقرير نواقص المخزون',
+    sep,
+    `[R]التاريخ: ${date} ~ الوقت: ${time}`,
+    sep,
+    'الصنف|المخزون|حد الطلب| ',
+    sep,
+    ...(items || []).map((item) => {
+      const name = String(item.name || '').replace(/[|~]/g, '') // strip delimiters
+      return `${name}|${item.stock_qty || 0}|${item.min_limit || 0}| `
+    }),
+    sep,
+    `[C]إجمالي عدد النواقص: ${(items || []).length} صنف`,
+    '',
+    '',
+    ''
+  ]
+}
+
 export const REPORTS = {
   shift: buildShiftReportLines,
   // A saved close printed again carries the copy mark (copy: true).

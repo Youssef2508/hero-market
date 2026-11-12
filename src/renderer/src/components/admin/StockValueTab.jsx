@@ -4,6 +4,7 @@ import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { StatCard, EmptyState } from '../ui'
 import { packagesText } from '../../../../shared/packages.mjs'
+import { useLiveTick } from '../../lib/live'
 
 const STATUS = [
   ['all', 'كل الأصناف'],
@@ -45,9 +46,11 @@ export default function StockValueTab({ triggerCustomAlert }) {
     },
     [f, includeInactive, triggerCustomAlert]
   )
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load(1)
-  }, [load])
+  }, [load, live])
 
   const t = data?.totals
   const pages = data ? Math.max(1, Math.ceil(t.products / data.perPage)) : 1

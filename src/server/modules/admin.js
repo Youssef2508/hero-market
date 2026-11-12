@@ -100,7 +100,7 @@ module.exports = function adminModule(app) {
         const r = await db.query(
           `INSERT INTO users (username, role, role_id, password_scrypt, must_change_password, is_active, created_at)
            VALUES ($1, $2, $3, $4, true, true, LOCALTIMESTAMP(0)) RETURNING id`,
-          [username, legacyRole, role.id, hashPassword(temporary)]
+          [username, legacyRole, role.id, await hashPassword(temporary)]
         )
         await ctx.audit(db, 'user_create', `إنشاء مستخدم جديد "${username}" بدور ${role.name}`)
         // Shown once to the administrator, who hands it to the user.
@@ -170,7 +170,10 @@ module.exports = function adminModule(app) {
           const me = (
             await db.query('SELECT password_scrypt FROM users WHERE id = $1', [ctx.user.id])
           ).rows[0]
-          if (!me?.password_scrypt || !verifyPassword(u.actorPassword || '', me.password_scrypt)) {
+          if (
+            !me?.password_scrypt ||
+            !(await verifyPassword(u.actorPassword || '', me.password_scrypt))
+          ) {
             await ctx.audit(
               ctx.pool,
               'password_reset_refused',
@@ -183,7 +186,7 @@ module.exports = function adminModule(app) {
           await db.query(
             `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
                     password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours' WHERE id = $2`,
-            [hashPassword(temporary), u.id]
+            [await hashPassword(temporary), u.id]
           )
           await db.query(
             'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE user_id = $1 AND revoked_at IS NULL',

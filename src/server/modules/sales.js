@@ -10,6 +10,8 @@ const { addMovement } = require('../money/shiftLedger')
 const { invoiceShift, assertInvoiceInScope } = require('../auth/invoiceScope')
 
 const PER_PAGE = 12
+// The cloud's first invoice number (src/shared/saleNumber.mjs, migration 0033's number books).
+const CLOUD_FIRST = 1000000001
 const ORDER = {
   invoice_number: 's.id',
   timestamp: 's.timestamp',
@@ -234,9 +236,19 @@ module.exports = function salesModule(app) {
         const clean = search.replace('#', '').trim()
         params.push(likeEscape(search))
         const textMatch = `s.client_name ILIKE '%' || $1 || '%' ESCAPE '\\' OR to_char(s.timestamp, 'YYYY-MM-DD HH24:MI:SS') LIKE '%' || $1 || '%' ESCAPE '\\'`
-        if (/^\d+$/.test(clean)) {
+        // The cloud's invoices (from 1,000,000,001) are shown and typed as W-1, W-2, … (D-105); the
+        // shop's short numbers count 1–10000 and start again.
+        const web = /^[wW]\s*-?\s*(\d{1,9})$/.exec(clean)
+        if (web) {
+          params[0] = Number(web[1])
+          conditions.push(
+            `(s.id >= ${CLOUD_FIRST} AND (s.id = ${CLOUD_FIRST - 1} + $1::bigint OR (s.id - ${CLOUD_FIRST}) % 10000 + 1 = $1::bigint))`
+          )
+        } else if (/^\d+$/.test(clean)) {
           params.push(Number(clean))
-          conditions.push(`(s.id = $2 OR ((s.id - 1) % 10000 + 1) = $2 OR ${textMatch})`)
+          conditions.push(
+            `(s.id = $2 OR (s.id < ${CLOUD_FIRST} AND ((s.id - 1) % 10000 + 1) = $2) OR ${textMatch})`
+          )
         } else {
           conditions.push(`(${textMatch})`)
         }

@@ -137,6 +137,8 @@ async function startStandalone(cfg) {
     // Cloud synchronisation runs in the background once an administrator links the store
     // (المزامنة السحابية). Selling never waits for it.
     syncAgent: true,
+    // Shown with the cloud's version on the sync screen (architecture §14.1).
+    appVersion: app.getVersion(),
     // Installed store: the installer applies migrations after its verified copy (serviceSetup.js).
     migrationPolicy: cfg.local && cfg.local.service ? 'refuse' : 'auto'
   })

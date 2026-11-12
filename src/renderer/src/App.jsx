@@ -31,6 +31,7 @@ import CustomAlertModal from './components/modals/CustomAlertModal'
 import ChangePasswordModal from './components/modals/ChangePasswordModal'
 import RecoveryPendingModal from './components/modals/RecoveryPendingModal'
 import { ALL_NAV_ITEMS } from './components/shell/navigation'
+import { useLiveTick } from './lib/live'
 import { startupPhaseFor } from './lib/startupPhase'
 import { NumberField } from './components/ui'
 
@@ -497,6 +498,17 @@ function App() {
   useEffect(() => {
     checkStartup()
   }, [])
+
+  // From the internet: when the cloud announces a change from the shop, the management screens
+  // that load through the shared controller (lists, balances, dashboard figures) load again by
+  // themselves. Nothing reloads under an open dialog.
+  const liveTick = useLiveTick()
+  useEffect(() => {
+    if (!liveTick || !currentUser || currentView !== 'admin') return
+    adminController.fetchAdminData()
+    adminController.fetchStats()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTick])
 
   // Session expired, account disabled or data restored: back to the lock screen.
   useEffect(() => {

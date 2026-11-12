@@ -5,6 +5,8 @@
 // (cfg.syncAgent) and the link is enabled. Selling never depends on it.
 const { SyncAgent, syncState } = require('../sync/agent')
 const { HttpTransport, TransportError } = require('../sync/transport')
+const { executeRemote } = require('../sync/remoteOps')
+const crypto = require('crypto')
 const { badRequest, conflict, ServiceError } = require('../errors')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -12,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const linked = (st) => !!(st && st.enabled && st.cloud_url && st.device_token)
 
 /** Status for the administrator (never the device token). */
-async function describe(db) {
+async function describe(db, cfg = {}) {
   const st = await syncState(db)
   const pending = Number(
     (await db.query('SELECT count(*) AS n FROM sync_outbox WHERE acked_at IS NULL')).rows[0].n
@@ -41,6 +43,30 @@ async function describe(db) {
     recoveryPending: st.recovery_pending,
     recoverFrom: st.recover_from,
     recoveredAt: st.recovered_at,
+    // Both sides' versions (architecture §14.1): records cross only while the database versions
+    // are the same; «تحديث مطلوب» otherwise.
+    versions: {
+      shop: { app: cfg.appVersion || null, schema: await schemaVersion(db) },
+      cloud: st.cloud_schema ? { app: st.cloud_app_version, schema: st.cloud_schema } : null
+    },
+    // Who holds the link and when it last said it is alive (D-104).
+    agent: st.agent_seen_at
+      ? {
+          kind: st.agent_kind,
+          pid: st.agent_pid,
+          version: st.agent_version,
+          startedAt: st.agent_started_at,
+          seenAt: st.agent_seen_at,
+          alive:
+            Number(
+              (
+                await db.query(
+                  'SELECT EXTRACT(EPOCH FROM (LOCALTIMESTAMP(0) - agent_seen_at)) AS s FROM sync_state'
+                )
+              ).rows[0].s
+            ) < 90
+        }
+      : null,
     recoveryDetail: st.recovery_detail,
     commands
   }
@@ -59,20 +85,46 @@ const syncFailed = (e) =>
           : `فشلت المزامنة على هذا الجهاز ولم يتغير شيء: ${e.message}`
   )
 
+/** This database's version: its latest migration (the cloud must be on the same one, D-105). */
+async function schemaVersion(pool) {
+  return (await pool.query('SELECT max(version) AS v FROM schema_migrations')).rows[0].v
+}
+
 module.exports = function syncModule(app) {
   const cfg = app.config
   const transport = async () => {
     const st = await syncState(app.pool)
     if (!linked(st)) return null
     if (cfg.syncTransport) return cfg.syncTransport(st)
-    return new HttpTransport({ url: st.cloud_url, storeId: st.store_id, token: st.device_token })
+    return new HttpTransport({
+      url: st.cloud_url,
+      storeId: st.store_id,
+      token: st.device_token,
+      schema: await schemaVersion(app.pool)
+    })
   }
   const agent = new SyncAgent({
     pool: app.pool,
     transport,
+    // Operations started from the internet are carried out by this service's own handlers (D-101).
+    execute: (op) => executeRemote(app, op),
+    // Who runs it, shown with its heartbeat (D-104): the background service or the desktop program.
+    kind: cfg.agentKind || 'desktop',
+    version: cfg.appVersion || null,
     log: (m) => app.log.info(m)
   })
   app.decorate('syncAgent', agent)
+  // The background work: the 15-second cycle, the push on every change, and the open link.
+  const startAgent = () => {
+    agent.start(cfg.syncIntervalMs || 15000, { checkEveryMs: cfg.syncCheckEveryMs })
+    agent.listen().catch((e) => app.log.warn(`sync listen: ${e.message}`))
+    agent.startLink()
+  }
+  const stopAgent = async () => {
+    agent.stop()
+    agent.stopLink()
+    await agent.unlisten().catch(() => {})
+  }
 
   // Writes pause after a restore of a synchronised store until recovery (or an explicit skip).
   const flags = { recoveryPending: false }
@@ -84,9 +136,10 @@ module.exports = function syncModule(app) {
 
   app.addHook('onReady', async () => {
     await refresh().catch(() => {})
-    if (cfg.syncAgent) agent.start(cfg.syncIntervalMs || 15000)
+    if (cfg.syncAgent) startAgent()
   })
-  app.addHook('onClose', async () => agent.stop())
+  // preClose: the listening connection goes back to the pool before the pool is closed.
+  app.addHook('preClose', async () => stopAgent())
 
   // Anyone signed in: is the till paused for recovery? (The screens show why writes are refused.)
   app.operation({
@@ -100,7 +153,7 @@ module.exports = function syncModule(app) {
   app.operation({
     name: 'sync.status',
     permission: 'sync.manage',
-    handler: async (ctx) => describe(ctx.pool)
+    handler: async (ctx) => describe(ctx.pool, cfg)
   })
 
   app.operation({
@@ -149,11 +202,112 @@ module.exports = function syncModule(app) {
           'sync_configure',
           `ربط المتجر بالسحابة: ${url} (${b.enabled ? 'مفعّل' : 'متوقف'})${changesStore ? ' – متجر جديد في السحابة' : ''}`
         )
-        return describe(db)
+        return describe(db, cfg)
       })
-      if (cfg.syncAgent && b.enabled) agent.start(cfg.syncIntervalMs || 15000)
-      if (!b.enabled) agent.stop()
+      if (cfg.syncAgent && b.enabled) startAgent()
+      if (!b.enabled) await stopAgent()
       return result
+    }
+  })
+
+  // Pair this installation with its cloud by a one-time code made on the server (D-102). The PC
+  // makes its own secret; only the secret's hash is sent, and the secret is never shown.
+  app.operation({
+    name: 'sync.pair',
+    permission: 'sync.manage',
+    schema: {
+      type: 'object',
+      required: ['cloudUrl', 'code'],
+      properties: {
+        cloudUrl: { type: 'string', minLength: 8, maxLength: 300 },
+        code: { type: 'string', minLength: 8, maxLength: 40 }
+      }
+    },
+    handler: async (ctx, b) => {
+      const url = b.cloudUrl.trim().replace(/\/+$/, '')
+      if (!/^https:\/\//i.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(url))
+        throw badRequest('عنوان السحابة يجب أن يبدأ بـ https://')
+      const before = await syncState(ctx.pool)
+      const secret = crypto.randomBytes(32).toString('base64url')
+      const secretHash = crypto.createHash('sha256').update(secret).digest('hex')
+      const name = (await ctx.pool.query("SELECT value FROM settings WHERE key = 'store_name'"))
+        .rows[0]?.value
+      // No business of its own yet: may become a replacement for a store the cloud holds.
+      const fresh = !(
+        await ctx.pool.query('SELECT 1 FROM sales UNION ALL SELECT 1 FROM shifts LIMIT 1')
+      ).rowCount
+      let answer
+      try {
+        const send =
+          cfg.pairRequest ||
+          (async (body) => {
+            const res = await fetch(`${url}/api/link.pair`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(20000)
+            })
+            return { status: res.status, body: await res.json().catch(() => null) }
+          })
+        answer = await send({
+          code: b.code,
+          storeId: before.store_id,
+          secretHash,
+          name: String(name || '').slice(0, 120),
+          fresh,
+          schema: await schemaVersion(ctx.pool)
+        })
+      } catch (e) {
+        throw new ServiceError(502, 'sync_failed', `تعذر الاتصال بالسحابة: ${e.message}`)
+      }
+      if (answer.status !== 200)
+        throw new ServiceError(
+          answer.status === 403 ? 403 : 502,
+          answer.body?.error?.code || 'sync_failed',
+          answer.body?.error?.message || 'رفضت السحابة الربط.'
+        )
+      const paired = answer.body
+      const result = await ctx.tx(async (db) => {
+        const st = (await db.query('SELECT * FROM sync_state FOR UPDATE')).rows[0]
+        // The cloud already serves a store (this PC replaces an earlier one): continue that store.
+        const changesStore = st.store_id !== paired.storeId
+        if (changesStore) {
+          await db.query('DELETE FROM sync_outbox')
+          await db.query('DELETE FROM sync_row_versions')
+        }
+        await db.query(
+          `UPDATE sync_state SET cloud_url = $1, store_id = $2, device_token = $3, enabled = true,
+                  linked_at = LOCALTIMESTAMP(0), epoch = CASE WHEN $4 THEN NULL ELSE epoch END,
+                  last_error = NULL`,
+          // A new, empty cloud (its first store; for example after the cloud's database was lost):
+          // a new epoch, so everything this shop holds is sent to it at once (D-106).
+          [url, paired.storeId, secret, changesStore || !paired.replaced]
+        )
+        // A different PC taking over a store the cloud already holds must first receive that
+        // store's records from the cloud; until then nothing is sent, so an empty or older
+        // database can never replace what the cloud has (work pauses, as after a restore).
+        if (changesStore && paired.replaced && paired.epoch) {
+          await db.query('UPDATE sync_state SET recovery_pending = true, recover_from = $1', [
+            JSON.stringify({
+              // This installation becomes the store: its own first-run records are replaced.
+              reason: 'replacement',
+              sync: { storeId: paired.storeId, epoch: paired.epoch - 1, version: 9007199254740991 }
+            })
+          ])
+        }
+        await ctx.audit(
+          db,
+          'sync_configure',
+          `ربط المتجر بالسحابة برمز الربط: ${url} – ${paired.name || ''} (${paired.fingerprint})${paired.replaced ? ' – هذا الجهاز يحل محل جهاز سابق' : ''}`
+        )
+        return describe(db, cfg)
+      })
+      await refresh()
+      if (cfg.syncAgent) startAgent()
+      return {
+        ...result,
+        paired: { name: paired.name, fingerprint: paired.fingerprint, replaced: paired.replaced }
+      }
     }
   })
 
@@ -161,14 +315,14 @@ module.exports = function syncModule(app) {
     name: 'sync.unlink',
     permission: 'sync.manage',
     handler: async (ctx) => {
-      agent.stop()
+      await stopAgent()
       return ctx.tx(async (db) => {
         await db.query(
           `UPDATE sync_state SET enabled = false, cloud_url = NULL, device_token = NULL, epoch = NULL,
                   recovery_pending = false`
         )
         await ctx.audit(db, 'sync_configure', 'إلغاء ربط المتجر بالسحابة')
-        const s = await describe(db)
+        const s = await describe(db, cfg)
         flags.recoveryPending = false
         return s
       })
@@ -186,7 +340,7 @@ module.exports = function syncModule(app) {
           throw e
         }
         const r = await agent.runOnce()
-        return { result: r, status: await describe(ctx.pool) }
+        return { result: r, status: await describe(ctx.pool, cfg) }
       } catch (e) {
         throw syncFailed(e)
       }
@@ -206,7 +360,7 @@ module.exports = function syncModule(app) {
       await refresh()
       // Start the new epoch straight away; a failure here is retried by the background agent.
       const next = await agent.runOnce().catch((e) => ({ error: e.message }))
-      return { recovery: r, sync: next, status: await describe(ctx.pool) }
+      return { recovery: r, sync: next, status: await describe(ctx.pool, cfg) }
     }
   })
 
@@ -221,7 +375,7 @@ module.exports = function syncModule(app) {
     handler: async (ctx) => {
       const s = await ctx.tx(async (db) => {
         const st = (await db.query('SELECT * FROM sync_state FOR UPDATE')).rows[0]
-        if (!st.recovery_pending) return describe(db)
+        if (!st.recovery_pending) return describe(db, cfg)
         await db.query(
           `UPDATE sync_state SET recovery_pending = false, recover_from = NULL,
                   recovery_detail = $1`,
@@ -232,10 +386,13 @@ module.exports = function syncModule(app) {
           'sync_recovery',
           'تخطي استرجاع البيانات من السحابة بعد استعادة النسخة الاحتياطية (التغييرات التي وصلت للسحابة بعد النسخة لن تعود لهذا الجهاز)'
         )
-        return describe(db)
+        return describe(db, cfg)
       })
       await refresh()
       return s
     }
   })
 }
+
+// The cloud has no link of its own to configure: it is the other end of this one (cloud/link.js).
+module.exports.shopOnly = true

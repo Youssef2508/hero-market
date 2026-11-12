@@ -1,6 +1,7 @@
 import { ensureStoreDir } from './userDataPath'
 import { setupService, stopServiceOnly, removeService, restorePreInstall } from './serviceSetup'
 import { runScheduledBackup } from './scheduledBackup'
+import { runSyncService, syncLog } from './syncService'
 import { openLogFile } from './logFile'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { join } from 'path'
@@ -19,6 +20,7 @@ import { getPrintSettings } from './printSettings'
 import fs from 'fs'
 import { initializePrinter, registerSalePrinting, runPrintScript } from './printer'
 import { registerDataIpc } from './dataIpc'
+import { buildShortagesLines } from '../shared/reportLines.mjs'
 
 // Production: warnings and errors go to a log file (started afresh after a day). The installer's
 // steps log to logs/setup.log only, so the administrator never creates the program's app.log.
@@ -31,6 +33,9 @@ const SERVICE_STEP_ARGS = [
 // The nightly backup (Task Scheduler, system account): no window, its own log, and it runs while
 // the till is open (it does not take the one-instance lock).
 const scheduledBackup = process.argv.includes('--scheduled-backup')
+// The background synchronisation service (Task Scheduler at Windows start, D-104): no window, its
+// own log, and it runs whether the till is open or not (no one-instance lock either).
+const syncServiceRun = process.argv.includes('--sync-service')
 if (app.isPackaged) {
   const logs = join(ensureStoreDir(), 'logs')
   const installerStep = SERVICE_STEP_ARGS.some((a) =>
@@ -41,7 +46,9 @@ if (app.isPackaged) {
       ? [join(logs, 'setup.log')]
       : scheduledBackup
         ? [join(logs, 'backup.log')]
-        : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
+        : syncServiceRun
+          ? [join(logs, 'sync.log')]
+          : [join(logs, 'app.log'), join(app.getPath('userData'), 'logs', 'app.log')]
   )
   // Errors keep their message and stack (JSON.stringify(new Error()) is "{}", which hid the reason
   // of a failed print in the 1.4.0 release checks).
@@ -120,8 +127,23 @@ if (scheduledBackup) {
   })
 }
 
+if (syncServiceRun) {
+  // No window: keep running with none open (Electron would otherwise quit).
+  app.on('window-all-closed', () => {})
+  app.whenReady().then(async () => {
+    let code = 1
+    try {
+      code = await runSyncService()
+    } catch (e) {
+      console.error('[sync] failed:', e.message)
+      syncLog(`sync service: failed: ${e.message}`)
+    }
+    app.exit(code)
+  })
+}
+
 // One instance per PC: a second copy would share – and on quit stop – the local database.
-if (!serviceStep && !scheduledBackup && !app.requestSingleInstanceLock()) {
+if (!serviceStep && !scheduledBackup && !syncServiceRun && !app.requestSingleInstanceLock()) {
   if (resetUser)
     app.whenReady().then(() => {
       dialog.showErrorBox(
@@ -221,7 +243,8 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  if (serviceStep || scheduledBackup) return // installer step or nightly backup: no window, no backend
+  // Installer step, nightly backup or the background sync service: no window, no desktop backend.
+  if (serviceStep || scheduledBackup || syncServiceRun) return
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.heromarket.pos')
 
@@ -346,33 +369,7 @@ ${tableRows}  )
   // IPC Direct Shortages Printer
   ipcMain.handle('print-shortages-to-printer', async (event, items) => {
     const { storeName, branchName, printerName } = await getPrintSettings(callOperation)
-
-    const todayStr = new Date().toLocaleDateString('ar-EG', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    })
-    const timeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-
-    const lines = [
-      `[C]${storeName}`,
-      `[C]${branchName}`,
-      `[C]تقرير نواقص المخزون`,
-      `------------------------------------------------`,
-      `[R]التاريخ: ${todayStr} ~ الوقت: ${timeStr}`,
-      `------------------------------------------------`,
-      `الصنف|المخزون|حد الطلب| `,
-      `------------------------------------------------`,
-      ...items.map((item) => {
-        const nameClean = String(item.name || '').replace(/[|~]/g, '') // strip delimiters
-        return `${nameClean}|${item.stock_qty || 0}|${item.min_limit || 0}| `
-      }),
-      `------------------------------------------------`,
-      `[C]إجمالي عدد النواقص: ${items.length} صنف`,
-      '',
-      '',
-      ''
-    ]
+    const lines = buildShortagesLines(items, { storeName, branchName })
 
     // Through the same no-shell printing path as receipts (audit 1.4.0).
     return runPrintScript(lines, { printerName })

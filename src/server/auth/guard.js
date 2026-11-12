@@ -3,18 +3,26 @@
 // Two layers: 5 failures in 5 min lock one terminal for 60 s (the original till behaviour), and
 // 20 failures in 15 min lock the whole source address for 15 min. The terminal name is chosen by the
 // client, so only the per-address limit stops a network client from rotating names to guess.
+// On the internet way in (the cloud) a third layer counts per typed username, whatever the address
+// (D-105): 10 failures in 15 min pause that name's internet sign-in for 15 min. It never applies in
+// the shop, so nobody at a till can lock another person out there.
 const { tooMany } = require('../errors')
 
 const LIMITS = {
   terminal: { max: 5, windowMs: 5 * 60 * 1000, lockMs: 60 * 1000 },
-  address: { max: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+  address: { max: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
+  account: { max: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
 }
 
-function guardKeys(ctx, prefix = '') {
-  return [
+function guardKeys(ctx, prefix = '', username = null) {
+  const keys = [
     [`${prefix}t|${ctx.terminal || 'unknown'}|${ctx.ip}`, LIMITS.terminal],
     [`${prefix}a|${ctx.ip}`, LIMITS.address]
   ]
+  // Keyed by what was typed, so it says nothing about whether the account exists.
+  if (ctx.cloud && username != null)
+    keys.push([`${prefix}u|${String(username).trim().toLowerCase()}`, LIMITS.account])
+  return keys
 }
 
 function checkGuard(guard, keys) {

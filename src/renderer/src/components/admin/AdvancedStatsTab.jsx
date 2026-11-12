@@ -24,6 +24,7 @@ import { VBarChart } from '../ui/charts'
 import { CHART_COLORS } from '../ui/chartColors'
 import { formatMoney } from '../../lib/utils'
 import { formatHour } from '../../lib/time'
+import { useLiveTick } from '../../lib/live'
 
 const fmt = (n) => formatMoney(n)
 const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US')
@@ -79,9 +80,11 @@ export default function AdvancedStatsTab() {
     paymentBreakdown
   } = useAdvancedAnalytics()
 
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     runAnalysis()
-  }, [])
+  }, [live])
 
   const peakHour =
     peakHours.length > 0

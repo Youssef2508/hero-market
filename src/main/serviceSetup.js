@@ -33,6 +33,7 @@ import {
 } from './upgradeSnapshot'
 import { systemTool } from './winTools'
 import { registerBackupTask, removeBackupTask } from './scheduledBackup'
+import { registerSyncTask, stopSyncTask, removeSyncTask } from './syncService'
 
 const APP_ROLE = 'hm_app'
 const NEW_SUPERUSER = 'hm_admin'
@@ -474,6 +475,13 @@ export async function setupService() {
   } catch (e) {
     log('WARNING nightly backup task not registered:', e.message)
   }
+  // 9. The background synchronisation service (D-104): keeps the shop connected to its cloud with
+  // the program closed. It only links once an administrator pairs the store; same rule on failure.
+  try {
+    await registerSyncTask({ log })
+  } catch (e) {
+    log('WARNING sync service task not registered:', e.message)
+  }
   log('setup complete')
 }
 
@@ -624,11 +632,14 @@ export async function restorePreInstall(which) {
 
 export async function stopServiceOnly() {
   const name = serviceName()
+  // The background sync service uses the database and the program files: it stops first.
+  await stopSyncTask()
   await stopService(name)
 }
 
 export async function removeService() {
   const name = serviceName()
+  await removeSyncTask()
   await stopService(name)
   if ((await serviceState(name)) !== 'missing')
     await runPgTool('pg_ctl', ['unregister', '-N', name])

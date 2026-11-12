@@ -1453,3 +1453,161 @@ Replaces the rejection part of D-090 (rejected → disputed → settled as retur
 - **Reports:** the shift details, closing report and printed close show the request (with «مرفوض – أُعيد المبلغ» or «ألغاه الكاشير – أُعيد المبلغ») and, as its own list and category, «عودة مبالغ طلبات سداد مرفوضة أو ملغاة», included in the expected drawer cash. The treasury history shows «إلغاء طلب سداد مورد (عودة المبلغ)» with its shift and request.
 - **Removed:** the `disputed` → `settled` flow, `supplierPayments.settle` and the «خسارة» outcome. The `disputed`/`settled` states stay valid in the schema only as former states; 1.5.2 was never installed with them, so no shop record has them.
 - **Tests:** `supplierPaymentRequests.test.js` (rejection with the shift open, three rejections at once, cashier cancellation, rejection after the close to the treasury, no expense, audit), `supplierPaymentReversal.test.js` (4: own approval refused, administrator's own allowed, cancel against reject at once ×5, a reservation blocks a cancel, supplier balance reconciliation), `shiftReconciliation152.test.js` (the rejected 60 back in the drawer, the treasury untouched until the close).
+
+## D-101 One business, two ways in: operations from the internet are carried out in the shop (owner, Phase 2 milestone 1, migration 0032)
+
+Replaces the remote part of D-042 and D-047 (four hand-written owner commands, "paid outside the drawer", an owner-only cloud account). Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md).
+
+- **Principle (owner, 2026-11-11):** HeroMarket is one business system with two ways to reach it. The way in never changes what an operation means: the same handler, the same user and permissions, the same shift, drawer, treasury and balances. No cloud drawer, cloud shift, cloud treasury or cloud rule exists.
+- **While the shop is reachable**, the cloud decides nothing about the business:
+  - it answers reads from its copy of the store's tables;
+  - every change is handed to the shop PC, which runs the operation through the service's own route (`app.inject`), so sign-in state, permission, validation and handler are those of a desktop call;
+  - the answer is sent after the changed rows, so the copy already shows the result.
+- **Where each operation runs** is declared in one table, `src/server/sync/operationKinds.js`. A test fails when a data-changing operation is not declared. The cloud answers 79 itself (77 reads, sign-in, sign-out), refuses 11 that belong to the shop PC (link settings, backup, reset, first-run setup, first password, recovery code), and carries the other 71 to the shop.
+- **At most once:**
+  - the operation's id is written to `remote_operations` inside the handler's own transaction (its first), so the effects and the record commit together;
+  - a second delivery finds the row and returns the stored outcome;
+  - a refusal by a business rule is stored too (nothing was changed);
+  - a failure before the commit leaves neither effects nor row.
+- **Hand-over states** (cloud, `cloud_operations`): queued → sent → applied, refused or not executed; queued → withdrawn.
+  - Shop unreachable when the operation starts: refused at once (503 `shop_unreachable`), nothing is queued.
+  - No answer in time and never handed over: withdrawn, nothing happened.
+  - Handed over and no answer: 504 `pending_confirmation` with the operation's id. The cloud never carries it out itself. On its next contact the shop PC is asked about every "sent" id and answers from `remote_operations`, or says it has no record (not executed).
+  - The same id sent again by the caller returns its one outcome.
+- **The copy.** The existing versioned rows stay the landing place (`cloud_rows`, unchanged rules). Each accepted row is also written into the cloud's own store tables in the same transaction (`applyRecovered`, the recovery writer). A new epoch empties the copy first. The cloud runs the store's migrations; its own few tables are recorded apart (`cloud_schema_migrations`).
+- **Speed.** PostgreSQL notifies the agent when a change is queued (`hm_sync_outbox`), and it is pushed at once. The shop PC keeps one request open to the cloud (`link.wait`, 25 seconds), which returns the moment an operation waits. That request is also the reachability signal. Screens keep one request open too (`link.watch`).
+- **Freshness is never implied.** `link.state` answers: live (reachable, nothing left to send), delayed (reachable, changes on their way) or unavailable (as of the last synchronisation, with its time).
+- **One identity.** The user row is sent whole, so the same username and password work on both sides. The password travels only as its scrypt hash inside the authenticated link; the old PIN columns stay on the PC. `role_permissions` and `receipt_templates` join the synchronised tables. A user disabled or given a new password in the shop is signed out of the cloud when the row arrives.
+- **Internet access** is its own permission, «الدخول عبر الإنترنت» (`internet.access`), administrators by default, in the existing roles screen. It opens the door only. Without it sign-in from the internet is refused and no session is kept.
+- **Passwords in transit.** Operations whose data holds a password are carried in memory only and never written to the operation records. Answers are stored without fields shown once (temporary password, recovery code, token).
+- **Audit.** The log line is the desktop's; its details also carry the remote operation's id.
+- **Not yet (later milestones):** the phone screens; the cloud working while the shop is unreachable; the Windows background service (the link runs inside the desktop program for now); choosing a first password and using the recovery code from the internet; the pairing code (D-102).
+- **Tests:** `cloudConnected.test.js` (5), `operationKinds.test.js` (3); the 21 existing sync scenarios pass with the user row sent whole.
+
+## D-102 Pairing a shop installation with its cloud (owner approved 2026-11-11; service side implemented)
+
+- **Today:** nothing links by itself. The cloud holds one store record, made by a command on the server that prints a device token once. An administrator types the cloud's address, the store id and the token on the shop PC («المزامنة السحابية», `sync.manage`). An installation with no link settings contacts nothing. Link settings are not in backups, so a backup restored on another PC does not link it.
+- **Implemented** (`cloud/pairing.js`, `sync.pair`, `cloud-pair` on the server; `pairing.test.js`). A replacement PC pauses and receives the store's records before it sends anything, so the cloud's data is never replaced by an empty or older database. The desktop screen for entering the code comes with milestone 2. The steps:
+  1. On the cloud server, a command prints a **pairing code** (for example `7KQ2-9XTB-4MPD`): one use, valid 15 minutes, stored hashed.
+  2. On the shop PC, an administrator enters the cloud's address and the code. The PC creates its own random device secret, sends the code, its store id and the secret's hash over HTTPS, and keeps the secret in its database. It is never displayed.
+  3. The cloud checks the code, binds its one store to that installation, and burns the code. Both sides then show the store's name and a short fingerprint of the store id, so the administrator sees what was linked.
+  4. A cloud serves exactly one store. Any other installation is refused: it has no code and no token. A replacement PC needs a new code from the server, which replaces the old device's secret (the old PC is then refused, as today by epoch).
+- **Why this is enough:** the only way to link is physical access to both the server's console and an administrator's session on the shop PC, within 15 minutes. A development PC is never linked unless someone does that deliberately; it keeps using the local test cloud on 127.0.0.1.
+
+## D-103 The cloud works while the shop is unreachable; the two come together by four rules (Phase 2 milestone 3, migration 0033)
+
+Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §3.2 and §6.
+
+- **When the cloud works on its own:** a change started from the internet while the shop is known to be unreachable (no open link, or the shop reports itself unable) is carried out by the cloud itself, with the same handler, user and permissions, on its copy. The six operations that need both sides together are refused with a clear message (barcode change, deleting a product, supplier, user or role, system reset). An operation already handed to the shop and not answered is never carried out by the cloud instead (D-101).
+- **Two number books:** the shop numbers from 1, the cloud from 1,000,000,001 (`sync_state.id_floor`). `hm_keep_id_range()` keeps every counter inside its own book after records from the other book arrive, and never moves a counter back. The cloud sets its floor at start-up.
+- **Each side sends only its own changes.** Every captured update keeps the row before it (`prev_data`). What a side writes while merging the other side's changes is not its own:
+  - the cloud does not capture it;
+  - the shop captures it as an echo, which is recorded in the cloud's record of the shop (so restores and fingerprints stay complete) but never applied there a second time.
+- **The shop receives the cloud's changes** with `link.fetch` / `link.ack`, whole transactions at a time. Each change is recorded in `sync_received` in the transaction that applies it, so a repeat or a lost acknowledgement changes nothing. The open link tells the shop when the cloud holds changes, and they are applied before any new operation is carried out.
+- **The merge** (`sync/merge.js`, the same code on both sides), applied in the order the changes were made:
+  1. a record that does not exist here is added (its number cannot collide);
+  2. a running total moves by the other side's difference (stock, customer and supplier balances, points, a sale's open amounts and total, a line's returned quantity and totals), so both sides' work adds up in any order;
+  3. another field is taken when only the other side changed it; changed on both sides, the shop's value stands on both sides and the shop lists it; bookkeeping times keep the later one;
+  4. the purchase price, changed on both sides, is the price of the newer purchase by its own time, decided once the whole batch is in.
+- **Selling-time guards step aside** for received records under `hm.ledger_rebuild`, which now includes "one open shift per user": the other side's shift is a fact, and two open shifts are listed.
+- **Never silently lost:** a row that cannot be stored (a uniqueness rule, a missing reference after every retry pass) is skipped with its whole content listed. A reference to a row later in the same batch is retried after the batch.
+- **«تحتاج انتباهك» (`sync_attention`)** is written by the shop only (it holds both sides' records) and reaches the cloud like any record. Kinds:
+  - the same field changed on both sides;
+  - a record not stored, or a deletion kept because the record is in use;
+  - stock below zero;
+  - a customer or supplier paid beyond the balance;
+  - a line returned beyond what was sold;
+  - cloud sales after their shift's close in the shop;
+  - two open shifts for one user.
+
+  An item is settled with `attention.resolve` (a note, the person, the time). Nothing is corrected automatically and no entry is invented. Permission «عناصر تحتاج الانتباه» (`sync.resolve`), administrators by default.
+
+- **New epoch (a restore):** refused by the cloud while it holds changes the shop has not received; the shop fetches them first in every cycle.
+- **Tests:** `cloudApart.test.js` (5):
+  - both sides work apart, then rejoin: identical rows, totals added once, the shop's price kept and listed;
+  - the owner's outage day from the phone in its own shift: the same business figures as the same day done at the shop;
+  - the same things on both sides (a line returned twice, the last unit sold twice, two open shifts): all kept and listed, settled from the phone;
+  - a failure half way through a batch and a lost acknowledgement: applied once;
+  - the purchase price, newer on either side.
+
+  `cloudConnected` "never twice" is updated to this rule.
+
+- **Two defects found by these tests and fixed before commit:**
+  - equal running totals on both sides were treated as already merged;
+  - the purchase price was decided before its purchase had arrived.
+
+## D-104 A Windows background service keeps the shop linked with the program closed (Phase 2 milestone 4, migration 0034)
+
+Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §9.
+
+- **What runs:** the installed program itself, started as `HeroMarket-POS.exe --sync-service`. It opens no window and runs the store's own service against the store's database. It never changes the schema; the installer does that after its verified copy. Its log is `logs\sync.log` in the store folder, with no passwords and no customer data.
+- **Started by Task Scheduler, not as a Windows service:** the task `HeroMarket\HeroMarket Sync` runs as the system account:
+  - at Windows start, before anyone signs in;
+  - every five minutes as a watchdog that starts it again if it stopped (one copy at a time);
+  - restarted after a failure, with no time limit, also on battery.
+
+  **This is the architecture's fallback, not its first proposal (a Windows service).** The program cannot answer Windows' service manager by itself; a real service would need an extra third-party wrapper program in the installer. The task gives the same start before sign-in and restart after a stop, and reuses the mechanism the backup tasks already use on the shop's Windows (D-060, D-074). The Windows-service variant was not built or tested. Difference: after a crash, the restart comes at the next five-minute mark rather than at once.
+
+- **The installer** registers and starts the task after the backup task. Before files are replaced, it ends the task and disables it, and registering it again at the end of the install turns it back on. Uninstall removes the task; the store's data stays.
+- **One holder of the link per database:** the service and the desktop program may both run. The holder takes an advisory lock on its own connection and writes a heartbeat to `sync_state` every 30 seconds (who, process, version, since when, last seen). The other copy waits and takes over within half a minute when the holder stops. The sync screen shows who holds the link.
+- **A dropped link is noticed at once** by the cloud (about 0.8 s instead of up to 45 s). At a hand-over, an operation the new holder has never heard of is recorded as "not carried out" in the shop (a tombstone), so a late copy from the previous holder changes nothing.
+- **Tests:**
+  - `syncService.test.js` (2): one holder at a time and the hand-over; operations carried out once either way; the tombstone;
+  - `syncTask.test.mjs` (3): what Task Scheduler is told.
+- **Windows Sandbox, a clean Windows with a build of this code:**
+  - the installer registered the task and the windowless process started, holding the heartbeat;
+  - killed, it was started again by the watchdog at the next five-minute mark;
+  - the desktop program opened next to it, and the service kept the link;
+  - reinstalling over the running service gave a new process with its heartbeat.
+
+  Not verifiable there: an actual Windows restart, or a real cloud (no network).
+
+## D-105 Ready for the internet: sign-in limits, password hashing, versions, W- numbers, the cloud server (Phase 2 milestone 5)
+
+Deployment: [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md). Owner: [OWNER_CLOUD_GUIDE.md](OWNER_CLOUD_GUIDE.md).
+
+- **The visitor's address behind the proxy.** The cloud takes it from the proxy's `X-Forwarded-For`, trusted only from the proxy's own address (`HEROMARKET_TRUST_PROXY`). Without this, every visitor shares the proxy's address, and one person's wrong guesses lock out everyone.
+- **A limit per typed username, on the internet only:** 10 wrong passwords in 15 minutes, from any number of addresses, pause that name's internet sign-in for 15 minutes. It is keyed by what was typed, so it does not reveal whether an account exists. It never applies at the shop's tills: nobody there can lock another person out. The existing limits stay (5 per terminal, 20 per address).
+- **Password hashing (the Argon2id question from the approval):** scrypt stays, at N=2^14, r=8, p=5, an OWASP-recommended setting (16 MiB of memory, about 0.26 s on the development PC), computed off the main thread so a sign-in never holds up a till.
+  - Hashes made before still verify, and are renewed at the next successful sign-in in the shop (the cloud never rewrites a user record itself; it receives the new hash).
+  - Argon2id is not adopted: it needs a native add-on in both the Windows installer and the server image, for no meaningful gain over this setting.
+  - PINs keep their format; they never reach the cloud.
+- **One database version on both sides.** The shop names its version (its latest migration) on every request to the cloud and when pairing. The cloud refuses another version with a message to update both (`schema_mismatch`), before taking anything in.
+- **Cloud invoice numbers read W-1, W-2, …** (`src/shared/saleNumber.mjs`): on the screens, the receipts and the invoice lists. "W-5" typed in the search or the invoice lookup finds the cloud's fifth. The shop's numbers are unchanged. A plain number no longer also finds a cloud invoice by its last digits.
+- **The whole-table comparison runs every 10 minutes** in the 15-second cycle, and at once again after a difference or when it could not run. Changes are still sent every cycle and at once after each change; explicit runs («مزامنة الآن», tests) still compare every time.
+- **The cloud server** (`deploy/cloud/`, `Dockerfile.cloud`): PostgreSQL, the cloud service with the browser screens, and Caddy. Caddy provides HTTPS with a Let's Encrypt certificate, HSTS and security headers. Only ports 80 and 443 are open.
+- **Cloud backups:** a nightly `pg_dump`, encrypted with age to the owner's public key, so the server cannot read its own copies. Kept 14 days with checksums. An optional upload to S3-compatible storage keeps a copy off the server. `restore.sh` verifies the checksum and refuses a database that is not empty.
+- **Tests:**
+  - `cloudSecurity.test.js` (3): per address and per name; the shop unaffected; the hash renewal reaching the cloud; another version refused for the link and for pairing;
+  - `saleNumbers.test.js` (1);
+  - `tests/unit/saleNumber.test.mjs` (3);
+  - `tests/unit/syncSchedule.test.js` (2);
+  - the password unit test is extended.
+
+## D-106 Security review, recovery without paid cloud backups, and the existing-installation rollout (owner priorities 2026-11-12, migration 0036)
+
+The owner's priorities:
+
+- security first;
+- the shop's local backups stay the primary recovery source;
+- the cloud is recovered from the shop;
+- no paid or complicated cloud backup infrastructure.
+
+Review: [SECURITY_REVIEW_PHASE2.md](SECURITY_REVIEW_PHASE2.md). Rollout: [ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md).
+
+- **Security fixes:**
+  - A password changed or reset on either side ends that user's sessions on the other side (trigger `users_end_sessions_on_credential_change`, by `password_changed_at` / `temp_password_expires_at`). It replaces the cloud's comparison of hashes, which would have signed users out after the D-105 hash renewal.
+  - The shop refuses a forwarded operation when, by its own records, the user lacks the internet permission.
+  - The recovery-code hash is no longer sent; a cloud copy clears what it held (cloud migration 0005).
+  - The session cookie and the internal operation key are redacted from logs.
+  - The backup container runs read-only without capabilities.
+  - Three package advisories are patched with compatible versions.
+- **Cloud backups stay minimal and free:** the nightly encrypted copy on the server, readable only with the owner's key (restore drill passed). No off-server storage service: R2 needs a payment method with no spending cap, and the owner chose no recurring cost.
+- **The cloud's database lost:** a new empty cloud and a new pairing code. The existing shop (not a fresh installation) pairs again, and **a new, empty cloud now starts a new epoch on the shop**, so the whole store is sent at once and is identical after one cycle. Only phone work the shop had not received is missing; the nightly copy brings it back.
+- **The shop's database lost:** restore a local backup, then recover. Everything after the backup returns once, including phone work done while the shop was offline, received or not (`recoveryTwoWay.test.js`).
+- **Existing installation upgrade and first pairing** (`existingInstall.test.js`):
+  - Stores are made by the released 1.4.0 and 1.5.2 programs themselves (`scripts/make-old-store-fixture.js`, `tests/fixtures/old-stores`). Each has 48 sales, 12 shifts, returns, credit, repayments, supplier invoices and payments, expenses, and the old program's unsent change queue.
+  - Each is updated in place. Every original record keeps every value and its number, except the named, approved changes: D-087's purchase price from 1.4.0, and D-105's renewed hash.
+  - Each is paired with a one-time code. The empty cloud receives the store and sends nothing back. The cloud is then identical, the website's invoice list is identical, a second sync changes nothing, and the store keeps its identity.
+- **The cloud is emptied for the real shop** with `deploy/cloud/reset-empty.sh`: it asks for the address to confirm and takes an encrypted copy first.
+- **Found by the installer update test and fixed:** every start rewrote the super administrator's permissions (110 needless changes to send).

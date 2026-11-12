@@ -12,7 +12,8 @@ const {
   newRecoveryCode,
   hashRecoveryCode,
   verifyRecoveryCode,
-  burnTime
+  burnTime,
+  needsRehash
 } = require('../auth/password')
 const { guardKeys, checkGuard, recordFailure, clearTerminal } = require('../auth/guard')
 const { badRequest, unauthorized, conflict } = require('../errors')
@@ -56,7 +57,7 @@ async function storePassword(db, userId, password, { keepSessions = false } = {}
             password_changed_at = LOCALTIMESTAMP(0),
             pin_lookup = NULL, pin_hash = NULL, password_hash = NULL, updated_at = LOCALTIMESTAMP(0)
       WHERE id = $2`,
-    [hashPassword(password), userId]
+    [await hashPassword(password), userId]
   )
   if (!keepSessions)
     await db.query(
@@ -77,7 +78,7 @@ async function ensureRecoveryCode(db, userId, { replace = false } = {}) {
   const code = newRecoveryCode()
   await db.query(
     'UPDATE users SET recovery_hash = $1, recovery_created_at = LOCALTIMESTAMP(0) WHERE id = $2',
-    [hashRecoveryCode(code), userId]
+    [await hashRecoveryCode(code), userId]
   )
   return code
 }
@@ -164,7 +165,7 @@ module.exports = function authModule(app) {
       properties: { username: usernameSchema, password: passwordSchema }
     },
     handler: async (ctx, { username, password }) => {
-      const key = guardKeys(ctx)
+      const key = guardKeys(ctx, '', username)
       checkGuard(ctx.guard, key)
       const { account, state } = await checkCredentials(ctx.pool, username, password)
       if (state === 'invalid') {
@@ -180,6 +181,13 @@ module.exports = function authModule(app) {
           firstPassword: !account.password_scrypt
         }
       return ctx.tx(async (db) => {
+        // A hash made with older, weaker parameters is renewed now that the password is known (D-105).
+        // Only in the shop: the cloud receives the new hash with the user's record.
+        if (!ctx.cloud && needsRehash(account.password_scrypt))
+          await db.query('UPDATE users SET password_scrypt = $1 WHERE id = $2', [
+            await hashPassword(password),
+            account.id
+          ])
         const token = await createSession(db, ctx, account.id)
         const user = await describeUser(db, account.id)
         return {
@@ -269,8 +277,8 @@ module.exports = function authModule(app) {
         )
         const u = rows[0]
         const ok = u?.recovery_hash
-          ? verifyRecoveryCode(recoveryCode, u.recovery_hash)
-          : burnTime(recoveryCode)
+          ? await verifyRecoveryCode(recoveryCode, u.recovery_hash)
+          : await burnTime(recoveryCode)
         if (!ok) {
           recordFailure(ctx.guard, key)
           throw unauthorized('اسم المستخدم أو رمز الاسترداد غير صحيح.')
@@ -325,7 +333,7 @@ module.exports = function authModule(app) {
           'SELECT password_scrypt FROM users WHERE id = $1 FOR UPDATE',
           [ctx.user.id]
         )
-        if (!verifyPassword(currentPassword, rows[0]?.password_scrypt)) {
+        if (!(await verifyPassword(currentPassword, rows[0]?.password_scrypt))) {
           recordFailure(ctx.guard, key)
           throw badRequest('كلمة المرور الحالية غير صحيحة!')
         }
@@ -361,7 +369,7 @@ module.exports = function authModule(app) {
           'SELECT password_scrypt FROM users WHERE id = $1 FOR UPDATE',
           [ctx.user.id]
         )
-        if (!verifyPassword(currentPassword, rows[0]?.password_scrypt)) {
+        if (!(await verifyPassword(currentPassword, rows[0]?.password_scrypt))) {
           recordFailure(ctx.guard, key)
           throw badRequest('كلمة المرور الحالية غير صحيحة!')
         }

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { formatMoney } from '../../lib/utils'
 import { api, can } from '../../lib/api'
+import { useLiveTick } from '../../lib/live'
 import { EmptyState } from '../ui'
 import { MethodReconciliation, MoneyCategories } from './ShiftMoney'
 
@@ -144,6 +145,20 @@ function ShiftsList({ onDetails, onOpenShift, canOpen, triggerCustomAlert }) {
       stopped = true
     }
   }, [applied, triggerCustomAlert])
+
+  // From the internet: a shift opened or closed in the shop appears by itself (same page kept).
+  const live = useLiveTick()
+  useEffect(() => {
+    if (!live) return undefined
+    let stopped = false
+    api('shifts.list', { date: applied.date || null })
+      .then((r) => !stopped && setRows(r.rows))
+      .catch(() => {})
+    return () => {
+      stopped = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live])
 
   const data = rows || []
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
@@ -279,6 +294,7 @@ function ShiftDetailsPage({ shiftId, onBack, onOpenInvoice, triggerCustomAlert }
   const [data, setData] = useState(null)
   const [filter, setFilter] = useState('all')
 
+  const live = useLiveTick()
   const load = useCallback(async () => {
     try {
       const d = await api('shifts.details', { shiftId })
@@ -303,7 +319,8 @@ function ShiftDetailsPage({ shiftId, onBack, onOpenInvoice, triggerCustomAlert }
       stopped = true
       clearTimeout(timer)
     }
-  }, [load])
+    // live: from the internet, every sale, return or payment of this shift shows as it happens.
+  }, [load, live])
 
   const byMethod = useMemo(() => {
     const out = {}

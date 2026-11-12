@@ -37,7 +37,8 @@ import {
   BadgePercent,
   Settings,
   Archive,
-  Landmark
+  Landmark,
+  BellRing
 } from 'lucide-react'
 
 // The screens, each defined once (grouped here as they were added; NAV_LAYOUT orders them).
@@ -391,6 +392,15 @@ const DEFINED_GROUPS = [
         onEnter: (c) => c.fetchChecksList()
       },
       {
+        id: 'attention',
+        permission: ['sync.resolve'],
+        label: 'تحتاج انتباهك',
+        icon: BellRing,
+        view: 'admin',
+        tab: 'attention',
+        description: 'ما ظهر بعد اجتماع بيانات المتجر والسحابة ويحتاج قرار شخص.'
+      },
+      {
         id: 'sync',
         permission: ['sync.manage'],
         label: 'المزامنة السحابية',
@@ -439,7 +449,7 @@ const NAV_LAYOUT = [
   {
     id: 'system',
     label: 'النظام',
-    items: ['settings', 'receipts', 'backup', 'import', 'sync', 'logs', 'checks']
+    items: ['settings', 'receipts', 'backup', 'import', 'sync', 'attention', 'logs', 'checks']
   }
 ]
 
@@ -466,10 +476,17 @@ const allowed = (item, user) =>
   (!item.permission || item.permission.some((p) => user.permissions.includes(p)))
 
 /** Navigation groups visible to the given user. */
+// Screens that belong to the shop PC itself: its link to the cloud and its backup files. From the
+// internet they are not offered (the service refuses their operations there too, D-101).
+const SHOP_PC_ONLY = ['sync', 'backup']
+const here = (i) =>
+  !(typeof window !== 'undefined' && window.api?.isWeb && SHOP_PC_ONLY.includes(i.id))
+
 export function visibleGroups(user) {
-  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => allowed(i, user)) })).filter(
-    (g) => g.items.length > 0
-  )
+  return NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => allowed(i, user) && here(i))
+  })).filter((g) => g.items.length > 0)
 }
 
 /** Whether the user can open at least one management screen. */
