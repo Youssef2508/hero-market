@@ -21,7 +21,15 @@ class CuttableTransport {
     this.down = false
     this.loseResults = 0
     this.duplicateOps = false
-    for (const m of ['newEpoch', 'push', 'pullCommands', 'checksums', 'recoverRows'])
+    for (const m of [
+      'newEpoch',
+      'push',
+      'pullCommands',
+      'checksums',
+      'recoverRows',
+      'fetch',
+      'ack'
+    ])
       this[m] = (...a) => {
         if (this.down) throw new TransportError('offline (test)')
         return this.inner[m](...a)

@@ -28,6 +28,7 @@ const { withTransaction } = require('../db/pool')
 const { applyCommand } = require('./commands')
 const { applyRecovered } = require('./recovery')
 const { outcomeOf } = require('./remoteOps')
+const { applyChanges } = require('./merge')
 
 const LOCK_KEY = 48151624 // one agent per database at a time
 const PRUNE_AFTER_DAYS = 7
@@ -104,7 +105,7 @@ class SyncAgent {
     // numeric scale (25.00 → 25) and could lose digits of large or precise amounts.
     return (
       await this.pool.query(
-        `SELECT id, table_name, pk, op, row_data::text AS row_text, version FROM sync_outbox
+        `SELECT id, table_name, pk, op, row_data::text AS row_text, prev_data::text AS prev_text, echo, version FROM sync_outbox
           WHERE acked_at IS NULL AND ${cond} ORDER BY id`,
         params
       )
@@ -161,6 +162,10 @@ class SyncAgent {
         k: x.pk,
         op: x.op,
         r: x.row_text,
+        // What the row was before (updates): the cloud merges field by field (D-103).
+        p: x.prev_text || undefined,
+        // Written here while merging the cloud's own changes: recorded there, never applied twice.
+        e: x.echo || undefined,
         v: Number(x.version)
       }))
       // What will still be waiting after this batch: the cloud shows its figures as "live" only
@@ -297,6 +302,57 @@ class SyncAgent {
   }
 
   /**
+   * The cloud's own changes – made there while the shop could not be reached (D-103) – brought
+   * into this database by the merge rules (sync/merge.js). Each batch is applied in one
+   * transaction with the record of what was received, so each change is applied exactly once,
+   * whatever is lost or repeated on the way; the cloud forgets a change only when told it arrived.
+   */
+  async fetchCloud() {
+    if (typeof this.link.fetch !== 'function') return 0
+    let total = 0
+    for (let turn = 0; turn < 1000; turn++) {
+      let got
+      try {
+        got = await this.link.fetch({ limit: 2000 })
+      } catch (e) {
+        if (e.status === 404) return 0 // a cloud that does not work on its own (test clouds)
+        throw e
+      }
+      const rows = got.rows || []
+      if (!rows.length) break
+      const ids = rows.map((r) => r.id)
+      const result = await withTransaction(this.pool, async (db) => {
+        // One merger at a time (the link and the cycle may both fetch): the record of what was
+        // received is read under this lock.
+        await db.query('SELECT pg_advisory_xact_lock($1)', [LOCK_KEY + 1])
+        const seen = new Set(
+          (
+            await db.query(
+              'SELECT outbox_id FROM sync_received WHERE origin = $1 AND outbox_id = ANY($2::bigint[])',
+              [got.origin, ids]
+            )
+          ).rows.map((r) => Number(r.outbox_id))
+        )
+        const fresh = rows.filter((r) => !seen.has(Number(r.id)))
+        const r = await applyChanges(db, fresh, { receiver: 'shop' })
+        if (fresh.length)
+          await db.query(
+            'INSERT INTO sync_received (origin, outbox_id) SELECT $1, unnest($2::bigint[]) ON CONFLICT DO NOTHING',
+            [got.origin, fresh.map((x) => x.id)]
+          )
+        return { ...r, fresh: fresh.length }
+      })
+      if (result.fresh)
+        this.log(
+          `sync: ${result.fresh} changes from the cloud (${result.conflicts} conflicts, ${result.attention.length} to look at)`
+        )
+      await this.link.ack({ ids })
+      total += result.fresh
+    }
+    return total
+  }
+
+  /**
    * How many changes still wait to be sent, and the newest change this count has seen. Two reports
    * can reach the cloud out of order (the open link and a push): it keeps the one that saw more.
    */
@@ -332,6 +388,9 @@ class SyncAgent {
     const st = await syncState(this.pool)
     if (st.recovery_pending) return { skipped: 'recovery_pending' }
     const turn = await this.link.wait({ timeoutMs, health: await this.health() })
+    // Work the cloud did while the shop was unreachable comes in before anything new is carried
+    // out here, so an operation can rely on it (a customer added from the phone, for example).
+    if (turn.changes) await this.fetchCloud()
     const results = []
     const unknown = []
     const pack = (o) => ({
@@ -473,6 +532,8 @@ class SyncAgent {
           if (e.code === 'not_linked') return { skipped: 'not_linked' } // nothing to do, not an error
           throw e
         }
+        // The cloud's own changes first (D-103): it refuses a new epoch while it still holds any.
+        const fetched = await this.fetchCloud()
         const epoch = await this.ensureEpoch()
         let pushed = await this.push(epoch)
         const commands = await this.applyCommands()
@@ -487,7 +548,7 @@ class SyncAgent {
           'UPDATE sync_state SET last_error = NULL, last_error_at = NULL WHERE last_error IS NOT NULL'
         )
         this.failures = 0
-        return { epoch, pushed, commands, check: checked }
+        return { epoch, pushed, fetched, commands, check: checked }
       } catch (e) {
         this.failures += 1
         await this.pool

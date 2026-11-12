@@ -10,7 +10,7 @@ const { schemaState, assertNotNewer } = require('./db/upgrade')
 const { ensureAccessControl, describeUser } = require('./auth/access')
 const { ServiceError, unauthorized, forbidden, fromDatabaseError } = require('./errors')
 const { KEYS } = require('./auth/permissions')
-const { cloudRoute, CLOUD_REFUSED } = require('./sync/operationKinds')
+const { cloudRoute, kindOf, CLOUD_REFUSED } = require('./sync/operationKinds')
 const { remoteTx } = require('./sync/remoteOps')
 
 const SESSION_HOURS = 12
@@ -184,10 +184,18 @@ async function createService(cfg) {
       async (req, reply) => {
         const auth = req.hmAuth || null
         const remote = auth?.remote || null
-        if (cloud) {
-          // The internet way in: reads from this copy; a change is carried out in the shop.
-          if (cloudRoute(def.name) === 'shop')
+        if (cloud && cloudRoute(def.name) === 'shop') {
+          // The internet way in: reads from this copy; a change is carried out in the shop while it
+          // can be reached (D-101). While it cannot, the same operation runs here on this copy and
+          // reaches the shop when it is back (D-103) – except the few that need both sides together.
+          if (await app.cloudLink.shopUp())
             return app.cloudLink.forward({ def, auth, body: req.body || {}, req })
+          if (kindOf(def.name) === 'linked')
+            throw new ServiceError(
+              503,
+              'shop_unreachable',
+              'المتجر غير متصل الآن. هذه العملية تحتاج اتصال المتجر (تغيير باركود أو حذف سجل أو إعادة ضبط)؛ حاول عند عودة الاتصال.'
+            )
         }
         const ctx = {
           pool,
@@ -288,9 +296,15 @@ async function createService(cfg) {
       e.code = 'setup_incomplete'
       throw e
     }
+    // The cloud: what its own migrations write (seed rows) is not work to send to the shop.
+    const hasOutbox =
+      cloud && (await pool.query("SELECT to_regclass('sync_outbox') IS NOT NULL AS ok")).rows[0].ok
+    const seenBefore = hasOutbox
+      ? Number((await pool.query('SELECT COALESCE(max(id), 0) AS n FROM sync_outbox')).rows[0].n)
+      : 0
     await migrate(pool, { dir, logger: { info: (m) => app.log.info(m) } })
     // The cloud's users, roles and permissions are the shop's, received through the link.
-    if (cloud) await app.cloudLink.prepare()
+    if (cloud) await app.cloudLink.prepare({ seenBefore })
     else await withTransaction(pool, (c) => ensureAccessControl(c))
   }
 

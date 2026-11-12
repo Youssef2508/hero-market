@@ -23,10 +23,11 @@ const path = require('path')
 const { withTransaction } = require('../db/pool')
 const { migrate } = require('../db/migrate')
 const { ServiceError, notFound } = require('../errors')
-const { applyRecovered } = require('../sync/recovery')
+const { applyChanges, FLOOR } = require('../sync/merge')
 const { SECRET_BODY, withoutSecrets } = require('../sync/operationKinds')
 const { registerSyncRoutes, MIGRATIONS } = require('./app')
 const { pair } = require('./pairing')
+const { SyncAgent } = require('../sync/agent')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v))
@@ -66,17 +67,36 @@ module.exports = function cloudLink(app, cfg) {
   // ── The copy of the store ────────────────────────────────────
   const { store } = registerSyncRoutes(app, pool, {
     ...(cfg.cloudHooks || {}),
-    // A new epoch: the shop sends everything again; what is here is replaced, not mixed.
+    // A new epoch: the shop sends everything again; what is here is replaced, not mixed. Refused
+    // while this side still holds work the shop has not received (D-103): it would be lost.
     onEpoch: async (db) => {
+      const own = Number(
+        (
+          await db.query(
+            'SELECT count(*) AS n FROM sync_outbox WHERE acked_at IS NULL AND NOT echo'
+          )
+        ).rows[0].n
+      )
+      if (own)
+        throw new ServiceError(
+          409,
+          'cloud_changes_pending',
+          `the cloud holds ${own} changes the shop has not received yet`
+        )
       const tables = (await db.query('SELECT table_name FROM sync_tables')).rows.map(
         (r) => `"${r.table_name}"`
       )
       await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
-      await db.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`)
+      await db.query(
+        `TRUNCATE ${tables.join(', ')}, sync_outbox, sync_row_versions RESTART IDENTITY CASCADE`
+      )
+      await db.query('SELECT hm_keep_id_range()')
     },
     onAccepted: async (db, rows) => {
+      // Written by the shop while merging this side's own changes: already here (D-103).
+      const own = rows.filter((r) => !r.e)
       // A user whose password changed or who was disabled is signed out here too.
-      const ids = rows.filter((r) => r.t === 'users' && !r.deleted).map((r) => Number(r.k))
+      const ids = own.filter((r) => r.t === 'users' && r.op !== 'delete').map((r) => Number(r.k))
       const before = ids.length
         ? (
             await db.query(
@@ -85,7 +105,8 @@ module.exports = function cloudLink(app, cfg) {
             )
           ).rows
         : []
-      await applyRecovered(db, rows, { fixStock: false })
+      // The shop's changes, field by field: the shop's value stands where both changed (D-103).
+      await applyChanges(db, own, { receiver: 'cloud' })
       if (before.length)
         await db.query(
           `UPDATE sessions s SET revoked_at = LOCALTIMESTAMP(0)
@@ -94,7 +115,7 @@ module.exports = function cloudLink(app, cfg) {
               AND (NOT u.is_active OR u.password_scrypt IS DISTINCT FROM b.password_scrypt)`,
           [JSON.stringify(before)]
         )
-      if (cfg.cloudHooks?.onAccepted) await cfg.cloudHooks.onAccepted(db, rows)
+      if (cfg.cloudHooks?.onAccepted) await cfg.cloudHooks.onAccepted(db, own)
     },
     afterCommit: async (s, rows, waiting) => {
       await report(s.store_id, waiting, null, true)
@@ -218,6 +239,57 @@ module.exports = function cloudLink(app, cfg) {
     }
   )
 
+  // ── This side's own changes, made while the shop was unreachable (D-103) ──
+  // Handed to the shop PC oldest first, whole transactions at a time; forgotten only when the shop
+  // says they arrived (it records each one, so a repeat changes nothing there).
+  const own = new SyncAgent({ pool, transport: null, batchSize: 500 })
+  const ownPending = async () =>
+    Number(
+      (await pool.query('SELECT count(*) AS n FROM sync_outbox WHERE acked_at IS NULL')).rows[0].n
+    )
+
+  app.post('/api/link.fetch', async (req) => {
+    await store(req)
+    const origin = (await pool.query('SELECT store_id FROM sync_state')).rows[0].store_id
+    const rows = await own.nextBatch()
+    return {
+      origin,
+      rows: rows.map((x) => ({
+        id: Number(x.id),
+        t: x.table_name,
+        k: x.pk,
+        op: x.op,
+        r: x.row_text,
+        p: x.prev_text || null
+      }))
+    }
+  })
+
+  app.post(
+    '/api/link.ack',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['ids'],
+          properties: { ids: { type: 'array', maxItems: 5000, items: { type: 'integer' } } }
+        }
+      }
+    },
+    async (req) => {
+      await store(req)
+      const r = await pool.query(
+        'UPDATE sync_outbox SET acked_at = LOCALTIMESTAMP(0) WHERE id = ANY($1::bigint[]) AND acked_at IS NULL',
+        [req.body.ids]
+      )
+      await pool.query(
+        "DELETE FROM sync_outbox WHERE acked_at < LOCALTIMESTAMP(0) - interval '7 days'"
+      )
+      if (r.rowCount) changed()
+      return { acked: r.rowCount }
+    }
+  )
+
   // The request the shop PC keeps open. It carries the shop's health, and returns the operations
   // waiting for it (now "sent") and the ids it must account for.
   app.post(
@@ -260,7 +332,9 @@ module.exports = function cloudLink(app, cfg) {
             )
           ).rows.sort((a, b) => Number(a.seq) - Number(b.seq))
         let ops = await take()
-        if (!ops.length && !check.length && (req.body.timeoutMs ?? 25000) > 0) {
+        // Work done here while the shop was unreachable: the shop fetches it before anything else.
+        const changes = await ownPending()
+        if (!ops.length && !check.length && !changes && (req.body.timeoutMs ?? 25000) > 0) {
           await new Promise((resolve) => {
             const done = () => {
               clearTimeout(timer)
@@ -293,7 +367,7 @@ module.exports = function cloudLink(app, cfg) {
             terminal: o.terminal
           })
         }
-        return { ops: out, check }
+        return { ops: out, check, changes }
       } finally {
         live.held -= 1
         live.lastContact = Date.now()
@@ -314,6 +388,12 @@ module.exports = function cloudLink(app, cfg) {
     if (row.status === 'not_executed' || row.status === 'withdrawn')
       throw new ServiceError(502, 'not_executed', NOT_EXECUTED, { operationId: row.id })
     throw new ServiceError(504, 'pending_confirmation', PENDING, { operationId: row.id })
+  }
+
+  /** Can the shop carry out an operation right now? */
+  async function shopUp() {
+    const s = await theStore()
+    return !!s && reachable() && s.health?.ok !== false
   }
 
   async function forward({ def, auth, body, req }) {
@@ -537,15 +617,21 @@ module.exports = function cloudLink(app, cfg) {
 
   app.decorate('cloudLink', {
     forward,
+    shopUp,
     describe,
     reachable,
     // The cloud's own tables, recorded apart from the store's migrations in the same database.
-    prepare: () =>
-      migrate(pool, {
+    prepare: async ({ seenBefore = 0 } = {}) => {
+      await migrate(pool, {
         dir: MIGRATIONS,
         table: 'cloud_schema_migrations',
         logger: { info: (m) => app.log.info(m) }
-      }),
+      })
+      // The cloud's own number book (D-103), and nothing from the migrations sent as work.
+      await pool.query('UPDATE sync_state SET id_floor = $1', [FLOOR])
+      await pool.query('SELECT hm_keep_id_range()')
+      await pool.query('DELETE FROM sync_outbox WHERE id > $1 AND acked_at IS NULL', [seenBefore])
+    },
     transaction: (fn) => withTransaction(pool, fn)
   })
 }

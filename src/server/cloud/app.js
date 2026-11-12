@@ -34,6 +34,8 @@ const rowSchema = {
     k: { type: 'string', maxLength: 200 },
     op: { type: 'string', enum: ['upsert', 'delete'] },
     r: { type: ['string', 'null'], maxLength: 1000000 }, // the row as JSON text (exact numbers)
+    p: { type: ['string', 'null'], maxLength: 1000000 }, // the row before an update (D-103)
+    e: { type: 'boolean' }, // written by the shop while merging the cloud's changes (D-103)
     v: { type: 'integer', minimum: 1 }
   }
 }
@@ -153,6 +155,24 @@ function registerSyncRoutes(app, pool, hooks = {}) {
             'stale_epoch',
             `epoch ${epoch} is not the store's current epoch (${cur.current_epoch})`
           )
+        // Which of these changes are new here: newer than what is stored for their row. Every one of
+        // them is handed on in the order it was made (a running total needs each step, D-103).
+        const stored = new Map(
+          (
+            await db.query(
+              `SELECT table_name || chr(1) || pk AS id, epoch, version FROM cloud_rows
+                WHERE store_id = $1 AND (table_name, pk) IN
+                      (SELECT x.t, x.k FROM jsonb_to_recordset($2::jsonb) AS x(t text, k text))`,
+              [s.store_id, JSON.stringify(rows.map((x) => ({ t: x.t, k: x.k })))]
+            )
+          ).rows.map((r) => [r.id, r])
+        )
+        const fresh = [...rows]
+          .sort((a, b) => a.v - b.v)
+          .filter((x) => {
+            const had = stored.get(`${x.t}\u0001${x.k}`)
+            return !had || had.epoch < epoch || (had.epoch === epoch && Number(had.version) < x.v)
+          })
         // Newest version per row within the batch, then keep whichever of (stored, incoming) is
         // newer. Re-sent, duplicated or reordered rows are therefore no-ops.
         const accepted = await db.query(
@@ -179,12 +199,7 @@ function registerSyncRoutes(app, pool, hooks = {}) {
               AND r.pk = ANY($2::text[])`,
           [s.store_id, rows.filter((x) => x.t === 'applied_commands').map((x) => x.k)]
         )
-        if (hooks.onAccepted && accepted.rows.length)
-          await hooks.onAccepted(
-            db,
-            accepted.rows.sort((a, b) => Number(a.version) - Number(b.version)),
-            s
-          )
+        if (hooks.onAccepted && fresh.length) await hooks.onAccepted(db, fresh, s)
         if (hooks.beforeCommit) await hooks.beforeCommit(db, req.body)
         return { acked: rows.map((x) => x.id), accepted: accepted.rows }
       })

@@ -44,6 +44,13 @@ class BaseTransport {
   results(body) {
     return this.call('link.results', body)
   }
+  // The cloud's own changes, made while the shop was unreachable (D-103), and their receipt.
+  fetch(body) {
+    return this.call('link.fetch', body)
+  }
+  ack(body) {
+    return this.call('link.ack', body)
+  }
 }
 
 class InProcessTransport extends BaseTransport {

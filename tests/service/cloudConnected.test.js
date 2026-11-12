@@ -495,12 +495,13 @@ test('never twice: duplicate delivery, a lost answer, a retry, and the shop unre
     assert.equal(again.id, settled.result.id)
     assert.equal(await expenses(), 2)
 
-    // The shop goes away. Known before the operation starts: refused at once, nothing queued,
-    // nothing changed anywhere; reading still works and says how old the figures are.
+    // The shop goes away. Known before the operation starts: the cloud does it itself, on its copy,
+    // with the same code (D-103); nothing is handed to the shop; reading says how old the figures
+    // are. Nothing reached the shop yet.
     twin.transport.down = true
     await sleep(1900)
-    const cut = await expense(30, opId())
-    assert.deepEqual([cut.status, cut.body.error.code], [503, 'shop_unreachable'])
+    const apart = ok(await expense(30, opId()))
+    assert.ok(apart.id >= 1000000000, 'numbered from the cloud’s own book')
     assert.equal(await expenses(), 2)
     assert.equal(
       await n(
@@ -514,19 +515,26 @@ test('never twice: duplicate delivery, a lost answer, a retry, and the shop unre
     assert.ok(st.lastSyncedAt, 'the screens can say "as of"')
     ok(await twin.cloud.call('suppliers.list', {}, owner))
 
-    // Back again: reachable, and work continues.
+    // Back again: the expense made apart reaches the shop once, and work continues in the shop.
     twin.transport.down = false
     for (let i = 0; i < 200 && !twin.cloud.app.cloudLink.reachable(); i++) await sleep(50)
-    ok(await expense(5, opId()))
+    await twin.agent.runOnce()
     assert.equal(await expenses(), 3)
+    assert.equal(await treasury(), t0 - 60)
+    ok(await expense(5, opId()))
+    assert.equal(await expenses(), 4)
     assert.deepEqual(await inStep(twin), [])
-    // Every expense is the shop's; the cloud holds them only as its copy.
+    // Three expenses were carried out in the shop for the internet; the fourth was the cloud's own.
     assert.equal(
       await n(
         twin.shop.pool,
         "SELECT count(*) AS n FROM remote_operations WHERE operation = 'expenses.create'"
       ),
       3
+    )
+    assert.equal(
+      await n(twin.shop.pool, 'SELECT count(*) AS n FROM expenses WHERE id = $1', [apart.id]),
+      1
     )
   } finally {
     await twin.close()

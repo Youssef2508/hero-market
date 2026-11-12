@@ -100,15 +100,9 @@ async function applyRecovered(db, rows, { fixStock = true } = {}) {
         ])
     deleted[t] = res.rowCount
   }
-  // Identity sequences continue after the highest written id.
-  for (const t of Object.keys(upserted).filter((x) => keys[x] === 'id')) {
-    const seq = (await db.query(`SELECT pg_get_serial_sequence($1, 'id') AS s`, [t])).rows[0]?.s
-    if (seq)
-      await db.query(
-        `SELECT setval($1, GREATEST((SELECT COALESCE(max(id), 0) FROM "${t}"), (SELECT last_value FROM ${seq})))`,
-        [seq]
-      )
-  }
+  // Number counters continue after the highest written number of this side's own book (the
+  // other side's numbers, from its own book, never move them: migration 0033).
+  await db.query('SELECT hm_keep_id_range()')
   // Stock is the sum of its movements (phase 1 ledger). Recovered rows come from complete
   // transactions, so this normally changes nothing; any difference is corrected and reported.
   const fixes = fixStock
