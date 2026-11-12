@@ -294,11 +294,16 @@ The step-by-step procedure for you and the owner is [ROLLOUT_GUIDE.md](ROLLOUT_G
 
 ### Also built
 
-- **Receipts on the phone:** the store's own receipt, shown on screen, to print or save as PDF with the phone's print dialog, or to share as text (WhatsApp).
+- **Everything the shop would print, shown on the phone** as the paper would look:
+  - covers sale receipts, A4 invoices, shift and closing reports, purchase invoices, the Momkn and wallets reports, the shortages list, and the receipt designer's test;
+  - the same shared layouts as the receipt printer;
+  - print or save as PDF, or share as text.
+
+  Everything stays saved and can be printed on the shop's printer later (your rule: saving matters, printing can wait).
+
+- **Every management screen refreshes by itself** on the phone when the shop's data changes. Twelve more screens joined: categories, discounts, the operations log, reordering, stock movements, stock value, supplier invoices and payment requests, roles, statistics, best sellers and cashier performance.
 
 ### Not built, plainly
 
-1. **Not every screen refreshes by itself.** The busy ones do (sales, shifts, treasury, link status); others show changes when reopened.
-2. **Shift reports and shortages lists from the phone:** printing them is a shop PC feature (its receipt printer). The phone shows them on screen.
-3. **Real phones:** the layout check ran on the real site with the rehearsal store's data, and all 31 screens passed at 390×844 and 360×740. Your own phone has not been tried yet; that is part of the rollout's step 19.
-4. **The pilot's shadow period** (comparing the two sides daily for two weeks before relying on the phone) is in the rollout plan, not yet done.
+1. **Real phones:** the layout check ran on the real site with the rehearsal store's data, and all 31 screens passed at 390×844 and 360×740. Your own phone has not been tried yet; that is part of the rollout's step 19.
+2. **The pilot's shadow period** (comparing the two sides daily for two weeks before relying on the phone) is in the rollout plan, not yet done.

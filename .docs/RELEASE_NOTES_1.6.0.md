@@ -14,7 +14,9 @@ Written for the shop owner. 1.6.0 connects the shop to its own website, so you c
 - **While the shop PC is off or offline**, the phone keeps working on its own copy, and a strip at the top says so. When the PC is back, both sides' work comes together by itself.
   - Invoices made on the phone in that time are numbered **W-1, W-2, …**.
   - Anything that needs a person (the same thing changed on both sides) is listed under «تحتاج انتباهك».
-- **Receipts on the phone:** the store's own receipt on screen, to print or save as PDF with the phone's print dialog, or to share (for example on WhatsApp). The receipt printer stays at the shop.
+- **Everything the shop would print, on the phone's screen:** sale receipts and invoices, shift and closing reports, purchase invoices and the shortages list. Each is shown as the paper would look, to print or save as PDF with the phone's print dialog, or to share (for example on WhatsApp).
+  - Everything is saved either way, so the shop PC can print it on the receipt printer at any time («إعادة طباعة فاتورة», «الورديات», «الموردون والمشتريات»).
+- **The screens refresh by themselves** on the phone when something changes at the shop.
 - Your guide: [OWNER_CLOUD_GUIDE.md](OWNER_CLOUD_GUIDE.md).
 
 ## On the shop PC

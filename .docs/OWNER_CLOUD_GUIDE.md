@@ -10,6 +10,11 @@ The shop PC is still your store. The cloud is a copy of it on the internet that 
 - **While the shop PC is off or offline,** the phone keeps working on the cloud's copy. A strip at the top says so. When the PC comes back, both sides' work comes together by itself. Anything that needs a person (the same price changed on both sides, the last item sold twice) appears under «تحتاج انتباهك».
 - **A few things only work while the shop is connected:** changing a barcode; deleting a product, supplier, user or role; and resetting the data. The phone tells you when you try.
 - Invoices made on the phone while the shop was offline are numbered **W-1, W-2, …** so they never look like the shop's. Typing «W-5» in the invoice search finds the fifth one.
+- **Printing:** the receipt printer is at the shop. On the phone, whatever the shop would print (a receipt, an invoice, a shift or closing report, a purchase invoice, the shortages list) opens on screen as the paper would look:
+  - **«طباعة أو حفظ PDF»** prints it or saves it as PDF;
+  - **«مشاركة»** sends it, for example on WhatsApp.
+
+  It is saved either way, so you can print it on the shop's printer at any time later: «إعادة طباعة فاتورة», «الورديات», «الموردون والمشتريات».
 
 ## Once, at the start
 
