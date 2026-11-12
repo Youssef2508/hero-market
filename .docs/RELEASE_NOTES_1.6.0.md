@@ -54,7 +54,7 @@ What a person may do on the phone is exactly what they may do at the shop; the f
 | File             | `HeroMarket-Setup-1.6.0.exe`                                                                                                                                   |
 | Size             | 181,357,584 bytes                                                                                                                                              |
 | SHA-256          | `12241ddc5f9b8c563c64d979e36a73fda43202852406ea810b86f152fcbc9afe`                                                                                             |
-| Built from       | `c2b021d`, the head of PR #39. `main` had not moved, so the merge commit holds exactly these files. No uncommitted change                                      |
+| Built from       | `c2b021d`, the head of PR #39; its merge commit `a1d4df0` on `main` holds exactly the same files (identical tree). No uncommitted change                       |
 | Package contents | checked: only the program (`node_modules`, `out`, `src` with migrations 0001–0036, `resources`, `package.json`); no tests, documents, databases or local files |
 | Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                                                                      |
 
