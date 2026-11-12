@@ -72,7 +72,6 @@ services:
         condition: service_healthy
     environment:
       HEROMARKET_DOMAIN: ${HEROMARKET_DOMAIN:?set HEROMARKET_DOMAIN in deploy/cloud/.env}
-      HEROMARKET_ACME_EMAIL: ${HEROMARKET_ACME_EMAIL:?set HEROMARKET_ACME_EMAIL in deploy/cloud/.env}
     ports:
       - '80:80'
       - '443:443'

@@ -1,9 +1,9 @@
 # HeroMarket cloud – HTTPS for the internet way in (D-105).
 #
 # Caddy obtains and renews the certificate for HEROMARKET_DOMAIN from Let's Encrypt by itself
-# (port 80 must be open for its check); plain http only redirects to https.
+# (port 80 must be open for its check); plain http only redirects to https. No account email is
+# given: Let's Encrypt no longer sends expiry notices, and Caddy renews by itself.
 {
-	email {$HEROMARKET_ACME_EMAIL}
 	admin off
 }
 
