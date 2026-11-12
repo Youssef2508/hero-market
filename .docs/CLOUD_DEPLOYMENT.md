@@ -80,14 +80,14 @@ Caddy obtains the certificate within seconds of the first start (port 80 must be
 
 ## 6. Backups and restore
 
-- **Every night** at `BACKUP_HOUR` the `backup` container writes `heromarket-cloud-YYYYMMDD-HHMM.dump.age` and its `.sha256` into the `backups` volume, keeping `BACKUP_KEEP_DAYS` days. To make one copy now: `sudo docker compose -f deploy/cloud/docker-compose.yml run --rm -e BACKUP_NOW=1 backup`.
+- **Every night** at `BACKUP_HOUR` the `backup` container writes `heromarket-cloud-YYYYMMDD-HHMMSS.dump.age` and its `.sha256` into the `backups` volume, keeping `BACKUP_KEEP_DAYS` days. To make one copy now: `sudo docker compose -f deploy/cloud/docker-compose.yml run --rm -e BACKUP_NOW=1 backup`.
 - **Off the server (recommended):** set `BACKUP_OFFSITE` and the `OFFSITE_*` values to an S3-compatible bucket (Cloudflare R2 or Backblaze B2 have free tiers). Use a key limited to that one bucket. Copies are already encrypted.
 - **Restore** (rehearsed on the test server on 2026-11-12). The private key is brought in only for the restore. It is read from the terminal into a memory-only folder of a throwaway container, never written to the server's disk.
 
   ```bash
   cd /opt/heromarket; dc="sudo docker compose -f deploy/cloud/docker-compose.yml"
   $dc up -d db                                                  # on a new server: an empty database
-  copy=/backups/heromarket-cloud-YYYYMMDD-HHMM.dump.age         # or put the copy into the backups volume first
+  copy=/backups/heromarket-cloud-YYYYMMDD-HHMMSS.dump.age         # or put the copy into the backups volume first
   pw=$(grep ^POSTGRES_PASSWORD= deploy/cloud/.env | cut -d= -f2)
   sudo docker run --rm -i --network heromarket-cloud_inside -v heromarket-cloud_backups:/backups:ro \
     -v "$PWD/deploy/cloud/restore.sh:/restore.sh:ro" --tmpfs /key:size=1m --entrypoint bash heromarket-cloud-backup:local \

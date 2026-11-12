@@ -1,7 +1,7 @@
 #!/bin/bash
 # The nightly encrypted copy of the HeroMarket cloud database (D-105).
 #
-#   heromarket-cloud-YYYYMMDD-HHMM.dump.age   pg_dump (custom format), encrypted with age to
+#   heromarket-cloud-YYYYMMDD-HHMMSS.dump.age pg_dump (custom format), encrypted with age to
 #                                              BACKUP_RECIPIENT (the owner's public key)
 #   ….dump.age.sha256                         its checksum
 # Kept BACKUP_KEEP_DAYS days in the "backups" volume. The server cannot read its own copies: only
@@ -23,7 +23,7 @@ DIR=/backups
 
 one_copy() {
   local name tmp
-  name="heromarket-cloud-$(date +%Y%m%d-%H%M).dump.age"
+  name="heromarket-cloud-$(date +%Y%m%d-%H%M%S).dump.age"
   tmp="$DIR/.partial-$name"
   # A copy that fails half way is never left under a real name.
   if pg_dump --format=custom --no-owner --no-privileges | age --encrypt --recipient "$BACKUP_RECIPIENT" > "$tmp"; then

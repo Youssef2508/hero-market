@@ -285,6 +285,13 @@ A real defect was found by the second test and fixed: re-pairing with an empty c
 
 The step-by-step procedure for you and the owner is [ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md).
 
+**Rehearsed on the real cloud** (`heromarket.duckdns.org`, emptied first with `reset-empty.sh`):
+
+- **Update and pairing:** the 1.5.2 store was updated in place from 0031 to 0036 in 2 seconds, then paired with a one-time code, with nothing to receive.
+- **First sync:** finished in 6.2 seconds, with the comparison passing and nothing waiting.
+- **On the website:** the owner signed in, and the invoice list (two pages), the product list and the shift list were identical to the shop's.
+- **Both directions:** a category made on the website reached the shop's database, and its deletion at the shop reached the website.
+
 ### Also built
 
 - **Receipts on the phone:** the store's own receipt, shown on screen, to print or save as PDF with the phone's print dialog, or to share as text (WhatsApp).
@@ -293,5 +300,5 @@ The step-by-step procedure for you and the owner is [ROLLOUT_GUIDE.md](ROLLOUT_G
 
 1. **Not every screen refreshes by itself.** The busy ones do (sales, shifts, treasury, link status); others show changes when reopened.
 2. **Shift reports and shortages lists from the phone:** printing them is a shop PC feature (its receipt printer). The phone shows them on screen.
-3. **Real phones:** the layout check is automatic, at two phone sizes, against the real server. Your own phone has not been tried yet; that is part of the rollout's step 19.
+3. **Real phones:** the layout check ran on the real site with the rehearsal store's data, and all 31 screens passed at 390×844 and 360×740. Your own phone has not been tried yet; that is part of the rollout's step 19.
 4. **The pilot's shadow period** (comparing the two sides daily for two weeks before relying on the phone) is in the rollout plan, not yet done.

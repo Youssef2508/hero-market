@@ -10,6 +10,12 @@ Proven before release:
 
 - On stores made by the released 1.4.0 and 1.5.2 programs themselves (`existingInstall.test.js`), the update kept every record and number, and pairing sent the whole store to the empty cloud and nothing the other way. The cloud then held the same records, and the website showed the same invoice list.
 - On a clean Windows (Windows Sandbox), the installer updated over a running background service. The pairing and every change waiting to be sent survived.
+- **Rehearsed on the real cloud (2026-11-12),** with the same steps as below:
+  - the 1.5.2 store was updated in place from database version 0031 to 0036 in 2 s;
+  - it was paired with a one-time code, and the first sync finished in 6 s;
+  - on the website, the invoice, product and shift lists were identical to the shop's;
+  - a change made on the website reached the shop's database, and a deletion at the shop reached the website;
+  - all 31 screens passed the phone-layout check at two phone sizes on the real site.
 
 ## Part 1 – Youssef, before the visit or call
 
