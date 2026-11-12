@@ -652,12 +652,24 @@ class SyncAgent {
     }
   }
 
-  /** Run every `intervalMs`; after failures, back off up to 5 minutes. */
-  start(intervalMs = 15000) {
+  /**
+   * Run every `intervalMs`; after failures, back off up to 5 minutes. The whole-table comparison
+   * (check) runs every `checkEveryMs` – it reads every row's version, so on a large store it is the
+   * expensive part – and at once again while the last one found a difference or could not run.
+   * Changes are sent on every cycle and at once after each change either way.
+   */
+  start(intervalMs = 15000, { checkEveryMs = 10 * 60 * 1000 } = {}) {
     this.stop()
+    let lastCheck = 0
+    let lastOk = false
     const tick = async () => {
       try {
-        await this.runOnce()
+        const due = !lastOk || Date.now() - lastCheck >= checkEveryMs
+        const r = await this.runOnce({ check: due })
+        if (due && r?.check && r.check.ok !== null && r.check.ok !== undefined) {
+          lastCheck = Date.now()
+          lastOk = r.check.ok
+        }
       } catch (e) {
         this.log(`sync: ${e.message}`)
       }

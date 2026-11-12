@@ -79,13 +79,23 @@ const syncFailed = (e) =>
           : `فشلت المزامنة على هذا الجهاز ولم يتغير شيء: ${e.message}`
   )
 
+/** This database's version: its latest migration (the cloud must be on the same one, D-105). */
+async function schemaVersion(pool) {
+  return (await pool.query('SELECT max(version) AS v FROM schema_migrations')).rows[0].v
+}
+
 module.exports = function syncModule(app) {
   const cfg = app.config
   const transport = async () => {
     const st = await syncState(app.pool)
     if (!linked(st)) return null
     if (cfg.syncTransport) return cfg.syncTransport(st)
-    return new HttpTransport({ url: st.cloud_url, storeId: st.store_id, token: st.device_token })
+    return new HttpTransport({
+      url: st.cloud_url,
+      storeId: st.store_id,
+      token: st.device_token,
+      schema: await schemaVersion(app.pool)
+    })
   }
   const agent = new SyncAgent({
     pool: app.pool,
@@ -100,7 +110,7 @@ module.exports = function syncModule(app) {
   app.decorate('syncAgent', agent)
   // The background work: the 15-second cycle, the push on every change, and the open link.
   const startAgent = () => {
-    agent.start(cfg.syncIntervalMs || 15000)
+    agent.start(cfg.syncIntervalMs || 15000, { checkEveryMs: cfg.syncCheckEveryMs })
     agent.listen().catch((e) => app.log.warn(`sync listen: ${e.message}`))
     agent.startLink()
   }
@@ -238,7 +248,8 @@ module.exports = function syncModule(app) {
           storeId: before.store_id,
           secretHash,
           name: String(name || '').slice(0, 120),
-          fresh
+          fresh,
+          schema: await schemaVersion(ctx.pool)
         })
       } catch (e) {
         throw new ServiceError(502, 'sync_failed', `تعذر الاتصال بالسحابة: ${e.message}`)

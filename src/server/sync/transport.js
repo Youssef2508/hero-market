@@ -53,10 +53,18 @@ class BaseTransport {
   }
 }
 
+// Every request names the shop database's version (its latest migration): the cloud refuses a
+// shop on another version rather than mix two shapes of the same tables (D-105).
+const headersOf = (t) => ({
+  authorization: `Bearer ${t.token}`,
+  'x-store-id': t.storeId,
+  ...(t.schema ? { 'x-heromarket-schema': t.schema } : {})
+})
+
 class InProcessTransport extends BaseTransport {
-  constructor({ app, storeId, token }) {
+  constructor({ app, storeId, token, schema = null }) {
     super()
-    Object.assign(this, { app, storeId, token })
+    Object.assign(this, { app, storeId, token, schema })
   }
   async call(op, body) {
     let res
@@ -65,7 +73,7 @@ class InProcessTransport extends BaseTransport {
         method: 'POST',
         url: `/api/${op}`,
         payload: body,
-        headers: { authorization: `Bearer ${this.token}`, 'x-store-id': this.storeId }
+        headers: headersOf(this)
       })
     } catch (e) {
       throw new TransportError(e.message)
@@ -75,22 +83,32 @@ class InProcessTransport extends BaseTransport {
 }
 
 class HttpTransport extends BaseTransport {
-  constructor({ url, storeId, token, timeoutMs = 30000, fetchImpl = globalThis.fetch }) {
+  constructor({
+    url,
+    storeId,
+    token,
+    schema = null,
+    timeoutMs = 30000,
+    fetchImpl = globalThis.fetch
+  }) {
     super()
     if (!/^https:\/\//i.test(url) && !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/i.test(url))
       throw new Error('The cloud address must use HTTPS.')
-    Object.assign(this, { url: url.replace(/\/+$/, ''), storeId, token, timeoutMs, fetchImpl })
+    Object.assign(this, {
+      url: url.replace(/\/+$/, ''),
+      storeId,
+      token,
+      schema,
+      timeoutMs,
+      fetchImpl
+    })
   }
   async call(op, body, { timeoutMs = this.timeoutMs } = {}) {
     let res
     try {
       res = await this.fetchImpl(`${this.url}/api/${op}`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${this.token}`,
-          'x-store-id': this.storeId
-        },
+        headers: { 'content-type': 'application/json', ...headersOf(this) },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs)
       })

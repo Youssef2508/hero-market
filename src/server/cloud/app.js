@@ -87,6 +87,7 @@ async function cloudChecksums(db, storeId, epoch) {
  *   onAccepted(db, rows, store)   rows that were newer than what the cloud held, inside the
  *                                 batch's transaction: [{ t, k, deleted, r (JSON text) }]
  *   afterCommit(store, rows)      after a batch committed
+ *   schemaCheck(version)          the calling shop's database version (may throw)
  * Returns { store } – the authenticator of the calling store, for further routes.
  */
 function registerSyncRoutes(app, pool, hooks = {}) {
@@ -102,6 +103,7 @@ function registerSyncRoutes(app, pool, hooks = {}) {
       s &&
       crypto.timingSafeEqual(Buffer.from(s.token_hash, 'hex'), Buffer.from(sha256(token), 'hex'))
     if (!ok) throw new CloudError(401, 'unauthorized', 'unauthorized')
+    if (hooks.schemaCheck) await hooks.schemaCheck(req.headers['x-heromarket-schema'])
     await pool.query('UPDATE cloud_stores SET last_seen_at = now() WHERE store_id = $1', [id])
     return s
   }

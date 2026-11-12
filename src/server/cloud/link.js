@@ -65,8 +65,23 @@ module.exports = function cloudLink(app, cfg) {
   }
 
   // ── The copy of the store ────────────────────────────────────
+  // The shop and the cloud must hold the same tables (D-105): a shop on another version is refused
+  // until both are updated, rather than mixing two shapes of the same records.
+  let ownSchema = null
+  const schemaCheck = async (theirs) => {
+    if (!theirs) return
+    ownSchema =
+      ownSchema || (await pool.query('SELECT max(version) AS v FROM schema_migrations')).rows[0].v
+    if (String(theirs) !== String(ownSchema))
+      throw new ServiceError(
+        409,
+        'schema_mismatch',
+        `إصدار HeroMarket على جهاز المتجر (${theirs}) يختلف عن إصدار السحابة (${ownSchema}). حدّث الاثنين إلى نفس الإصدار ثم أعد المحاولة.`
+      )
+  }
   const { store } = registerSyncRoutes(app, pool, {
     ...(cfg.cloudHooks || {}),
+    schemaCheck,
     // A new epoch: the shop sends everything again; what is here is replaced, not mixed. Refused
     // while this side still holds work the shop has not received (D-103): it would be lost.
     onEpoch: async (db) => {
@@ -169,12 +184,15 @@ module.exports = function cloudLink(app, cfg) {
             secretHash: { type: 'string', minLength: 64, maxLength: 64 },
             name: { type: 'string', maxLength: 120 },
             // The installation has no sales or shifts of its own (may take over a store).
-            fresh: { type: 'boolean' }
+            fresh: { type: 'boolean' },
+            // Its database version: must be the cloud's (D-105).
+            schema: { type: 'string', maxLength: 64 }
           }
         }
       }
     },
     async (req) => {
+      await schemaCheck(req.body.schema)
       const r = await pair(pool, req.body)
       live.lastContact = 0 // whoever held the link before must present the new secret
       changed()

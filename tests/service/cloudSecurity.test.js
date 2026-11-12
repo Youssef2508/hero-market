@@ -7,6 +7,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { requireDb } = require('./helpers')
 const { makeTwin } = require('./cloudHelpers')
+const { InProcessTransport } = require('../../src/server/sync/transport')
 const { hashPin } = require('../../src/server/auth/pin')
 const { PARAMS } = require('../../src/server/auth/password')
 
@@ -92,6 +93,51 @@ test('a password hashed with the older parameters still signs in and is renewed 
       (await twin.cloud.call('auth.login', { username: 'owner', password: PASSWORD })).status,
       200
     )
+  } finally {
+    await twin.close()
+  }
+})
+
+test('a shop on another database version is refused by the cloud until both are updated', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin({ link: false })
+  try {
+    await twin.sync()
+    const st = (await twin.shop.pool.query('SELECT store_id FROM sync_state')).rows[0]
+    const token = twin.transport.inner?.token ?? twin.transport.token
+    const version = (await twin.shop.pool.query('SELECT max(version) AS v FROM schema_migrations'))
+      .rows[0].v
+    const via = (schema) =>
+      new InProcessTransport({ app: twin.cloud.app, storeId: st.store_id, token, schema })
+
+    // The same version: the link works.
+    await via(version).results({ results: [], unknown: [] })
+    // Another version: refused, with a message that says what to do; nothing is taken in.
+    const before = await twin.cloud.pool.query('SELECT count(*)::int AS n FROM cloud_rows')
+    await assert.rejects(
+      () => via('9999_newer').push({ epoch: 1, rows: [] }),
+      (e) => e.status === 409 && e.code === 'schema_mismatch' && /حدّث الاثنين/.test(e.message)
+    )
+    await assert.rejects(
+      () => via('0001_older').wait({ timeoutMs: 0 }),
+      (e) => e.code === 'schema_mismatch'
+    )
+    const after = await twin.cloud.pool.query('SELECT count(*)::int AS n FROM cloud_rows')
+    assert.equal(after.rows[0].n, before.rows[0].n)
+
+    // Pairing from a PC on another version is refused before any code is used.
+    const pairing = await twin.cloud.app.inject({
+      method: 'POST',
+      url: '/api/link.pair',
+      payload: {
+        code: 'ABCD-EFGH-JKMN',
+        storeId: st.store_id,
+        secretHash: 'a'.repeat(64),
+        schema: '9999_newer'
+      }
+    })
+    assert.equal(pairing.statusCode, 409)
+    assert.equal(JSON.parse(pairing.body).error.code, 'schema_mismatch')
   } finally {
     await twin.close()
   }
