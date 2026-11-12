@@ -12,6 +12,14 @@ class TransportError extends Error {
   }
 }
 
+/** What the cloud says about itself on every answer (architecture §14.1). */
+function peerOf(get) {
+  const schema = get('x-heromarket-schema')
+  return schema
+    ? { schema: String(schema), version: String(get('x-heromarket-version') || '') }
+    : null
+}
+
 function unwrap(status, body) {
   if (status >= 200 && status < 300) return body
   throw new TransportError(body?.error?.message || `cloud answered ${status}`, {
@@ -78,6 +86,7 @@ class InProcessTransport extends BaseTransport {
     } catch (e) {
       throw new TransportError(e.message)
     }
+    this.peer = peerOf((h) => res.headers[h]) || this.peer
     return unwrap(res.statusCode, res.body ? JSON.parse(res.body) : null)
   }
 }
@@ -115,6 +124,7 @@ class HttpTransport extends BaseTransport {
     } catch (e) {
       throw new TransportError(e.message)
     }
+    this.peer = peerOf((h) => res.headers.get(h)) || this.peer
     let json = null
     try {
       json = await res.json()

@@ -3,6 +3,7 @@ import { Menu, X } from 'lucide-react'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 import LinkStatus from './LinkStatus'
+import { reloadIfUpdated } from '../../lib/appUpdate'
 import { activeItem, ALL_NAV_ITEMS, visibleGroups } from './navigation'
 
 const SIDEBAR_KEY = 'heromarket.sidebar' // 'expanded' | 'compact' | absent = automatic
@@ -72,6 +73,8 @@ export default function AppShell({
   const item = activeItem(currentView, adminTab)
   const go = (target) => {
     setMenuOpen(false)
+    // The cloud was updated while this page was open: come back as the new version (§14.1).
+    if (reloadIfUpdated()) return
     onNavigate(target)
   }
   const allowed = phone ? visibleGroups(currentUser).flatMap((g) => g.items) : []

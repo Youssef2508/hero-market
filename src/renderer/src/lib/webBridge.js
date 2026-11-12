@@ -8,6 +8,9 @@
 // What a browser cannot do is said plainly instead of failing silently: the desktop's receipt
 // printer, its backup files and its connection settings.
 
+import packageInfo from '../../../../package.json'
+import { noteServerVersion, setOwnVersion } from './appUpdate'
+
 const NOT_HERE = (what) => () =>
   Promise.reject(new Error(`${what} متاح من برنامج HeroMarket على جهاز المتجر فقط.`))
 
@@ -42,6 +45,7 @@ async function call(op, body) {
       }
     }
   }
+  noteServerVersion(res.headers.get('x-heromarket-version'))
   let json = null
   try {
     json = await res.json()
@@ -65,6 +69,7 @@ function terminalName() {
 }
 
 export function installWebBridge() {
+  setOwnVersion(packageInfo.version)
   if (window.api) return false // the desktop program: its own bridge is already there
   window.api = {
     isWeb: true,

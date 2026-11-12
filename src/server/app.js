@@ -308,10 +308,22 @@ async function createService(cfg) {
       ? Number((await pool.query('SELECT COALESCE(max(id), 0) AS n FROM sync_outbox')).rows[0].n)
       : 0
     await migrate(pool, { dir, logger: { info: (m) => app.log.info(m) } })
+    versions.schema = (
+      await pool.query('SELECT max(version) AS v FROM schema_migrations')
+    ).rows[0].v
     // The cloud's users, roles and permissions are the shop's, received through the link.
     if (cloud) await app.cloudLink.prepare({ seenBefore })
     else await withTransaction(pool, (c) => ensureAccessControl(c))
   }
+
+  // The cloud names its versions on every answer, refusals included (architecture §14.1): the shop
+  // shows both sides on its sync screen, and phones reload after the cloud is updated.
+  const versions = { app: cfg.appVersion || null, schema: null }
+  if (cloud)
+    app.addHook('onSend', async (req, reply) => {
+      if (versions.schema) reply.header('x-heromarket-schema', versions.schema)
+      if (versions.app) reply.header('x-heromarket-version', versions.app)
+    })
 
   app.addHook('onClose', async () => {
     await pool.end()

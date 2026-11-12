@@ -47,6 +47,8 @@ const cloudConfig = () => ({
   webRoot: process.env.HEROMARKET_WEB_ROOT || undefined,
   // Only for trying it on this machine over plain http: the session cookie without "Secure".
   insecureCookies: process.env.HEROMARKET_INSECURE_COOKIES === '1',
+  // Named on every answer (architecture §14.1).
+  appVersion: require('../../package.json').version,
   // The reverse proxy's address(es) or network, comma separated (D-105), e.g. 172.16.0.0/12 in
   // Docker: only these may say who the visitor is.
   trustProxy: process.env.HEROMARKET_TRUST_PROXY || undefined

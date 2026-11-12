@@ -22,6 +22,9 @@ const STATUS_LABEL = {
   rejected: 'رُفضت'
 }
 
+/** "1.6.0 (قاعدة البيانات 0035)" – the application and database versions of one side. */
+const versionText = (v) => (v ? `${v.app || '—'} (قاعدة البيانات ${v.schema || '—'})` : '—')
+
 /**
  * Cloud synchronisation (stage 4 phase 4, administrators only). The store keeps working without
  * internet; this screen links it to the owner's cloud account, shows what has been sent, and – after
@@ -166,7 +169,10 @@ export default function SyncTab({ triggerCustomAlert, triggerCustomConfirm }) {
     )
 
   const replacement = status.recoverFrom?.reason === 'replacement'
-  const healthy = status.linked && !status.lastError && status.checkOk !== false
+  // Records cross only while both database versions are the same (architecture §14.1).
+  const updateNeeded =
+    !!status.versions?.cloud && status.versions.cloud.schema !== status.versions.shop?.schema
+  const healthy = status.linked && !updateNeeded && !status.lastError && status.checkOk !== false
   return (
     <div className="settings-page">
       {status.recoveryPending && (
@@ -261,13 +267,15 @@ export default function SyncTab({ triggerCustomAlert, triggerCustomConfirm }) {
                   <TriangleAlert size={16} aria-hidden="true" />
                 )}
                 <span>
-                  {status.lastError
-                    ? `آخر محاولة فشلت: ${status.lastError}`
-                    : status.checkOk === false
-                      ? 'السحابة لا تطابق هذا الجهاز بالكامل (انظر التفاصيل).'
-                      : status.pending
-                        ? `${status.pending} تغيير بانتظار الإرسال.`
-                        : 'كل التغييرات وصلت إلى السحابة وتطابقت.'}
+                  {updateNeeded
+                    ? 'تحديث مطلوب: إصدار HeroMarket على هذا الجهاز يختلف عن إصدار السحابة. لا تُرسل التغييرات حتى يصبح الاثنان على نفس الإصدار؛ البيع والعمل مستمران على الجانبين، وكل شيء يُرسل بعد التحديث.'
+                    : status.lastError
+                      ? `آخر محاولة فشلت: ${status.lastError}`
+                      : status.checkOk === false
+                        ? 'السحابة لا تطابق هذا الجهاز بالكامل (انظر التفاصيل).'
+                        : status.pending
+                          ? `${status.pending} تغيير بانتظار الإرسال.`
+                          : 'كل التغييرات وصلت إلى السحابة وتطابقت.'}
                 </span>
               </p>
               <dl className="kv">
@@ -276,6 +284,11 @@ export default function SyncTab({ triggerCustomAlert, triggerCustomConfirm }) {
                   {!status.agent
                     ? '—'
                     : `${status.agent.kind === 'service' ? 'خدمة المزامنة في الخلفية (تعمل والبرنامج مغلق)' : 'هذا البرنامج (يتوقف عند إغلاقه)'} – ${status.agent.alive ? 'يعمل' : 'متوقف'}، آخر نبضة ${formatStamp(status.agent.seenAt)}`}
+                </dd>
+                <dt>الإصدار</dt>
+                <dd>
+                  هذا الجهاز {versionText(status.versions?.shop)}؛ السحابة{' '}
+                  {status.versions?.cloud ? versionText(status.versions.cloud) : 'غير معروف بعد'}
                 </dd>
                 <dt>آخر إرسال</dt>
                 <dd>{status.lastPushAt ? formatStamp(status.lastPushAt) : '—'}</dd>

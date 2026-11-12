@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const linked = (st) => !!(st && st.enabled && st.cloud_url && st.device_token)
 
 /** Status for the administrator (never the device token). */
-async function describe(db) {
+async function describe(db, cfg = {}) {
   const st = await syncState(db)
   const pending = Number(
     (await db.query('SELECT count(*) AS n FROM sync_outbox WHERE acked_at IS NULL')).rows[0].n
@@ -43,6 +43,12 @@ async function describe(db) {
     recoveryPending: st.recovery_pending,
     recoverFrom: st.recover_from,
     recoveredAt: st.recovered_at,
+    // Both sides' versions (architecture §14.1): records cross only while the database versions
+    // are the same; «تحديث مطلوب» otherwise.
+    versions: {
+      shop: { app: cfg.appVersion || null, schema: await schemaVersion(db) },
+      cloud: st.cloud_schema ? { app: st.cloud_app_version, schema: st.cloud_schema } : null
+    },
     // Who holds the link and when it last said it is alive (D-104).
     agent: st.agent_seen_at
       ? {
@@ -147,7 +153,7 @@ module.exports = function syncModule(app) {
   app.operation({
     name: 'sync.status',
     permission: 'sync.manage',
-    handler: async (ctx) => describe(ctx.pool)
+    handler: async (ctx) => describe(ctx.pool, cfg)
   })
 
   app.operation({
@@ -196,7 +202,7 @@ module.exports = function syncModule(app) {
           'sync_configure',
           `ربط المتجر بالسحابة: ${url} (${b.enabled ? 'مفعّل' : 'متوقف'})${changesStore ? ' – متجر جديد في السحابة' : ''}`
         )
-        return describe(db)
+        return describe(db, cfg)
       })
       if (cfg.syncAgent && b.enabled) startAgent()
       if (!b.enabled) await stopAgent()
@@ -292,7 +298,7 @@ module.exports = function syncModule(app) {
           'sync_configure',
           `ربط المتجر بالسحابة برمز الربط: ${url} – ${paired.name || ''} (${paired.fingerprint})${paired.replaced ? ' – هذا الجهاز يحل محل جهاز سابق' : ''}`
         )
-        return describe(db)
+        return describe(db, cfg)
       })
       await refresh()
       if (cfg.syncAgent) startAgent()
@@ -314,7 +320,7 @@ module.exports = function syncModule(app) {
                   recovery_pending = false`
         )
         await ctx.audit(db, 'sync_configure', 'إلغاء ربط المتجر بالسحابة')
-        const s = await describe(db)
+        const s = await describe(db, cfg)
         flags.recoveryPending = false
         return s
       })
@@ -332,7 +338,7 @@ module.exports = function syncModule(app) {
           throw e
         }
         const r = await agent.runOnce()
-        return { result: r, status: await describe(ctx.pool) }
+        return { result: r, status: await describe(ctx.pool, cfg) }
       } catch (e) {
         throw syncFailed(e)
       }
@@ -352,7 +358,7 @@ module.exports = function syncModule(app) {
       await refresh()
       // Start the new epoch straight away; a failure here is retried by the background agent.
       const next = await agent.runOnce().catch((e) => ({ error: e.message }))
-      return { recovery: r, sync: next, status: await describe(ctx.pool) }
+      return { recovery: r, sync: next, status: await describe(ctx.pool, cfg) }
     }
   })
 
@@ -367,7 +373,7 @@ module.exports = function syncModule(app) {
     handler: async (ctx) => {
       const s = await ctx.tx(async (db) => {
         const st = (await db.query('SELECT * FROM sync_state FOR UPDATE')).rows[0]
-        if (!st.recovery_pending) return describe(db)
+        if (!st.recovery_pending) return describe(db, cfg)
         await db.query(
           `UPDATE sync_state SET recovery_pending = false, recover_from = NULL,
                   recovery_detail = $1`,
@@ -378,7 +384,7 @@ module.exports = function syncModule(app) {
           'sync_recovery',
           'تخطي استرجاع البيانات من السحابة بعد استعادة النسخة الاحتياطية (التغييرات التي وصلت للسحابة بعد النسخة لن تعود لهذا الجهاز)'
         )
-        return describe(db)
+        return describe(db, cfg)
       })
       await refresh()
       return s

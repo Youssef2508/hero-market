@@ -35,6 +35,10 @@ class CuttableTransport {
         return this.inner[m](...a)
       }
   }
+  /** What the cloud said about itself on its last answer (versions, architecture §14.1). */
+  get peer() {
+    return this.inner.peer
+  }
   async wait(body) {
     if (this.down) throw new TransportError('offline (test)')
     const r = await this.inner.wait(body)

@@ -86,6 +86,21 @@ class SyncAgent {
     this.pumping = null
   }
 
+  /** The cloud's versions, as it last answered (architecture §14.1): kept for the sync screen. */
+  async notePeer() {
+    const p = this.link?.peer
+    if (!p) return
+    const key = `${p.version}|${p.schema}`
+    if (key === this.peerKey) return
+    this.peerKey = key
+    await this.pool
+      .query('UPDATE sync_state SET cloud_app_version = $1, cloud_schema = $2', [
+        p.version || null,
+        p.schema
+      ])
+      .catch(() => {})
+  }
+
   async resolveLink() {
     this.link = typeof this.transport === 'function' ? await this.transport() : this.transport
     if (!this.link) {
@@ -398,7 +413,9 @@ class SyncAgent {
     await this.resolveLink()
     const st = await syncState(this.pool)
     if (st.recovery_pending) return { skipped: 'recovery_pending' }
-    const turn = await this.link.wait({ timeoutMs, health: await this.health() })
+    const turn = await this.link
+      .wait({ timeoutMs, health: await this.health() })
+      .finally(() => this.notePeer())
     // Work the cloud did while the shop was unreachable comes in before anything new is carried
     // out here, so an operation can rely on it (a customer added from the phone, for example).
     if (turn.changes) await this.fetchCloud()
@@ -635,8 +652,10 @@ class SyncAgent {
           'UPDATE sync_state SET last_error = NULL, last_error_at = NULL WHERE last_error IS NOT NULL'
         )
         this.failures = 0
+        await this.notePeer()
         return { epoch, pushed, fetched, commands, check: checked }
       } catch (e) {
+        await this.notePeer()
         this.failures += 1
         await this.pool
           .query('UPDATE sync_state SET last_error = $1, last_error_at = LOCALTIMESTAMP(0)', [
