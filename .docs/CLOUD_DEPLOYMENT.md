@@ -2,7 +2,7 @@
 
 Written for whoever sets up the server (the developer, with the owner present for the keys). The owner's own steps are in [OWNER_CLOUD_GUIDE.md](OWNER_CLOUD_GUIDE.md). Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md); decisions D-101 to D-105 in [DECISIONS.md](DECISIONS.md).
 
-**Nothing here has been run on a real server yet.** Every step needs the owner's approval first: buying the server, the domain, any storage account, and the first deployment.
+**Run on the test server on 2026-11-12** (Contabo Cloud VPS 4, with made-up data). Every step that costs money or links the real shop needs the owner's approval first.
 
 ## 1. What runs
 
@@ -31,67 +31,81 @@ Files: [`deploy/cloud/docker-compose.yml`](../deploy/cloud/docker-compose.yml), 
 
 ## 3. The server
 
-As root on a fresh Ubuntu 24.04 server:
+These are the commands run on the test server on 2026-11-12: Contabo Cloud VPS 4, Ubuntu 24.04, the `ubuntu` user with `sudo`, and an SSH key added at install time. Root cannot sign in by SSH there.
 
 ```bash
-# Updates and the firewall: SSH, HTTP and HTTPS only.
-apt update && apt -y upgrade
-apt -y install ufw unattended-upgrades
-ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
+# SSH by key only. Contabo's cloud-init file (50-cloud-init.conf) turns password login back on; a
+# file read before it decides (sshd keeps the first value it reads).
+printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'PermitRootLogin no' \
+  | sudo tee /etc/ssh/sshd_config.d/10-heromarket.conf
+sudo sshd -t && sudo systemctl reload ssh     # then check a NEW key login works before closing this one
+
+# Updates, automatic security updates, and the firewall: SSH, HTTP and HTTPS only.
+sudo apt-get update && sudo apt-get -y upgrade
+sudo apt-get -y install ufw unattended-upgrades ca-certificates curl git
+sudo ufw default deny incoming && sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+sudo ufw --force enable
 
 # Docker from Docker's own repository (https://docs.docker.com/engine/install/ubuntu/).
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
-apt update && apt -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# SSH by key only (after copying your public key to ~/.ssh/authorized_keys and testing it).
-sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl reload ssh
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt-get update && sudo apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+[ -f /var/run/reboot-required ] && sudo systemctl reboot
 ```
 
-Docker publishes container ports past `ufw`; only `proxy` publishes any (80 and 443), so nothing else is reachable.
+Docker publishes container ports past `ufw`; only `proxy` publishes any (80 and 443), so nothing else is reachable. Checked from outside: 5432 and 8787 are closed.
 
 ## 4. HeroMarket
 
 ```bash
+sudo install -d -o ubuntu -g ubuntu /opt/heromarket
 git clone https://github.com/Youssef2508/hero-market.git /opt/heromarket
 cd /opt/heromarket && git checkout <the approved release tag>
 cp deploy/cloud/cloud.env.example deploy/cloud/.env && chmod 600 deploy/cloud/.env
 nano deploy/cloud/.env      # every value; generate the two secrets with the commands in the file
-docker compose -f deploy/cloud/docker-compose.yml up -d --build
-docker compose -f deploy/cloud/docker-compose.yml ps        # all four "running", cloud "healthy"
-curl -s https://<HEROMARKET_DOMAIN>/api/health               # {"ok":true,…}
+sudo docker compose -f deploy/cloud/docker-compose.yml up -d --build
+sudo docker compose -f deploy/cloud/docker-compose.yml ps        # all four running, cloud "healthy"
+curl -s https://<HEROMARKET_DOMAIN>/api/health                    # {"status":"ok",…}
 ```
 
-Keep a copy of `HEROMARKET_SECRET` with the owner, apart from the server: a restore on a new server needs the same one.
+Caddy obtains the certificate within seconds of the first start (port 80 must be reachable). Keep a copy of `HEROMARKET_SECRET` with the owner, apart from the server: a restore on a new server needs the same one.
 
 ## 5. Linking the shop
 
-1. On the server: `docker compose -f deploy/cloud/docker-compose.yml exec cloud node src/server/cli.js cloud-pair`. It prints a one-time code, valid 15 minutes.
+1. On the server: `sudo docker compose -f deploy/cloud/docker-compose.yml exec cloud node src/server/cli.js cloud-pair`. It prints a one-time code, valid 15 minutes.
 2. On the shop PC, as an administrator: «المزامنة السحابية» → «ربط برمز»: the address `https://<HEROMARKET_DOMAIN>` and the code. The PC confirms the store's name and sends everything; the background service keeps the link from then on.
 3. In the program, give «الدخول عبر الإنترنت» to the roles that may use the phone (administrators have it by default).
 
 ## 6. Backups and restore
 
-- Every night at `BACKUP_HOUR` the `backup` container writes `heromarket-cloud-YYYYMMDD-HHMM.dump.age` and its `.sha256` into the `backups` volume, keeping `BACKUP_KEEP_DAYS` days. One copy now: `docker compose -f deploy/cloud/docker-compose.yml exec -e BACKUP_NOW=1 backup bash /backup/backup.sh`.
+- **Every night** at `BACKUP_HOUR` the `backup` container writes `heromarket-cloud-YYYYMMDD-HHMM.dump.age` and its `.sha256` into the `backups` volume, keeping `BACKUP_KEEP_DAYS` days. To make one copy now: `sudo docker compose -f deploy/cloud/docker-compose.yml run --rm -e BACKUP_NOW=1 backup`.
 - **Off the server (recommended):** set `BACKUP_OFFSITE` and the `OFFSITE_*` values to an S3-compatible bucket (Cloudflare R2 or Backblaze B2 have free tiers). Use a key limited to that one bucket. Copies are already encrypted.
-- **Restore** (a lost or broken server): on a machine with the private key, Docker and the copy:
+- **Restore** (rehearsed on the test server on 2026-11-12). The private key is brought in only for the restore. It is read from the terminal into a memory-only folder of a throwaway container, never written to the server's disk.
 
   ```bash
-  docker compose -f deploy/cloud/docker-compose.yml up -d db        # an empty database
-  docker compose -f deploy/cloud/docker-compose.yml run --rm -v "$PWD:/work" --entrypoint bash backup \
-    /backup/restore.sh /work/<copy>.dump.age /work/heromarket-backup-key.txt postgres://heromarket:<password>@db:5432/heromarket
-  docker compose -f deploy/cloud/docker-compose.yml up -d
+  cd /opt/heromarket; dc="sudo docker compose -f deploy/cloud/docker-compose.yml"
+  $dc up -d db                                                  # on a new server: an empty database
+  copy=/backups/heromarket-cloud-YYYYMMDD-HHMM.dump.age         # or put the copy into the backups volume first
+  pw=$(grep ^POSTGRES_PASSWORD= deploy/cloud/.env | cut -d= -f2)
+  sudo docker run --rm -i --network heromarket-cloud_inside -v heromarket-cloud_backups:/backups:ro \
+    -v "$PWD/deploy/cloud/restore.sh:/restore.sh:ro" --tmpfs /key:size=1m --entrypoint bash heromarket-cloud-backup:local \
+    -c "cat > /key/k.txt && bash /restore.sh $copy /key/k.txt postgres://heromarket:$pw@db:5432/heromarket" \
+    < heromarket-backup-key.txt
+  $dc up -d
   ```
 
-  `restore.sh` checks the checksum and refuses a database that is not empty. The shop's link then brings the copy up to date. If no copy can be restored at all, the shop can rebuild the cloud from itself (a new cloud and a new pairing): only work done on the phone while the shop was unreachable and not yet received by the shop would be lost.
+  `restore.sh` checks the checksum and refuses a database that is not empty. In the rehearsal, the restored copy held the same users, records and database version as the live one, and a second restore over it was refused. The shop's link then brings the copy up to date.
+
+  If no copy can be restored at all, the shop can rebuild the cloud from itself (a new cloud and a new pairing). Only work done on the phone while the shop was unreachable, and not yet received by the shop, would be lost.
 
 ## 7. Updating
 
 The order and the reasons are in [PHASE2_ARCHITECTURE.md §14.1](PHASE2_ARCHITECTURE.md): **the cloud first, then the shop**, with the same release.
 
 ```bash
-cd /opt/heromarket && deploy/cloud/update.sh v1.6.0      # the approved release tag
+cd /opt/heromarket && sudo deploy/cloud/update.sh v1.6.0      # the approved release tag
 ```
 
 `update.sh` does the following:

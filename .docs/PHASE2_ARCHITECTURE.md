@@ -229,8 +229,9 @@ One always-on server with Docker Compose: the service, PostgreSQL, the HTTPS pro
 **Recommendation: OVHcloud VPS-1**, about **$4.5–5.2 per month** now (server $4.54 with its daily backup; off-server encrypted copy, certificate and a free host name at $0; Egyptian VAT of 14 % if the provider adds it, not confirmed). With a domain later (about $1 a month; my estimate) and the 7-day backup option ($1.40): about $7–7.6.
 
 - **Order day (2026-11-12):** every VPS plan in OVHcloud's "World" store had no European stock.
-  - VPS-1 was available only in Canada (Beauharnois), at $5.35 a month before tax, with no commitment and the daily backup included. The owner chose it.
-  - Measured from the development PC in Egypt: about 162 ms to Canada, against about 87 ms to OVH's French sites. The difference is small for phone use; the shop's sales never wait on the cloud.
+  - VPS-1 was offered only in Canada (Beauharnois), and the order then failed: "out of stock in region BHS".
+  - **Chosen instead: Contabo Cloud VPS 4**, European Union region: 4 vCPU, 8 GB, 100 GB SSD. $7.52 a month including VAT, monthly term, one-time setup $2.74. No provider backup add-on: our own encrypted copies, plus an off-server copy to come.
+  - Measured from the development PC in Egypt: about 162 ms to Canada, about 87 ms to OVH France; Contabo states 85 ms to its EU region.
   - Moving to Europe later is the restore procedure. The store's address is a host name, so the move needs no new pairing.
 - **Fallbacks:** Contabo Cloud VPS 4 if a 24-month contract is acceptable; AWS Lightsail $7 if you prefer month-to-month with a large provider and accept 1 GB.
 - **To confirm on the order page before paying:** the monthly-billing price, the tax line, and a location in France or Germany.

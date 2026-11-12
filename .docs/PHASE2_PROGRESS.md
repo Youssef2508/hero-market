@@ -184,6 +184,63 @@ Full suite **507 of 507**; lint 0 errors; format clean; CI passed on `fdf0996`.
 2. The Sandbox has no network, so the service there had no cloud to talk to; the link itself was proven on this PC in development mode.
 3. After a crash, the service comes back at the next five-minute mark; in between, the desktop program takes over if it is open.
 
-## Milestone 5
+## Milestone 5: ready for the internet, the server, and updates
 
-Not started: security review, production hosting setup, encrypted cloud backups, guides, pilot.
+**Status: built, and checked on the real server with made-up data.** Not yet done: the pilot (your shop linked to the cloud), the off-server backup copy, the permanent address, and the Windows Sandbox run of an installer update over a running background service.
+
+### The server
+
+**Contabo Cloud VPS 4**, European Union region: 4 vCPU, 8 GB, 100 GB. **$7.52 a month including VAT**, monthly term (one-time setup $2.74). OVHcloud had no VPS stock anywhere that day.
+
+- **Server security:**
+  - SSH by key only; password login is off (Contabo's own setting turned it on, and it is overridden);
+  - firewall: SSH, HTTP and HTTPS only;
+  - automatic security updates;
+  - Docker from Docker's own repository.
+- **The cloud:** at `https://109-123-240-94.sslip.io`, a test address that follows the server's IP. Its certificate is from Let's Encrypt, renewed automatically.
+- **What it holds:** only a disposable test store. Your shop is not linked.
+
+### Checked on the server
+
+| Check                                        | Result                                                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| HTTPS, certificate, security headers         | Pass: Let's Encrypt, HSTS, no-frame, nosniff, no referrer; plain http redirects; the database and service ports are closed |
+| A shop pairs over the internet               | Pass (a disposable test shop on the development PC)                                                                        |
+| Sign-in from a "phone", browser session      | Pass: the session is in a Secure, HttpOnly cookie, never in the page                                                       |
+| An operation from the phone runs in the shop | Pass: **650 ms** from the phone's request to the record in the shop's database and the answer                              |
+| Wrong guesses                                | Pass: locked for that address only; another address unaffected; a forged forwarding header does not help                   |
+| Encrypted backup and restore                 | Pass: the copy restored into an empty database matches the live one; restoring over a non-empty database is refused        |
+| Update to a release whose migration fails    | Pass: `update.sh` saw it never became healthy, put the copy back and started the previous version by itself                |
+| Update to a good release                     | Pass in 10 seconds; the previous image kept for going back                                                                 |
+
+### Built in this milestone (D-105, architecture §14.1)
+
+- **Sign-in from the internet:**
+  - the visitor's real address behind the proxy;
+  - a 15-minute pause for one name after 10 wrong passwords from anywhere, on the internet only;
+  - stronger password hashing (scrypt at an OWASP setting, renewed at the next sign-in in the shop). Argon2id is not adopted.
+- **The same database version on both sides,** or the link waits with «تحديث مطلوب». The sync screen shows both versions.
+- **Coordinated updates:**
+  - the cloud is updated first, then the shop;
+  - the update test (work pending on both sides, an operation in flight) loses and doubles nothing, and needs no new pairing;
+  - phones reload after a cloud update;
+  - `update.sh` returns to the previous version by itself if an update fails.
+- **Cloud invoice numbers read W-1, W-2, …** and are found by that number.
+- **The whole-table comparison** runs every 10 minutes instead of every 15 seconds.
+- **Guides:** [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) (with the commands as run on the server) and [OWNER_CLOUD_GUIDE.md](OWNER_CLOUD_GUIDE.md).
+
+### Test results
+
+Full suite **521 of 521**; lint 0 errors; format clean; CI passed.
+
+### Still to do before the pilot
+
+1. **A permanent address:** a free DuckDNS name or your own domain. The test address contains the IP, so moving the server would need a new pairing.
+2. **The off-server copy:** a free Cloudflare R2 or Backblaze B2 bucket, in your account. Until then, copies stay on the server, which has no provider backup add-on.
+3. **Your backup key:** made on your computer. The test key is replaced.
+4. **The Windows Sandbox run** of an installer update over a running background service with unsent changes.
+5. **The pilot:**
+   - a release built from this branch, after your approval to merge;
+   - your shop PC updated and linked;
+   - a shadow period: the cloud receives and is compared daily, and nobody works in it;
+   - then phone use is switched on.
