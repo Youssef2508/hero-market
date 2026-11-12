@@ -17,6 +17,7 @@ import { ThemeProvider } from './theme/ThemeProvider'
 import { installModalChrome } from './lib/modalChrome'
 import { installKeyboard } from './lib/keyboard'
 import { installWebBridge } from './lib/webBridge'
+import ReceiptViewer from './components/shell/ReceiptViewer'
 
 // In a browser (the internet way in) there is no preload bridge: provide the same one.
 installWebBridge()
@@ -28,6 +29,7 @@ createRoot(document.getElementById('root')).render(
     <ThemeProvider>
       <ErrorBoundary>
         <App />
+        {window.api?.isWeb && <ReceiptViewer />}
       </ErrorBoundary>
     </ThemeProvider>
   </StrictMode>

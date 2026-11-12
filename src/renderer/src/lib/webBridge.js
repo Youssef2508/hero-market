@@ -10,6 +10,7 @@
 
 import packageInfo from '../../../../package.json'
 import { noteServerVersion, setOwnVersion } from './appUpdate'
+import { showWebReceipt } from './webReceipt'
 
 const NOT_HERE = (what) => () =>
   Promise.reject(new Error(`${what} متاح من برنامج HeroMarket على جهاز المتجر فقط.`))
@@ -97,8 +98,9 @@ export function installWebBridge() {
     printer: {
       print: NOT_HERE('الطباعة على طابعة الإيصالات'),
       printReport: NOT_HERE('الطباعة على طابعة الإيصالات'),
-      printSale: NOT_HERE('الطباعة على طابعة الإيصالات'),
-      saleToPdf: NOT_HERE('حفظ الإيصال PDF'),
+      // The receipt on screen: print or save as PDF, or share (D-106).
+      printSale: (data) => showWebReceipt(call, data),
+      saleToPdf: (data) => showWebReceipt(call, data),
       testTemplate: NOT_HERE('الطباعة على طابعة الإيصالات')
     },
     generateShortagesPdf: NOT_HERE('ملف النواقص'),
