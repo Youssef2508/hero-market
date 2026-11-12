@@ -110,25 +110,17 @@ module.exports = function cloudLink(app, cfg) {
     onAccepted: async (db, rows) => {
       // Written by the shop while merging this side's own changes: already here (D-103).
       const own = rows.filter((r) => !r.e)
-      // A user whose password changed or who was disabled is signed out here too.
-      const ids = own.filter((r) => r.t === 'users' && r.op !== 'delete').map((r) => Number(r.k))
-      const before = ids.length
-        ? (
-            await db.query(
-              'SELECT id, password_scrypt, is_active FROM users WHERE id = ANY($1::int[])',
-              [ids]
-            )
-          ).rows
-        : []
       // The shop's changes, field by field: the shop's value stands where both changed (D-103).
+      // A user whose password was changed or reset there is signed out here too, by the trigger of
+      // migration 0036 (not by a renewed hash, D-106); a disabled user is signed out here.
       await applyChanges(db, own, { receiver: 'cloud' })
-      if (before.length)
+      const ids = own.filter((r) => r.t === 'users' && r.op !== 'delete').map((r) => Number(r.k))
+      if (ids.length)
         await db.query(
           `UPDATE sessions s SET revoked_at = LOCALTIMESTAMP(0)
-             FROM users u, jsonb_to_recordset($1::jsonb) AS b(id int, password_scrypt text, is_active boolean)
-            WHERE u.id = b.id AND s.user_id = u.id AND s.revoked_at IS NULL
-              AND (NOT u.is_active OR u.password_scrypt IS DISTINCT FROM b.password_scrypt)`,
-          [JSON.stringify(before)]
+             FROM users u WHERE u.id = ANY($1::int[]) AND s.user_id = u.id
+              AND s.revoked_at IS NULL AND NOT u.is_active`,
+          [ids]
         )
       if (cfg.cloudHooks?.onAccepted) await cfg.cloudHooks.onAccepted(db, own)
     },

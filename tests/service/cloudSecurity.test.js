@@ -142,3 +142,105 @@ test('a shop on another database version is refused by the cloud until both are 
     await twin.close()
   }
 })
+
+test('D-106: a password changed at the shop signs that user out of the cloud; a renewed hash does not', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin({ link: false })
+  try {
+    // The cashier's hash is in the older format: their next sign-in at the shop renews it.
+    await twin.shop.pool.query("UPDATE users SET password_scrypt = $1 WHERE username = 'cashier'", [
+      hashPin('Test-5173-pw')
+    ])
+    await twin.sync()
+    const owner = await twin.signIn('8642')
+    const cashier = await twin.signIn('5173')
+    const alive = async (token) => (await twin.cloud.call('shifts.current', {}, token)).status
+    assert.deepEqual([await alive(owner), await alive(cashier)], [200, 200])
+
+    // The cashier signs in at the shop (hash renewed) and the owner changes their password there.
+    assert.equal(
+      (await twin.shop.call('auth.login', { username: 'cashier', password: 'Test-5173-pw' }))
+        .status,
+      200
+    )
+    assert.equal(
+      (
+        await twin.shop.call(
+          'auth.changePassword',
+          { currentPassword: PASSWORD, newPassword: 'Keeper-Gate-2027' },
+          twin.owner
+        )
+      ).status,
+      200
+    )
+    await twin.sync()
+    assert.equal(await alive(owner), 401, 'the owner is signed out of the cloud (a lost phone)')
+    assert.equal(await alive(cashier), 200, 'a renewed hash is not a new password')
+    assert.equal(
+      (await twin.cloud.call('auth.login', { username: 'owner', password: 'Keeper-Gate-2027' }))
+        .status,
+      200
+    )
+    assert.equal((await twin.shop.call('shifts.current', {}, twin.owner)).status, 200, 'kept here')
+  } finally {
+    await twin.close()
+  }
+})
+
+test('D-106: internet access withdrawn at the shop is refused there before the cloud hears of it', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin({ link: false })
+  try {
+    await twin.sync()
+    const crypto = require('crypto')
+    const { executeRemote } = require('../../src/server/sync/remoteOps')
+    const cashierId = (
+      await twin.shop.pool.query("SELECT id, role_id FROM users WHERE username = 'cashier'")
+    ).rows[0]
+    await twin.shop.pool.query(
+      "DELETE FROM role_permissions WHERE role_id = $1 AND permission = 'internet.access'",
+      [cashierId.role_id]
+    )
+    const r = await executeRemote(twin.shop.app, {
+      id: crypto.randomUUID(),
+      operation: 'expenses.create',
+      body: { amount: 4, category: 'عام', destination: 'treasury', clientRef: crypto.randomUUID() },
+      userId: cashierId.id,
+      username: 'cashier'
+    })
+    assert.equal(r.status, 'refused')
+    assert.equal(r.httpStatus, 403)
+    assert.equal(
+      Number((await twin.shop.pool.query('SELECT count(*) AS n FROM expenses')).rows[0].n),
+      0
+    )
+  } finally {
+    await twin.close()
+  }
+})
+
+test('D-106: the recovery code hash never reaches the cloud', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin({ link: false })
+  try {
+    await twin.shop.pool.query("UPDATE users SET recovery_hash = $1 WHERE username = 'owner'", [
+      hashPin('RECOVERY-CODE')
+    ])
+    await twin.sync()
+    const cloudUser = await twin.cloud.pool.query(
+      "SELECT recovery_hash FROM users WHERE username = 'owner'"
+    )
+    assert.equal(cloudUser.rows[0].recovery_hash, null)
+    const stored = await twin.cloud.pool.query(
+      "SELECT count(*)::int AS n FROM cloud_rows WHERE table_name = 'users' AND row_data ? 'recovery_hash'"
+    )
+    assert.equal(stored.rows[0].n, 0)
+    // Still there in the shop, where recovery happens.
+    const shopUser = await twin.shop.pool.query(
+      "SELECT recovery_hash FROM users WHERE username = 'owner'"
+    )
+    assert.ok(shopUser.rows[0].recovery_hash)
+  } finally {
+    await twin.close()
+  }
+})

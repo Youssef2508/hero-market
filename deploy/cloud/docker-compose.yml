@@ -124,6 +124,12 @@ services:
       - ./backup.sh:/backup/backup.sh:ro
       - backups:/backups
     networks: [inside]
+    # Writes only its own volume (D-106).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
 

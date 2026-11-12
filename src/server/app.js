@@ -73,6 +73,8 @@ async function createService(cfg) {
       // covers any future debug logging).
       redact: [
         'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers["x-heromarket-remote"]',
         'body.pin',
         'body.password',
         'body.currentPassword',
@@ -128,6 +130,9 @@ async function createService(cfg) {
       if (!remote) throw unauthorized()
       const user = await describeUser(pool, remote.userId)
       if (!user || !user.isActive) throw unauthorized('تم تعطيل هذا الحساب.')
+      // The shop's own records decide (D-106): internet access withdrawn here is refused even
+      // before the cloud has heard of it.
+      if (!user.permissions.includes(INTERNET)) throw forbidden(NO_INTERNET)
       return { sessionId: 0, user, remote }
     }
     const header = req.headers.authorization || ''
