@@ -1561,3 +1561,25 @@ Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §9.
   - reinstalling over the running service gave a new process with its heartbeat.
 
   Not verifiable there: an actual Windows restart, or a real cloud (no network).
+
+## D-105 Ready for the internet: sign-in limits, password hashing, versions, W- numbers, the cloud server (Phase 2 milestone 5)
+
+Deployment: [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md). Owner: [OWNER_CLOUD_GUIDE.md](OWNER_CLOUD_GUIDE.md).
+
+- **The visitor's address behind the proxy.** The cloud takes it from the proxy's `X-Forwarded-For`, trusted only from the proxy's own address (`HEROMARKET_TRUST_PROXY`). Without this, every visitor shares the proxy's address, and one person's wrong guesses lock out everyone.
+- **A limit per typed username, on the internet only:** 10 wrong passwords in 15 minutes, from any number of addresses, pause that name's internet sign-in for 15 minutes. It is keyed by what was typed, so it does not reveal whether an account exists. It never applies at the shop's tills: nobody there can lock another person out. The existing limits stay (5 per terminal, 20 per address).
+- **Password hashing (the Argon2id question from the approval):** scrypt stays, at N=2^14, r=8, p=5, an OWASP-recommended setting (16 MiB of memory, about 0.26 s on the development PC), computed off the main thread so a sign-in never holds up a till.
+  - Hashes made before still verify, and are renewed at the next successful sign-in in the shop (the cloud never rewrites a user record itself; it receives the new hash).
+  - Argon2id is not adopted: it needs a native add-on in both the Windows installer and the server image, for no meaningful gain over this setting.
+  - PINs keep their format; they never reach the cloud.
+- **One database version on both sides.** The shop names its version (its latest migration) on every request to the cloud and when pairing. The cloud refuses another version with a message to update both (`schema_mismatch`), before taking anything in.
+- **Cloud invoice numbers read W-1, W-2, …** (`src/shared/saleNumber.mjs`): on the screens, the receipts and the invoice lists. "W-5" typed in the search or the invoice lookup finds the cloud's fifth. The shop's numbers are unchanged. A plain number no longer also finds a cloud invoice by its last digits.
+- **The whole-table comparison runs every 10 minutes** in the 15-second cycle, and at once again after a difference or when it could not run. Changes are still sent every cycle and at once after each change; explicit runs («مزامنة الآن», tests) still compare every time.
+- **The cloud server** (`deploy/cloud/`, `Dockerfile.cloud`): PostgreSQL, the cloud service with the browser screens, and Caddy. Caddy provides HTTPS with a Let's Encrypt certificate, HSTS and security headers. Only ports 80 and 443 are open.
+- **Cloud backups:** a nightly `pg_dump`, encrypted with age to the owner's public key, so the server cannot read its own copies. Kept 14 days with checksums. An optional upload to S3-compatible storage keeps a copy off the server. `restore.sh` verifies the checksum and refuses a database that is not empty.
+- **Tests:**
+  - `cloudSecurity.test.js` (3): per address and per name; the shop unaffected; the hash renewal reaching the cloud; another version refused for the link and for pairing;
+  - `saleNumbers.test.js` (1);
+  - `tests/unit/saleNumber.test.mjs` (3);
+  - `tests/unit/syncSchedule.test.js` (2);
+  - the password unit test is extended.

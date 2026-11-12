@@ -284,13 +284,84 @@ Milestone 1 alone already gives the main use case (the owner managing remotely w
 | Bad cloud deployment                    | The shop is unaffected; the link pauses                       | Start the previous image                                                 |
 | Failed migration in the cloud           | Deployment stops before serving                               | Restore the copy taken just before; the shop resends what is missing     |
 | Failed migration on the PC              | As today: the installer's verified copy is put back           | Existing procedure                                                       |
-| The two sides on different versions     | The link pauses with a clear message; both keep working       | Update the older side                                                    |
+| The two sides on different versions     | The link pauses with a clear message; both keep working       | Update the older side (§14.1)                                            |
 | Cloud database damaged or server lost   | The shop is unaffected                                        | New server from the guide; fill from the shop; add the last cloud copy   |
 | PC crash or power cut mid-sync          | Nothing is half-applied                                       | Automatic on restart                                                     |
 | Cloud outage                            | The shop sells; changes wait                                  | Automatic on return                                                      |
 | PC lost or its disk dead                | Work continues from the phone                                 | New PC, install, link, fill from the cloud                               |
 | An old backup restored on one side      | That side pauses                                              | It catches up from the other, then resumes                               |
 | A merge rule proves wrong after go-live | The link can be paused from either side without stopping work | Both databases keep every original record; the correction is a new entry |
+
+### 14.1 Versions and coordinated updates (added 2026-11-12 at the owner's request)
+
+Every future HeroMarket update has to reach two installations: the shop (the desktop program and its background service, one installer) and the cloud (the service and the browser screens, one server image). They must stay compatible, and no update may cost a pairing, a record or a duplicated operation.
+
+**What a version is.** Each release has an application version (`package.json`, for example 1.6.0) and a database version: the name of its latest migration (for example `0035_…`). Both come from the same git tag, which builds the Windows installer and the cloud image.
+
+**The compatibility rule (built in D-105).** The shop and the cloud exchange records only while their database versions are the same. The shop names its version on every request and when pairing; the cloud refuses another version with «حدّث الاثنين إلى نفس الإصدار». Application versions may differ when the database version is the same, for example a fix to one screen.
+
+- **Why equality and not a range:** merging records between two shapes of the same table could drop a new field without anyone noticing.
+- **The cost:** a short period during an update when the two sides work apart. That is already a normal, tested state (milestone 3).
+- If such periods ever become a burden, migrations can be split into "add" and "remove" releases and the rule widened to one version apart. That is not needed now.
+
+**Within each installation, the parts never differ.**
+
+- **Shop:** the desktop program and the background service are the same executable from the same installer. The installer stops the service before replacing files (D-104), applies the migrations after its verified copy, then registers and starts the service again.
+- **Cloud:** the browser screens are built into the same image as the service, so a server always serves screens of its own version.
+- **A phone with a page left open from before an update:** see "Still to build" below.
+
+**What must survive every update** lives in the databases, never in program files:
+
+- the shop's identity and pairing (`sync_state`: store id, device secret, cloud address);
+- the cloud's record of the store (`cloud_stores`);
+- epochs and checkpoints (`sync_row_versions`, the cloud's row store);
+- unsent changes (`sync_outbox`) and received ones (`sync_received`);
+- operations from the internet in every state (`cloud_operations` on the cloud; `remote_operations` on the shop, including "not carried out" records);
+- the attention list.
+
+Migrations rules, from now on:
+
+- they only add (columns with defaults, tables, functions), never truncate or rewrite these tables;
+- a change recorded before a migration and applied after it leaves the new fields untouched;
+- every release's tests include an update with work pending on both sides (below).
+
+**The order of an update.**
+
+1. **Release:** one tag gives the installer and the cloud image. The release notes give the database version and say whether it changed.
+2. **Cloud first,** by whoever maintains the installation, with the owner's approval:
+   - an encrypted copy now (`BACKUP_NOW=1`);
+   - start the new image, which migrates its copy at start;
+   - check its health.
+
+   From that moment, if the database version changed, the cloud refuses the shop's link. Phones see «المتجر غير متصل» and keep working on the cloud alone, exactly as during an outage.
+
+3. **Then the shop,** by the owner, as for every update so far: the installer takes its verified copy, stops the service, migrates, and starts it again. The link reconnects with equal versions and both sides' work comes together.
+
+The reverse order is equally safe: the shop keeps selling and its changes wait. Cloud first is preferred because the server update takes minutes, while the shop's can wait for a quiet hour. If the database version did not change, the order does not matter and the two never work apart.
+
+**When something goes wrong.**
+
+| Event                                               | Effect                                                                                      | Recovery                                                                                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The cloud's migration fails                         | The new cloud does not become healthy; the shop is unaffected (it counts the cloud as down) | Start the previous image (kept by version tag) on the copy taken in step 2. Nothing from the shop is lost: its unsent changes wait in its own outbox                 |
+| The shop's update fails                             | The installer puts back its verified copy; the shop is on the old version                   | Both keep working apart until the update is retried; nothing to repair                                                                                               |
+| The connection drops during either update           | Nothing special                                                                             | Receiving is exactly once (`sync_received`), an operation runs at most once (`remote_operations`), unsent changes stay until acknowledged                            |
+| An operation from a phone was in flight at the stop | The phone shows "waiting for confirmation" (D-101)                                          | After the update, the shop reports it carried out or records "not carried out" (D-104). It is never carried out twice, and never silently lost                       |
+| Phones stay on the old page                         | Their next request meets a newer service                                                    | See "Still to build": they reload by themselves                                                                                                                      |
+| An update goes wrong after both sides have merged   | As in §14                                                                                   | A fix in a new release (the same order). A database is never rolled back by hand while the other side holds work it has not received; the restore rules of §14 apply |
+
+Pairing, device identity and checkpoints are never touched by an update, so an update never requires pairing again.
+
+**Still to build** (milestone 5, after the cloud has run on its server and before the pilot, so the pilot's first update uses it):
+
+1. **Both versions on the sync screen** (application and database, shop and cloud), and a clear «تحديث مطلوب» state while they differ, instead of a generic link error.
+2. **Phones reload by themselves:**
+   - every answer from the cloud carries its version;
+   - the browser screens compare it with their own;
+   - on a difference they reload at the next screen change, never in the middle of a form.
+3. **The cloud image tagged by version** (`heromarket-cloud:1.6.0`), so the previous one is always there to start again. Plus an `update.sh` that takes the copy, starts the new image, checks its health, and goes back to the previous image by itself if the check fails.
+4. **The update test** in the suite: shop and cloud at version N-1 with work pending on both sides and an operation in flight. Then the cloud moves to N (refuses the shop, works alone), then the shop moves to N (reconnects). Expected: the same records as without the update, the pairing kept, nothing duplicated. Plus a Windows Sandbox run of the installer updating over a running background service with unsent changes.
+5. **Release notes** state the database version and the order.
 
 ## 15. Limits, plainly
 
