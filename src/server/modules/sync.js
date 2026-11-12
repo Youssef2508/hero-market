@@ -279,7 +279,9 @@ module.exports = function syncModule(app) {
           `UPDATE sync_state SET cloud_url = $1, store_id = $2, device_token = $3, enabled = true,
                   linked_at = LOCALTIMESTAMP(0), epoch = CASE WHEN $4 THEN NULL ELSE epoch END,
                   last_error = NULL`,
-          [url, paired.storeId, secret, changesStore]
+          // A new, empty cloud (its first store; for example after the cloud's database was lost):
+          // a new epoch, so everything this shop holds is sent to it at once (D-106).
+          [url, paired.storeId, secret, changesStore || !paired.replaced]
         )
         // A different PC taking over a store the cloud already holds must first receive that
         // store's records from the cloud; until then nothing is sent, so an empty or older
