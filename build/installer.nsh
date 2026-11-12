@@ -6,6 +6,8 @@
 ; 2. The store's database runs as a Windows service with its own account, set up by the program
 ;    itself (HeroMarket-POS.exe --setup-service, src/main/serviceSetup.js): Windows users cannot
 ;    open the database files or the superuser password (security review, option C).
+; 3. The background sync service (Phase 2, D-104): a scheduled task runs the program with no window
+;    from Windows start; it is stopped before files change and registered again by the setup.
 ; The installer is per-machine (already elevated), so no extra prompt appears.
 
 !if "${PRODUCT_NAME}" == "HeroMarket POS QA"
@@ -17,6 +19,11 @@
 ; Before anything changes. Full paths: a tool found first on PATH must never run with the
 ; installer's administrator rights.
 !macro customInit
+  ; The background sync service (D-104) runs the same program with no window: stop it first, so
+  ; only a till someone has open stops the installer below. Started again at the end of the setup.
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /End /TN "HeroMarket\HeroMarket Sync"'
+  Pop $0
+  Sleep 3000
   ; HeroMarket open on ANY Windows account (switch user included): stop here, nothing changed. An
   ; update while someone sells would cut their database connection mid-sale.
   nsExec::ExecToStack '"$SYSDIR\cmd.exe" /c ""$SYSDIR\tasklist.exe" /NH /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" | "$SYSDIR\findstr.exe" /I /C:"${APP_EXECUTABLE_FILENAME}""'
@@ -24,9 +31,16 @@
   Pop $1
   ${If} $0 == 0
     MessageBox MB_ICONEXCLAMATION|MB_OK "برنامج HeroMarket مفتوح الآن على هذا الجهاز (ربما على حساب Windows آخر).$\r$\nأغلقه على كل الحسابات، ثم شغّل برنامج التثبيت مرة أخرى. لم يتم تغيير أي شيء." /SD IDOK
+    ; Nothing changes: the background service may run again.
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /Run /TN "HeroMarket\HeroMarket Sync"'
+    Pop $0
     SetErrorLevel 4
     Quit
   ${EndIf}
+  ; Its five-minute watchdog must not start the old program while files are replaced; the setup
+  ; registers the task again (enabled) with the new program.
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /Change /TN "HeroMarket\HeroMarket Sync" /DISABLE'
+  Pop $0
   ; The service runs postgres.exe from the program folder: stop it before files are replaced.
   nsExec::Exec '"$SYSDIR\net.exe" stop "${HM_SERVICE}"'
   Pop $0

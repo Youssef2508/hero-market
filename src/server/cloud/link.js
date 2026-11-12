@@ -305,11 +305,20 @@ module.exports = function cloudLink(app, cfg) {
         }
       }
     },
-    async (req) => {
+    async (req, reply) => {
       const s = await store(req)
       const wasReachable = reachable()
       live.lastContact = Date.now()
       live.held += 1
+      // The shop PC's side of this request went away (its program stopped, its connection broke):
+      // the shop is unreachable from this moment, not when the request would have timed out (D-104).
+      let gone = false
+      let wake = null
+      reply.raw.once('close', () => {
+        if (reply.raw.writableFinished) return
+        gone = true
+        if (wake) wake()
+      })
       try {
         const { pending, seen, ...health } = req.body.health || {}
         await report(s.store_id, { pending, seen }, health)
@@ -343,8 +352,10 @@ module.exports = function cloudLink(app, cfg) {
             }
             const timer = setTimeout(done, req.body.timeoutMs ?? 25000)
             live.wake.add(done)
-            req.raw.on?.('close', done)
+            wake = done
           })
+          // Nobody to hand them to: they stay queued for the next holder.
+          if (gone) return { ops: [], check: [], changes: 0 }
           ops = await take()
         }
         const out = []
@@ -370,7 +381,10 @@ module.exports = function cloudLink(app, cfg) {
         return { ops: out, check, changes }
       } finally {
         live.held -= 1
-        live.lastContact = Date.now()
+        if (gone) {
+          live.lastContact = 0
+          changed()
+        } else live.lastContact = Date.now()
       }
     }
   )

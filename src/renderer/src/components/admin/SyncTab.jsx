@@ -271,6 +271,12 @@ export default function SyncTab({ triggerCustomAlert, triggerCustomConfirm }) {
                 </span>
               </p>
               <dl className="kv">
+                <dt>الاتصال يعمل من</dt>
+                <dd>
+                  {!status.agent
+                    ? '—'
+                    : `${status.agent.kind === 'service' ? 'خدمة المزامنة في الخلفية (تعمل والبرنامج مغلق)' : 'هذا البرنامج (يتوقف عند إغلاقه)'} – ${status.agent.alive ? 'يعمل' : 'متوقف'}، آخر نبضة ${formatStamp(status.agent.seenAt)}`}
+                </dd>
                 <dt>آخر إرسال</dt>
                 <dd>{status.lastPushAt ? formatStamp(status.lastPushAt) : '—'}</dd>
                 <dt>آخر استلام أوامر</dt>

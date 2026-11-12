@@ -43,6 +43,24 @@ async function describe(db) {
     recoveryPending: st.recovery_pending,
     recoverFrom: st.recover_from,
     recoveredAt: st.recovered_at,
+    // Who holds the link and when it last said it is alive (D-104).
+    agent: st.agent_seen_at
+      ? {
+          kind: st.agent_kind,
+          pid: st.agent_pid,
+          version: st.agent_version,
+          startedAt: st.agent_started_at,
+          seenAt: st.agent_seen_at,
+          alive:
+            Number(
+              (
+                await db.query(
+                  'SELECT EXTRACT(EPOCH FROM (LOCALTIMESTAMP(0) - agent_seen_at)) AS s FROM sync_state'
+                )
+              ).rows[0].s
+            ) < 90
+        }
+      : null,
     recoveryDetail: st.recovery_detail,
     commands
   }
@@ -74,6 +92,9 @@ module.exports = function syncModule(app) {
     transport,
     // Operations started from the internet are carried out by this service's own handlers (D-101).
     execute: (op) => executeRemote(app, op),
+    // Who runs it, shown with its heartbeat (D-104): the background service or the desktop program.
+    kind: cfg.agentKind || 'desktop',
+    version: cfg.appVersion || null,
     log: (m) => app.log.info(m)
   })
   app.decorate('syncAgent', agent)

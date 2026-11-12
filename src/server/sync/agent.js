@@ -31,6 +31,7 @@ const { outcomeOf } = require('./remoteOps')
 const { applyChanges } = require('./merge')
 
 const LOCK_KEY = 48151624 // one agent per database at a time
+const LINK_LOCK = 48151630 // one holder of the open link per database (D-104)
 const PRUNE_AFTER_DAYS = 7
 const MAX_BATCH_ROWS = 4000 // the cloud accepts up to 5000 rows per batch
 const RECOVERY_PAGE = 2000
@@ -64,8 +65,18 @@ class SyncAgent {
    *                                           the internet (sync/remoteOps.js executeRemote)
    * @param {(msg: string) => void} [o.log]
    */
-  constructor({ pool, transport, batchSize = 500, commandHooks, execute, log = () => {} }) {
-    Object.assign(this, { pool, transport, batchSize, commandHooks, execute, log })
+  constructor({
+    pool,
+    transport,
+    batchSize = 500,
+    commandHooks,
+    execute,
+    kind,
+    version,
+    log = () => {}
+  }) {
+    // kind: who runs this agent ('service' | 'desktop' | 'server'), shown with its heartbeat.
+    Object.assign(this, { pool, transport, batchSize, commandHooks, execute, kind, version, log })
     this.link = null
     this.timer = null
     this.failures = 0
@@ -401,9 +412,21 @@ class SyncAgent {
       error: o.error || undefined
     })
     for (const id of turn.check || []) {
-      const o = await outcomeOf(this.pool, id)
-      if (o) results.push(pack(o))
-      else unknown.push(id)
+      // "Never carried out here" is decided in this database, once: the verdict takes the
+      // operation's place in remote_operations, so a copy still carrying it out (another holder
+      // of the link handing over, D-104) finds it there and changes nothing – or got there first,
+      // and its real outcome is what is reported.
+      let o = await outcomeOf(this.pool, id)
+      if (!o) {
+        await this.pool.query(
+          `INSERT INTO remote_operations (op_id, operation, status, http_status, error)
+           VALUES ($1, 'unknown', 'refused', 502, $2) ON CONFLICT (op_id) DO NOTHING`,
+          [id, JSON.stringify({ code: 'not_executed', message: 'not carried out in the shop' })]
+        )
+        o = await outcomeOf(this.pool, id)
+      }
+      if (o.error?.code === 'not_executed') unknown.push(id)
+      else results.push(pack(o))
     }
     for (const op of turn.ops || []) {
       let o
@@ -429,13 +452,26 @@ class SyncAgent {
     return { carriedOut: (turn.ops || []).length, accounted: (turn.check || []).length }
   }
 
-  /** Keep the link open until stopLink(); after a failure, wait longer each time (up to 1 minute). */
-  startLink({ timeoutMs = 25000 } = {}) {
+  /**
+   * Keep the link open until stopLink(); after a failure, wait longer each time (up to 1 minute).
+   *
+   * One holder per database (D-104): the background service and the desktop program may both run.
+   * The one that holds the link's lock – a lock kept on its own connection for as long as it runs –
+   * keeps the link open and writes its heartbeat every 30 seconds; another copy waits and takes
+   * over within half a minute if the holder stops (closed, crashed, or its PC connection lost).
+   */
+  startLink({ timeoutMs = 25000, holdRetryMs = 30000 } = {}) {
     if (this.linking) return
     this.linking = true
     let failures = 0
     const loop = async () => {
       while (this.linking) {
+        if (!(await this.holdLink())) {
+          await new Promise((res) => {
+            this.linkSleep = setTimeout(res, holdRetryMs)
+          })
+          continue
+        }
         try {
           const r = await this.linkOnce({ timeoutMs })
           failures = 0
@@ -453,9 +489,60 @@ class SyncAgent {
     loop()
   }
 
+  /** Take (or keep) the link's lock on its own connection. True while this copy holds it. */
+  async holdLink() {
+    if (this.holder) return true
+    let client
+    try {
+      client = await this.pool.connect()
+      const got = (await client.query('SELECT pg_try_advisory_lock($1) AS ok', [LINK_LOCK])).rows[0]
+        .ok
+      if (!got) {
+        client.release()
+        return false
+      }
+    } catch {
+      if (client) client.release(true)
+      return false
+    }
+    this.holder = client
+    // The lock goes with the connection: if it drops (PostgreSQL restarted), give it up for now.
+    client.once('error', () => this.releaseLink(true))
+    await this.heartbeat(true)
+    this.beat = setInterval(() => this.heartbeat(false), 30000)
+    return true
+  }
+
+  /** Who holds the link, and that it is alive (shown on the desktop's sync screen). */
+  async heartbeat(starting) {
+    await this.pool
+      .query(
+        `UPDATE sync_state SET agent_kind = $1, agent_pid = $2, agent_version = $3,
+                agent_seen_at = LOCALTIMESTAMP(0),
+                agent_started_at = CASE WHEN $4 THEN LOCALTIMESTAMP(0) ELSE agent_started_at END`,
+        [this.kind || 'desktop', process.pid, this.version || null, !!starting]
+      )
+      .catch(() => {})
+  }
+
+  releaseLink(broken = false) {
+    if (this.beat) clearInterval(this.beat)
+    this.beat = null
+    const client = this.holder
+    this.holder = null
+    if (!client) return
+    if (broken) client.release(true)
+    else
+      client
+        .query('SELECT pg_advisory_unlock($1)', [LINK_LOCK])
+        .catch(() => {})
+        .finally(() => client.release())
+  }
+
   stopLink() {
     this.linking = false
     if (this.linkSleep) clearTimeout(this.linkSleep)
+    this.releaseLink()
   }
 
   /** Push as soon as possible; changes queued while a push runs are pushed right after it. */
