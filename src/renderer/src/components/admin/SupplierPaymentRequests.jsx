@@ -3,6 +3,7 @@ import { BellRing } from 'lucide-react'
 import { api, can } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { Timestamp } from '../ui'
+import { useLiveTick } from '../../lib/live'
 
 const FILTERS = [
   ['open', 'بانتظار قرار'],
@@ -37,12 +38,14 @@ export default function SupplierPaymentRequests({ currentUser, triggerCustomAler
       .then(setRows)
       .catch(() => setRows([]))
   }, [canDecide, filter])
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load()
     // Reservations change on other PCs (D-099): look again every 30 seconds.
     const t = setInterval(load, 30000)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, live])
   if (!canDecide) return null
 
   // D-099: a request is reserved (5 minutes) before deciding, so two administrators never decide

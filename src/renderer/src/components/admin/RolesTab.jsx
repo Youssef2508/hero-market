@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ShieldCheck, Plus, Save, Trash2, Lock, Users, Copy } from 'lucide-react'
 import { EmptyState } from '../ui'
 import { api } from '../../lib/api'
+import { useLiveTick } from '../../lib/live'
 
 const MODULE_LABELS = {
   pos: 'البيع',
@@ -41,9 +42,11 @@ export default function RolesTab({ currentUser, triggerCustomAlert, triggerCusto
       triggerCustomAlert(e.message)
     }
   }
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load()
-  }, [])
+  }, [live])
 
   const groups = useMemo(() => {
     const g = {}

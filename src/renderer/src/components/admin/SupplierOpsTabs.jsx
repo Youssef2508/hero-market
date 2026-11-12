@@ -7,6 +7,7 @@ import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
 import SupplierPaymentRequestModal from '../modals/SupplierPaymentRequestModal'
 import SupplierPaymentRequests, { ReverseModal } from './SupplierPaymentRequests'
+import { useLiveTick } from '../../lib/live'
 
 // The two supplier operations of the till, each a screen of its own with its own permission
 // (owner, 1.5.2, D-097). They used to sit on «الأدراج والتحويلات», which was removed: neither
@@ -17,11 +18,13 @@ function MyPaymentRequests({ refreshKey, showEmpty, currentUser, triggerCustomAl
   const [rows, setRows] = useState([])
   const [cancelling, setCancelling] = useState(null)
   const [reloaded, setReloaded] = useState(0)
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     api('supplierPayments.list', { status: 'all' })
       .then((r) => setRows(r.filter((x) => x.created_by === currentUser?.id).slice(0, 20)))
       .catch(() => setRows([]))
-  }, [refreshKey, reloaded, currentUser])
+  }, [refreshKey, reloaded, currentUser, live])
   if (!rows.length)
     return showEmpty ? <p className="cell-muted text-center">لم تسجل طلبات سداد بعد.</p> : null
   return (
@@ -110,9 +113,11 @@ function MyPendingInvoices({
       .then(setRows)
       .catch(() => setRows([]))
   }, [])
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load()
-  }, [load, refreshKey])
+  }, [load, refreshKey, live])
   if (!rows.length)
     return showEmpty ? (
       <p className="cell-muted text-center">لا توجد فواتير مبدئية بانتظار الأصناف.</p>

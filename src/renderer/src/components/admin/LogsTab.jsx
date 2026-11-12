@@ -3,6 +3,7 @@ import { RefreshCw, ScrollText } from 'lucide-react'
 import { getSystemLogs } from '../../lib/dao/logs.dao'
 import { api } from '../../lib/api'
 import { BidiText, EmptyState, Timestamp } from '../ui'
+import { useLiveTick } from '../../lib/live'
 
 // action_type values written by the service audit log (src/server).
 const ACTIONS = {
@@ -73,10 +74,12 @@ export default function LogsTab() {
     }
   }
 
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     fetchLogs()
     fetchUsers()
-  }, [])
+  }, [live])
 
   const filteredLogs = logs.filter((log) => {
     const matchesAction = actionFilter ? log.action_type === actionFilter : true

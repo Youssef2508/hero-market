@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import { useLiveTick } from '../../lib/live'
 
 const PERIODS = [
   { id: 'daily', label: 'آخر 24 ساعة' },
@@ -30,9 +31,11 @@ export default function BestSellersTab({
   bsLoading,
   fetchBestSellers
 }) {
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     fetchBestSellers(bsPeriod)
-  }, [bsPeriod])
+  }, [bsPeriod, live])
 
   const handlePeriodChange = (p) => {
     setBsPeriod(p)

@@ -3,6 +3,7 @@ import { ArrowLeftRight } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { EmptyState, Timestamp } from '../ui'
+import { useLiveTick } from '../../lib/live'
 
 // Same labels as each product's history (StockHistoryModal).
 const KINDS = [
@@ -57,9 +58,11 @@ export default function StockMovementsTab({ onOpenInvoice, triggerCustomAlert })
     },
     [f, triggerCustomAlert]
   )
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load(1)
-  }, [load])
+  }, [load, live])
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.perPage)) : 1
   const source = (m) => {

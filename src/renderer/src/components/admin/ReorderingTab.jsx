@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
 import { formatMoney } from '../../lib/utils'
+import { useLiveTick } from '../../lib/live'
 
 export default function ReorderingTab() {
   const [loading, setLoading] = useState(false)
@@ -47,9 +48,11 @@ export default function ReorderingTab() {
     }
   }
 
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     calculateReordering()
-  }, [])
+  }, [live])
 
   // Process data based on targetDays
   const items = products

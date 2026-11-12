@@ -3,6 +3,7 @@ import { BadgePercent, Plus, Pencil, Power } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { Timestamp, EmptyState, NumberField } from '../ui'
+import { useLiveTick } from '../../lib/live'
 
 const EMPTY = {
   id: null,
@@ -38,10 +39,12 @@ export default function DiscountsTab({ triggerCustomAlert }) {
     api('discounts.list')
       .then(setRules)
       .catch((e) => triggerCustomAlert(e.message))
+  // From the internet: reload by itself when the shop's data changes (D-106).
+  const live = useLiveTick()
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [live])
 
   const edit = (r) => {
     setProductName(r ? r.product_name || '' : '')
