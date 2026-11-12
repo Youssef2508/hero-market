@@ -1,0 +1,35 @@
+# HeroMarket cloud – HTTPS for the internet way in (D-105).
+#
+# Caddy obtains and renews the certificate for HEROMARKET_DOMAIN from Let's Encrypt by itself
+# (port 80 must be open for its check); plain http only redirects to https.
+{
+	email {$HEROMARKET_ACME_EMAIL}
+	admin off
+}
+
+{$HEROMARKET_DOMAIN} {
+	encode zstd gzip
+	# Phones may wait up to 30 s for a change on an open request (useLiveTick), and the shop's
+	# link waits 25 s: the proxy keeps such requests open.
+	reverse_proxy 172.31.250.20:8787 {
+		transport http {
+			read_timeout 90s
+		}
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+	}
+	# The request bodies the service accepts are capped there (16 MiB for the shop's link).
+	request_body {
+		max_size 20MB
+	}
+	log {
+		output stdout
+		format console
+	}
+}
