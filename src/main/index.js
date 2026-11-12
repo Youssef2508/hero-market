@@ -20,6 +20,7 @@ import { getPrintSettings } from './printSettings'
 import fs from 'fs'
 import { initializePrinter, registerSalePrinting, runPrintScript } from './printer'
 import { registerDataIpc } from './dataIpc'
+import { buildShortagesLines } from '../shared/reportLines.mjs'
 
 // Production: warnings and errors go to a log file (started afresh after a day). The installer's
 // steps log to logs/setup.log only, so the administrator never creates the program's app.log.
@@ -368,33 +369,7 @@ ${tableRows}  )
   // IPC Direct Shortages Printer
   ipcMain.handle('print-shortages-to-printer', async (event, items) => {
     const { storeName, branchName, printerName } = await getPrintSettings(callOperation)
-
-    const todayStr = new Date().toLocaleDateString('ar-EG', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    })
-    const timeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-
-    const lines = [
-      `[C]${storeName}`,
-      `[C]${branchName}`,
-      `[C]تقرير نواقص المخزون`,
-      `------------------------------------------------`,
-      `[R]التاريخ: ${todayStr} ~ الوقت: ${timeStr}`,
-      `------------------------------------------------`,
-      `الصنف|المخزون|حد الطلب| `,
-      `------------------------------------------------`,
-      ...items.map((item) => {
-        const nameClean = String(item.name || '').replace(/[|~]/g, '') // strip delimiters
-        return `${nameClean}|${item.stock_qty || 0}|${item.min_limit || 0}| `
-      }),
-      `------------------------------------------------`,
-      `[C]إجمالي عدد النواقص: ${items.length} صنف`,
-      '',
-      '',
-      ''
-    ]
+    const lines = buildShortagesLines(items, { storeName, branchName })
 
     // Through the same no-shell printing path as receipts (audit 1.4.0).
     return runPrintScript(lines, { printerName })

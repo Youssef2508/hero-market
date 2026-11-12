@@ -10,7 +10,13 @@
 
 import packageInfo from '../../../../package.json'
 import { noteServerVersion, setOwnVersion } from './appUpdate'
-import { showWebReceipt } from './webReceipt'
+import {
+  showReport,
+  showSaleInvoice,
+  showSaleReceipt,
+  showShortages,
+  showTemplateTest
+} from './webReceipt'
 
 const NOT_HERE = (what) => () =>
   Promise.reject(new Error(`${what} متاح من برنامج HeroMarket على جهاز المتجر فقط.`))
@@ -97,14 +103,15 @@ export function installWebBridge() {
     },
     printer: {
       print: NOT_HERE('الطباعة على طابعة الإيصالات'),
-      printReport: NOT_HERE('الطباعة على طابعة الإيصالات'),
-      // The receipt on screen: print or save as PDF, or share (D-106).
-      printSale: (data) => showWebReceipt(call, data),
-      saleToPdf: (data) => showWebReceipt(call, data),
-      testTemplate: NOT_HERE('الطباعة على طابعة الإيصالات')
+      // What the shop would print is shown on screen as the paper would look: print or save as
+      // PDF, or share. It is saved either way; the shop PC can print it at any time (D-106).
+      printReport: (kind, data) => showReport(call, kind, data),
+      printSale: (data) => showSaleReceipt(call, data),
+      saleToPdf: (data) => showSaleInvoice(call, data),
+      testTemplate: (config, data) => showTemplateTest(call, config, data)
     },
-    generateShortagesPdf: NOT_HERE('ملف النواقص'),
-    printShortagesToPrinter: NOT_HERE('طباعة النواقص')
+    generateShortagesPdf: (items) => showShortages(call, items),
+    printShortagesToPrinter: (items) => showShortages(call, items)
   }
   document.documentElement.setAttribute('data-way-in', 'web')
   return true

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Printer, Share2, ReceiptText } from 'lucide-react'
 
 /**
- * The receipt on the phone (lib/webReceipt.js): the same invoice as the shop's, to print or save
+ * What the shop would print, on the phone (lib/webReceipt.js): receipts, invoices, shift and closing
+ * reports, purchase invoices, the shortages list – shown as the paper would look, to print or save
  * as PDF with the phone's print dialog, or to share as text. Only the browser build opens it.
  */
 export default function ReceiptViewer() {
@@ -43,7 +44,11 @@ export default function ReceiptViewer() {
             <ReceiptText size={24} />
           </span>
           <h2 id="web-receipt-title">{receipt.title}</h2>
-          <p>الطباعة على طابعة الإيصالات من جهاز المتجر؛ من هنا: طباعة أو حفظ PDF، أو مشاركة.</p>
+          <p>
+            كما يطبعه جهاز المتجر. محفوظ في النظام، ويمكن طباعته على طابعة الإيصالات في أي وقت من
+            جهاز المتجر{receipt.reprint ? ` (${receipt.reprint})` : ''}. من هنا: طباعة أو حفظ PDF،
+            أو مشاركة.
+          </p>
         </div>
         <div className="modal-body">
           <iframe
