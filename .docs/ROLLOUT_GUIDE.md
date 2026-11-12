@@ -4,7 +4,7 @@ Written for Youssef (who prepares the release and the server) and the shop owner
 
 The shop PC keeps all its data. The new installer updates the program **and the database already on the PC** in place: nothing is uninstalled, re-imported or typed again. The PC then sends its whole store to its own cloud once, and from then on keeps the two in step.
 
-The release number below is written **1.6.0**; use the real one.
+The release is **1.6.0** ([RELEASE_NOTES_1.6.0.md](RELEASE_NOTES_1.6.0.md)): its installer, size and SHA-256 are in the release notes and in `SHA256SUMS.txt`.
 
 Proven before release:
 
