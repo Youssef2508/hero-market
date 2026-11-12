@@ -53,6 +53,150 @@ const figures = async (pool) => ({
   movements: await num(pool, 'SELECT count(*) FROM stock_movements')
 })
 
+/**
+ * The owner's outage (owner, 2026-11-11): the shop PC is off, the owner opens a shift from the
+ * phone and does a working day in it. `call(op, body)` is the owner's way in; request ids are fixed
+ * so two runs record the same.
+ */
+async function outageDay(twin, call) {
+  const shift = await call('shifts.open', { startingCash: 200 })
+  const sale = await call('pos.checkout', {
+    clientRef: 'outage-sale-0001',
+    shiftId: shift.id,
+    paymentType: 'نقدي',
+    items: [
+      { barcode: 'RICE', qty: 4 },
+      { barcode: 'SUGAR', qty: 2 }
+    ]
+  })
+  await call('pos.checkout', {
+    clientRef: 'outage-sale-0002',
+    shiftId: shift.id,
+    paymentType: 'آجل',
+    client: { id: twin.clientId, name: 'أم أحمد', phone: '01012345678', address: '' },
+    items: [{ barcode: 'SUGAR', qty: 1 }]
+  })
+  const line = (await call('sales.detail', { saleId: sale.saleId })).items.find(
+    (i) => i.product_barcode === 'RICE'
+  )
+  await call('sales.returnItem', { saleItemId: line.id, quantity: 1, reason: 'تالف' })
+  await call('suppliers.addPurchase', {
+    supplierId: twin.supplierId,
+    invoice_ref: 'OUT-1',
+    total_amount: 260,
+    paid_amount: 60,
+    currentShiftId: shift.id,
+    clientRef: 'outage-purchase-0001',
+    items: [{ barcode: 'SUGAR', qty: 10, unitCost: 26 }]
+  })
+  await call('suppliers.repay', {
+    supplierId: twin.supplierId,
+    amount: 40,
+    currentShiftId: shift.id,
+    destination: 'shift',
+    clientRef: 'outage-supplier-pay-1'
+  })
+  await call('expenses.create', {
+    amount: 15,
+    category: 'نظافة',
+    currentShiftId: shift.id,
+    destination: 'shift',
+    clientRef: 'outage-expense-0001'
+  })
+  await call('clients.repay', {
+    clientId: twin.clientId,
+    amount: 50,
+    currentShiftId: shift.id,
+    destination: 'shift',
+    clientRef: 'outage-collect-0001'
+  })
+  const live = await call('shifts.liveSummary', { shiftId: shift.id })
+  await call('shifts.close', {
+    shiftId: shift.id,
+    actualCash: live.drawer.expected,
+    clientRef: 'outage-close-0001'
+  })
+  return { shift, expected: live.drawer.expected }
+}
+
+/** Business figures that do not depend on record numbers. */
+const business = async (pool) => ({
+  stock: await q(
+    pool,
+    'SELECT barcode, stock_qty::float8 AS s, cost_price::float8 AS c FROM products ORDER BY barcode'
+  ),
+  supplier: await num(pool, 'SELECT debt_balance FROM suppliers ORDER BY id LIMIT 1'),
+  customer: await num(pool, "SELECT debt_balance FROM clients WHERE name = 'أم أحمد'"),
+  treasury: await q(
+    pool,
+    'SELECT kind, method, sum(amount)::float8 AS a FROM treasury_ledger GROUP BY 1, 2 ORDER BY 1, 2'
+  ),
+  drawer: await q(
+    pool,
+    'SELECT kind, type, sum(amount)::float8 AS a, count(*)::int AS n FROM safe_ledger GROUP BY 1, 2 ORDER BY 1, 2'
+  ),
+  sales: await q(
+    pool,
+    'SELECT payment_type, count(*)::int AS n, sum(total_amount)::float8 AS t FROM sales GROUP BY 1 ORDER BY 1'
+  ),
+  returns: await num(pool, 'SELECT COALESCE(sum(refund), 0) FROM sale_returns'),
+  closes: await q(
+    pool,
+    "SELECT expected - 'at' AS expected, actual, variance FROM shift_closings ORDER BY closed_at"
+  ),
+  shifts: await q(
+    pool,
+    'SELECT status, initial_cash::float8, expected_end_cash::float8, actual_end_cash::float8 FROM shifts ORDER BY start_time, id'
+  ),
+  movements: await q(
+    pool,
+    'SELECT product_barcode, kind, sum(qty)::float8 AS q FROM stock_movements GROUP BY 1, 2 ORDER BY 1, 2'
+  ),
+  purchases: await q(
+    pool,
+    'SELECT invoice_ref, total_amount::float8, paid_amount::float8, paid_from FROM supplier_purchases ORDER BY invoice_ref'
+  )
+})
+
+test('the shop PC is off: a whole day from the phone in its own shift, then the PC returns – the same business as if done at the shop', async (t) => {
+  if (!requireDb(t)) return
+  const desk = await makeTwin({ link: false })
+  const net = await makeTwin()
+  try {
+    const a = await outageDay(desk, async (op, body) =>
+      ok(await desk.shop.call(op, body, desk.owner), op)
+    )
+    const owner = await net.signIn('8642')
+    await cut(net)
+    const b = await outageDay(net, async (op, body) =>
+      ok(await net.cloud.call(op, body, owner), op)
+    )
+    assert.ok(b.shift.id >= FLOOR, 'the phone’s shift is numbered from the cloud’s book')
+    assert.equal(b.expected, a.expected)
+    // Nothing reached the shop while the PC was off.
+    assert.equal(await num(net.shop.pool, 'SELECT count(*) FROM shifts WHERE id >= $1', [FLOOR]), 0)
+
+    await rejoin(net)
+    assert.deepEqual(await copyDifferences(net), [])
+    assert.deepEqual(await business(net.shop.pool), await business(desk.shop.pool))
+    assert.deepEqual(await business(net.cloud.pool), await business(desk.shop.pool))
+    // The phone's shift is in the shop, closed, with its saved close.
+    const s = await one(net.shop.pool, 'SELECT status FROM shifts WHERE id = $1', [b.shift.id])
+    assert.equal(s.status, 'closed')
+    assert.equal(
+      await num(net.shop.pool, 'SELECT count(*) FROM shift_closings WHERE shift_id = $1', [
+        b.shift.id
+      ]),
+      1
+    )
+    const listed = await q(net.shop.pool, "SELECT kind FROM sync_attention WHERE status = 'open'")
+    assert.deepEqual(listed, [], 'a day done on one side only needs no one’s attention')
+  } finally {
+    await desk.close()
+    await net.close()
+  }
+})
+
 test('apart: both sides work, then come together – identical records, both sides’ work added, the shop’s value where both changed a field', async (t) => {
   if (!requireDb(t)) return
   const twin = await makeTwin()
@@ -239,5 +383,299 @@ test('apart: both sides work, then come together – identical records, both sid
     assert.ok(next.saleId < FLOOR && next.saleId > sSale.saleId, `next shop sale ${next.saleId}`)
   } finally {
     await twin.close()
+  }
+})
+
+test('apart, the same things on both sides: both kept, the totals added, and each case listed for a person', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin()
+  try {
+    const cOwner = await twin.signIn('8642')
+    // A cash sale of one bag of sugar, at the shop, before the cut.
+    const sale = ok(
+      await twin.shop.call(
+        'pos.checkout',
+        {
+          clientRef: crypto.randomUUID(),
+          shiftId: twin.shift.id,
+          paymentType: 'نقدي',
+          items: [{ barcode: 'SUGAR', qty: 1 }]
+        },
+        twin.cashier
+      )
+    )
+    const line = await one(twin.shop.pool, 'SELECT id FROM sale_items WHERE sale_id = $1', [
+      sale.saleId
+    ])
+    // Only one bag of rice left on both sides.
+    const left = await num(twin.shop.pool, "SELECT stock_qty FROM products WHERE barcode = 'RICE'")
+    ok(
+      await twin.shop.call(
+        'inventory.count',
+        { barcode: 'RICE', counted: 1, seen: left, reason: 'جرد' },
+        twin.owner
+      ),
+      'count'
+    )
+    await twin.agent.runOnce()
+    assert.deepEqual(await copyDifferences(twin), [])
+
+    await cut(twin)
+    // The same bag returned on both sides; the last bag of rice sold on both; a shift opened on both.
+    ok(
+      await twin.cloud.call(
+        'sales.returnItem',
+        { saleItemId: line.id, quantity: 1, reason: 'تالف' },
+        cOwner
+      ),
+      'cloud return'
+    )
+    ok(
+      await twin.shop.call(
+        'sales.returnItem',
+        { saleItemId: line.id, quantity: 1, reason: 'تالف' },
+        twin.owner
+      ),
+      'shop return'
+    )
+    ok(await twin.cloud.call('shifts.open', { startingCash: 0 }, cOwner), 'cloud shift')
+    ok(await twin.shop.call('shifts.open', { startingCash: 0 }, twin.owner), 'shop shift')
+    const cShift = (
+      await one(twin.cloud.pool, "SELECT id FROM shifts WHERE status = 'open' AND user_id = 1")
+    ).id
+    const sShift = (
+      await one(twin.shop.pool, "SELECT id FROM shifts WHERE status = 'open' AND user_id = 1")
+    ).id
+    ok(
+      await twin.cloud.call(
+        'pos.checkout',
+        {
+          clientRef: crypto.randomUUID(),
+          shiftId: cShift,
+          paymentType: 'نقدي',
+          items: [{ barcode: 'RICE', qty: 1 }]
+        },
+        cOwner
+      ),
+      'cloud rice'
+    )
+    ok(
+      await twin.shop.call(
+        'pos.checkout',
+        {
+          clientRef: crypto.randomUUID(),
+          shiftId: sShift,
+          paymentType: 'نقدي',
+          items: [{ barcode: 'RICE', qty: 1 }]
+        },
+        twin.owner
+      ),
+      'shop rice'
+    )
+
+    await rejoin(twin)
+    assert.deepEqual(await copyDifferences(twin), [])
+    // Both returns are kept, and the line now shows two bags back of one sold.
+    assert.equal(
+      await num(twin.shop.pool, 'SELECT count(*) FROM sale_returns WHERE sale_item_id = $1', [
+        line.id
+      ]),
+      2
+    )
+    assert.equal(
+      await num(twin.shop.pool, 'SELECT returned_qty FROM sale_items WHERE id = $1', [line.id]),
+      2
+    )
+    assert.equal(
+      await num(twin.shop.pool, "SELECT stock_qty FROM products WHERE barcode = 'RICE'"),
+      -1
+    )
+    assert.equal(
+      await num(
+        twin.shop.pool,
+        "SELECT count(*) FROM shifts WHERE status = 'open' AND user_id = 1"
+      ),
+      2
+    )
+    const kinds = (
+      await q(
+        twin.shop.pool,
+        "SELECT kind, row_key FROM sync_attention WHERE status = 'open' ORDER BY kind"
+      )
+    ).map((r) => `${r.kind}:${r.row_key}`)
+    assert.deepEqual(kinds, [
+      'returned_twice:' + line.id,
+      'stock_negative:RICE',
+      'two_open_shifts:1'
+    ])
+    // Settled from the phone while connected: recorded in the shop, shown on both sides.
+    twin.agent.startLink({ timeoutMs: 300 })
+    for (let i = 0; i < 100 && !(await twin.cloud.app.cloudLink.shopUp()); i++) await sleep(50)
+    const open = ok(await twin.cloud.call('attention.list', {}, cOwner))
+    const neg = open.find((i) => i.kind === 'stock_negative')
+    ok(
+      await twin.cloud.call('attention.resolve', { id: neg.id, note: 'جرد الأرز وتصحيحه' }, cOwner)
+    )
+    assert.equal(
+      (await one(twin.shop.pool, 'SELECT status FROM sync_attention WHERE id = $1', [neg.id]))
+        .status,
+      'resolved'
+    )
+    assert.equal(ok(await twin.cloud.call('attention.count', {}, cOwner)).open, 2)
+    twin.agent.stopLink()
+    await sleep(400)
+    // The cloud shows the same list.
+    assert.deepEqual(
+      (
+        await q(
+          twin.cloud.pool,
+          "SELECT kind, row_key FROM sync_attention WHERE status = 'open' ORDER BY kind"
+        )
+      ).map((r) => `${r.kind}:${r.row_key}`),
+      kinds.filter((k) => !k.startsWith('stock_negative')),
+      'the settled item is settled on the cloud too'
+    )
+  } finally {
+    await twin.close()
+  }
+})
+
+test('never twice from the cloud: a lost acknowledgement and a failure half way through a batch', async (t) => {
+  if (!requireDb(t)) return
+  const twin = await makeTwin()
+  try {
+    const cOwner = await twin.signIn('8642')
+    await cut(twin)
+    for (const amount of [11, 12, 13])
+      ok(
+        await twin.cloud.call(
+          'expenses.create',
+          { amount, category: 'عام', destination: 'treasury', clientRef: crypto.randomUUID() },
+          cOwner
+        )
+      )
+    twin.transport.down = false
+    const shopExpenses = () =>
+      num(twin.shop.pool, 'SELECT count(*) FROM expenses WHERE id >= $1', [FLOOR])
+    // The shop fails half way through the batch: nothing of it stays, nothing is marked received.
+    await twin.shop.pool
+      .query(`CREATE FUNCTION hm_test_fail() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.amount = 12 THEN RAISE EXCEPTION 'power cut (test)'; END IF; RETURN NEW; END $$`)
+    await twin.shop.pool.query(
+      'CREATE TRIGGER hm_test_fail BEFORE INSERT ON expenses FOR EACH ROW EXECUTE FUNCTION hm_test_fail()'
+    )
+    await twin.agent.fetchCloud()
+    // The row failed on its own and was listed, the rest of the batch stands: undo that and retry
+    // the way it would really happen – a crash takes the whole transaction.
+    await twin.shop.pool.query('DROP TRIGGER hm_test_fail ON expenses')
+    await twin.shop.pool.query('DROP FUNCTION hm_test_fail()')
+    const failed = await q(
+      twin.shop.pool,
+      "SELECT kind FROM sync_attention WHERE kind = 'not_applied'"
+    )
+    assert.equal(failed.length, 1, 'a row that cannot be stored is listed, never dropped silently')
+    assert.equal(await shopExpenses(), 2)
+
+    // A real crash: the transaction never commits. Nothing is applied and nothing is marked.
+    const realFetch = twin.transport.inner.fetch.bind(twin.transport.inner)
+    const before = await num(twin.shop.pool, 'SELECT count(*) FROM sync_received')
+    const sabotage = twin.agent.pool
+    const origConnect = sabotage.connect.bind(sabotage)
+    let armed = true
+    sabotage.connect = async () => {
+      const c = await origConnect()
+      if (!armed) return c
+      const query = c.query.bind(c)
+      c.query = (...args) => {
+        if (armed && /INSERT INTO sync_received/.test(String(args[0]))) {
+          armed = false
+          return Promise.reject(new Error('process killed (test)'))
+        }
+        return query(...args)
+      }
+      return c
+    }
+    // A new change from the cloud, so there is something to receive.
+    twin.transport.down = true
+    await cut(twin)
+    ok(
+      await twin.cloud.call(
+        'expenses.create',
+        { amount: 14, category: 'عام', destination: 'treasury', clientRef: crypto.randomUUID() },
+        cOwner
+      )
+    )
+    twin.transport.down = false
+    await assert.rejects(() => twin.agent.fetchCloud(), /process killed/)
+    sabotage.connect = origConnect
+    assert.equal(await num(twin.shop.pool, 'SELECT count(*) FROM sync_received'), before)
+    assert.equal(await shopExpenses(), 2, 'nothing of the failed batch was applied')
+
+    // The acknowledgement is lost: the cloud sends the same changes again; they are applied once.
+    twin.transport.inner.fetch = realFetch
+    const realAck = twin.transport.ack
+    twin.transport.ack = async () => {
+      throw new Error('answer lost (test)')
+    }
+    await assert.rejects(() => twin.agent.fetchCloud(), /answer lost/)
+    twin.transport.ack = realAck
+    await twin.agent.fetchCloud()
+    await twin.agent.fetchCloud()
+    assert.equal(
+      await shopExpenses(),
+      3,
+      'each of the cloud’s expenses once (one listed as not stored)'
+    )
+    assert.equal(await num(twin.shop.pool, 'SELECT count(*) FROM expenses WHERE amount = 14'), 1)
+  } finally {
+    await twin.close()
+  }
+})
+
+test('the purchase price after a purchase on each side: the newer purchase’s price, on both sides', async (t) => {
+  if (!requireDb(t)) return
+  for (const newer of ['shop', 'cloud']) {
+    const twin = await makeTwin()
+    try {
+      const cOwner = await twin.signIn('8642')
+      await cut(twin)
+      const buy = (side, cost) =>
+        (side === 'shop' ? twin.shop.call : twin.cloud.call)(
+          'suppliers.addPurchase',
+          {
+            supplierId: twin.supplierId,
+            invoice_ref: `${side}-${cost}`,
+            total_amount: cost * 10,
+            paid_amount: 0,
+            clientRef: crypto.randomUUID(),
+            items: [{ barcode: 'SUGAR', qty: 10, unitCost: cost }]
+          },
+          side === 'shop' ? twin.owner : cOwner
+        )
+      const older = newer === 'shop' ? 'cloud' : 'shop'
+      ok(await buy(older, 26), 'older purchase')
+      await sleep(1200) // the purchases' own times differ
+      ok(await buy(newer, 28), 'newer purchase')
+      await rejoin(twin)
+      for (const pool of [twin.shop.pool, twin.cloud.pool])
+        assert.equal(
+          await num(pool, "SELECT cost_price FROM products WHERE barcode = 'SUGAR'"),
+          28,
+          `newer on the ${newer} side`
+        )
+      // Both invoices keep their own prices.
+      assert.deepEqual(
+        (
+          await q(
+            twin.shop.pool,
+            "SELECT invoice_ref FROM supplier_purchases WHERE invoice_ref LIKE '%-2_' ORDER BY 1"
+          )
+        ).map((r) => r.invoice_ref),
+        [`cloud-${newer === 'cloud' ? 28 : 26}`, `shop-${newer === 'shop' ? 28 : 26}`]
+      )
+      assert.deepEqual(await copyDifferences(twin), [])
+    } finally {
+      await twin.close()
+    }
   }
 })

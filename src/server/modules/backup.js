@@ -54,10 +54,12 @@ const TABLES = [
   'receipt_templates',
   // Operations carried out for users working from the internet (D-101). Kept with their effects:
   // a restored shop still knows which ones it carried out, so none is ever carried out again.
-  'remote_operations'
+  'remote_operations',
+  // What needs a person's look after the shop and the cloud came together (D-103).
+  'sync_attention'
 ]
 // Tables a backup made before they existed does not hold: restored as empty.
-const SINCE_LATER = new Set(['remote_operations'])
+const SINCE_LATER = new Set(['remote_operations', 'sync_attention'])
 // User triggers are off while rows are restored: restored movements must not be applied to stock
 // a second time, and restored stock is not a direct write (stock_movements, products guard).
 const TRIGGER_TABLES = ['products', 'stock_movements', 'sales', 'shifts']

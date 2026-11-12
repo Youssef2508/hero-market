@@ -50,6 +50,7 @@ const SupplierPaymentsTab = lazy(() =>
 )
 const DiscountsTab = lazy(() => import('./DiscountsTab'))
 const SyncTab = lazy(() => import('./SyncTab'))
+const AttentionTab = lazy(() => import('./AttentionTab'))
 const CategoriesTab = lazy(() => import('./CategoriesTab'))
 
 function Overview({ currentUser, currentShift, periodicAnalytics, dbStats, onNavigate }) {
@@ -297,6 +298,7 @@ export default function AdminDashboard(props) {
             triggerCustomConfirm={props.triggerCustomConfirm}
           />
         )}
+        {adminTab === 'attention' && <AttentionTab triggerCustomAlert={props.triggerCustomAlert} />}
         {adminTab === 'reordering' && <ReorderingTab />}
         {adminTab === 'advanced-stats' && <AdvancedStatsTab />}
         {adminTab === 'cashier-performance' && <CashierPerformanceTab />}

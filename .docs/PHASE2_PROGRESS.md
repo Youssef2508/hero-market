@@ -106,6 +106,48 @@ A replacement PC needs a new code and must be a fresh installation: the cloud re
 3. **Screens that do not yet reload by themselves** beyond those listed: they show the change when reopened.
 4. **The layout check is a script, not part of the test suite**: it needs a browser, which the CI machines do not have. It runs by hand before each release.
 
-## Milestones 3 to 5
+## Milestone 3: the cloud working while the shop is unreachable
+
+**Status: built and proven on two disposable databases. Not yet tried with a real server, a real internet cut or a real power cut.**
+
+### What happens now
+
+- **The shop is unreachable** (no internet, or the PC is off): an operation started from the phone is carried out by the cloud itself, with the same code, the same user and permissions, the same shift and accounts, on its copy. Its numbers come from the cloud's own book (from 1,000,000,001), so they can never collide with the shop's.
+- **The few that need both sides together** are refused with a clear message: changing a barcode, deleting a product, supplier, user or role, and the system reset.
+- **The shop comes back:** it receives the cloud's work and sends its own, automatically, by four rules:
+  - new records are added;
+  - running totals (stock, balances, returned quantities) add both sides' changes;
+  - a field changed on one side is taken;
+  - a field changed on both sides keeps the shop's value, and is listed.
+
+  The purchase price follows the newer purchase, whichever side made it.
+
+- **«تحتاج انتباهك»:** a new screen on both the desktop and the phone, for administrators («عناصر تحتاج الانتباه»). It lists what needs a person: the same field changed on both sides, stock below zero, a line returned twice, a balance paid twice, sales after a shift's close, two open shifts, and anything that could not be stored. Nothing is corrected automatically; the person fixes the cause with the ordinary operations and records how it was settled.
+- **The status strip** now says that operations made while the shop is unreachable are recorded and reach the shop when it reconnects.
+
+### Evidence (`cloudApart.test.js`, 5 tests)
+
+| Scenario                                                                                                                                                                                                                                            | Result                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Both sides work apart (sales in the same shift, supplier payments, a collection, an expense, a new customer, a price changed on both), then rejoin                                                                                                  | Pass: identical rows on both sides; every total adds both sides once; the shop's price stands and is listed; synchronising again changes nothing; the shop's next invoice number is ordinary |
+| **Your outage:** the PC is off; the owner opens a shift from the phone, sells cash and on credit, takes a return, records a supplier invoice paid from the shift, a supplier payment, an expense and a collection, closes the shift; the PC returns | Pass: **the same business figures as the same day done at the shop** (stock, cost, balances, treasury by method, drawer by kind, sales, returns, purchases, the saved close); nothing listed |
+| The same things on both sides: one line returned on each, the last unit sold on each, a shift opened on each                                                                                                                                        | Pass: everything kept and added; three items listed; one settled from the phone and shown settled on both sides                                                                              |
+| A failure half way through a batch, a crash before the commit, a lost acknowledgement                                                                                                                                                               | Pass: nothing half-applied; each change applied once; a row that cannot be stored is listed, never dropped                                                                                   |
+| A purchase on each side: the newer price wins, whichever side is newer                                                                                                                                                                              | Pass, both orders                                                                                                                                                                            |
+
+Two real defects were found by these tests and fixed before the commit: equal running totals were treated as already merged, and the purchase price was decided before its purchase had arrived.
+
+### Test results
+
+Full suite **502 of 502**; lint 0 errors; format clean.
+
+### Limits, plainly
+
+1. While apart, each side sees only its own work: double sales, returns and payments are listed afterwards, not prevented.
+2. A record that breaks a uniqueness rule on arrival (for example two new customers with the same phone, one on each side) is not stored on the shop; it is listed with its full content for a person to re-enter.
+3. Cloud invoice numbers look different (1,000,000,001 and up). The short `W-` display is not done yet.
+4. Restoring a backup on the shop while the cloud holds work the shop has not received waits until the shop has fetched it (the shop does that first in every cycle).
+
+## Milestones 4 and 5
 
 Not started.

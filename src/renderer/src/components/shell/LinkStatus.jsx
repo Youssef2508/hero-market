@@ -15,7 +15,8 @@ const when = (iso) =>
  * right now. Figures are never presented as current when they are not:
  *   live        – the shop is reachable and has nothing left to send;
  *   delayed     – reachable, with changes still on their way;
- *   unavailable – the shop cannot be reached; what is shown is as of the last synchronisation.
+ *   unavailable – the shop cannot be reached; what is shown is the shop as of the last
+ *                 synchronisation plus what was done here since (it reaches the shop later, D-103).
  * One request stays open to the cloud and returns when something changes, so nobody refreshes:
  * each change is announced to the screens as the window event `heromarket:data-changed`.
  */
@@ -82,7 +83,7 @@ export default function LinkStatus() {
           : 'المتجر غير متصل الآن. البيانات المعروضة حتى'}
       </span>
       {kind !== 'offline' && state.lastSyncedAt && <strong>{when(state.lastSyncedAt)}</strong>}
-      {kind !== 'offline' && <span>ولا يمكن تسجيل عمليات حتى يعود الاتصال.</span>}
+      {kind !== 'offline' && <span>العمليات تُسجَّل هنا وتصل إلى المتجر عند عودة الاتصال.</span>}
       {waiting}
     </div>
   )

@@ -20,6 +20,9 @@ const NOT_BACKED_UP = {
   sync_outbox: 'synchronisation restarts in a new epoch after a restore (D-047)',
   sync_row_versions: 'same',
   sync_state: 'the store’s own link to the cloud stays as it is',
+  // Which of the cloud's changes were applied here (D-103). After a restore, everything newer than the
+  // backup comes back from the cloud's record of the shop, echoes of the cloud's changes included.
+  sync_received: 'same as sync_outbox: the link restarts from the cloud after a restore',
   sync_tables: 'fixed list written by the migrations',
   applied_commands: 'cloud commands; the new sync epoch governs them after a restore (D-047)',
   catalog_state: 'a cache version counter the tills re-read'

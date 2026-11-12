@@ -37,7 +37,8 @@ import {
   BadgePercent,
   Settings,
   Archive,
-  Landmark
+  Landmark,
+  BellRing
 } from 'lucide-react'
 
 // The screens, each defined once (grouped here as they were added; NAV_LAYOUT orders them).
@@ -391,6 +392,15 @@ const DEFINED_GROUPS = [
         onEnter: (c) => c.fetchChecksList()
       },
       {
+        id: 'attention',
+        permission: ['sync.resolve'],
+        label: 'تحتاج انتباهك',
+        icon: BellRing,
+        view: 'admin',
+        tab: 'attention',
+        description: 'ما ظهر بعد اجتماع بيانات المتجر والسحابة ويحتاج قرار شخص.'
+      },
+      {
         id: 'sync',
         permission: ['sync.manage'],
         label: 'المزامنة السحابية',
@@ -439,7 +449,7 @@ const NAV_LAYOUT = [
   {
     id: 'system',
     label: 'النظام',
-    items: ['settings', 'receipts', 'backup', 'import', 'sync', 'logs', 'checks']
+    items: ['settings', 'receipts', 'backup', 'import', 'sync', 'attention', 'logs', 'checks']
   }
 ]
 

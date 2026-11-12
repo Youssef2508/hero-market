@@ -98,7 +98,8 @@ const KINDS = {
   'measureKinds.save': 'merge',
   'measureKinds.setActive': 'merge',
   'measureKinds.delete': 'merge',
-  'storeImport.apply': 'merge'
+  'storeImport.apply': 'merge',
+  'attention.resolve': 'state'
 }
 
 // Where the cloud carries out an operation started from the internet:

@@ -366,6 +366,14 @@ const PERMISSIONS = [
     label: 'الدخول عبر الإنترنت',
     description:
       'تسجيل الدخول إلى HeroMarket من خارج المتجر (الهاتف أو المتصفح). لا يمنح أي صلاحية أخرى'
+  },
+  {
+    // What a person must look at after the shop and the cloud came together (D-103).
+    key: 'sync.resolve',
+    module: 'admin',
+    label: 'عناصر تحتاج الانتباه',
+    description:
+      'عرض ومعالجة ما ظهر بعد اجتماع بيانات المتجر والسحابة (تعارض، رصيد بالسالب، إرجاع مكرر)'
   }
 ]
 
@@ -409,7 +417,8 @@ const MANAGEMENT = ALL.filter(
       // The cloud link and recovery are the administrator's alone (stage 4 phase 4).
       'sync.manage',
       // Signing in through the internet: administrators by default; the owner grants it (D-101).
-      'internet.access'
+      'internet.access',
+      'sync.resolve'
     ].includes(k)
 )
 

@@ -23,5 +23,6 @@ module.exports = [
   require('./sync'),
   require('./categories'),
   require('./measureKinds'),
-  require('./storeImport')
+  require('./storeImport'),
+  require('./attention')
 ]

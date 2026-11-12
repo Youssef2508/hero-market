@@ -62,6 +62,7 @@ Every permission is checked by the service on every request, before the request 
 | `system.reset`              | إعادة ضبط بيانات التشغيل                                              |      ✓      |             |      |       |                     |                   |
 | `sync.manage`               | المزامنة السحابية                                                     |      ✓      |      ✓      |      |       |                     |                   |
 | `internet.access`           | الدخول عبر الإنترنت                                                   |      ✓      |      ✓      |      |       |                     |                   |
+| `sync.resolve`              | عناصر تحتاج الانتباه                                                  |      ✓      |      ✓      |      |       |                     |                   |
 
 ## Operations and the permission each requires
 
@@ -69,6 +70,9 @@ Every permission is checked by the service on every request, before the request 
 
 | Operation                        | Requires                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `attention.count`                | all of `sync.resolve`                                                                             |
+| `attention.list`                 | all of `sync.resolve`                                                                             |
+| `attention.resolve`              | all of `sync.resolve`                                                                             |
 | `auth.changePassword`            | any signed-in user: the own password (old password required)                                      |
 | `auth.login`                     | before sign-in: sign in (rate-limited)                                                            |
 | `auth.logout`                    | any signed-in user: end the own session                                                           |

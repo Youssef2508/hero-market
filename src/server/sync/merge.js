@@ -85,6 +85,7 @@ async function applyChanges(db, rows, { receiver }) {
   )
   const cache = new Map()
   const items = []
+  const prices = new Map() // barcode → { shop, cloud }: purchase price changed on both sides
   const touched = {
     products: new Set(),
     clients: new Set(),
@@ -137,11 +138,13 @@ async function applyChanges(db, rows, { receiver }) {
             const clash = []
             for (const c of all.filter((x) => x in r && !keyCols.includes(x))) {
               if (p && same(r[c], p[c])) continue // the other side did not change it
-              if (same(l[c], r[c])) continue // already the same here
+              // A running total always moves by the other side's difference, even when the two
+              // totals happen to be equal now (both sides returned one bag: two are back).
               if (p && (ADDITIVE[row.t] || []).includes(c)) {
                 add[c] = Number(r[c] ?? 0) - Number(p[c] ?? 0)
                 continue
               }
+              if (same(l[c], r[c])) continue // already the same here
               if (p && same(l[c], p[c])) {
                 take[c] = r[c] // only the other side changed it
                 continue
@@ -152,8 +155,12 @@ async function applyChanges(db, rows, { receiver }) {
               }
               if (row.t === 'products' && c === 'cost_price') {
                 // Changed on both sides: the price of the newer purchase stands, on both sides.
-                const newer = await newerPurchase(db, row.k)
-                if ((newer === 'cloud') === shop) take[c] = r[c]
+                // Decided once the whole batch is in: a purchase's price is captured before its
+                // stock movement, so the movement may come later in the batch.
+                prices.set(row.k, {
+                  shop: shop ? l[c] : r[c],
+                  cloud: shop ? r[c] : l[c]
+                })
                 continue
               }
               // Changed on both sides: the shop's value stands.
@@ -225,6 +232,13 @@ async function applyChanges(db, rows, { receiver }) {
 
   await db.query("SELECT set_config('hm.ledger_rebuild', 'off', true)")
   // Received numbers never move this side's counters out of its own book.
+  for (const [barcode, v] of prices) {
+    const newer = await newerPurchase(db, barcode)
+    await db.query('UPDATE products SET cost_price = $2 WHERE barcode = $1', [
+      barcode,
+      newer === 'cloud' ? v.cloud : v.shop
+    ])
+  }
   await db.query('SELECT hm_keep_id_range()')
   if (shop) items.push(...(await afterMerge(db, touched)))
 

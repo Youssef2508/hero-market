@@ -1493,3 +1493,45 @@ Replaces the remote part of D-042 and D-047 (four hand-written owner commands, "
   3. The cloud checks the code, binds its one store to that installation, and burns the code. Both sides then show the store's name and a short fingerprint of the store id, so the administrator sees what was linked.
   4. A cloud serves exactly one store. Any other installation is refused: it has no code and no token. A replacement PC needs a new code from the server, which replaces the old device's secret (the old PC is then refused, as today by epoch).
 - **Why this is enough:** the only way to link is physical access to both the server's console and an administrator's session on the shop PC, within 15 minutes. A development PC is never linked unless someone does that deliberately; it keeps using the local test cloud on 127.0.0.1.
+
+## D-103 The cloud works while the shop is unreachable; the two come together by four rules (Phase 2 milestone 3, migration 0033)
+
+Design: [PHASE2_ARCHITECTURE.md](PHASE2_ARCHITECTURE.md) §3.2 and §6.
+
+- **When the cloud works on its own:** a change started from the internet while the shop is known to be unreachable (no open link, or the shop reports itself unable) is carried out by the cloud itself, with the same handler, user and permissions, on its copy. The six operations that need both sides together are refused with a clear message (barcode change, deleting a product, supplier, user or role, system reset). An operation already handed to the shop and not answered is never carried out by the cloud instead (D-101).
+- **Two number books:** the shop numbers from 1, the cloud from 1,000,000,001 (`sync_state.id_floor`). `hm_keep_id_range()` keeps every counter inside its own book after records from the other book arrive, and never moves a counter back. The cloud sets its floor at start-up.
+- **Each side sends only its own changes.** Every captured update keeps the row before it (`prev_data`). What a side writes while merging the other side's changes is not its own:
+  - the cloud does not capture it;
+  - the shop captures it as an echo, which is recorded in the cloud's record of the shop (so restores and fingerprints stay complete) but never applied there a second time.
+- **The shop receives the cloud's changes** with `link.fetch` / `link.ack`, whole transactions at a time. Each change is recorded in `sync_received` in the transaction that applies it, so a repeat or a lost acknowledgement changes nothing. The open link tells the shop when the cloud holds changes, and they are applied before any new operation is carried out.
+- **The merge** (`sync/merge.js`, the same code on both sides), applied in the order the changes were made:
+  1. a record that does not exist here is added (its number cannot collide);
+  2. a running total moves by the other side's difference (stock, customer and supplier balances, points, a sale's open amounts and total, a line's returned quantity and totals), so both sides' work adds up in any order;
+  3. another field is taken when only the other side changed it; changed on both sides, the shop's value stands on both sides and the shop lists it; bookkeeping times keep the later one;
+  4. the purchase price, changed on both sides, is the price of the newer purchase by its own time, decided once the whole batch is in.
+- **Selling-time guards step aside** for received records under `hm.ledger_rebuild`, which now includes "one open shift per user": the other side's shift is a fact, and two open shifts are listed.
+- **Never silently lost:** a row that cannot be stored (a uniqueness rule, a missing reference after every retry pass) is skipped with its whole content listed. A reference to a row later in the same batch is retried after the batch.
+- **«تحتاج انتباهك» (`sync_attention`)** is written by the shop only (it holds both sides' records) and reaches the cloud like any record. Kinds:
+  - the same field changed on both sides;
+  - a record not stored, or a deletion kept because the record is in use;
+  - stock below zero;
+  - a customer or supplier paid beyond the balance;
+  - a line returned beyond what was sold;
+  - cloud sales after their shift's close in the shop;
+  - two open shifts for one user.
+
+  An item is settled with `attention.resolve` (a note, the person, the time). Nothing is corrected automatically and no entry is invented. Permission «عناصر تحتاج الانتباه» (`sync.resolve`), administrators by default.
+
+- **New epoch (a restore):** refused by the cloud while it holds changes the shop has not received; the shop fetches them first in every cycle.
+- **Tests:** `cloudApart.test.js` (5):
+  - both sides work apart, then rejoin: identical rows, totals added once, the shop's price kept and listed;
+  - the owner's outage day from the phone in its own shift: the same business figures as the same day done at the shop;
+  - the same things on both sides (a line returned twice, the last unit sold twice, two open shifts): all kept and listed, settled from the phone;
+  - a failure half way through a batch and a lost acknowledgement: applied once;
+  - the purchase price, newer on either side.
+
+  `cloudConnected` "never twice" is updated to this rule.
+
+- **Two defects found by these tests and fixed before commit:**
+  - equal running totals on both sides were treated as already merged;
+  - the purchase price was decided before its purchase had arrived.
