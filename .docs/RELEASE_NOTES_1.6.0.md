@@ -49,11 +49,25 @@ What a person may do on the phone is exactly what they may do at the shop; the f
 
 ## The installer
 
-The file, its size and its SHA-256 are added here once it is built from `main`.
+|                  |                                                                                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File             | `HeroMarket-Setup-1.6.0.exe`                                                                                                                                   |
+| Size             | 181,357,584 bytes                                                                                                                                              |
+| SHA-256          | `12241ddc5f9b8c563c64d979e36a73fda43202852406ea810b86f152fcbc9afe`                                                                                             |
+| Built from       | `c2b021d`, the head of PR #39. `main` had not moved, so the merge commit holds exactly these files. No uncommitted change                                      |
+| Package contents | checked: only the program (`node_modules`, `out`, `src` with migrations 0001–0036, `resources`, `package.json`); no tests, documents, databases or local files |
+| Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                                                                      |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.6.0.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
 
 ## How this release was verified
 
 - **The full test suite** passes (530 tests), with lint, the format check and the CI pipeline.
 - **Stores made by the released 1.4.0 and 1.5.2 programs** were updated in place and paired. Every record and number was kept. The website then held the same records, and nothing was doubled.
 - **On a clean Windows (Windows Sandbox),** the installer updated over a running background service. The pairing and every change waiting to be sent were identical afterwards.
+- **This installer over the released 1.5.2 installer** (the one on the owner's USB stick), on a clean Windows with a paired store and changes waiting to be sent:
+  - the installer took its verified copy, then applied migrations 0032–0036 (result "ok");
+  - the pairing details and the changes waiting to be sent were kept;
+  - the background service started as 1.6.0;
+  - the update added the roles and their permissions to what the website receives once (they are synchronised from 1.6.0), and gave the two new permissions to the administrator roles only.
 - **On the real website,** a rehearsal with the 1.5.2 store: updated, paired, first send in 6 seconds, the same invoice, product and shift lists, both directions. All 31 screens pass at two phone sizes.
