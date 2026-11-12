@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { addressRows } from '../../lib/addressForm'
 import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
+import { saleNo as displayNo, saleRef } from '../../../../shared/saleNumber.mjs'
 import {
   Award,
   TrendingUp,
@@ -27,7 +28,6 @@ import PaymentMethodSelect from './PaymentMethodSelect'
 import { fixedDestination } from '../../lib/destination'
 import { rowKeys } from '../../lib/keyboard'
 
-const displayNo = (id) => ((id - 1) % 10000) + 1
 const PERIODS = [
   { id: 'all', label: 'كل الأوقات' },
   { id: 'daily', label: 'اليوم' },
@@ -630,7 +630,7 @@ export default function ClientsTab({
             <dl className="detail-grid">
               <div>
                 <dt>رقم الفاتورة</dt>
-                <dd className="num">#{activeInvoice.id}</dd>
+                <dd className="num">#{saleRef(activeInvoice.id)}</dd>
               </div>
               <div>
                 <dt>التاريخ والوقت</dt>

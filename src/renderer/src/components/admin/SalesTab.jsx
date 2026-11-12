@@ -6,8 +6,7 @@ import { splitStamp } from '../../lib/time'
 import { can } from '../../lib/api'
 import { rowKeys } from '../../lib/keyboard'
 import ChangePaymentModal from './ChangePaymentModal'
-
-const displayNo = (id) => ((id - 1) % 10000) + 1
+import { saleNo as displayNo } from '../../../../shared/saleNumber.mjs'
 
 // "YYYY-MM-DD HH:MM:SS" → date on the first line, time underneath (keeps the column narrow).
 function Stamp({ value }) {

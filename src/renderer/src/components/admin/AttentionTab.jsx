@@ -3,6 +3,7 @@ import { BellRing, CircleCheck } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useLiveTick } from '../../lib/live'
 import { formatStamp } from '../../lib/time'
+import { saleRef } from '../../../../shared/saleNumber.mjs'
 
 const FILTERS = [
   ['open', 'بانتظار المعالجة'],
@@ -41,8 +42,8 @@ function Detail({ item }) {
   if (item.kind === 'returned_twice')
     return (
       <p>
-        الفاتورة #{d.sale}، الصنف {d.barcode}: بيع {show(d.sold)} وأُرجع {show(d.returned)}. راجع
-        المرتجعين؛ إن صُرف المبلغ مرتين فسجّل التصحيح بالعمليات المعتادة.
+        الفاتورة #{saleRef(d.sale)}، الصنف {d.barcode}: بيع {show(d.sold)} وأُرجع {show(d.returned)}
+        . راجع المرتجعين؛ إن صُرف المبلغ مرتين فسجّل التصحيح بالعمليات المعتادة.
       </p>
     )
   if (item.kind === 'two_open_shifts')

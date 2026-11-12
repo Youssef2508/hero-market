@@ -5,6 +5,7 @@ import { normalizeDigits } from '../../lib/utils'
 import { formatStamp } from '../../lib/time'
 import { ReturnPanel } from '../modals/ReturnRequestModal'
 import ChangePaymentModal from './ChangePaymentModal'
+import { parseSaleRef, saleRef } from '../../../../shared/saleNumber.mjs'
 
 // One invoice by its number for one action (1.5.1, D-082): «المرتجعات», «إعادة طباعة فاتورة»,
 // «تغيير طريقة الدفع». Each screen needs only its own permission, not «عرض الفواتير»: the invoice is
@@ -55,7 +56,7 @@ function LookupAction({ action, handleReprintSale, triggerCustomAlert }) {
 
   const find = async (e) => {
     e?.preventDefault()
-    const id = Number(normalizeDigits(invoice).replace(/[^0-9]/g, ''))
+    const id = parseSaleRef(normalizeDigits(invoice))
     if (!id) return
     setBusy(true)
     setError('')
@@ -106,8 +107,9 @@ function LookupAction({ action, handleReprintSale, triggerCustomAlert }) {
         {sale && (
           <>
             <p className="return-sale">
-              فاتورة <strong className="num">#{sale.id}</strong> – {formatStamp(sale.timestamp)} –{' '}
-              {sale.payment_type} – <strong className="num">{money(sale.total_amount)}</strong> ج.م
+              فاتورة <strong className="num">#{saleRef(sale.id)}</strong> –{' '}
+              {formatStamp(sale.timestamp)} – {sale.payment_type} –{' '}
+              <strong className="num">{money(sale.total_amount)}</strong> ج.م
             </p>
             {action === 'reprint' && (
               <button
