@@ -186,7 +186,7 @@ Full suite **507 of 507**; lint 0 errors; format clean; CI passed on `fdf0996`.
 
 ## Milestone 5: ready for the internet, the server, and updates
 
-**Status: built, and checked on the real server with made-up data.** Not yet done: the off-server backup copy (your choice pending) and the pilot (your shop linked to the cloud).
+**Status: built, and checked on the real server with made-up data.** Not yet done: the pilot (your shop linked to the cloud), by the rollout guide.
 
 ### The server
 
@@ -236,8 +236,8 @@ Full suite **521 of 521**; lint 0 errors; format clean; CI passed.
 ### Still to do before the pilot
 
 1. ~~**A permanent address**~~: done, `heromarket.duckdns.org`. A move to another server is a DNS change, with no new pairing.
-2. **The off-server copy:** a free Cloudflare R2 or Backblaze B2 bucket, in your account. Until then, copies stay on the server, which has no provider backup add-on.
-3. ~~**Your backup key**~~: done 2026-11-12. It was made for you and sent straight to this PC (`DocumentsHeroMarket-Backup-Key`, your Windows account only), with instructions for two USB copies. The server encrypts to it.
+2. ~~**The off-server copy**~~: dropped by your decision (no recurring cost, no added complexity). The cloud keeps its nightly encrypted copy on the server. The shop's local backups stay the primary recovery source, and a lost cloud is rebuilt from the shop (below).
+3. ~~**Your backup key**~~: done 2026-11-12. It was made for you and sent straight to this PC (`Documents\HeroMarket-Backup-Key`, your Windows account only), with instructions for two USB copies. The server encrypts to it.
    - **Restore drill with your key:** pass. The restored database was identical to the live one, and another key could not open the copy.
 4. ~~**The Windows Sandbox run**~~: done 2026-11-12. A clean Windows; installer A (current), then a paired shop with 285 changes waiting and two operations from the internet on record, then installer B (1.5.3, one more migration) over the running background service.
    - **Pairing:** identical (store, device, address, epoch).
@@ -246,8 +246,52 @@ Full suite **521 of 521**; lint 0 errors; format clean; CI passed.
    - **Migration and copy:** the migration applied after the installer's verified copy.
    - **Background service:** back as 1.5.3 within seconds.
    - **One real defect found and fixed:** every start of the program or the service rewrote the super-administrator's permission list, which queued 110 needless changes for the cloud. Now only what differs is written; a test guards it.
-5. **The pilot:**
-   - a release built from this branch, after your approval to merge;
-   - your shop PC updated and linked;
-   - a shadow period: the cloud receives and is compared daily, and nobody works in it;
-   - then phone use is switched on.
+5. **The pilot:** follow [ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md). Merging, the release and linking your shop each wait for your approval.
+
+## Your priorities of 2026-11-12: security, recovery, and the existing shop (D-106)
+
+### Security
+
+A full review is in [SECURITY_REVIEW_PHASE2.md](SECURITY_REVIEW_PHASE2.md). Fixed and tested:
+
+- **Sign-out on the other side:** a password changed or reset on either side signs that user out on the other side (a lost phone).
+  - The cloud already did this one way, but by comparing hashes. Since D-105's hash renewal, that would have signed users out after every first sign-in at the shop.
+- **Internet access at the shop:** the shop itself refuses operations from a user whose internet access it withdrew.
+- **Recovery codes:** they no longer reach the cloud.
+- **Logs:** they never contain session cookies.
+- **Backup container:** locked down.
+- **Packages:** three advisories patched with compatible versions (Electron 43.8.9, fast-uri, undici). `npm audit` reports none left.
+
+Everything else was checked and found sound; the reasons are in the review.
+
+### Recovery, with no paid cloud backups
+
+| What is lost         | What you do                                                | Result (tested)                                                                                                                              |
+| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| The shop's database  | Restore the latest local backup, then «استرجاع من السحابة» | Everything after the backup returns once, including phone work done while the shop was offline (received by the shop or not)                 |
+| The cloud's database | Empty or new cloud, a new pairing code, pair again         | The cloud is rebuilt identical from the shop in one cycle. Phone work the shop never received is missing unless the nightly copy is restored |
+
+A real defect was found by the second test and fixed: re-pairing with an empty cloud did not resend the shop's history at once.
+
+### The existing shop installation
+
+`existingInstall.test.js` uses stores **made by the released 1.4.0 and 1.5.2 programs themselves**. Each has a month of business: 48 sales, 12 shifts, returns, credit, repayments, supplier invoices and payments, expenses, and the old program's unsent change queue. Each store is updated in place and paired with a one-time code:
+
+- **Every original record** keeps every value and its number.
+- **The only changes** are the two approved rules: the latest purchase price from 1.4.0 (D-087), and a stronger password hash.
+- **Pairing** never writes to the shop.
+- **The cloud** is identical row for row, and the website's invoice list is identical.
+- **A second sync** changes nothing.
+
+The step-by-step procedure for you and the owner is [ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md).
+
+### Also built
+
+- **Receipts on the phone:** the store's own receipt, shown on screen, to print or save as PDF with the phone's print dialog, or to share as text (WhatsApp).
+
+### Not built, plainly
+
+1. **Not every screen refreshes by itself.** The busy ones do (sales, shifts, treasury, link status); others show changes when reopened.
+2. **Shift reports and shortages lists from the phone:** printing them is a shop PC feature (its receipt printer). The phone shows them on screen.
+3. **Real phones:** the layout check is automatic, at two phone sizes, against the real server. Your own phone has not been tried yet; that is part of the rollout's step 19.
+4. **The pilot's shadow period** (comparing the two sides daily for two weeks before relying on the phone) is in the rollout plan, not yet done.
