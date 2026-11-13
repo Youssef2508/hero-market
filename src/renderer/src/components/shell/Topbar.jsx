@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { BellRing, ChevronDown, KeyRound, Lock, LogOut, PlayCircle } from 'lucide-react'
+import {
+  BellRing,
+  ChevronDown,
+  KeyRound,
+  Lock,
+  LogOut,
+  PlayCircle,
+  ReceiptText
+} from 'lucide-react'
 import { Kbd } from '../ui'
 import { formatClock } from '../../lib/time'
 import { api, can } from '../../lib/api'
@@ -48,6 +56,43 @@ function PaymentRequestsNotice({ currentUser, onOpen }) {
       <BellRing size={16} aria-hidden="true" />
       <span className="num">{n.pending}</span>
       <span className="hide-sm">طلبات سداد</span>
+    </button>
+  )
+}
+
+// The same notice for preliminary invoices waiting for their items (owner, 1.6.1, D-107), for those
+// who complete them («الموردون والمشتريات»). Checked every 30 seconds.
+function PendingInvoicesNotice({ currentUser, onOpen }) {
+  const allowed = can(currentUser, 'suppliers.manage')
+  const [n, setN] = useState(null)
+  useEffect(() => {
+    if (!allowed) return undefined
+    let stop = false
+    const load = () =>
+      api('supplierInvoices.pendingCount')
+        .then((r) => !stop && setN(r))
+        .catch(() => {})
+    load()
+    const t = setInterval(load, 30000)
+    return () => {
+      stop = true
+      clearInterval(t)
+    }
+  }, [allowed])
+  if (!allowed || !n || n.pending === 0) return null
+  const since = n.oldestAt ? `، أقدمها من ${n.oldestAt.slice(0, 16)}` : ''
+  const label = `${n.pending} فاتورة مورد مبدئية بانتظار الأصناف (${formatMoney(n.pendingTotal)} ج.م${since})`
+  return (
+    <button
+      type="button"
+      className="btn btn-warning-soft btn-sm"
+      onClick={onOpen}
+      title={label}
+      aria-label={label}
+    >
+      <ReceiptText size={16} aria-hidden="true" />
+      <span className="num">{n.pending}</span>
+      <span className="hide-sm">فواتير مبدئية</span>
     </button>
   )
 }
@@ -144,7 +189,8 @@ export default function Topbar({
   onCloseShift,
   onLock,
   onChangePassword,
-  onOpenPaymentRequests
+  onOpenPaymentRequests,
+  onOpenPendingInvoices
 }) {
   const now = useClock()
   const hasShift = !!(currentShift && currentShift.id)
@@ -208,6 +254,7 @@ export default function Topbar({
         )}
 
         <PaymentRequestsNotice currentUser={currentUser} onOpen={onOpenPaymentRequests} />
+        <PendingInvoicesNotice currentUser={currentUser} onOpen={onOpenPendingInvoices} />
         <UserMenu currentUser={currentUser} onChangePassword={onChangePassword} onLock={onLock} />
       </div>
     </header>

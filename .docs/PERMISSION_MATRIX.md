@@ -97,6 +97,7 @@ Every permission is checked by the service on every request, before the request 
 | `clients.profile`                | any of `customers.view`, `customers.manage`                                                       |
 | `clients.repay`                  | all of `customers.payments`                                                                       |
 | `clients.stats`                  | any of `customers.view`, `customers.manage`                                                       |
+| `clients.suggestCode`            | any of `customers.manage`, `pos.sell`                                                             |
 | `clients.update`                 | all of `customers.manage`                                                                         |
 | `damaged.create`                 | all of `inventory.damaged`                                                                        |
 | `damaged.delete`                 | all of `inventory.damaged`                                                                        |
@@ -194,6 +195,7 @@ Every permission is checked by the service on every request, before the request 
 | `supplierInvoices.convert`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.createPending` | all of `suppliers.pending`                                                                        |
 | `supplierInvoices.list`          | any of `suppliers.view`, `suppliers.manage`, `suppliers.pending`                                  |
+| `supplierInvoices.pendingCount`  | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.release`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.reserve`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.suppliers`     | any of `suppliers.pending`, `suppliers.view`, `suppliers.manage`                                  |

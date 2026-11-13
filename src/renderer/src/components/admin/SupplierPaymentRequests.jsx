@@ -42,8 +42,8 @@ export default function SupplierPaymentRequests({ currentUser, triggerCustomAler
   const live = useLiveTick()
   useEffect(() => {
     load()
-    // Reservations change on other PCs (D-099): look again every 30 seconds.
-    const t = setInterval(load, 30000)
+    // Reservations change on other PCs and phones (D-099): look again every 10 seconds (D-107).
+    const t = setInterval(load, 10000)
     return () => clearInterval(t)
   }, [load, live])
   if (!canDecide) return null

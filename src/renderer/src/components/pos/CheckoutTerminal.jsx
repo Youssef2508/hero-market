@@ -25,14 +25,15 @@ import {
   Info,
   Undo2,
   FolderTree,
-  List
+  List,
+  Hash
 } from 'lucide-react'
 import { Kbd, NumberField } from '../ui'
 import CategoryBrowser from './CategoryBrowser'
 import { ADDRESS_LABELS } from '../../../../shared/address.mjs'
 import WeightEntryModal from './WeightEntryModal'
 import { formatMoney } from '../../lib/utils'
-import { api } from '../../lib/api'
+import { api, can } from '../../lib/api'
 import { kindInfo } from '../../lib/measureKinds'
 import { qtyFromText } from '../../lib/qtyText'
 import ManualDiscountModal from './ManualDiscountModal'
@@ -167,6 +168,82 @@ function QtyInput({ item, inputRef, onQty, onZero }) {
   )
 }
 
+/**
+ * A new customer's code at the till (owner, 1.6.1, D-107): the store's next code is suggested; with
+ * «تحديد كود العميل يدوياً» another may be typed – checked at once for another customer having it,
+ * and again by the service when the sale is saved. Empty = the suggested code.
+ */
+function NewClientCode({ value, onChange, allowed }) {
+  const [suggested, setSuggested] = useState('')
+  // The last answer of clients.codeAvailable and the code it was for: an answer for a code no longer
+  // typed is simply not shown.
+  const [answer, setAnswer] = useState(null)
+  useEffect(() => {
+    let stop = false
+    api('clients.suggestCode')
+      .then((r) => !stop && setSuggested(r.code))
+      .catch(() => {})
+    return () => {
+      stop = true
+    }
+  }, [])
+  const typed = value.trim()
+  const checking = allowed && typed && typed.toUpperCase() !== suggested.toUpperCase()
+  useEffect(() => {
+    if (!checking) return undefined
+    let stop = false
+    const t = setTimeout(() => {
+      api('clients.codeAvailable', { code: typed })
+        .then((r) => !stop && setAnswer({ code: typed, owner: r.available ? null : r.owner }))
+        .catch(() => {})
+    }, 300)
+    return () => {
+      stop = true
+      clearTimeout(t)
+    }
+  }, [checking, typed])
+  const taken = checking && answer?.code === typed ? answer.owner : null
+  if (!allowed)
+    return suggested ? (
+      <p className="field-hint">
+        عميل جديد: يأخذ الكود <span className="ltr-id">{suggested}</span>
+      </p>
+    ) : null
+  const field = (
+    <div className="search-field">
+      <Hash size={15} aria-hidden="true" />
+      <input
+        type="text"
+        className="input ltr-id"
+        dir="auto"
+        maxLength={30}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={suggested || 'كود العميل الجديد'}
+        aria-label="كود العميل الجديد"
+        aria-invalid={taken ? true : undefined}
+        title={taken ? `مستخدم للعميل «${taken.name}»` : 'اتركه فارغاً لاستخدام الكود المقترح'}
+        autoComplete="off"
+      />
+      {taken && (
+        <span className="field-error" role="alert">
+          مستخدم للعميل «{taken.name}»
+        </span>
+      )}
+    </div>
+  )
+  return (
+    <>
+      {field}
+      {!typed && suggested && (
+        <p className="field-hint">
+          يأخذ الكود <span className="ltr-id">{suggested}</span> – أو اكتب كوداً آخر
+        </p>
+      )}
+    </>
+  )
+}
+
 function CheckoutTerminal({
   cart,
   triggerClearCart,
@@ -231,6 +308,9 @@ function CheckoutTerminal({
   appliedCredit,
   setAppliedCredit,
   selectedClient,
+  clientCode = '',
+  setClientCode,
+  currentUser,
   triggerCustomAlert
 }) {
   // Saved numbers of the selected customer (pick one; "رقم آخر" types a new one for this order).
@@ -309,10 +389,26 @@ function CheckoutTerminal({
     }
   }, [barcodeInput])
   useEffect(() => {
+    // F6 browses the categories; owner, 1.6.1 (D-107): F8 goes to the customer, F9 to the amount
+    // paid (Shift+Tab from there reaches the payment methods, moved with the arrows) – a sale needs
+    // no mouse. None of them acts behind an open window.
+    const focusField = (selector) => {
+      const el = document.querySelector(selector)
+      if (!el) return
+      el.focus()
+      el.select?.()
+    }
     const onKey = (e) => {
-      if (e.key === 'F6' && !document.querySelector('.modal-overlay')) {
+      if (document.querySelector('.modal-overlay')) return
+      if (e.key === 'F6') {
         e.preventDefault()
         setBrowsing((b) => !b)
+      } else if (e.key === 'F8') {
+        e.preventDefault()
+        focusField('input[aria-label="اسم العميل"]')
+      } else if (e.key === 'F9') {
+        e.preventDefault()
+        focusField('input[aria-label="المبلغ المدفوع"]')
       }
     }
     window.addEventListener('keydown', onKey)
@@ -768,6 +864,12 @@ function CheckoutTerminal({
               <Kbd>F4</Kbd> حذف آخر صنف
             </span>
             <span>
+              <Kbd>F8</Kbd> العميل
+            </span>
+            <span>
+              <Kbd>F9</Kbd> المدفوع
+            </span>
+            <span>
               <Kbd>Esc</Kbd> تفريغ
             </span>
             <span className="hide-md">
@@ -875,10 +977,11 @@ function CheckoutTerminal({
           <div className="money-fields">
             <label className="field">
               <span className="field-label">
-                {paymentType === 'دفع جزئي' ? 'المدفوع مقدماً' : 'المدفوع من العميل'}
+                {paymentType === 'دفع جزئي' ? 'المدفوع مقدماً' : 'المدفوع من العميل'} <Kbd>F9</Kbd>
               </span>
               <NumberField
                 className="input input-amount num"
+                aria-label="المبلغ المدفوع"
                 value={paidAmount}
                 placeholder="0.00"
                 onChange={(e) => setPaidAmount(e.target.value)}
@@ -916,7 +1019,8 @@ function CheckoutTerminal({
           <div className="customer">
             <div className="section-label">
               <UserRound size={15} aria-hidden="true" />
-              العميل <span className="text-muted">(اختياري – مطلوب للآجل والدفع الجزئي)</span>
+              العميل <span className="text-muted">(اختياري – مطلوب للآجل والدفع الجزئي)</span>{' '}
+              <Kbd>F8</Kbd>
             </div>
             <div className="customer-fields">
               <div className="search-field">
@@ -996,6 +1100,13 @@ function CheckoutTerminal({
                     </button>
                   )}
                 </div>
+              )}
+              {clientName.trim() && !selectedClient && setClientCode && (
+                <NewClientCode
+                  value={clientCode}
+                  onChange={setClientCode}
+                  allowed={can(currentUser, 'customers.code')}
+                />
               )}
               {phoneNote && (
                 <p className={`field-hint ${phoneNote.warn ? 'is-warning' : ''}`} role="status">

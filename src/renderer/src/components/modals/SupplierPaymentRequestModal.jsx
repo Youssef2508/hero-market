@@ -5,8 +5,10 @@ import { formatMoney } from '../../lib/utils'
 import { NumberField } from '../ui'
 
 /**
- * Paying a supplier's older debt from the drawer (owner, 1.5.2, D-090). The cash leaves the drawer
- * now; the supplier's balance falls only when an administrator approves the request.
+ * Paying a supplier from the drawer (owner, 1.5.2, D-090). The cash leaves the drawer now; the
+ * supplier's balance falls only when an administrator approves the request. Since 1.6.1 (D-107)
+ * any supplier may be paid – also more than is owed, or before the invoice is recorded (an
+ * advance) – and the drawer need not hold the amount (the shift may show a negative balance).
  */
 export default function SupplierPaymentRequestModal({
   currentShift,
@@ -34,14 +36,19 @@ export default function SupplierPaymentRequestModal({
   }, [suppliers, search])
   const picked = suppliers.find((s) => String(s.id) === String(supplierId))
   const value = Number(amount) || 0
-  const error =
-    picked && value > picked.open + 0.005
-      ? `أكبر من المتاح للسداد (${formatMoney(picked.open)} ج.م بعد الطلبات المعلقة).`
-      : ''
+  // Not a refusal (D-107): what the payment means for the supplier's account, said plainly.
+  const advance = picked && value > Math.max(0, picked.open) + 0.005
+  const hint = !picked
+    ? 'سلِّم المبلغ للمورد ثم سجّله هنا.'
+    : advance
+      ? picked.open > 0
+        ? `أكثر من المستحق (${formatMoney(picked.open)} ج.م): الزيادة دفعة مقدمة تُخصم من فواتيره القادمة بعد الاعتماد.`
+        : 'لا يوجد مستحق مسجل لهذا المورد: المبلغ دفعة مقدمة تُخصم من فاتورته عند تسجيلها، بعد الاعتماد.'
+      : 'سلِّم المبلغ للمورد ثم سجّله هنا.'
 
   const save = async (e) => {
     e.preventDefault()
-    if (!picked || !(value > 0) || error) return
+    if (!picked || !(value > 0)) return
     setBusy(true)
     try {
       const res = await api('supplierPayments.create', {
@@ -75,8 +82,11 @@ export default function SupplierPaymentRequestModal({
           <span className="modal-icon" aria-hidden="true">
             <HandCoins size={22} />
           </span>
-          <h2 id="spr-create-title">سداد دين مورد من الدرج</h2>
-          <p>المبلغ يخرج من درج ورديتك الآن، ولا يُخصم من حساب المورد إلا بعد اعتماد المدير.</p>
+          <h2 id="spr-create-title">سداد لمورد من الدرج</h2>
+          <p>
+            المبلغ يخرج من درج ورديتك الآن – حتى لو كان أكبر مما في الدرج – ولا يُخصم من حساب المورد
+            إلا بعد اعتماد المدير.
+          </p>
         </div>
         <div className="modal-body">
           <label className="field">
@@ -84,7 +94,13 @@ export default function SupplierPaymentRequestModal({
             <input
               className="input"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                const t = e.target.value
+                setSearch(t)
+                // D-107: one match is chosen at once, so Enter goes straight on to the amount.
+                const hits = t.trim() ? suppliers.filter((x) => x.name.includes(t.trim())) : []
+                if (hits.length === 1) setSupplierId(String(hits[0].id))
+              }}
               placeholder="اسم المورد"
             />
           </label>
@@ -99,15 +115,22 @@ export default function SupplierPaymentRequestModal({
               <option value="">— اختر المورد —</option>
               {shown.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} – مستحق {formatMoney(s.open)} ج.م
+                  {s.name} –{' '}
+                  {/* The recorded balance; requests waiting for approval are not in it yet. */}
+                  {s.debt > 0.005
+                    ? `مستحق ${formatMoney(s.debt)} ج.م`
+                    : s.debt < -0.005
+                      ? `لنا رصيد عنده ${formatMoney(-s.debt)} ج.م`
+                      : 'لا مستحق مسجل'}
+                  {s.pending > 0 ? ` – طلبات معلقة ${formatMoney(s.pending)} ج.م` : ''}
                 </option>
               ))}
             </select>
           </label>
           {picked && picked.pending > 0 && (
             <p className="field-hint">
-              على المورد طلبات معلقة بقيمة {formatMoney(picked.pending)} ج.م من أصل مستحق{' '}
-              {formatMoney(picked.debt)} ج.م.
+              لهذا المورد طلبات سداد معلقة بقيمة {formatMoney(picked.pending)} ج.م، تُخصم من حسابه
+              عند اعتمادها.
             </p>
           )}
           <label className="field">
@@ -120,15 +143,10 @@ export default function SupplierPaymentRequestModal({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               aria-describedby="spr-amount-hint"
-              aria-invalid={!!error}
             />
           </label>
-          <p
-            id="spr-amount-hint"
-            className={error ? 'field-error' : 'field-hint'}
-            role={error ? 'alert' : undefined}
-          >
-            {error || 'سلِّم المبلغ للمورد ثم سجّله هنا.'}
+          <p id="spr-amount-hint" className="field-hint" role={advance ? 'status' : undefined}>
+            {hint}
           </p>
           <label className="field">
             <span className="field-label">ملاحظة (اختياري)</span>
@@ -149,7 +167,7 @@ export default function SupplierPaymentRequestModal({
             type="submit"
             className="btn btn-primary"
             style={{ flex: 1 }}
-            disabled={busy || !picked || !(value > 0) || !!error}
+            disabled={busy || !picked || !(value > 0)}
           >
             تسجيل الطلب ({formatMoney(value)} ج.م)
           </button>

@@ -1611,3 +1611,44 @@ Review: [SECURITY_REVIEW_PHASE2.md](SECURITY_REVIEW_PHASE2.md). Rollout: [ROLLOU
   - Each is paired with a one-time code. The empty cloud receives the store and sends nothing back. The cloud is then identical, the website's invoice list is identical, a second sync changes nothing, and the store keeps its identity.
 - **The cloud is emptied for the real shop** with `deploy/cloud/reset-empty.sh`: it asks for the address to confirm and takes an encrypted copy first.
 - **Found by the installer update test and fixed:** every start rewrote the super administrator's permissions (110 needless changes to send).
+
+## D-107 The owner's requests of 2026-11-13: supplier payments, preliminary invoices, keyboard, customer codes (1.6.1, migration 0037)
+
+Every change is in the shared service and the shared screens, so the shop PC and the website behave identically. No new financial rule exists for the cloud.
+
+- **Supplier payments from the drawer** («سداد لمورد من الدرج»):
+  - every supplier is listed, with what is owed, «لا مستحق مسجل», or the store's credit with them;
+  - a payment may exceed what is owed, or be made before the invoice is recorded (an advance);
+  - the drawer need not hold the amount: the shift may show a negative balance, explained at its close by the recorded payment;
+  - **unchanged:** the cash leaves the drawer when recorded, and the supplier's balance falls only when an administrator approves, exactly once;
+  - after approval an advance leaves the balance below zero (shown as «لنا»), and the next invoice settles against it;
+  - the audit line says when a payment was an advance or exceeded the drawer, with the figures at that moment.
+
+  Preliminary invoices already listed every supplier and never checked the drawer; a test now proves both.
+
+- **Preliminary invoices:**
+  - **Date and time:** each shows when it was recorded.
+  - **The cashier's view:** waiting invoices first, then those completed or cancelled during the current shift («تمت في هذه الوردية»), with who did it and when. The view starts empty again with the next shift; every record stays in the history.
+  - **The alert:** a notice like «طلبات سداد», «فواتير مبدئية», with the count, the total and the oldest date, for those who complete them; it opens «الموردون والمشتريات».
+  - **Who is editing:** shown to every other user, with until when the lock lasts. The lists refresh every 10 seconds (30 before), and a lock taken on the phone reaches the shop's screens (tested across a shop and its cloud).
+- **Keyboard:**
+  - at the till, **F8** goes to the customer and **F9** to the amount paid, with Shift+Tab from there reaching the payment methods (moved with the arrows);
+  - the till's hint row lists them;
+  - in the supplier payment and preliminary invoice forms, a search that narrows to one supplier chooses it, so Enter goes straight on to the amount;
+  - with the existing Enter-to-next-field, arrow keys in groups and window keys (D-065, D-093), these workflows need no mouse.
+- **Customer codes:**
+  - **The automatic code** is the next number of the store's own series (C00012 → C00013), no longer C + the internal number. That gave codes such as C1000000001 for customers added on the phone while the shop was offline.
+  - **A number once given is never given again,** also after its customer was deleted: each database keeps the highest number of each series in `client_code_series` (not synchronised), starting above every existing code and every customer number given so far.
+  - **The cloud working alone** uses its own series, W00001…, so the two sides never give the same code.
+  - **Known limit:** a suggestion shown on the website while the shop is connected comes from the cloud's copy. In the rare case the shop's latest customer was deleted, the shop gives the next number on saving, so the saved code may differ from the suggestion shown.
+  - **Every form that adds a customer shows the code before saving:** the customers screen and, new, the till's new-customer fields.
+  - **Typing another code** needs «تحديد كود العميل يدوياً» (unchanged; the owner may give it to cashiers in «الأدوار والصلاحيات»). It is checked at once and again on saving, unique ignoring case, with a message naming the customer who has it.
+  - Existing codes are not changed.
+- **Tests:** `ownerRequests161.test.js` (6) covers:
+  - payments beyond what is owed and beyond the drawer, approval, settlement by the next invoice;
+  - preliminary invoices from a short drawer, and their shift view;
+  - the alert;
+  - codes, at the till too;
+  - across a shop and its cloud: a lock taken on the phone, and W codes.
+
+  The older test that expected the two refusals now checks only what is still refused (no open shift).

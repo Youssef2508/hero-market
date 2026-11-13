@@ -116,6 +116,10 @@ export default function AppShell({
             const page = ALL_NAV_ITEMS.find((i) => i.id === 'supplier-payments')
             if (page) onNavigate(page)
           }}
+          onOpenPendingInvoices={() => {
+            const page = ALL_NAV_ITEMS.find((i) => i.id === 'suppliers')
+            if (page) onNavigate(page)
+          }}
         />
         <LinkStatus />
         <main className="app-content" id="main-content">

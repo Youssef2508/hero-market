@@ -7,6 +7,10 @@
 //               cashier who recorded it, unless that is an administrator);
 //   rejects   → the whole transaction is reversed (D-100).
 // The cashier who recorded a pending request may also cancel it: reversed the same way.
+// Owner, 1.6.1 (D-107): any supplier may be paid – also one with nothing owed yet, whose invoice is
+// not recorded (an advance: after approval the balance goes below zero, the store's credit with the
+// supplier, until the invoice is recorded) – and the drawer need not hold the amount: the shift
+// may show a negative balance, explained at its close by this payment.
 // A reversal puts the same cash back into the request's own shift drawer while that shift is open,
 // otherwise into the treasury against that shift and request. The supplier's balance never moved,
 // so it is not touched; nothing is an expense or a loss; the request and both movements stay.
@@ -171,7 +175,7 @@ async function reverse(db, ctx, r, { status, reason }) {
 }
 
 module.exports = function supplierPaymentsModule(app) {
-  // The suppliers a request may be made for, with what is still owed to each.
+  // Every supplier (D-107), with what is still owed to each after the requests waiting approval.
   app.operation({
     name: 'supplierPayments.suppliers',
     permission: 'suppliers.payment_request',
@@ -180,7 +184,7 @@ module.exports = function supplierPaymentsModule(app) {
         await ctx.pool.query(
           `SELECT s.id, s.name, s.debt_balance::float8 AS debt,
                   COALESCE((SELECT SUM(amount) FROM supplier_payment_requests r WHERE r.supplier_id = s.id AND r.status = 'pending'), 0)::float8 AS pending
-             FROM suppliers s WHERE s.debt_balance > 0 ORDER BY s.name, s.id`
+             FROM suppliers s ORDER BY s.name, s.id`
         )
       ).rows.map((s) => ({ ...s, open: round2(s.debt - s.pending) }))
   })
@@ -221,19 +225,11 @@ module.exports = function supplierPaymentsModule(app) {
         ).rows[0]
         if (!s) throw notFound('المورد غير موجود.')
         const amount = round2(b.amount)
+        // D-107: more than is owed is an advance; less cash in the drawer than the amount leaves the
+        // shift negative. Both are recorded as they happened; the balance still falls only when the
+        // request is approved.
         const open = await openForRequests(db, s.id)
-        if (amount > open + 0.005)
-          throw badRequest(
-            open > 0
-              ? `المبلغ (${amount.toFixed(2)}) أكبر من المستحق للمورد "${s.name}" بعد الطلبات المعلقة (${open.toFixed(2)} ج.م).`
-              : `لا يوجد مستحق للمورد "${s.name}" يمكن سداده (بعد الطلبات المعلقة).`
-          )
-        // The drawer must hold the cash that is handed over.
         const drawer = await drawerFigures(db, shift)
-        if (amount > drawer.expected + 0.005)
-          throw badRequest(
-            `النقدية المتوقعة في الدرج (${drawer.expected.toFixed(2)} ج.م) أقل من المبلغ المطلوب.`
-          )
         const id = (
           await db.query(
             `INSERT INTO supplier_payment_requests (supplier_id, amount, shift_id, note, created_by, client_ref)
@@ -261,8 +257,15 @@ module.exports = function supplierPaymentsModule(app) {
         await ctx.audit(
           db,
           'supplier_payment_request',
-          `طلب سداد #${id}: ${amount.toFixed(2)} ج.م نقداً من درج الوردية #${shift.id} للمورد "${s.name}" (بانتظار اعتماد المدير)`,
-          { requestId: id, supplierId: s.id, amount, shiftId: shift.id }
+          `طلب سداد #${id}: ${amount.toFixed(2)} ج.م نقداً من درج الوردية #${shift.id} للمورد "${s.name}" (بانتظار اعتماد المدير)${amount > open + 0.005 ? ` – دفعة مقدمة: المستحق كان ${open.toFixed(2)} ج.م` : ''}${amount > drawer.expected + 0.005 ? ` – الدرج كان ${drawer.expected.toFixed(2)} ج.م` : ''}`,
+          {
+            requestId: id,
+            supplierId: s.id,
+            amount,
+            shiftId: shift.id,
+            owedBefore: open,
+            drawerBefore: drawer.expected
+          }
         )
         return { request: withLabels(await requestRow(db, id)) }
       })

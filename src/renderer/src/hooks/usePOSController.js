@@ -92,6 +92,8 @@ export function usePOSController({
   // A saved address of the selected customer chosen for delivery (null = typed address).
   const [clientAddressId, setClientAddressId] = useState(null)
   const [selectedClient, setSelectedClient] = useState(null)
+  // A new customer's code typed at the till (D-107); empty = the store's next code, shown as a hint.
+  const [clientCode, setClientCode] = useState('')
   // Automatic discounts (administrator rules) priced by the service for the current cart.
   const [appliedDiscounts, setAppliedDiscounts] = useState([])
   // Manual fixed invoice discount (D-057): { amount, reason } or null; priced by the service too.
@@ -149,6 +151,7 @@ export function usePOSController({
     setSearchResults([])
     setClientName('')
     setClientPhone('')
+    setClientCode('')
     setIsDelivery(false)
     setClientAddress('')
     setClientAddressId(null)
@@ -530,7 +533,8 @@ export function usePOSController({
               phone: clientPhone || '',
               // A saved address goes by id (checked on the server); otherwise the typed text.
               address: isDelivery && selectedClient && clientAddressId ? '' : clientAddress || '',
-              addressId: isDelivery && selectedClient && clientAddressId ? clientAddressId : null
+              addressId: isDelivery && selectedClient && clientAddressId ? clientAddressId : null,
+              ...(!selectedClient && clientCode.trim() ? { code: clientCode.trim() } : {})
             }
           : null
       }
@@ -633,6 +637,7 @@ export function usePOSController({
       setPaidAmount('')
       setClientName('')
       setClientPhone('')
+      setClientCode('')
       setClientAddress('')
       setClientAddressId(null)
       setIsDelivery(false)
@@ -779,6 +784,7 @@ export function usePOSController({
 
   const selectClient = (client) => {
     setSelectedClient(client)
+    setClientCode('')
     setClientName(client.name)
     setClientPhone(client.phone || '')
     // Saved addresses: the default is preselected for a delivery; the cashier may pick another.
@@ -825,6 +831,8 @@ export function usePOSController({
     setClientAddressId,
     selectedClient,
     setSelectedClient,
+    clientCode,
+    setClientCode,
     clientSearchResults,
     setClientSearchResults,
     handleClientNameChange,

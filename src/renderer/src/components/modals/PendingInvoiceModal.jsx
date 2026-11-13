@@ -109,7 +109,13 @@ export default function PendingInvoiceModal({
               className="input"
               placeholder="ابحث باسم المورد"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                const t = e.target.value
+                setSearch(t)
+                // D-107: one match is chosen at once, so Enter goes straight on to the total.
+                const hits = t.trim() ? suppliers.filter((x) => x.name.includes(t.trim())) : []
+                if (hits.length === 1) setForm((f) => ({ ...f, supplierId: String(hits[0].id) }))
+              }}
               aria-label="بحث المورد"
             />
             <select
