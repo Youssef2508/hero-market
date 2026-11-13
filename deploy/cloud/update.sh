@@ -12,11 +12,22 @@
 # The shop is not touched. While the database versions differ, the cloud refuses the shop's link and
 # both sides work apart; the shop's own update (the installer) brings them together again.
 set -euo pipefail
-# git checkout replaces this file while it runs: run from a copy of it.
+# git checkout replaces this file while it runs: run from a copy of it. And it runs on its own, in
+# a new session with its own log, so a dropped SSH connection cannot stop it half way – some networks
+# cut a session after ~32 KB of output (pre-production audit OPS-01), and the build prints more. This
+# terminal only follows the log; if it is cut, the update goes on and the log says how it ended.
 if [ -z "${HM_UPDATE_REPO:-}" ]; then
   self=$(mktemp)
   cp "$0" "$self"
-  HM_UPDATE_REPO="$(cd "$(dirname "$0")/../.." && pwd)" exec bash "$self" "$@"
+  repo="$(cd "$(dirname "$0")/../.." && pwd)"
+  mkdir -p "$repo/deploy/cloud/pre-update" && chmod 700 "$repo/deploy/cloud/pre-update"
+  log="$repo/deploy/cloud/pre-update/update-$(date +%Y%m%d-%H%M%S).log"
+  HM_UPDATE_REPO="$repo" setsid bash "$self" "$@" > "$log" 2>&1 < /dev/null &
+  pid=$!
+  echo "the update runs on its own (log: $log)"
+  tail --pid="$pid" -n +1 -f "$log" || true
+  wait "$pid"
+  exit $?
 fi
 cd "$HM_UPDATE_REPO"
 tag="${1:?usage: deploy/cloud/update.sh <release tag, e.g. v1.6.0>}"

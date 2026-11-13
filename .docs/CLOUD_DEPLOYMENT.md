@@ -117,6 +117,8 @@ The order and the reasons are in [PHASE2_ARCHITECTURE.md §14.1](PHASE2_ARCHITEC
 cd /opt/heromarket && sudo deploy/cloud/update.sh v1.6.0      # the approved release tag
 ```
 
+The update runs on its own in the background, with its log in `deploy/cloud/pre-update/update-<date>.log`; the terminal only follows that log. If the SSH connection drops (the owner's home Wi-Fi cuts a session after about 32 KB of output, and the build prints more), the update still finishes: reconnect and read the end of the newest log, for example `sudo tail -5 deploy/cloud/pre-update/update-*.log`.
+
 `update.sh` does the following:
 
 1. It stops the cloud service. Phones see "unreachable" for a minute or two.

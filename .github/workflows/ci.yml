@@ -65,21 +65,11 @@ jobs:
       - name: Unit, service, migration and business-flow tests (PostgreSQL 17)
         run: npm test
 
-      - name: Dependency audit (report)
-        # Report-only: known advisories are tracked in .docs/SECURITY_AND_RELEASE.md and
-        # resolved through reviewed Dependabot PRs. The summary is published on every run.
-        continue-on-error: true
-        run: |
-          set +e
-          npm audit --omit=dev --audit-level=high > audit.txt 2>&1
-          status=$?
-          {
-            echo '### npm audit (runtime dependencies)'
-            echo '```'
-            tail -n 40 audit.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $status
+      - name: Dependency audit (gate)
+        # Fails on any high or critical advisory, runtime or build, unless it has a reviewed, dated
+        # exception in .github/audit-exceptions.json (pre-production audit SEC-07). The summary is
+        # published on every run.
+        run: node scripts/audit-gate.js
 
   windows:
     name: Windows tests on the bundled PostgreSQL & packaging check
@@ -163,6 +153,37 @@ jobs:
           # Without the store root the certificate must be refused, and the API port must not be published.
           if curl --silent --output /dev/null https://127.0.0.1:8443/api/health; then echo 'untrusted certificate accepted' && exit 1; fi
           if curl --silent --max-time 3 --output /dev/null http://127.0.0.1:8787/api/health; then echo 'plain API reachable' && exit 1; fi
+
+      - name: Cloud stack – as deployed (deploy/cloud), checked from outside
+        # The internet way in, started from its own compose file with throwaway values. Caddy serves
+        # "localhost" from its internal CA, so no certificate is requested from Let's Encrypt.
+        env:
+          POSTGRES_PASSWORD: ci-cloud-${{ github.run_id }}-${{ github.run_attempt }}
+          HEROMARKET_SECRET: ci-cloud-secret-${{ github.run_id }}-${{ github.run_attempt }}-0123456789
+          HEROMARKET_DOMAIN: localhost
+          BACKUP_RECIPIENT: age1ci0unused0recipient
+        run: |
+          docker compose -f deploy/cloud/docker-compose.yml up -d --build --wait db cloud proxy
+          sh scripts/cloud-smoke.sh https://localhost --insecure
+          # Only the proxy is published: neither PostgreSQL nor the service itself.
+          # `docker port` lists only what is published on the host.
+          for s in db cloud; do
+            published=$(docker port "$(docker compose -f deploy/cloud/docker-compose.yml ps -q $s)")
+            if [ -n "$published" ]; then echo "$s published: $published" && exit 1; fi
+          done
+          docker port "$(docker compose -f deploy/cloud/docker-compose.yml ps -q proxy)"
+          if curl --silent --max-time 3 --output /dev/null http://127.0.0.1:8787/api/health; then echo 'service reachable directly' && exit 1; fi
+
+      - name: Cloud stack logs and tear down
+        if: always()
+        env:
+          POSTGRES_PASSWORD: unused
+          HEROMARKET_SECRET: unused-unused-unused-unused-unused
+          HEROMARKET_DOMAIN: localhost
+          BACKUP_RECIPIENT: age1unused
+        run: |
+          docker compose -f deploy/cloud/docker-compose.yml logs --no-color cloud proxy | tail -n 80
+          docker compose -f deploy/cloud/docker-compose.yml down -v
 
       - name: Server logs
         if: always()

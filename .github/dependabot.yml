@@ -38,3 +38,17 @@ updates:
     schedule:
       interval: monthly
     labels: [dependencies, docker]
+
+  # The cloud's PostgreSQL, Caddy and backup images are pinned by digest (pre-production audit):
+  # updates arrive here as reviewable PRs, and reach the server only with an approved release.
+  - package-ecosystem: docker
+    directory: /deploy/cloud
+    schedule:
+      interval: monthly
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker-compose
+    directory: /deploy/cloud
+    schedule:
+      interval: monthly
+    labels: [dependencies, docker]
