@@ -42,8 +42,14 @@ function download(url, to, redirects = 0) {
 
 function signer(file) {
   const ps = `$s = Get-AuthenticodeSignature -LiteralPath '${file.replace(/'/g, "''")}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`
+  // Started from PowerShell 7 (the CI runner's shell), Windows PowerShell inherits a PSModulePath
+  // naming PowerShell 7's modules and cannot load its own Get-AuthenticodeSignature: it then finds
+  // its modules by itself, without that variable.
+  const env = { ...process.env }
+  for (const k of Object.keys(env)) if (k.toLowerCase() === 'psmodulepath') delete env[k]
   return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
-    encoding: 'utf8'
+    encoding: 'utf8',
+    env
   }).trim()
 }
 
