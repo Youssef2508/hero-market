@@ -166,8 +166,12 @@ jobs:
           docker compose -f deploy/cloud/docker-compose.yml up -d --build --wait db cloud proxy
           sh scripts/cloud-smoke.sh https://localhost --insecure
           # Only the proxy is published: neither PostgreSQL nor the service itself.
-          if docker compose -f deploy/cloud/docker-compose.yml port db 5432 2>/dev/null | grep -q .; then echo 'db published' && exit 1; fi
-          if docker compose -f deploy/cloud/docker-compose.yml port cloud 8787 2>/dev/null | grep -q .; then echo 'cloud service published' && exit 1; fi
+          # `docker port` lists only what is published on the host.
+          for s in db cloud; do
+            published=$(docker port "$(docker compose -f deploy/cloud/docker-compose.yml ps -q $s)")
+            if [ -n "$published" ]; then echo "$s published: $published" && exit 1; fi
+          done
+          docker port "$(docker compose -f deploy/cloud/docker-compose.yml ps -q proxy)"
           if curl --silent --max-time 3 --output /dev/null http://127.0.0.1:8787/api/health; then echo 'service reachable directly' && exit 1; fi
 
       - name: Cloud stack logs and tear down
