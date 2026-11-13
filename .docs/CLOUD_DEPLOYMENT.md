@@ -40,18 +40,19 @@ printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'Per
   | sudo tee /etc/ssh/sshd_config.d/10-heromarket.conf
 sudo sshd -t && sudo systemctl reload ssh     # then check a NEW key login works before closing this one
 
-# SSH also on 2222 and 8443: some networks (the owner's home Wi-Fi among them) block port 22. Port 22
-# must stay listed, since any Port line replaces the default. Ubuntu 24.04 starts sshd from ssh.socket,
-# which takes its ports from this file after daemon-reload.
+# SSH also on 21: the owner's home Wi-Fi lets only ports 21, 80 and 443 out (80 and 443 are the
+# website's). Port 22 must stay listed, since any Port line replaces the default. Ubuntu 24.04 starts
+# sshd from ssh.socket, which takes its ports from this file after daemon-reload. (Some mobile
+# networks stall SSH on 21; use 22 there.)
 printf '%s
-' 'Port 22' 'Port 2222' 'Port 8443' | sudo tee /etc/ssh/sshd_config.d/20-heromarket-ports.conf
+' 'Port 22' 'Port 21' | sudo tee /etc/ssh/sshd_config.d/20-heromarket-ports.conf
 sudo sshd -t && sudo systemctl daemon-reload && sudo systemctl restart ssh.socket
 
-# Updates, automatic security updates, and the firewall: SSH (22, 2222, 8443), HTTP and HTTPS only.
+# Updates, automatic security updates, and the firewall: SSH (22, 21), HTTP and HTTPS only.
 sudo apt-get update && sudo apt-get -y upgrade
 sudo apt-get -y install ufw unattended-upgrades ca-certificates curl git
 sudo ufw default deny incoming && sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
-sudo ufw allow 2222/tcp && sudo ufw allow 8443/tcp
+sudo ufw allow 21/tcp
 sudo ufw --force enable
 
 # Docker from Docker's own repository (https://docs.docker.com/engine/install/ubuntu/).
