@@ -22,6 +22,7 @@ const { badRequest, forbidden, conflict, notFound } = require('../errors')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
 const { readAll } = require('./settings')
+const { manualCode, codeOwner, codeTaken } = require('./customers').helpers
 const { priceCart, activeRules } = require('../pricing/discounts')
 const { ADDRESSES } = require('./customers').helpers
 
@@ -538,7 +539,10 @@ module.exports = function posModule(app) {
             phone: { type: 'string', maxLength: 40 },
             address: { type: 'string', maxLength: 300 },
             // One of the customer's saved addresses for a delivery (client_addresses.id).
-            addressId: { type: ['integer', 'null'] }
+            addressId: { type: ['integer', 'null'] },
+            // A new customer's code typed at the till (D-107); absent or empty = the next of the
+            // store's series. Typing one needs «تحديد كود العميل يدوياً», as on the customers screen.
+            code: { type: ['string', 'null'], maxLength: 60 }
           }
         }
       }
@@ -681,11 +685,16 @@ module.exports = function posModule(app) {
               clientRow = named[0]
             }
             if (!clientRow) {
+              const code = manualCode(ctx, c.code)
+              if (code) {
+                const owner = await codeOwner(db, code)
+                if (owner) throw codeTaken(owner)
+              }
               clientRow = (
                 await db.query(
-                  `INSERT INTO clients (name, phone, address, debt_balance, points, created_at)
-                   VALUES ($1, $2, $3, 0, 0, LOCALTIMESTAMP(0)) RETURNING *`,
-                  [c.name.trim(), phone, (c.address || '').trim()]
+                  `INSERT INTO clients (name, phone, address, debt_balance, points, created_at, code)
+                   VALUES ($1, $2, $3, 0, 0, LOCALTIMESTAMP(0), $4) RETURNING *`,
+                  [c.name.trim(), phone, (c.address || '').trim(), code]
                 )
               ).rows[0]
               // A new customer's address becomes their default delivery address (1.4.0).

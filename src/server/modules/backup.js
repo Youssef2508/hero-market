@@ -20,6 +20,9 @@ const TABLES = [
   'stock_movements',
   'discount_rules',
   'clients',
+  // The highest customer code given in each series (0037, D-107): a restored store never gives a
+  // deleted customer's code again.
+  'client_code_series',
   'client_addresses',
   'client_ledger',
   'approvals',

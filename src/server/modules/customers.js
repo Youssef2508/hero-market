@@ -325,6 +325,18 @@ module.exports = function customersModule(app) {
       })
   })
 
+  // The code a new customer will get unless another is typed (D-107): the next of the store's
+  // series (W on the cloud working alone). Shown on every form that adds a customer, the till's too.
+  app.operation({
+    name: 'clients.suggestCode',
+    anyPermission: ['customers.manage', 'pos.sell'],
+    handler: async (ctx) => {
+      // The website while the shop is connected: the shop saves the customer, from its C series.
+      const series = ctx.cloud && (await app.cloudLink.shopUp()) ? 'C' : null
+      return (await ctx.pool.query('SELECT hm_next_client_code($1) AS code', [series])).rows[0]
+    }
+  })
+
   // The form warns before saving when a typed code is taken (D-086); saving checks again.
   app.operation({
     name: 'clients.codeAvailable',
@@ -499,4 +511,11 @@ module.exports = function customersModule(app) {
   })
 }
 
-module.exports.helpers = { ADDRESSES, saveAddresses, addressRules }
+module.exports.helpers = {
+  ADDRESSES,
+  saveAddresses,
+  addressRules,
+  manualCode,
+  codeOwner,
+  codeTaken
+}

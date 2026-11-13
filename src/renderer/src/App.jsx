@@ -220,6 +220,8 @@ function App() {
     clientAddressId,
     setClientAddressId,
     selectedClient,
+    clientCode,
+    setClientCode,
     clientSearchResults,
     handleClientNameChange,
     handleClientPhoneChange,
@@ -756,6 +758,9 @@ function App() {
             appliedCredit={appliedCredit}
             setAppliedCredit={setAppliedCredit}
             selectedClient={selectedClient}
+            clientCode={clientCode}
+            setClientCode={setClientCode}
+            currentUser={currentUser}
             handleCheckout={handleCheckout}
             barcodeInputRef={barcodeInputRef}
             barcodeInput={barcodeInput}
