@@ -28,7 +28,7 @@ Proven before release:
 - [ ] **2. Update the cloud to the same release** (on the server, [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) §7):
 
   ```bash
-  ssh -i ~/.ssh/heromarket_cloud_ed25519 ubuntu@109.123.240.94
+  ssh -p 8443 -i ~/.ssh/heromarket_cloud_ed25519 ubuntu@109.123.240.94   # 8443 or 2222 where port 22 is blocked
   cd /opt/heromarket && sudo deploy/cloud/update.sh v1.6.0
   ```
 
