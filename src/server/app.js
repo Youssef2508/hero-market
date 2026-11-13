@@ -23,6 +23,8 @@ const NO_INTERNET = 'هذا الحساب غير مصرح له بالدخول ع�
 // operations run: signing in, the recovery itself, store settings, and backups.
 const DURING_RECOVERY = /^(auth\.|sync\.|backup\.|settings\.public$)/
 
+const CLIENT_ERRORS = { 413: 'payload_too_large', 415: 'unsupported_media_type' }
+
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex')
 }
@@ -114,6 +116,15 @@ async function createService(cfg) {
     let e = err instanceof ServiceError ? err : fromDatabaseError(err)
     if (!e && err.validation)
       e = new ServiceError(400, 'bad_request', 'بيانات غير صالحة.', err.validation)
+    // The framework's own refusals of a request (malformed JSON, a body over the limit, an unknown
+    // content type) are the caller's error, not the service's: their status, no log of a failure
+    // (pre-production audit AUD-03 – before, each was a 500 and an "unhandled error" in the log).
+    if (!e && err.statusCode >= 400 && err.statusCode < 500)
+      e = new ServiceError(
+        err.statusCode,
+        CLIENT_ERRORS[err.statusCode] || 'bad_request',
+        err.statusCode === 413 ? 'حجم البيانات المرسلة أكبر من المسموح.' : 'بيانات غير صالحة.'
+      )
     if (!e) {
       req.log.error({ err }, 'unhandled error')
       e = new ServiceError(500, 'internal', 'حدث خطأ غير متوقع في الخادم.')

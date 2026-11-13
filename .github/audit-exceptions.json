@@ -1,0 +1,4 @@
+{
+  "_comment": "Reviewed exceptions to the dependency gate (scripts/audit-gate.js). Each entry: advisory (the GHSA URL npm audit reports), reason, reviewedBy, expires (YYYY-MM-DD, at most 90 days ahead). An expired entry blocks again.",
+  "exceptions": []
+}
