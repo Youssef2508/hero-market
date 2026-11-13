@@ -98,7 +98,17 @@ function MyPaymentRequests({ refreshKey, showEmpty, currentUser, triggerCustomAl
   )
 }
 
-/** The preliminary invoices this user recorded and that wait for their lines: cancel a mistake. */
+// The start of the shift as the service writes times ("YYYY-MM-DD HH:MM:SS").
+const shiftStart = (shift) =>
+  shift?.start_time ? String(shift.start_time).replace('T', ' ').slice(0, 19) : null
+const STATUS_DONE = { converted: 'اكتملت أصنافها', cancelled: 'أُلغيت' }
+
+/**
+ * The preliminary invoices this user recorded (D-064) that wait for their lines – to cancel a
+ * mistake – and, until the current shift ends, those completed or cancelled during it (D-107), so
+ * the cashier sees what became of them. Each shows when it was recorded. Who is completing one now
+ * (D-099) is shown to everyone; the list looks again every 10 seconds.
+ */
 function MyPendingInvoices({
   currentUser,
   currentShift,
@@ -108,20 +118,45 @@ function MyPendingInvoices({
 }) {
   const [rows, setRows] = useState([])
   const [cancelling, setCancelling] = useState(null)
+  const since = shiftStart(currentShift)
   const load = useCallback(() => {
-    api('supplierInvoices.list', { status: 'pending' })
+    api('supplierInvoices.list', { status: 'pending', ...(since ? { doneSince: since } : {}) })
       .then(setRows)
       .catch(() => setRows([]))
-  }, [])
+  }, [since])
   // From the internet: reload by itself when the shop's data changes (D-106).
   const live = useLiveTick()
   useEffect(() => {
     load()
+    const t = setInterval(load, 10000)
+    return () => clearInterval(t)
   }, [load, refreshKey, live])
+  const waiting = rows.filter((p) => p.status === 'pending')
+  const done = rows.filter((p) => p.status !== 'pending')
   if (!rows.length)
     return showEmpty ? (
       <p className="cell-muted text-center">لا توجد فواتير مبدئية بانتظار الأصناف.</p>
     ) : null
+  const head = (
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>المورد</th>
+        <th className="num">الإجمالي</th>
+        <th className="num">المدفوع</th>
+        <th>الحالة</th>
+      </tr>
+    </thead>
+  )
+  const idCell = (p) => (
+    <td>
+      <span className="ltr-id">{p.id}</span>
+      {/* D-107: when it was recorded, so invoices of different days are told apart. */}
+      <div className="cell-muted">
+        <Timestamp value={p.created_at_text || p.created_at} />
+      </div>
+    </td>
+  )
   return (
     <section className="card">
       <div className="card-header">
@@ -131,49 +166,83 @@ function MyPendingInvoices({
         </h2>
       </div>
       <div className="card-body">
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>المورد</th>
-                <th className="num">الإجمالي</th>
-                <th className="num">المدفوع</th>
-                <th>
-                  <span className="visually-hidden">إجراءات</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => (
-                <tr key={p.id} className={p.reserved_active ? 'row-reserved' : undefined}>
-                  <td>
-                    <span className="ltr-id">{p.id}</span>
-                  </td>
-                  <td>{p.supplier_name}</td>
-                  <td className="num">{formatMoney(p.total)}</td>
-                  <td className="num">{formatMoney(p.paid)}</td>
-                  <td>
-                    {/* D-099: the administrator completing it holds it for up to 30 minutes. */}
-                    {p.reserved_active && !p.reserved_mine ? (
-                      <span className="badge badge-info" role="status">
-                        «{p.reserved_by_name}» بيعدل الفاتورة حاليًا
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => setCancelling(p)}
-                      >
-                        إلغاء
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {waiting.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              {head}
+              <tbody>
+                {waiting.map((p) => (
+                  <tr key={p.id} className={p.reserved_active ? 'row-reserved' : undefined}>
+                    {idCell(p)}
+                    <td>{p.supplier_name}</td>
+                    <td className="num">{formatMoney(p.total)}</td>
+                    <td className="num">{formatMoney(p.paid)}</td>
+                    <td>
+                      {/* D-099: the administrator completing it holds it for up to 30 minutes. */}
+                      {p.reserved_active && !p.reserved_mine ? (
+                        <span className="badge badge-info" role="status">
+                          «{p.reserved_by_name}» بيعدل الفاتورة حاليًا
+                          {p.reserved_until_text && ` (حتى ${p.reserved_until_text.slice(11, 16)})`}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="cell-muted">بانتظار الأصناف</span>{' '}
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setCancelling(p)}
+                          >
+                            إلغاء
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="cell-muted text-center">لا توجد فواتير مبدئية بانتظار الأصناف.</p>
+        )}
+        {done.length > 0 && (
+          <>
+            <h3 className="section-label" style={{ marginTop: 16 }}>
+              تمت في هذه الوردية
+            </h3>
+            <div className="table-wrap">
+              <table className="table">
+                {head}
+                <tbody>
+                  {done.map((p) => (
+                    <tr key={p.id} className="row-done">
+                      {idCell(p)}
+                      <td>{p.supplier_name}</td>
+                      <td className="num">{formatMoney(p.final_total ?? p.total)}</td>
+                      <td className="num">{formatMoney(p.paid)}</td>
+                      <td>
+                        <span
+                          className={p.status === 'converted' ? 'badge badge-success' : 'badge'}
+                        >
+                          {STATUS_DONE[p.status] || p.status}
+                        </span>
+                        <div className="cell-muted">
+                          {p.converted_by_name || p.cancelled_by_name}
+                          {p.done_at_text && (
+                            <>
+                              {' '}
+                              · <Timestamp value={p.done_at_text} />
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
       {cancelling && (
         <CancelPendingModal

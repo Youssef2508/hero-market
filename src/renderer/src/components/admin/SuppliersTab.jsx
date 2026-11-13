@@ -89,6 +89,7 @@ function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
                       {busy ? (
                         <span className="badge badge-info" role="status">
                           «{p.reserved_by_name}» بيعدل الفاتورة حاليًا
+                          {p.reserved_until_text && ` (حتى ${p.reserved_until_text.slice(11, 16)})`}
                         </span>
                       ) : p.reserved_mine ? (
                         <span className="badge badge-info">مفتوحة عندك للتعديل</span>
@@ -174,10 +175,10 @@ export default function SuppliersTab({
   const [cancelling, setCancelling] = useState(null)
   const [returning, setReturning] = useState(null)
   const [viewing, setViewing] = useState(null)
-  // Who is completing which preliminary invoice changes on other PCs (D-099): look again every
-  // 30 seconds, so a finished or expired reservation does not stay shown.
+  // Who is completing which preliminary invoice changes on other PCs and phones (D-099): look again
+  // every 10 seconds, so everyone sees promptly who is editing one, and when it is free (D-107).
   useEffect(() => {
-    const t = setInterval(() => fetchPendingInvoices?.(), 30000)
+    const t = setInterval(() => fetchPendingInvoices?.(), 10000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

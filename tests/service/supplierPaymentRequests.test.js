@@ -163,22 +163,17 @@ test('a double click or a retry records one request and one cash movement', asyn
   )
 })
 
-test('refused: more than is owed after pending requests, more than the drawer, no shift', async (t) => {
+test('refused without an open shift (beyond what is owed or the drawer: allowed since 1.6.1)', async (t) => {
   if (!requireDb(t)) return
-  // Owed 1000; 290 pending: at most 710.
-  const over = await request(711)
-  assert.equal(over.status, 400)
-  assert.match(over.body.error.message, /710\.00/)
-  // The drawer: 1000 − 290 = 710 expected; another supplier owed 300 cannot take 800 either way.
+  // Owner, 1.6.1 (D-107): paying beyond what is owed (an advance) or beyond the drawer (a negative
+  // shift) is allowed; tests/service/ownerRequests161.test.js proves both on its own database.
+  // Here the state the later tests build on stays as it was: the other supplier's request of 300.
   const big = await svc.call(
     'supplierPayments.create',
     { supplierId: otherSupplierId, amount: 300, currentShiftId: shift.id, clientRef: ref() },
     cashier
   )
   ok(big)
-  const drawerShort = await request(500)
-  assert.equal(drawerShort.status, 400)
-  assert.match(drawerShort.body.error.message, /النقدية المتوقعة في الدرج/)
   // An administrator with no shift: the cash comes from a drawer, so a shift is needed.
   const noShift = await svc.call(
     'supplierPayments.create',

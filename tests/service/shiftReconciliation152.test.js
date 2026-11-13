@@ -185,10 +185,11 @@ test('a mixed shift reconciles to the piastre everywhere', async (t) => {
       },
       cashier
     ),
-    // A request above what is owed after pending ones.
+    // A request for a supplier that does not exist. (Above what is owed is an advance since 1.6.1,
+    // D-107: allowed, so no longer an example of a refusal.)
     await svc.call(
       'supplierPayments.create',
-      { supplierId, amount: 5000, currentShiftId: shift.id, clientRef: ref() },
+      { supplierId: 999999, amount: 50, currentShiftId: shift.id, clientRef: ref() },
       cashier
     ),
     // A sale of an unknown product.

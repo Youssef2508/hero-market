@@ -173,25 +173,41 @@ module.exports = function supplierInvoicesModule(app) {
       type: 'object',
       properties: {
         status: { type: ['string', 'null'], enum: [null, 'pending', 'converted', 'cancelled'] },
-        supplierId: { type: ['integer', 'null'] }
+        supplierId: { type: ['integer', 'null'] },
+        // With status 'pending': also those completed or cancelled since this moment – the start
+        // of the cashier's shift – so what was done in the shift stays in view until it ends (D-107).
+        doneSince: {
+          type: ['string', 'null'],
+          pattern: '^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?$'
+        }
       }
     },
-    handler: async (ctx, { status, supplierId }) =>
+    handler: async (ctx, { status, supplierId, doneSince }) =>
       (
         await ctx.pool.query(
           `SELECT t.*, t.total::float8 AS total, t.paid::float8 AS paid, s.name AS supplier_name,
-                  u.username AS created_by_name, ${reservations.LIST_COLUMNS(4)}
+                  u.username AS created_by_name, cu.username AS converted_by_name,
+                  xu.username AS cancelled_by_name,
+                  to_char(t.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at_text,
+                  to_char(COALESCE(t.converted_at, t.cancelled_at), 'YYYY-MM-DD HH24:MI:SS') AS done_at_text,
+                  ${reservations.LIST_COLUMNS(4)}
              FROM supplier_pending_invoices t JOIN suppliers s ON s.id = t.supplier_id
              LEFT JOIN users u ON u.id = t.created_by
+             LEFT JOIN users cu ON cu.id = t.converted_by
+             LEFT JOIN users xu ON xu.id = t.cancelled_by
              LEFT JOIN users ru ON ru.id = t.reserved_by
-            WHERE ($1::text IS NULL OR t.status = $1) AND ($2::int IS NULL OR t.supplier_id = $2)
+            WHERE ($1::text IS NULL OR t.status = $1
+                   OR ($5::timestamp IS NOT NULL AND $1 = 'pending'
+                       AND COALESCE(t.converted_at, t.cancelled_at) >= $5::timestamp))
+              AND ($2::int IS NULL OR t.supplier_id = $2)
               AND ($3::int IS NULL OR t.created_by = $3)
-            ORDER BY t.id DESC LIMIT 500`,
+            ORDER BY (t.status = 'pending') DESC, t.id DESC LIMIT 500`,
           [
             status || null,
             supplierId || null,
             ctx.can('suppliers.view') || ctx.can('suppliers.manage') ? null : ctx.user.id,
-            reservations.offset()
+            reservations.offset(),
+            doneSince || null
           ]
         )
       ).rows.map(({ reserve_token: _token, ...row }) => ({
@@ -446,6 +462,21 @@ module.exports = function supplierInvoicesModule(app) {
           difference
         }
       })
+  })
+
+  // The notice for those who complete preliminary invoices (D-107), like «طلبات سداد»: how many
+  // wait for their items, how much, and since when the oldest waits.
+  app.operation({
+    name: 'supplierInvoices.pendingCount',
+    permission: 'suppliers.manage',
+    handler: async (ctx) =>
+      (
+        await ctx.pool.query(
+          `SELECT COUNT(*)::int AS pending, COALESCE(SUM(total), 0)::float8 AS "pendingTotal",
+                  to_char(MIN(created_at), 'YYYY-MM-DD HH24:MI:SS') AS "oldestAt"
+             FROM supplier_pending_invoices WHERE status = 'pending'`
+        )
+      ).rows[0]
   })
 
   // Open a preliminary invoice to complete it: reserve it for 30 minutes (D-099), or renew the
