@@ -39,4 +39,25 @@ The hint row at the bottom of the till lists every key: F1, F2, F3, F4, F6, F7, 
 
 ## The installer
 
-The file, its size and its SHA-256 are added here once it is built from `main`.
+|                  |                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| File             | `HeroMarket-Setup-1.6.1.exe`                                                                                                     |
+| Size             | 181,012,350 bytes                                                                                                                |
+| SHA-256          | `5e23af6270ec65b62857f0c47abf0cc2365d10519dcc4433e6a55ebdf3e89726`                                                               |
+| Built from       | the tag `v1.6.1`, `main`'s merge commit `cdb1f00`. No uncommitted change. Lint, and all 538 tests, passed on that checkout first |
+| Package contents | checked: only the program, with migrations 0001–0037 and the bundled PostgreSQL; no tests, documents, databases or local files   |
+| Signed           | no ("Windows protected your PC" → More info → Run anyway)                                                                        |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.6.1.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+## How this release was verified
+
+- **The full test suite** passes (538 tests), with lint, the format check and the CI pipeline.
+- **Stores made by the released 1.4.0 and 1.5.2 programs** were updated in place to 1.6.1 and paired; every record was kept.
+- **A shop and its website together (automated):** a lock taken on the phone shows at the shop, the website suggests the code the shop then saves, and customers added on the phone while the shop is offline get W codes.
+- **In a browser against a local shop and website (made-up data):** every step of the requests above, and all 31 screens at phone size. Two display faults found this way were fixed before the release.
+- **This installer over the released 1.6.0 installer,** on a clean Windows (Windows Sandbox, made-up data) with a paired store, 177 changes waiting to be sent, customers (one of them deleted), a supplier and a preliminary invoice:
+  - the installer took its verified copy, then applied migration 0037 (result "ok");
+  - the pairing, the waiting changes, the customers and their codes, the supplier's balance and the preliminary invoice were identical afterwards;
+  - the background service started as 1.6.1 over the running one;
+  - the next customer got C00004: the deleted customer's C00003 was not given again.
