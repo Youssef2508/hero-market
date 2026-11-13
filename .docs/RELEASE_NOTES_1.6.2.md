@@ -30,4 +30,14 @@ Written for the shop owner. 1.6.2 is a reliability and safety update from the fi
 
 ## The installer
 
-The file, its size and its SHA-256 are added here once it is built from `main`.
+|            |                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| File       | `HeroMarket-Setup-1.6.2.exe`                                                                                                 |
+| Size       | 181,012,669 bytes                                                                                                            |
+| SHA-256    | `34487cfc1599ce66d6df9986b89ded4c2a9d865d1f2a6d26cb1da232c66a7e71`                                                           |
+| Built from | the tag `v1.6.2` (`main`'s merge commit `f79c75b`) by the release workflow on GitHub, after lint and every test passed there |
+| Signed     | no ("Windows protected your PC" → More info → Run anyway)                                                                    |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.6.2.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+**Checked in Windows Sandbox** (a clean Windows, made-up data): this installer over the released 1.6.1, on a paired store with 177 changes waiting to be sent and its background service running. The installer took its verified copy; there was nothing to migrate (result "ok"). The pairing, the waiting changes, the customers and their codes, the supplier's balance and the preliminary invoice were identical afterwards. The background service started as 1.6.2.

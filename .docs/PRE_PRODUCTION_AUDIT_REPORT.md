@@ -19,7 +19,7 @@
 
   Afterwards, both databases were identical row for row (2,288 rows), compared independently of the sync code.
 
-- **Fixed on the branch:**
+- **Fixed, released in 1.6.2 and deployed to the cloud the same day:**
 
 | ID     | Severity           | Fix                                                                                                                                               |
 | ------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,7 +30,13 @@
 | UX-01  | Medium             | Tablets got mouse-sized buttons. They now get finger-sized ones.                                                                                  |
 | SEC-08 | Low                | Two floating image tags. Both are now pinned by digest.                                                                                           |
 
-- **Remaining conditions:** merge the branch and release it (1.6.2), and prove OPS-01 on the server, which needs your approval. Section H lists the conditions and what remains unverified.
+- **Follow-up (same day):**
+  - the fixes were merged (#47) and released as **1.6.2**;
+  - the installer was built by the release workflow itself, for the first time since 1.5.2;
+  - the cloud was updated to 1.6.2;
+  - OPS-01 was proven on the server: an update whose SSH connection was cut 4 seconds in finished by itself, and the website came back healthy.
+
+  Section H lists what remains unverified.
 
 ## B. Architecture (as implemented)
 
@@ -143,11 +149,11 @@ An overpayment becoming store credit was confirmed as intended: the screen asks 
 | Lint / format                               | `npm run lint`, `npm run format:check`                                                                      | 0 errors (24 older warnings, as `main`); clean            |
 | Builds                                      | `npm run build`, `npm run build:web`                                                                        | ok                                                        |
 | Dependency gate                             | `node scripts/audit-gate.js`                                                                                | 0 high/critical; 6 moderate (build tooling) reported      |
-| Live smoke (read-only)                      | `sh scripts/cloud-smoke.sh https://heromarket.duckdns.org`                                                  | 27 checks pass; 1 fails until AUD-03 is deployed          |
+| Live smoke (read-only)                      | `sh scripts/cloud-smoke.sh https://heromarket.duckdns.org`                                                  | 28 / 28 pass on 1.6.2 (AUD-03 deployed)                   |
 | Live rehearsal                              | `node scripts/cloud-rehearsal/run.js`                                                                       | 15 / 15 pass (2026-11-13 10:04–10:11)                     |
 | Screens                                     | `node scripts/phone-check.js --width W --height H` × 9 sizes                                                | 31 screens each, 0 overflow                               |
 | Backup round trip                           | download, checksum, decrypt with the owner's key (PC), `pg_restore --exit-on-error` into a scratch database | ok; contents as expected                                  |
-| Update detach (OPS-01)                      | WSL, stand-in work, terminal process group killed                                                           | update completed; exit status passed through              |
+| Update detach (OPS-01)                      | WSL with stand-in work; then the server, SSH cut 4 s into a real update                                     | completed both times; exit status passed through          |
 | Installer                                   | Windows Sandbox, 1.6.0 → 1.6.1 over a running service                                                       | pairing and 177 waiting changes identical (release 1.6.1) |
 
 **Load parameters (live):**
@@ -167,24 +173,25 @@ All in [MOBILE_UX_AUDIT.md](MOBILE_UX_AUDIT.md). Nine viewport sizes from 320 ×
 
 ## H. Production blockers and open items
 
-| Class   | Item                                                                                                                                                                                                                                                         |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| BLOCKER | none                                                                                                                                                                                                                                                         |
-| HIGH    | **OPS-01 deployment**: until the fixed `update.sh` is on the server, never run a cloud update over the home Wi-Fi (port 21 cuts sessions after ~32 KB); use a network with port 22. Merging and proving it on the server need approval.                      |
-| HIGH    | **Merge `audit/pre-production`** after CI is green (it also proves the new gates), and release it as 1.6.2.                                                                                                                                                  |
-| MEDIUM  | AUD-03 stays live on the cloud until 1.6.2 is deployed (log noise and wrong status codes; no data risk).                                                                                                                                                     |
-| MEDIUM  | Not tested: a real power cut of the shop PC (a process kill was tested; PostgreSQL's own crash recovery was not exercised), disk full, corrupted queue rows, an interrupted migration on a real installation.                                                |
-| MEDIUM  | No alerting when the cloud is down or a backup fails (budget); no off-server backup copy.                                                                                                                                                                    |
-| MEDIUM  | No long soak test (hours of activity), no test on real phones or tablets, no Electron end-to-end test of the desktop window itself.                                                                                                                          |
-| LOW     | SEC-11 CSP directives; UX-02 narrow table fields on tablets; UX-05 setup form on an unpaired cloud; the release workflow fix (#44) proven only at the next tag; encrypted test backups in the cloud's backup volume until they expire (synthetic data only). |
+| Class   | Item                                                                                                                                                                                                          |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BLOCKER | none                                                                                                                                                                                                          |
+| HIGH    | none. OPS-01, AUD-03 and the CI gates are released in 1.6.2, deployed, and proven on the server.                                                                                                              |
+| MEDIUM  | Not tested: a real power cut of the shop PC (a process kill was tested; PostgreSQL's own crash recovery was not exercised), disk full, corrupted queue rows, an interrupted migration on a real installation. |
+| MEDIUM  | No alerting when the cloud is down or a backup fails (budget); no off-server backup copy.                                                                                                                     |
+| MEDIUM  | No long soak test (hours of activity), no test on real phones or tablets, no Electron end-to-end test of the desktop window itself.                                                                           |
+| LOW     | SEC-11 CSP directives; UX-02 narrow table fields on tablets; UX-05 setup form on an unpaired cloud; older encrypted test backups in the cloud's backup volume until they expire (synthetic data only).        |
 
 ## I. Recommendation
 
-**CONDITIONALLY READY.** The shop can start real business. No defect was found that loses, doubles or corrupts records or money, or lets anyone in who should not be. The conditions:
+**CONDITIONALLY READY.** The shop can start real business. No defect was found that loses, doubles or corrupts records or money, or lets anyone in who should not be.
 
-1. Cloud updates only over port 22 until OPS-01 is deployed.
-2. Merge and release the audit branch (1.6.2) soon after.
-3. Accept the medium items above as known, or schedule them: no alerting, the untested power-cut and disk-full cases, no soak test.
+The conditions that followed from the audit's own findings are met (1.6.2 released and deployed, OPS-01 proven on the server). One condition remains: accept the medium items in section H as known risks, or schedule them:
+
+- no alerting;
+- the untested power-cut and disk-full cases;
+- no soak test;
+- no tests on real phones and tablets.
 
 ## Cloud pre-handover cleanup and health verification
 
