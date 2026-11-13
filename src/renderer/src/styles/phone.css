@@ -413,3 +413,27 @@
     overflow-x: auto;
   }
 }
+
+/* ── Tablets: a touch screen wider than a phone (pre-production audit UX-01) ──
+   The website on a tablet kept the desktop's mouse-sized controls (23 of 31 screens had buttons
+   under 40 px at 768 × 1024). Any touch screen of that width gets the phone's finger sizes. The
+   shop PC's program is not affected (is-web is the browser way in only), so a touch till keeps
+   its layout. */
+@media (pointer: coarse) and (min-width: 760px) {
+  .is-web .btn,
+  .is-web .input,
+  .is-web select {
+    min-height: 44px;
+  }
+  .is-web .btn-sm {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+  .is-web .icon-btn,
+  .is-web .link-btn,
+  .is-web .category-pick,
+  .is-web .segmented button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

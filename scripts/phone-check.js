@@ -100,8 +100,9 @@ function measure(minTarget) {
   const ctx = await browser.newContext({
     viewport: { width: WIDTH, height: HEIGHT },
     deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
+    // Phone and tablet sizes behave as touch devices; the desktop sizes as a mouse and a wide window.
+    isMobile: WIDTH < 1024,
+    hasTouch: WIDTH < 1024,
     locale: 'ar-EG'
   })
   const page = await ctx.newPage()
@@ -111,21 +112,31 @@ function measure(minTarget) {
   await page.locator('input').nth(0).fill(USER)
   await page.locator('input[type=password]').first().fill(PASSWORD)
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.phone-bar', { timeout: 15000 })
-
+  await page.waitForSelector('.phone-bar, .sidebar-nav', { timeout: 15000 })
+  // Below 760 px the menu opens from the bar at the bottom; wider, the sidebar is always there
+  // (icons only, named by aria-label, when it is compact).
+  const phone = (await page.locator('.phone-bar').count()) > 0
   const more = page.locator('.phone-bar-item').last()
-  await more.click()
+  const openMenu = async () => {
+    if (phone) await more.click()
+  }
+  await openMenu()
   const labels = await page
     .locator('.sidebar-nav .nav-item')
-    .evaluateAll((els) => els.map((e) => e.innerText.trim()))
-  await more.click()
+    .evaluateAll((els) => els.map((e) => e.innerText.trim() || e.getAttribute('aria-label') || ''))
+  await openMenu()
 
   const results = []
   let n = 0
   for (const label of labels) {
     n += 1
-    await more.click()
-    await page.locator('.sidebar-nav .nav-item', { hasText: label }).first().click()
+    await openMenu()
+    const item = page.locator('.sidebar-nav .nav-item', { hasText: label })
+    await (
+      (await item.count()) ? item : page.locator(`.sidebar-nav .nav-item[aria-label="${label}"]`)
+    )
+      .first()
+      .click()
     await page.waitForTimeout(900)
     const m = await page.evaluate(measure, MIN_TARGET)
     if (SHOTS)

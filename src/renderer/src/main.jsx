@@ -21,6 +21,8 @@ import ReceiptViewer from './components/shell/ReceiptViewer'
 
 // In a browser (the internet way in) there is no preload bridge: provide the same one.
 installWebBridge()
+// Styles that only the browser way in needs (tablet touch sizes, styles/phone.css).
+if (window.api?.isWeb) document.documentElement.classList.add('is-web')
 installModalChrome()
 installKeyboard()
 
