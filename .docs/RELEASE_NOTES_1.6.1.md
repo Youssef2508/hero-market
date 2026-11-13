@@ -6,7 +6,7 @@ Written for the shop owner. 1.6.1 brings the changes you asked for on 13 Novembe
 
 ## Paying suppliers from the drawer
 
-- **«سداد لمورد من الدرج» lists every supplier,** not only those with a balance. Each shows what is owed, «لا مستحق مسجل», or «له رصيد لدينا».
+- **«سداد لمورد من الدرج» lists every supplier,** not only those with a balance. Each shows what is owed, «لا مستحق مسجل», or «لنا رصيد عنده» (the store's credit), with any requests still waiting for approval.
 - **You may pay more than is owed, or before the invoice is recorded** (an advance). The screen says so plainly instead of refusing.
 - **The drawer need not hold the amount.** The shift may show a negative balance; the closing report explains it with the payment.
 - **Unchanged:** the money leaves the drawer when recorded, and the supplier's balance falls only when you approve the request.

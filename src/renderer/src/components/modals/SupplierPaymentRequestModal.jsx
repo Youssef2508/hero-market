@@ -116,19 +116,21 @@ export default function SupplierPaymentRequestModal({
               {shown.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} –{' '}
-                  {s.open > 0
-                    ? `مستحق ${formatMoney(s.open)} ج.م`
-                    : s.open < 0
-                      ? `له رصيد لدينا ${formatMoney(-s.open)} ج.م`
+                  {/* The recorded balance; requests waiting for approval are not in it yet. */}
+                  {s.debt > 0.005
+                    ? `مستحق ${formatMoney(s.debt)} ج.م`
+                    : s.debt < -0.005
+                      ? `لنا رصيد عنده ${formatMoney(-s.debt)} ج.م`
                       : 'لا مستحق مسجل'}
+                  {s.pending > 0 ? ` – طلبات معلقة ${formatMoney(s.pending)} ج.م` : ''}
                 </option>
               ))}
             </select>
           </label>
           {picked && picked.pending > 0 && (
             <p className="field-hint">
-              على المورد طلبات معلقة بقيمة {formatMoney(picked.pending)} ج.م من أصل مستحق{' '}
-              {formatMoney(picked.debt)} ج.م.
+              لهذا المورد طلبات سداد معلقة بقيمة {formatMoney(picked.pending)} ج.م، تُخصم من حسابه
+              عند اعتمادها.
             </p>
           )}
           <label className="field">

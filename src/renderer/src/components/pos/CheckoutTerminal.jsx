@@ -209,7 +209,7 @@ function NewClientCode({ value, onChange, allowed }) {
         عميل جديد: يأخذ الكود <span className="ltr-id">{suggested}</span>
       </p>
     ) : null
-  return (
+  const field = (
     <div className="search-field">
       <Hash size={15} aria-hidden="true" />
       <input
@@ -219,7 +219,7 @@ function NewClientCode({ value, onChange, allowed }) {
         maxLength={30}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={suggested ? `كود العميل الجديد: ${suggested}` : 'كود العميل الجديد'}
+        placeholder={suggested || 'كود العميل الجديد'}
         aria-label="كود العميل الجديد"
         aria-invalid={taken ? true : undefined}
         title={taken ? `مستخدم للعميل «${taken.name}»` : 'اتركه فارغاً لاستخدام الكود المقترح'}
@@ -231,6 +231,16 @@ function NewClientCode({ value, onChange, allowed }) {
         </span>
       )}
     </div>
+  )
+  return (
+    <>
+      {field}
+      {!typed && suggested && (
+        <p className="field-hint">
+          يأخذ الكود <span className="ltr-id">{suggested}</span> – أو اكتب كوداً آخر
+        </p>
+      )}
+    </>
   )
 }
 
