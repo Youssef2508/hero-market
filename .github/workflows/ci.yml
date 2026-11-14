@@ -67,6 +67,7 @@ jobs:
 
       - name: Browser end-to-end – session across reloads, an import through reload and lost connection
         # A real Chrome against the built pages and a cloud paired with a shop (made-up data).
+        timeout-minutes: 15
         run: |
           npm run build:web
           npm install --no-save --ignore-scripts playwright-core@1.49.1
@@ -117,6 +118,8 @@ jobs:
 
       - name: Desktop end-to-end – imports never paired, reload/close/kill in the middle, then pairing
         # The real desktop window on throw-away databases of the bundled PostgreSQL (made-up data).
+        # About 3 minutes; a hang fails here instead of using up the whole job.
+        timeout-minutes: 20
         env:
           HEROMARKET_E2E_SIZES: 50,200,500,3000,5000
         run: |

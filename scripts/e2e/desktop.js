@@ -45,6 +45,26 @@ const check = (name, ok, detail = '') => {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** Close the program; if it does not close within 15 s, end its whole process tree. */
+async function closeOrKill(app) {
+  const pid = app.process().pid
+  const closed = await Promise.race([
+    app.close().then(
+      () => true,
+      () => false
+    ),
+    sleep(15000).then(() => false)
+  ])
+  if (closed) return
+  try {
+    if (process.platform === 'win32')
+      require('child_process').execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'])
+    else process.kill(pid, 'SIGKILL')
+  } catch {
+    /* already gone */
+  }
+}
+
 async function workbook(n, prefix, file) {
   const imp = (p) => import(pathToFileURL(path.join(ROOT, p)).href)
   const { exportSheets } = await imp('src/shared/storeImport.mjs')
@@ -107,7 +127,19 @@ async function workbook(n, prefix, file) {
     win = await app.firstWindow()
     win.setDefaultTimeout(30000)
     // Narrower than 1,200 px, as on a small screen (and on CI's 1024×768): the compact sidebar.
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 760))
+    // While the program is still starting the call can miss: tried again, never fatal.
+    for (let i = 0; i < 10; i++) {
+      const done = await app
+        .evaluate(({ BrowserWindow }) => {
+          const w = BrowserWindow.getAllWindows()[0]
+          if (!w) return false
+          w.setSize(1100, 760)
+          return true
+        })
+        .catch(() => false)
+      if (done) break
+      await sleep(500)
+    }
   }
   const signIn = async () => {
     await win.waitForSelector(SIGN_IN, { timeout: 60000 })
@@ -377,7 +409,7 @@ async function workbook(n, prefix, file) {
         .screenshot({ path: path.join(process.env.HEROMARKET_E2E_SHOTS, 'desktop-failure.png') })
         .catch(() => {})
   } finally {
-    if (app) await app.close().catch(() => {})
+    if (app) await closeOrKill(app)
     await pool.end()
     await db.dispose()
     fs.rmSync(dir, { recursive: true, force: true })
