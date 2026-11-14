@@ -318,6 +318,18 @@ module.exports = function authModule(app) {
 
   app.operation({ name: 'auth.me', handler: async (ctx) => ctx.user })
 
+  // The browser's page was reloaded or opened again: its session cookie is still valid, so the
+  // screens continue as after auth.login – without a new session and without the token, which the
+  // page never holds. An expired, revoked or unknown session answers 401 like every operation.
+  app.operation({
+    name: 'auth.session',
+    handler: async (ctx) => ({
+      user: ctx.user,
+      openShift: await openShiftOf(ctx.pool, ctx.user.id),
+      shiftRequired: await shiftRequiredFor(ctx.pool, ctx.user)
+    })
+  })
+
   app.operation({
     name: 'auth.changePassword',
     schema: {

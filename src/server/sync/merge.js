@@ -73,7 +73,7 @@ async function newerPurchase(db, barcode) {
  * @param db       a client inside a transaction
  * @param rows     the other side's changes, in the order they were made
  * @param receiver 'shop' | 'cloud' – which side this database is
- * @returns        { applied, skipped, conflicts, attention: [ids] }
+ * @returns        { applied, skipped, skippedTables: { table: count }, conflicts, attention: [ids] }
  */
 async function applyChanges(db, rows, { receiver }) {
   const shop = receiver === 'shop'
@@ -94,6 +94,7 @@ async function applyChanges(db, rows, { receiver }) {
   }
   let applied = 0
   let skipped = 0
+  const skippedTables = {}
   let conflicts = 0
 
   // The selling-time guards step aside for records that already happened on the other side; the
@@ -210,6 +211,7 @@ async function applyChanges(db, rows, { receiver }) {
           continue
         }
         skipped += 1
+        skippedTables[row.t] = (skippedTables[row.t] || 0) + 1
         if (shop)
           items.push({
             kind: row.op === 'delete' ? 'delete_kept' : 'not_applied',
@@ -261,7 +263,7 @@ async function applyChanges(db, rows, { receiver }) {
     )
   }
   await db.query("SELECT set_config('hm.sync_capture', '', true)")
-  return { applied, skipped, conflicts, attention: ids }
+  return { applied, skipped, skippedTables, conflicts, attention: ids }
 }
 
 /** What breaks a business limit once both sides' records are together (the shop only). */

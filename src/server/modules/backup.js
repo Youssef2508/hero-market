@@ -5,6 +5,7 @@
 // Server administrators should additionally schedule pg_dump (see .docs/DATABASE_ARCHITECTURE.md).
 const { badRequest } = require('../errors')
 const { listMigrations } = require('../db/migrate')
+const { IMPORT_LOCK } = require('../imports/runner')
 
 // FK-safe insert order; deletes run in reverse. Sessions are not backed up (everyone logs in again).
 const TABLES = [
@@ -172,6 +173,17 @@ module.exports = function backupModule(app) {
       }
       const actor = ctx.user
       const result = await ctx.tx(async (db) => {
+        // An Excel import running now finishes first (it holds this lock while it works); the
+        // ones not finished are cancelled with the restore: their rows are not in the backup and
+        // must never be written into the restored store (D-108).
+        await db.query('SELECT pg_advisory_xact_lock($1)', [IMPORT_LOCK])
+        await db.query('DELETE FROM import_job_data')
+        await db.query(
+          `UPDATE import_jobs SET status = 'cancelled', stage = 'cancelled', processed_rows = 0,
+                  error_code = 'restored', error_message = 'أُلغي الاستيراد لأن نسخة احتياطية استُعيدت قبل أن يكتمل.',
+                  finished_at = LOCALTIMESTAMP(0)
+            WHERE status IN ('queued', 'processing')`
+        )
         // Rows rewritten by the restore are not queued one by one: synchronisation restarts below.
         await db.query("SELECT set_config('hm.sync_capture', 'off', true)")
         // Restored history includes closed shifts and their money movements (migration 0011).

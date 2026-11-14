@@ -283,6 +283,7 @@ export default function AdminDashboard(props) {
         {adminTab === 'import' && (
           <ImportTab
             triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
             currentUser={props.currentUser}
           />
         )}

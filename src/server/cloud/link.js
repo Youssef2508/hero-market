@@ -113,7 +113,14 @@ module.exports = function cloudLink(app, cfg) {
       // The shop's changes, field by field: the shop's value stands where both changed (D-103).
       // A user whose password was changed or reset there is signed out here too, by the trigger of
       // migration 0036 (not by a renewed hash, D-106); a disabled user is signed out here.
-      await applyChanges(db, own, { receiver: 'cloud' })
+      const applied = await applyChanges(db, own, { receiver: 'cloud' })
+      // A row the copy could not store is a difference between the two sides that the comparison
+      // of what was received does not show (D-109): said in the log, never silently.
+      if (applied.skipped)
+        app.log.warn(
+          { skipped: applied.skipped, tables: applied.skippedTables },
+          'sync: rows from the shop not applied to the copy'
+        )
       const ids = own.filter((r) => r.t === 'users' && r.op !== 'delete').map((r) => Number(r.k))
       if (ids.length)
         await db.query(

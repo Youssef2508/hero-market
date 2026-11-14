@@ -65,6 +65,14 @@ jobs:
       - name: Unit, service, migration and business-flow tests (PostgreSQL 17)
         run: npm test
 
+      - name: Browser end-to-end – session across reloads, an import through reload and lost connection
+        # A real Chrome against the built pages and a cloud paired with a shop (made-up data).
+        timeout-minutes: 15
+        run: |
+          npm run build:web
+          npm install --no-save --ignore-scripts playwright-core@1.49.1
+          node scripts/e2e/browser.js
+
       - name: Dependency audit (gate)
         # Fails on any high or critical advisory, runtime or build, unless it has a reviewed, dated
         # exception in .github/audit-exceptions.json (pre-production audit SEC-07). The summary is
@@ -107,6 +115,16 @@ jobs:
 
       - name: Unit, service, migration and business-flow tests (Windows)
         run: npm test
+
+      - name: Desktop end-to-end – imports never paired, reload/close/kill in the middle, then pairing
+        # The real desktop window on throw-away databases of the bundled PostgreSQL (made-up data).
+        # About 3 minutes; a hang fails here instead of using up the whole job.
+        timeout-minutes: 20
+        env:
+          HEROMARKET_E2E_SIZES: 50,200,500,3000,5000
+        run: |
+          npm install --no-save playwright-core@1.49.1
+          node scripts/e2e/desktop.js
 
       - name: Package unpacked app (unsigned, no installer)
         run: npx electron-builder --win --dir --publish never

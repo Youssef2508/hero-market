@@ -59,11 +59,14 @@ class CuttableTransport {
  * A shop with an owner, a cashier (allowed in from the internet), products, a supplier, a customer
  * who owes 100, and the cashier's open shift; its cloud; and the link between them.
  */
-async function makeTwin({ link = true, cloudOptions = {} } = {}) {
+async function makeTwin({ link = true, cloudOptions = {}, shopOptions = {} } = {}) {
   const shopDb = await freshDatabase()
   const cloudDb = await freshDatabase()
   const holder = {}
-  const shop = await startService(shopDb.url, { syncTransport: () => holder.transport })
+  const shop = await startService(shopDb.url, {
+    syncTransport: () => holder.transport,
+    ...shopOptions
+  })
   const cloud = await startService(cloudDb.url, {
     role: 'cloud',
     linkGraceMs: 1500,

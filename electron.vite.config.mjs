@@ -8,9 +8,11 @@ export default defineConfig({
   preload: {},
   renderer: {
     resolve: {
-      alias: {
-        '@renderer': resolve('src/renderer/src')
-      }
+      alias: [
+        { find: '@renderer', replacement: resolve('src/renderer/src') },
+        // The Excel libraries' zip and unzip without a Worker (src/renderer/src/lib/fflateMainThread.js).
+        { find: /^fflate$/, replacement: resolve('src/renderer/src/lib/fflateMainThread.js') }
+      ]
     },
     plugins: [react(), productionCsp()]
   }

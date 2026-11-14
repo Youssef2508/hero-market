@@ -179,6 +179,8 @@ class SyncAgent {
 
   async push(epoch) {
     let sent = 0
+    let batches = 0
+    const started = Date.now()
     for (;;) {
       const rows = await this.nextBatch()
       if (!rows.length) break
@@ -211,8 +213,12 @@ class SyncAgent {
           [acked]
         )
       sent += acked.length
+      batches += 1
       if (acked.length < batch.length) break // not everything confirmed: retry on the next cycle
     }
+    // What was sent and how long it took (no row content, no token): where a delay comes from.
+    if (sent)
+      this.log(`sync: sent ${sent} changes in ${batches} batch(es), ${Date.now() - started} ms`)
     await this.pool.query('UPDATE sync_state SET last_push_at = LOCALTIMESTAMP(0)')
     return sent
   }
@@ -470,7 +476,12 @@ class SyncAgent {
   }
 
   /**
-   * Keep the link open until stopLink(); after a failure, wait longer each time (up to 1 minute).
+   * Keep the link open until stopLink(); after a failure, wait longer each time (up to 10 seconds:
+   * one small request, so the return of the internet is noticed at once, 1.6.3).
+   *
+   * Back after a failure (D-109): the first request asks without waiting (timeoutMs 0), and as soon
+   * as it is answered the changes made meanwhile are sent – they never wait for the next cycle,
+   * whose wait has grown with every failed attempt while the internet was away.
    *
    * One holder per database (D-104): the background service and the desktop program may both run.
    * The one that holds the link's lock – a lock kept on its own connection for as long as it runs –
@@ -490,13 +501,14 @@ class SyncAgent {
           continue
         }
         try {
-          const r = await this.linkOnce({ timeoutMs })
+          const r = await this.linkOnce({ timeoutMs: failures ? 0 : timeoutMs })
+          if (failures || this.failures) this.reconnected()
           failures = 0
           if (r.skipped) await new Promise((res) => setTimeout(res, 5000))
         } catch (e) {
           if (e.code !== 'not_linked') this.log(`link: ${e.message}`)
           failures += 1
-          const wait = e.code === 'not_linked' ? 15000 : Math.min(2000 * 2 ** failures, 60000)
+          const wait = e.code === 'not_linked' ? 15000 : Math.min(1000 * 2 ** failures, 10000)
           await new Promise((res) => {
             this.linkSleep = setTimeout(res, wait)
           })
@@ -504,6 +516,20 @@ class SyncAgent {
       }
     }
     loop()
+  }
+
+  /**
+   * The cloud answers again: what was queued meanwhile goes now, and the regular cycle starts
+   * again from its normal interval instead of the long wait of the failed attempts.
+   */
+  reconnected() {
+    this.log(`sync: the cloud answers again after ${this.failures} failed attempt(s)`)
+    this.failures = 0
+    this.kick()
+    if (this.timer && this.tick) {
+      clearTimeout(this.timer)
+      this.timer = setTimeout(this.tick, this.intervalMs)
+    }
   }
 
   /** Take (or keep) the link's lock on its own connection. True while this copy holds it. */
@@ -672,7 +698,8 @@ class SyncAgent {
   }
 
   /**
-   * Run every `intervalMs`; after failures, back off up to 5 minutes. The whole-table comparison
+   * Run every `intervalMs`; after failures, back off up to 1 minute (5 minutes before 1.6.3: a
+   * shop back online could wait that long to send its changes, D-109). The whole-table comparison
    * (check) runs every `checkEveryMs` – it reads every row's version, so on a large store it is the
    * expensive part – and at once again while the last one found a difference or could not run.
    * Changes are sent on every cycle and at once after each change either way.
@@ -693,9 +720,11 @@ class SyncAgent {
         this.log(`sync: ${e.message}`)
       }
       if (!this.timer) return
-      const wait = Math.min(intervalMs * 2 ** Math.min(this.failures, 5), 5 * 60 * 1000)
+      const wait = Math.min(intervalMs * 2 ** Math.min(this.failures, 5), 60 * 1000)
       this.timer = setTimeout(tick, wait)
     }
+    this.tick = tick
+    this.intervalMs = intervalMs
     this.timer = setTimeout(tick, 0)
   }
 

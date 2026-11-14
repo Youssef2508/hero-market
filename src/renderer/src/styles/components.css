@@ -1601,6 +1601,25 @@ input[data-computed='true'] {
   max-height: 360px;
   overflow-y: auto;
 }
+/* Import jobs (1.6.3): the bar is the share of rows the server reports written. */
+.import-progress {
+  block-size: 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.import-progress > span {
+  display: block;
+  block-size: 100%;
+  background: var(--accent);
+  transition: inline-size 0.4s var(--ease-out);
+}
+.import-contact {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  color: var(--danger-text);
+}
 label.btn.is-disabled {
   pointer-events: none;
   opacity: 0.6;
