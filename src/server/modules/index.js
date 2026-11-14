@@ -24,5 +24,6 @@ module.exports = [
   require('./categories'),
   require('./measureKinds'),
   require('./storeImport'),
+  require('./imports'),
   require('./attention')
 ]

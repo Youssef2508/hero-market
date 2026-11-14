@@ -25,7 +25,11 @@ const NOT_BACKED_UP = {
   sync_received: 'same as sync_outbox: the link restarts from the cloud after a restore',
   sync_tables: 'fixed list written by the migrations',
   applied_commands: 'cloud commands; the new sync epoch governs them after a restore (D-047)',
-  catalog_state: 'a cache version counter the tills re-read'
+  catalog_state: 'a cache version counter the tills re-read',
+  // Import jobs (0038, D-108): their effects (products, customers, suppliers, the audit line) are
+  // in the backup; a job restored half-way could never be finished, its rows are not kept.
+  import_jobs: 'the imported records and the audit line are backed up, not the job',
+  import_job_data: 'same: a running job’s rows stay with the job'
 }
 
 let db, svc, owner, cashier, backup

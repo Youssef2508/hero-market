@@ -1652,3 +1652,60 @@ Every change is in the shared service and the shared screens, so the shop PC and
   - across a shop and its cloud: a lock taken on the phone, and W codes.
 
   The older test that expected the two refusals now checks only what is still refused (no open shift).
+
+## D-108 Sessions continue after a reload; the Excel import runs as a background job (1.6.3, migration 0038)
+
+- **A reloaded or reopened website page stays signed in.**
+  - **Cause:** the page always started on the sign-in screen (G-16, meant for the till) and never asked whether its HTTP-only session cookie was still valid. The session itself was never lost.
+  - **Fix:** a new read `auth.session` answers like a sign-in from the cookie alone: user, open shift, shift rule. It creates no new session and never returns the token. The start-up screen stays until the answer arrives, so the sign-in screen never flashes.
+  - **Unchanged:** 401/403 (expired, revoked, unknown, no internet access) leads to the sign-in screen. A failure to ask (503) is retried by the start-up, never taken for "signed out". The desktop till still always starts locked (G-16).
+- **Large Excel files never finished reading.**
+  - **Cause:** fflate, used by read-excel-file and write-excel-file, unzips any file part over 512 KB in a Worker made from a `blob:` URL. The production Content-Security-Policy (G-15, `script-src 'self'`, no `worker-src`) refuses that worker, and fflate has no error handler on it. Above roughly 1,000 product rows, reading waited for ever, with nothing on screen, on the desktop and on the website alike.
+  - **Fix:** the screens' builds resolve `fflate` to `src/renderer/src/lib/fflateMainThread.js`, which does the same unzip/zip with fflate's synchronous functions. A 20,000-row file reads in about a second. The policy is not loosened.
+- **The import is a job** (`imports.start`, `.get`, `.list`, `.cancel`; `import_jobs`, `import_job_data`).
+  - **Before:** one request carried the whole file and waited for the writing. It outlasted a client till's 15 s, the cloud's 20 s wait for the shop and the 40 s after which the cloud counts the shop as gone. The screen reported "not imported" while the import went on.
+  - **Start:** the rows the screen read are stored with the job, and the answer comes at once. The screen's id makes a repeated start the same job.
+  - **Where it runs:** a runner in the service carries out one job at a time per database. It holds a PostgreSQL advisory lock on its own connection, so of the desktop program and the background service only one works. It needs nothing but the local database: no pairing, no internet, no cloud.
+  - **All or nothing, as before:**
+    - the job is written in one transaction;
+    - progress is written beside it, on another connection;
+    - a cancel, a stop or a crash undoes everything, and the next runner starts the job again;
+    - the job's own commit marks its stored rows "committed"; its row is marked completed just after, outside the long transaction, so the job's row changes reach the cloud in order (the cloud merges rows field by field, D-103);
+    - problems in the file end the job `failed` with every problem by row and column, nothing written;
+    - a database rule refusing a row (a barcode saved meanwhile at a till) does the same, with the reason.
+  - **The screen:**
+    - it follows the job from the server's own figures: rows written, stage, elapsed time, and the time left once there is enough to estimate it;
+    - a failure to ask is "trying again", never "failed";
+    - it finds a running job again after a reload, a closed tab or a restart;
+    - it lists recent jobs and downloads an error report with formulas made text.
+  - **Who sees a job:** its starter and the administrators. Anyone else gets "not found".
+- **Faster writing:** rows are inserted 250 per statement (`src/server/imports/storeData.js`). The row triggers (stock ledger, change capture, customer codes) still run for every row. For 5,000 products: 10,272 queries became 89, and 12.9 s became 5.2 s on the development PC.
+- **From the website:** `imports.start` is carried out in the shop while it can be reached. The job runs there and its progress reaches the cloud's copy with the shop's other changes. While the shop cannot be reached, the cloud carries the job out and the shop receives the records when it is back. Imports before pairing travel in the first-contact snapshot (agent.js `ensureEpoch`); nothing is sent twice.
+- **Tests:**
+  - `sessionResume.test.js`, `sessionResume.test.mjs`;
+  - `importJobs.test.js` (7), `importJobsCloud.test.js` (2), `importJobsCrash.test.js` (2 — a separate process killed in the middle), `importJob.test.mjs`;
+  - `scripts/e2e/browser.js` (a real Chrome or Edge: reloads, tabs, browser restart, expiry, revocation, a forged cookie, and an import through a reload, a lost connection and a reopened tab);
+  - `scripts/e2e/desktop.js` (the real desktop window, never paired: 50 to 20,000 products, the window reloaded, the program closed and killed in the middle, then pairing and the first synchronisation).
+
+## D-109 Synchronisation: changes made offline go as soon as the internet is back; a large first send reaches the cloud whole (1.6.3, migration 0039)
+
+- **Offline sales waited up to five minutes after the internet came back.**
+  - **Cause** (`src/server/sync/agent.js`): the agent's regular cycle waits longer after every failed attempt (15 s, 30 s … up to 5 minutes). While the shop is offline every cycle fails, and so does every immediate push after a sale. The return of the internet was noticed by the open link, but that sent nothing unless the cloud had an operation for the shop. The changes made offline waited for the next cycle.
+  - **Measured:** two invoices (13 changes) after an 8-minute outage: first send 210.7 s after the return, all confirmed at 211.1 s. The send itself took under half a second.
+  - **Fix:**
+    - after a failure the link's next request asks without waiting, and when it is answered the queued changes are sent at once (`reconnected()`), and the regular cycle restarts from its normal interval;
+    - the link retries every 10 s at most while offline (was 60 s);
+    - the regular cycle's longest wait is 1 minute (was 5).
+  - **The same case after the fix:** first send 5.0 s after the return, all confirmed at 5.4 s.
+  - **Unchanged:** what is sent and how (the outbox, batches of up to 4,000 rows, versions, acknowledgements).
+- **A first full send larger than one batch lost packages and their barcodes on the cloud.**
+  - **Cause:** `hm_sync_snapshot()` listed tables alphabetically, so `product_barcodes` and `product_units` came before `products`. The cloud applies a batch in passes, so a row pointing later in the same batch lands; across batches it failed its reference and was skipped, and the shop counted it as delivered. The comparison of the two sides is made from what the cloud received (`cloud_rows`), not from its tables, so it did not notice.
+  - **Measured:**
+    - 3,000 products with 1,500 packages paired: 0 packages on the cloud;
+    - a desktop store of 51,750 imported products paired: all products, no packages, no package barcodes.
+  - **Fix:** migration 0039 lists tables parents first, by their foreign keys (`hm_sync_table_order()`). The cloud now logs every row it could not apply, per table, instead of skipping it silently.
+  - **Not affected:** changes made one by one (each record is queued after the records it points to), and stores whose first send fits in one batch.
+- **Tests:**
+  - `syncReconnect.test.js` fails on the former agent: still unconfirmed after 20 s;
+  - `syncSnapshotOrder.test.js`: the table order, and a first send of more than one batch identical on both sides;
+  - `scripts/bench/offline-sync.js` measures an outage end to end with the agent as the shop runs it.
