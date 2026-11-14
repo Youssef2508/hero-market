@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 'use strict'
+// Before the test helpers are loaded: they read the address once (HEROMARKET_TEST_DATABASE_URL,
+// or the development PostgreSQL of npm run pg:dev).
+process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
 // The desktop program, never paired and with no cloud: Excel imports of 50 to 5,000 products
 // through the real window (1.6.3), with the window reloaded, the program closed and the program
 // killed in the middle of an import. Then, separately, the same database is paired with a cloud
@@ -70,7 +73,6 @@ async function workbook(n, prefix, file) {
 }
 
 ;(async () => {
-  process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
   if (!fs.existsSync(path.join(ROOT, 'out', 'main', 'index.js')))
     throw new Error('run npm run build first')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-desk-'))

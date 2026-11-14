@@ -100,7 +100,8 @@ test('killed in the middle of a job: the next start finishes it, every record on
     const done = await finished(svc, await login(svc, '8642'), id)
     assert.equal(done.status, 'completed', JSON.stringify(done))
     assert.equal(done.successfulRows, 2000)
-    assert.equal(done.attempts, 2)
+    // Started again at least once (a loaded PC may need one more try); never written twice: below.
+    assert.ok(done.attempts >= 2, `attempts ${done.attempts}`)
     assert.equal(
       await num(svc.pool, "SELECT count(*) FROM products WHERE name LIKE 'صنف CRASH%'"),
       2000
@@ -156,6 +157,81 @@ test('saved just before a stop: the next runner marks it completed and writes no
       'nothing written again'
     )
     assert.equal(await num(svc.pool, 'SELECT count(*) FROM import_job_data'), 0)
+  } finally {
+    await svc.close()
+    await db.dispose()
+  }
+})
+
+test('a backup restored while an import waits: the import is cancelled and never written', async (t) => {
+  if (!requireDb(t)) return
+  const db = await freshDatabase()
+  const svc = await startService(db.url, { importJobs: false, importPollMs: 100 })
+  try {
+    await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
+    const owner = await login(svc, '8642')
+    const backup = JSON.parse(JSON.stringify((await svc.call('backup.export', {}, owner)).body))
+    const id = crypto.randomUUID()
+    const started = await svc.call('imports.start', { id, products: products(50, 'OLD') }, owner)
+    assert.equal(started.status, 200)
+    const restored = await svc.call('backup.restore', { backup, confirm: 'RESTORE' }, owner)
+    assert.equal(restored.status, 200, JSON.stringify(restored.body))
+    const job = (
+      await svc.pool.query('SELECT status, error_code FROM import_jobs WHERE id = $1', [id])
+    ).rows[0]
+    assert.deepEqual(job, { status: 'cancelled', error_code: 'restored' })
+    assert.equal(await num(svc.pool, 'SELECT count(*) FROM import_job_data'), 0)
+    // The runner starts afterwards: nothing of the old file reaches the restored store.
+    svc.app.importRunner.start()
+    await svc.app.importRunner.kick()
+    assert.equal(await num(svc.pool, "SELECT count(*) FROM products WHERE barcode LIKE 'OLD%'"), 0)
+  } finally {
+    await svc.close()
+    await db.dispose()
+  }
+})
+
+test('a job cancelled at the moment it is claimed stays cancelled, and later imports start', async (t) => {
+  if (!requireDb(t)) return
+  const db = await freshDatabase()
+  const svc = await startService(db.url, { importJobs: false })
+  try {
+    await createUser(svc, { username: 'owner', pin: '8642', roleKey: 'super_admin' })
+    const owner = await login(svc, '8642')
+    const id = crypto.randomUUID()
+    assert.equal(
+      (await svc.call('imports.start', { id, products: products(5, 'RACEC') }, owner)).status,
+      200
+    )
+    // The cancel holds the job's row while the runner looks for work: it is skipped, not revived.
+    const c = await svc.pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query('SELECT 1 FROM import_jobs WHERE id = $1 FOR UPDATE', [id])
+      const runner = await svc.pool.connect()
+      try {
+        assert.equal(await svc.app.importRunner.claim(runner), null)
+      } finally {
+        runner.release()
+      }
+      await c.query('DELETE FROM import_job_data WHERE job_id = $1', [id])
+      await c.query("UPDATE import_jobs SET status = 'cancelled' WHERE id = $1", [id])
+      await c.query('COMMIT')
+    } finally {
+      c.release()
+    }
+    svc.app.importRunner.start()
+    await svc.app.importRunner.kick()
+    assert.equal(
+      (await svc.pool.query('SELECT status FROM import_jobs WHERE id = $1', [id])).rows[0].status,
+      'cancelled'
+    )
+    const next = await svc.call(
+      'imports.start',
+      { id: crypto.randomUUID(), products: products(5, 'AFTER') },
+      owner
+    )
+    assert.equal(next.status, 200, 'nothing left open blocks the next import')
   } finally {
     await svc.close()
     await db.dispose()

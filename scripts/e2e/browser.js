@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 'use strict'
+// Before the test helpers are loaded: they read the address once (HEROMARKET_TEST_DATABASE_URL,
+// or the development PostgreSQL of npm run pg:dev).
+process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
 // Browser end-to-end checks of the website (1.6.3): the session across reloads, reopened tabs and
 // a restarted browser, and an import followed through a reload and a lost connection. A real
 // Chromium (the installed Edge or Chrome) drives the real pages (out/web) served by a cloud paired
@@ -105,7 +108,6 @@ async function workbook(n, file) {
 }
 
 ;(async () => {
-  process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
   if (!fs.existsSync(path.join(WEB, 'index.html'))) throw new Error('run npm run build:web first')
   const twin = await makeTwin({
     cloudOptions: { webRoot: WEB, insecureCookies: true, forwardTimeoutMs: 20000 },

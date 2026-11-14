@@ -121,8 +121,17 @@ class ImportRunner {
     }
   }
 
-  /** The oldest open job with its rows here. Holding the lock, a job 'processing' is nobody's. */
+  /**
+   * The oldest open job with its rows here. Holding the lock, a job 'processing' is nobody's.
+   * None while a restored store waits for its recovery from the cloud (writes are paused then).
+   * A job being cancelled at this moment is skipped (its row is locked), and the status is
+   * checked again on the row that is changed, so a cancelled job is never taken back.
+   */
   async claim(client) {
+    const paused = (
+      await client.query('SELECT COALESCE(bool_or(recovery_pending), false) AS p FROM sync_state')
+    ).rows[0].p
+    if (paused) return null
     const { rows } = await client.query(
       `UPDATE import_jobs j
           SET status = 'processing', stage = 'checking', processed_rows = 0,
@@ -130,7 +139,8 @@ class ImportRunner {
               heartbeat_at = LOCALTIMESTAMP(0)
         WHERE j.id = (SELECT o.id FROM import_jobs o JOIN import_job_data d ON d.job_id = o.id
                        WHERE o.status IN ('queued', 'processing')
-                       ORDER BY o.created_at, o.id LIMIT 1)
+                       ORDER BY o.created_at, o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED)
+          AND j.status IN ('queued', 'processing')
         RETURNING j.*`
     )
     return rows[0] || null
@@ -166,6 +176,13 @@ class ImportRunner {
     const stored = (
       await client.query('SELECT rows, committed FROM import_job_data WHERE job_id = $1', [job.id])
     ).rows[0]
+    // Its rows went with a cancel or a restore at the very moment it was taken: it ends here.
+    if (!stored)
+      return this.finish(job.id, {
+        status: 'cancelled',
+        stage: 'cancelled',
+        processed_rows: 0
+      })
     // Saved before the process stopped: only its row is left to mark.
     if (stored.committed) return this.completed(job, stored.committed)
     if (job.cancel_requested)

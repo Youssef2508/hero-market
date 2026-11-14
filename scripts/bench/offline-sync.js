@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 'use strict'
+// Before the test helpers are loaded: they read the address once (HEROMARKET_TEST_DATABASE_URL,
+// or the development PostgreSQL of npm run pg:dev).
+process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
 // A paired shop that loses its internet, keeps selling, and gets it back (1.6.3): how long until
 // the cloud holds every invoice, and why. Runs the sync agent exactly as the shop runs it (the
 // 15-second cycle, the push on every change, the open link held 25 seconds at a time) against a
@@ -25,7 +28,6 @@ const INVOICES = arg('invoices', '2,10,50,100,500').split(',').map(Number)
 const OFFLINE_S = Number(arg('offline', 60))
 const LATENCY = Number(arg('latency', 0))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-process.env.HEROMARKET_TEST_DATABASE_URL ||= require('../pg-dev').url('postgres')
 
 const PRODUCTS = Array.from({ length: 40 }, (_, i) => `BENCH${String(i).padStart(3, '0')}`)
 
