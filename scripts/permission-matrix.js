@@ -14,6 +14,8 @@ const OUT = path.join(__dirname, '..', '.docs', 'PERMISSION_MATRIX.md')
 const SIGNED_IN = {
   'auth.logout': 'end the own session',
   'auth.me': 'the own account and permissions',
+  // A reloaded website page continues its session (D-108).
+  'auth.session': 'the own session, as after signing in',
   'auth.changePassword': 'the own password (old password required)',
   'auth.newRecoveryCode': 'the own recovery code (password required)',
   'settings.public':

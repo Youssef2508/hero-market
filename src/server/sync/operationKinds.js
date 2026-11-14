@@ -99,6 +99,9 @@ const KINDS = {
   'measureKinds.setActive': 'merge',
   'measureKinds.delete': 'merge',
   'storeImport.apply': 'merge',
+  // A job is stored in the shop and carried out there in the background (D-108).
+  'imports.start': 'merge',
+  'imports.cancel': 'state',
   'attention.resolve': 'state'
 }
 

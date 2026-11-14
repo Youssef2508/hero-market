@@ -79,6 +79,7 @@ Every permission is checked by the service on every request, before the request 
 | `auth.me`                        | any signed-in user: the own account and permissions                                               |
 | `auth.newRecoveryCode`           | any signed-in user: the own recovery code (password required)                                     |
 | `auth.recover`                   | before sign-in: reset with the recovery code                                                      |
+| `auth.session`                   | any signed-in user: the own session, as after signing in                                          |
 | `auth.setPassword`               | before sign-in: first password with the one-time code                                             |
 | `auth.setup`                     | before sign-in: first owner account, only while no user exists                                    |
 | `auth.status`                    | before sign-in: is the store set up (sign-in screen)                                              |
@@ -112,6 +113,10 @@ Every permission is checked by the service on every request, before the request 
 | `expenses.create`                | all of `expenses.manage`                                                                          |
 | `expenses.delete`                | all of `expenses.manage`                                                                          |
 | `expenses.list`                  | all of `expenses.manage`                                                                          |
+| `imports.cancel`                 | all of `data.import`                                                                              |
+| `imports.get`                    | all of `data.import`                                                                              |
+| `imports.list`                   | all of `data.import`                                                                              |
+| `imports.start`                  | all of `data.import`                                                                              |
 | `inventory.allMovements`         | all of `products.view`                                                                            |
 | `inventory.count`                | all of `inventory.adjust`                                                                         |
 | `inventory.movements`            | all of `products.view`                                                                            |
