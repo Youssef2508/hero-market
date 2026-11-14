@@ -77,7 +77,13 @@ async function stayedIn(page) {
 }
 
 async function openImport(page) {
-  await page.locator('.sidebar-nav .nav-item', { hasText: 'استيراد وتصدير' }).first().click()
+  // A narrow window shows the compact sidebar: icons, named by aria-label.
+  const label = 'استيراد وتصدير'
+  await page
+    .locator('.sidebar-nav .nav-item', { hasText: label })
+    .or(page.locator(`.sidebar-nav .nav-item[aria-label="${label}"]`))
+    .first()
+    .click()
   await page.waitForSelector('text=استيراد بيانات المتجر من Excel', { timeout: 15000 })
 }
 

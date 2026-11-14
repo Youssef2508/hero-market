@@ -106,6 +106,8 @@ async function workbook(n, prefix, file) {
     })
     win = await app.firstWindow()
     win.setDefaultTimeout(30000)
+    // Narrower than 1,200 px, as on a small screen (and on CI's 1024×768): the compact sidebar.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 760))
   }
   const signIn = async () => {
     await win.waitForSelector(SIGN_IN, { timeout: 60000 })
@@ -115,7 +117,13 @@ async function workbook(n, prefix, file) {
     await win.waitForSelector(SHELL)
   }
   const openImport = async () => {
-    await win.locator('.sidebar-nav .nav-item', { hasText: 'استيراد وتصدير' }).first().click()
+    // A narrow window shows the compact sidebar: icons, named by aria-label.
+    const label = 'استيراد وتصدير'
+    await win
+      .locator('.sidebar-nav .nav-item', { hasText: label })
+      .or(win.locator(`.sidebar-nav .nav-item[aria-label="${label}"]`))
+      .first()
+      .click()
     await win.waitForSelector('text=استيراد بيانات المتجر من Excel')
   }
   // By the file's name: two jobs may start within the same second.
