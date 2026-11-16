@@ -655,6 +655,78 @@ const phases = {
     await stopShop(svc)
   },
 
+  async ui() {
+    await guard('ui')
+    await links()
+    const st = JSON.parse(fs.readFileSync(STATE, 'utf8'))
+    const svc = await startShop(st.db)
+    await inStep(svc, 60000)
+    const { chromium } = require('playwright-core')
+    const browser = await chromium.launch()
+    const sizes = [
+      ['phone', { width: 360, height: 740 }, true],
+      ['tablet', { width: 768, height: 1024 }, true],
+      ['desktop', { width: 1366, height: 900 }, false]
+    ]
+    for (const [label, viewport, touch] of sizes) {
+      const ctx = await browser.newContext({
+        viewport,
+        isMobile: touch && label === 'phone',
+        hasTouch: touch,
+        locale: 'ar-EG'
+      })
+      const page = await ctx.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`http://127.0.0.1:${WEB_PORT}/`)
+      await page.waitForSelector('.lock input[type=password]', { timeout: 30000 })
+      await page.locator('.lock input').nth(0).fill('owner')
+      await page.locator('.lock input[type=password]').first().fill(H.passwordFor('8642'))
+      await page.keyboard.press('Enter')
+      await page.waitForSelector('.sidebar-nav, .phone-bar', { timeout: 30000 })
+      const rtl = await page.evaluate(() => getComputedStyle(document.documentElement).direction)
+      const menu = async () => {
+        const more = page.locator('.phone-bar .phone-bar-item', { hasText: 'المزيد' })
+        if (await more.count()) {
+          if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click()
+          await page.waitForTimeout(300)
+        }
+      }
+      await menu()
+      const items = page.locator('.sidebar-nav .nav-item')
+      const n = await items.count()
+      const overflow = []
+      let visited = 0
+      for (let i = 0; i < n; i++) {
+        await menu()
+        const item = page.locator('.sidebar-nav .nav-item').nth(i)
+        if (!(await item.isVisible().catch(() => false))) continue
+        const name = ((await item.getAttribute('aria-label')) || (await item.innerText())).trim()
+        await item.click().catch(() => {})
+        await page.waitForTimeout(1200)
+        // Close a dialog a screen may open by itself.
+        await page.keyboard.press('Escape').catch(() => {})
+        visited += 1
+        const wide = await page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth
+        )
+        if (wide > 1) overflow.push(`${name} (+${wide}px)`)
+        if (label !== 'tablet')
+          await page.screenshot({
+            path: path.join(RESULTS, `ui-${label}-${String(i).padStart(2, '0')}.png`)
+          })
+      }
+      check(
+        `${label} ${viewport.width}x${viewport.height}: ${visited} screens, right-to-left, no sideways scroll, no script errors`,
+        visited > 15 && rtl === 'rtl' && !overflow.length && !errors.length,
+        `${overflow.join(', ') || 'no overflow'}; errors: ${errors.slice(0, 3).join(' | ') || 'none'}`
+      )
+      await ctx.close()
+    }
+    await browser.close()
+    await stopShop(svc)
+  },
+
   async soak(minutes = '20') {
     await guard('soak')
     await links()
