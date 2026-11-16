@@ -303,6 +303,14 @@ module.exports = function supplierInvoicesModule(app) {
               idemKey: `cancel-pending:${b.clientRef}`
             })
           }
+          // The account reads as a statement (QA-03): the payment made with the invoice is cancelled
+          // too, and the money the supplier gave back is entered against it – before 1.8.0 only the
+          // refund was entered, so the statement showed the supplier owed what had come back.
+          await ledger(
+            'adjustment',
+            -paid,
+            `إلغاء ${label}: المدفوع ${paid.toFixed(2)} أعاده المورد`
+          )
           await ledger('refund', paid, `المورد أعاد ${paid.toFixed(2)} ج.م (إلغاء ${label})`)
         } else if (paid > 0) {
           // Not returned: the supplier owes it to the store (a credit on the supplier's account).

@@ -12,6 +12,7 @@ const { ServiceError, unauthorized, forbidden, fromDatabaseError } = require('./
 const { KEYS } = require('./auth/permissions')
 const { cloudRoute, kindOf, CLOUD_REFUSED } = require('./sync/operationKinds')
 const { remoteTx } = require('./sync/remoteOps')
+const { runRepairs } = require('./money/repairs')
 
 const SESSION_HOURS = 12
 // Signing in through the internet needs this permission, on top of the user's own (D-101). It
@@ -337,7 +338,13 @@ async function createService(cfg) {
     ).rows[0].v
     // The cloud's users, roles and permissions are the shop's, received through the link.
     if (cloud) await app.cloudLink.prepare({ seenBefore })
-    else await withTransaction(pool, (c) => ensureAccessControl(c))
+    else {
+      await withTransaction(pool, (c) => ensureAccessControl(c))
+      // Records of earlier versions put right once, in the shop only (money/repairs.js).
+      const repaired = await withTransaction(pool, (c) => runRepairs(c))
+      for (const [k, n] of Object.entries(repaired))
+        if (n) app.log.info(`[repair] ${k}: ${n} record(s) added`)
+    }
   }
 
   // The cloud names its versions on every answer, refusals included (architecture §14.1): the shop
