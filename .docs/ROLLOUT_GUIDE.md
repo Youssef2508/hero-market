@@ -4,7 +4,9 @@ Written for Youssef (who prepares the release and the server) and the shop owner
 
 The shop PC keeps all its data. The new installer updates the program **and the database already on the PC** in place: nothing is uninstalled, re-imported or typed again. The PC then sends its whole store to its own cloud once, and from then on keeps the two in step.
 
-The release is **1.7.0** ([RELEASE_NOTES_1.7.0.md](RELEASE_NOTES_1.7.0.md)): its installer, size and SHA-256 are in the release notes and in `SHA256SUMS.txt`. The steps are the same for every update; only the version number changes.
+The release is **1.8.0** ([RELEASE_NOTES_1.8.0.md](RELEASE_NOTES_1.8.0.md)): its installer, size and SHA-256 are in the release notes and in `SHA256SUMS.txt`. The steps are the same for every update; only the version number changes.
+
+**A shop PC that is already linked** (the shop's PC since 2026-11-14) skips steps 3, 4 and 15–17: it stays linked to the same store. Never empty the cloud, never press «إلغاء الربط», and no new code is needed.
 
 Proven before release:
 
@@ -21,7 +23,7 @@ Proven before release:
 
 - [ ] **1. Approval and release.** With the owner's approval:
   - merge the release into `main`;
-  - set the version to 1.7.0;
+  - set the version to 1.8.0;
   - build the installer and record its SHA-256 in `SHA256SUMS.txt`;
   - publish the GitHub release;
   - put the installer and `SHA256SUMS.txt` on the USB stick.
@@ -29,12 +31,12 @@ Proven before release:
 
   ```bash
   ssh -p 21 -i ~/.ssh/heromarket_cloud_ed25519 ubuntu@109.123.240.94   # 21 on the home Wi-Fi; 22 elsewhere
-  cd /opt/heromarket && sudo deploy/cloud/update.sh v1.7.0
+  cd /opt/heromarket && sudo deploy/cloud/update.sh v1.8.0
   ```
 
-  It ends with `updated to v1.7.0`. If it says it went back to the previous version, stop and look at its log.
+  It ends with `updated to v1.8.0`. If it says it went back to the previous version, stop and look at its log.
 
-- [ ] **3. Empty the cloud,** only if it holds trial data (for 1.7.0 it was already emptied on 2026-11-14). A cloud that serves another store refuses a shop with sales of its own:
+- [ ] **3. Empty the cloud,** only before a first link, and only if it holds trial data. Never for 1.8.0: the cloud holds the shop's own store since 2026-11-14. A cloud that serves another store refuses a shop with sales of its own:
 
   ```bash
   sudo deploy/cloud/reset-empty.sh          # type heromarket.duckdns.org to confirm
@@ -67,10 +69,10 @@ Proven before release:
 
 ### B. Check and install
 
-- [ ] **10.** Copy `HeroMarket-Setup-1.7.0.exe` to the Desktop. In PowerShell:
+- [ ] **10.** Copy `HeroMarket-Setup-1.8.0.exe` to the Desktop. In PowerShell:
 
   ```
-  Get-FileHash "$env:USERPROFILE\Desktop\HeroMarket-Setup-1.7.0.exe"
+  Get-FileHash "$env:USERPROFILE\Desktop\HeroMarket-Setup-1.8.0.exe"
   ```
 
   The `Hash` must equal the one in `SHA256SUMS.txt`. If it differs, **stop**.
@@ -94,7 +96,7 @@ Proven before release:
 
 ### D. Pairing with the cloud
 
-- [ ] **15.** Menu → «المزامنة السحابية». If the PC is still linked from before the cloud was emptied, press «إلغاء الربط» first (the shop's data is not touched). Then, on the card «ربط المتجر بالسحابة برمز الربط», enter:
+- [ ] **15.** Menu → «المزامنة السحابية». **Already linked** (1.8.0): check that it shows the same store, that «بانتظار الإرسال» falls to 0 and «الإصدار» is the same on both sides, then go on to step 18. Only for a first link: on the card «ربط المتجر بالسحابة برمز الربط», enter:
   - **عنوان السحابة:** `https://heromarket.duckdns.org`
   - **رمز الربط:** the code from step 4.
 
