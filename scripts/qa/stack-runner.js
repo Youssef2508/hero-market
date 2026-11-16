@@ -131,7 +131,8 @@ const STATE = path.join(RESULTS, 'state.json')
 const proxies = {}
 async function links({ latencyMs = 0 } = {}) {
   proxies.shop = createProxy({ listenPort: SHOP_PORT, target: CLOUD, latencyMs })
-  proxies.web = createProxy({ listenPort: WEB_PORT, target: CLOUD })
+  // The phone's way in takes the same latency (QA_LATENCY_MS: the measured internet path).
+  proxies.web = createProxy({ listenPort: WEB_PORT, target: CLOUD, latencyMs })
   await proxies.shop.listen()
   await proxies.web.listen()
 }
