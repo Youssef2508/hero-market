@@ -217,6 +217,149 @@ From `passwordPolicy.test.js` (one long scenario against the shop and its cloud)
 - **Deferred operations wait for the shop.** A barcode change made from the phone is not visible on the phone until the shop has carried it out; the strip shows it waiting.
 - **Same-field conflicts keep the shop's value (D-103),** listed for a person to settle; they are not merged automatically.
 
-## 9. Verdict
+## 10. Store connectivity freshness and last-contact verification
 
-**READY WITH DOCUMENTED LIMITATIONS.** The limitations are those in §8. Nothing has been released, deployed or shown to the owner; CI runs on the branch.
+**What the strip shows:** connected, delayed, offline or unknown, with the shop's last successful contact. The decision is D-114.
+
+| State     | Rule                                                                             | Example                                       |
+| --------- | -------------------------------------------------------------------------------- | --------------------------------------------- |
+| unknown   | never in contact (or not paired)                                                 | «لم يتصل المحل بالسحابة بعد.»                 |
+| connected | last contact ≤ 25 s                                                              | «متصل الآن — آخر تواصل منذ 4 ثوانٍ»           |
+| delayed   | last contact > 25 s, the cloud still routes to the shop                          | «الاتصال متأخر — آخر تواصل منذ 18 ثانية»      |
+| offline   | the cloud's routing rule: no contact for 40 s, or the shop's open request closed | «المحل غير متصل — آخر تواصل ناجح: 10:45:12 م» |
+
+**The source of truth:**
+
+- `cloud_stores.last_seen_at`: written with the cloud's own clock when an authenticated request from the shop arrives (and only at the same database version), and kept in the database.
+- Never used: when the page loaded, signed in, or last asked.
+- The page counts the age on the cloud's clock, every second and without requests. Times are in the store's time zone.
+
+**Thresholds, from measurement, not chosen arbitrarily:**
+
+- the real link's proxy log on 2026-11-15, over 2,033 shop requests;
+- gaps between contacts: p50 0.8 s, p90 11.6 s, p99 15.2 s (the 15 s sync cycle);
+- the screens learn of a newer contact within 5 s, through the open request they already keep. That adds nothing while the shop is silent.
+
+**Fixed with it:** the end of a held request counted as contact, keeping a dropped shop "reachable" up to 65 s (QA-02, now 40 s).
+
+**Verified:**
+
+| Case                                               | Where                                | Result                                                            |
+| -------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| Unknown initial state, then connected              | `linkConnectivity.test.js`           | unknown before any contact; connected after                       |
+| Healthy, delayed, offline; the loss announced      | `linkConnectivity.test.js`           | never connected after the healthy time                            |
+| Recovery after reconnection                        | `linkConnectivity.test.js`, QA stack | connected only after a new contact                                |
+| Cloud restart                                      | `linkConnectivity.test.js`           | the last contact kept, never newer; connected after a new contact |
+| Shop's service restart                             | QA stack `restart`                   | link resumed, every invoice once                                  |
+| Stale state after a reload                         | `linkConnectivity.test.js`, QA stack | the cloud's state, not a remembered one                           |
+| Time zone, page clock wrong by 3 hours             | `connectivity.test.mjs`              | same age; store's time zone shown                                 |
+| Half-open drop (Wi-Fi), real browser at phone size | QA stack `offline`                   | connected → delayed 23 s → offline 37 s                           |
+| Clean cut (router, program closed)                 | QA stack `offline`                   | offline in 0.5 s                                                  |
+| Synchronisation unaffected                         | QA stack `perf`, `soak`              | 500 invoices in 5.1 s; 20 min soak consistent                     |
+
+## 11. Desktop 1.7.0 → 1.8.0 in-place upgrade proof
+
+**A. The real installers in Windows Sandbox** (`scratchpad/sbx/sbx-cmd/M10b-upgrade170to180.ps1`):
+
+1. **The released 1.7.0 installer** on a clean Windows.
+2. **A representative 1.7.0 store loaded into its database:**
+   - **How it was made:** by the 1.7.0 code itself — 3,005 products including `1`, `01` and `001`; customers, suppliers, cash and credit sales and a return; purchases with a partial payment; a supplier payment; an approved payment request; a preliminary invoice; an open and a closed shift.
+   - **Its sync state:** paired, with its device token and cloud address, and 10 changes waiting to be sent.
+   - **How it was loaded:** the installed database user is _not_ a superuser, so only the store's own triggers were paused while loading.
+3. **1.7.0 opened with it;** both test passwords verified.
+4. **The 1.8.0 installer** (built from this branch) ran over it, with the background service running:
+   - exit 0 in 318 s;
+   - the verified pre-install copy taken; migration 0040 applied, result `ok`;
+   - the service restarted as 1.8.0.
+5. **Results:**
+
+| Check                                                     | Result                                                                                                                  |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Every record of every table (1.7.0 columns)               | **identical**: 0 changed                                                                                                |
+| What 1.8.0 adds on its first start                        | the new permission (1 key, 2 roles), its sync records (+2), the service heartbeat, `sync_tables` (+1 for the new table) |
+| Store id, device token, cloud address, epoch, linked date | identical                                                                                                               |
+| Changes waiting to be sent                                | all 10 kept                                                                                                             |
+| Numbering sequences                                       | none lower                                                                                                              |
+| Users' passwords                                          | valid; all recorded as strong                                                                                           |
+| Stock of `1`, `01`, `001`                                 | unchanged                                                                                                               |
+| Configuration (`heromarket.json`)                         | only `local.setupVersion` 1.7.0 → 1.8.0                                                                                 |
+| The program                                               | opens; opens again after a restart                                                                                      |
+| Background service, backup tasks                          | 1.8.0 running; both tasks registered                                                                                    |
+
+**B. Pairing and synchronisation continue** (host, real 1.7.0 and 1.8.0 code side by side, `scratchpad/upgrade/host.js`, 14 of 14):
+
+- the same paired store updated in place;
+- the database fingerprint unchanged;
+- the same store id, token and epoch;
+- synchronisation resumed with no new pairing and no new epoch;
+- every sale exactly once on both sides;
+- an operation from the phone was carried out in the shop afterwards.
+
+**C. Interruption** (`upgradeInterruption.test.js`):
+
+- 0040 failing at its very end leaves the 1.7.0 store exactly as it was, and the next start applies it in full;
+- the same when the updating process is killed in the middle of 0040.
+
+Each migration runs in one transaction with its record.
+
+**The installer's own protections, observed:**
+
+- the existing installation and data directory were detected;
+- a verified copy was taken before migrating;
+- the result was recorded in `update-history.jsonl`;
+- the configuration was kept;
+- the service was upgraded in place.
+
+**Not observed here (by design of the test):** a failing installer. Its rollback restores the verified copy (D-097), and an earlier release check exercised it.
+
+## 12. Cloud/Desktop mixed-version compatibility
+
+- **The rule:** the two sides synchronise only at the same database version (D-105). The shop sends its version on every request.
+- **Proven, with the 1.8.0 cloud and the 1.7.0 shop** (host test, B above):
+  - the shop is refused with «إصدار HeroMarket على جهاز المتجر (0039) يختلف عن إصدار السحابة (0040)…»;
+  - nothing is mixed: the cloud kept 4 sales while the shop had 6;
+  - the shop keeps selling on its own database;
+  - the phone signs in and reads the cloud's copy. While the shop is refused the cloud works apart, and the phone's changes reach the shop after its update.
+  - Once the shop is updated, everything waiting arrives once.
+- **The other direction** (a 1.8.0 shop before its cloud) is refused the same way. The runbook avoids it: cloud first.
+- **Changed APIs between versions:**
+  - only additions: `link.state` gained fields; new operations;
+  - the shop never calls a cloud operation that 1.7.0 lacks, because the version check stops the link first.
+
+## 13. Cloud pre-handover testing and cleanup
+
+The production website already holds the owner's linked store, so it was never tested on. An isolated stack on the same server was used instead, then removed. Production was verified identical afterwards: containers never restarted, the same configuration, pairing and data, every synced row's fingerprint, no test traces, healthy, TLS valid.
+
+The full account is in [CLOUD_PREHANDOVER_REPORT_1.8.0.md](CLOUD_PREHANDOVER_REPORT_1.8.0.md).
+
+## 14. Owner upgrade and release runbook (1.8.0)
+
+Nothing here unpairs, resets or reimports. If any check fails, stop: the owner's PC keeps selling on 1.7.0, and the website keeps its copy.
+
+| #   | Who     | Step                                                                                                                                                                                                                                            | Check                                                                                  |
+| --- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 1   | Owner   | «النسخ الاحتياطي» → «إنشاء نسخة احتياطية الآن» on a USB stick                                                                                                                                                                                   | the file exists, larger than 0 KB                                                      |
+| 2   | Youssef | Merge PR #53; release 1.8.0 from `main` with the release workflow; record the installer's SHA-256                                                                                                                                               | CI green; release notes                                                                |
+| 3   | Youssef | Read the website's state (read-only): store id, last contact                                                                                                                                                                                    | the owner's store `c32cf311-…`                                                         |
+| 4   | Youssef | `sudo deploy/cloud/update.sh v1.8.0` (backs up, applies store 0040 and cloud 0006, restarts)                                                                                                                                                    | "updated to v1.8.0"; `/api/health` ok; same store id; schema 0040                      |
+| 5   | –       | From here until step 6 the owner's 1.7.0 PC is refused for its version: it keeps selling, the phone works on the copy                                                                                                                           | the PC's sync screen says the versions differ                                          |
+| 6   | Owner   | Install `HeroMarket-Setup-1.8.0.exe` over the existing installation (SHA-256 checked); do not uninstall, do not unpair                                                                                                                          | the installer reports success; 0040 applied automatically                              |
+| 7   | Owner   | Open HeroMarket and sign in as before                                                                                                                                                                                                           | the same users and passwords work                                                      |
+| 8   | Owner   | «المزامنة السحابية»                                                                                                                                                                                                                             | linked to the same store; «بانتظار الإرسال» falls to 0; the same version on both sides |
+| 9   | Youssef | Compare both sides read-only: products, sales, the last invoice, a supplier's balance                                                                                                                                                           | identical                                                                              |
+| 10  | Owner   | **Smoke test:**<br>• a sale of a product with a leading-zero code;<br>• the phone shows «متصل الآن — آخر تواصل منذ …»;<br>• with the PC's internet off, approve one test payment request from the phone, then turn it back on; it arrives once. | as described                                                                           |
+
+**First start of 1.8.0 on the owner's PC:** a store holding a preliminary invoice cancelled with its payment returned gets one corrective account row (QA-03), dated that day. Its balance does not change.
+
+## 15. Verdict
+
+**READY WITH DOCUMENTED LIMITATIONS.**
+
+- **Tests:** after the pre-handover campaign, the whole suite (`npm test`) passes: 618 of 618, none skipped.
+- **What else was proven:**
+  - the in-place upgrade with the real installers (§11);
+  - mixed versions (§12);
+  - the cloud stack, isolated and cleaned (§13);
+  - the campaign's own evidence and defects in [ULTIMATE_QA_CERTIFICATION_1.8.0.md](ULTIMATE_QA_CERTIFICATION_1.8.0.md).
+- **Limitations:** listed in §8 and in that report's §L.
+- **Not done:** nothing has been merged, released, deployed or shown to the owner. Releasing follows the runbook (§14) only after approval.

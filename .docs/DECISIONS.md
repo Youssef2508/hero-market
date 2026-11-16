@@ -1829,3 +1829,40 @@ Every change is in the shared service and the shared screens, so the shop PC and
 - **Unchanged:** scrypt hashing, sessions, the wrong-password limits (the same for simple passwords), internet access still needing its permission, and passwords never logged.
 - **Screens:** the hints under a new password follow the user's rule; the service's message is shown if it refuses.
 - **Test:** `passwordPolicy.test.js` covers all of the above against the real service and its cloud.
+
+## D-114 The shop's connection on the internet screens: its state and its last successful contact (1.8.0)
+
+- **Before:** the strip said only «متصل» or «غير متصل», refreshed by a request that waited up to 25 s, so it could still say connected that long after the shop dropped.
+- **Source of truth:** `cloud_stores.last_seen_at`. It is written with the cloud's own clock when an authenticated request from the shop of the same database version arrives, and kept in the database, so a restart of the cloud neither forgets it nor makes it newer.
+- **Never used:** the time the page loaded, signed in, or last asked.
+- **Measured before choosing thresholds** (proxy log of the real link, 2026-11-15, 2,033 requests): the shop calls at least every 15 s through its sync cycle. Gaps between contacts were p50 0.8 s, p90 11.6 s and p99 15.2 s.
+- **States:**
+  - **unknown:** never in contact (or not paired);
+  - **connected:** the last contact is at most 25 s old;
+  - **delayed:** older than that, though the cloud still routes to the shop;
+  - **offline:** the cloud's own routing rule — no contact for 40 s (`linkGraceMs`), or the shop's open request closed.
+- **On the screen:**
+  - «متصل الآن — آخر تواصل منذ 4 ثوانٍ», «الاتصال متأخر — آخر تواصل منذ 18 ثانية», «المحل غير متصل — آخر تواصل ناجح: 10:45:12 م»;
+  - times are shown in the store's time zone;
+  - the age counts on every second in the page, on the cloud's clock (the page's own clock never enters).
+- **No new polling:** the screens' existing open request also returns once the shop's contact is 5 s newer than the one they know, and the moment the cloud stops routing to the shop is announced.
+- **Fixed with it (QA-02):** the end of a held link request counted as contact. On a connection that died without closing, that kept the shop "reachable" for up to 65 s instead of 40 s. Contact is a request's arrival.
+- **Tests:**
+  - `linkConnectivity.test.js` (4): unknown, connected, delayed, offline announced, recovery, a reload, a restart of the cloud;
+  - `connectivity.test.mjs` (6): the page's clock wrong by hours, Arabic plurals, the store's time zone;
+  - in a real browser on the QA test stack: a half-open drop went connected → delayed at 23 s → offline at 37 s; a clean cut went offline in 0.5 s.
+
+## D-115 Pre-handover quality campaign 1.8.0: fixes (1.8.0)
+
+- **QA-01:** a date shaped right but not on the calendar (2026-02-29) made five date filters answer 500. It is now refused as invalid (PostgreSQL 22007 and 22008 → 400). Found by sweeping every operation with hostile values (`apiHardening.test.js`).
+- **QA-03:**
+  - **The fault:** cancelling a preliminary invoice whose payment the supplier gave back entered the refund but not the cancellation of that payment, so the supplier's account, read as a statement, showed the store owing what had come back. The balance itself was right.
+  - **The fix:** both rows are entered.
+  - **Existing stores:** a store holding such a cancellation is put right once, at its next start, in the shop only (`money/repairs.js`; never on the cloud, which receives the row by synchronisation).
+  - **Found by** the property-based invariant test (`invariants.test.js`, 5 seeds × 200 random operations).
+- **QA-04:** the strip's "data shown as of" and its operation lists used the page's time zone beside a last contact in the store's. All are now the store's.
+- **QA-05:** the reorder assistant's two summary cards wrapped one word per line on a 360 px phone. They now stack.
+- **Tests strengthened from a mutation sample** (`scripts/qa/mutation-sample.js`: 17 realistic bugs in critical rules, all caught):
+  - the exact code against another product's 12/13-digit spelling;
+  - a short code never gaining a zero;
+  - a correction below what was returned, at a price that still covers the returns' credit.
