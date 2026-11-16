@@ -41,11 +41,23 @@ before(async () => {
       ('0012345678905', 'صنف EAN-13', 5, 50, 50, 0, 'قطعة'),
       ('765432109876', 'صنف UPC-A', 6, 60, 50, 0, 'قطعة'),
       ('0765432109876', 'صنف EAN بنفس الأرقام', 7, 70, 50, 0, 'قطعة'),
-      ('BOX', 'صنف بعبوة', 4, 40, 240, 0, 'قطعة')`
+      ('BOX', 'صنف بعبوة', 4, 40, 240, 0, 'قطعة'),
+      ('07', 'صنف صفر سبعة', 2, 20, 50, 0, 'قطعة'),
+      ('123456789012', 'صنف UPC بلا مكافئ', 8, 80, 50, 0, 'قطعة'),
+      ('XL', 'صنف بباركود إضافي', 9, 90, 50, 0, 'قطعة')`
   )
   admin = await login(svc, '8642')
   shift = ok(await svc.call('shifts.open', { startingCash: 0 }, admin))
   supplierId = ok(await svc.call('suppliers.create', { name: 'مورد الأكواد' }, admin)).id
+  // An extra barcode of XL that is exactly the 13-digit spelling of another product's 12-digit code:
+  // typed exactly, it is XL's – the exact code wins over another product's other spelling.
+  ok(
+    await svc.call(
+      'productUnits.save',
+      { barcode: 'XL', baseBarcodes: ['0123456789012'], units: [] },
+      admin
+    )
+  )
   // A packaging barcode that is spelled like a short code: still its own barcode.
   ok(
     await svc.call(
@@ -95,8 +107,13 @@ test('the scanner’s spelling: a UPC-A finds its EAN-13 only when nothing has t
   // Both spellings registered as two products: each finds itself.
   assert.equal((await resolve('765432109876')).product.barcode, '765432109876')
   assert.equal((await resolve('0765432109876')).product.barcode, '0765432109876')
-  // Short codes never get a zero added or taken away.
+  // Short codes never get a zero added or taken away: 7 is not 07.
   assert.equal(ok(await svc.call('pos.resolve', { code: '0BOX' }, admin)), null)
+  assert.equal(ok(await svc.call('pos.resolve', { code: '7' }, admin)), null)
+  assert.equal((await resolve('07')).product.barcode, '07')
+  // The exact code (an extra barcode of XL) wins over the other spelling of another product.
+  assert.equal((await resolve('0123456789012')).product.barcode, 'XL')
+  assert.equal((await resolve('123456789012')).product.barcode, '123456789012')
 })
 
 test('the till’s list puts the exact code first, and the chosen result is the product added', async (t) => {

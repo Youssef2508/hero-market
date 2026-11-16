@@ -386,6 +386,11 @@ test('returns limit a correction; refused corrections change nothing; permission
     assert.equal(r.status, 409, `${what}: ${JSON.stringify(r.body)}`)
   }
   await refuse([{ ...lines[0], qty: 30 }], 'below what was returned')
+  // Below what was returned even when the net would still cover the returns' credit.
+  await refuse(
+    [{ ...lines[0], qty: 30, unitCost: 50 }],
+    'below what was returned, at a higher price'
+  )
   await refuse([{ ...lines[0], barcode: 'B' }], 'the product of a line with returns')
   await refuse([{ barcode: 'B', qty: 10, unitCost: 25 }], 'removing a line with returns')
   // Without the permission: an inventory keeper manages suppliers but does not correct invoices.

@@ -339,6 +339,11 @@
   .app-shell.is-phone .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
+  /* Two summary cards with an icon and a sentence each (the reorder assistant): side by side on a
+     narrow phone each line held one word (QA-05); one card under the other. */
+  .app-shell.is-phone .stat-grid.stat-grid-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
   .app-shell.is-phone .segmented {
     max-width: 100%;
     overflow-x: auto;

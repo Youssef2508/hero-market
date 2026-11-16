@@ -3,8 +3,10 @@ import { CloudOff, HelpCircle, RefreshCw, Wifi } from 'lucide-react'
 import { api } from '../../lib/api'
 import { connectivityNow, connectivityText } from '../../lib/connectivity'
 
-const when = (iso) =>
+// In the store's time zone, like the last contact beside it (QA-04: it was the page's own).
+const when = (iso, timeZone) =>
   new Date(iso).toLocaleString('ar-EG', {
+    timeZone: timeZone || undefined,
     day: 'numeric',
     month: 'short',
     hour: 'numeric',
@@ -84,9 +86,17 @@ export default function LinkStatus() {
   const waiting = (
     <>
       {state.waitingOperations > 0 && (
-        <WaitingOperations count={state.waitingOperations} seq={state.seq} />
+        <WaitingOperations
+          count={state.waitingOperations}
+          seq={state.seq}
+          timeZone={state.timeZone}
+        />
       )}
-      <DeferredOperations count={state.deferredOperations || 0} seq={state.seq} />
+      <DeferredOperations
+        count={state.deferredOperations || 0}
+        seq={state.seq}
+        timeZone={state.timeZone}
+      />
     </>
   )
   if (serverDown)
@@ -108,8 +118,8 @@ export default function LinkStatus() {
       )}
       {conn.state === 'offline' && state.lastSyncedAt && (
         <span>
-          البيانات المعروضة حتى <strong>{when(state.lastSyncedAt)}</strong>، والعمليات تُسجَّل هنا
-          وتصل إلى المحل عند عودة الاتصال.
+          البيانات المعروضة حتى <strong>{when(state.lastSyncedAt, state.timeZone)}</strong>،
+          والعمليات تُسجَّل هنا وتصل إلى المحل عند عودة الاتصال.
         </span>
       )}
       {waiting}
@@ -128,7 +138,7 @@ const OPERATION_STATUS = {
  * They are never carried out twice and never carried out by the cloud instead (D-101): each one
  * becomes "applied" or "not executed" when the shop next reports. Until then, do not repeat it.
  */
-function WaitingOperations({ count, seq }) {
+function WaitingOperations({ count, seq, timeZone }) {
   const [open, setOpen] = useState(false)
   const [rows, setRows] = useState([])
   useEffect(() => {
@@ -167,7 +177,7 @@ function WaitingOperations({ count, seq }) {
                       <strong>{r.operation}</strong>
                       <span>{OPERATION_STATUS[r.status] || r.status}</span>
                       <span className="cell-muted">
-                        {r.username} · {when(r.created_at)}
+                        {r.username} · {when(r.created_at, timeZone)}
                       </span>
                     </li>
                   ))}
@@ -223,7 +233,7 @@ function deferredSubject(r) {
  * is kept, reaches the shop on its return and is carried out there once, after the shop has
  * checked it against its own data. Until it is handed over, the person who made it may withdraw it.
  */
-function DeferredOperations({ count, seq }) {
+function DeferredOperations({ count, seq, timeZone }) {
   const [open, setOpen] = useState(false)
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
@@ -276,7 +286,7 @@ function DeferredOperations({ count, seq }) {
                       <span className="ltr-id">{deferredSubject(r)}</span>
                       <span>{DEFERRED_STATUS[r.status] || r.status}</span>
                       {r.error?.message && <span className="field-error">{r.error.message}</span>}
-                      <span className="cell-muted">{when(r.createdAt)}</span>
+                      <span className="cell-muted">{when(r.createdAt, timeZone)}</span>
                       {r.status === 'queued' && (
                         <button
                           type="button"
