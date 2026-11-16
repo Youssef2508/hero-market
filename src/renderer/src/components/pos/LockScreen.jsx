@@ -3,7 +3,7 @@ import { KeyRound, Loader2, LogIn, ShieldCheck } from 'lucide-react'
 import { BrandMark, Wordmark } from '../brand/BrandMark'
 import { ThemeToggle } from '../ui'
 import { api } from '../../lib/api'
-import { passwordHint, passwordReady } from '../../lib/passwordHint'
+import { passwordHint, passwordReady, policyText } from '../../lib/passwordHint'
 import PasswordInput from '../auth/PasswordInput'
 import RecoveryCodeNotice from '../auth/RecoveryCodeNotice'
 
@@ -39,6 +39,8 @@ export default function LockScreen({ onSignedIn }) {
   const [confirm, setConfirm] = useState('')
   const [recoveryInput, setRecoveryInput] = useState('')
   const [firstPassword, setFirstPassword] = useState(false)
+  // The rule the password to choose must meet, as the service says (D-113).
+  const [policy, setPolicy] = useState('strong')
   const [pending, setPending] = useState(null) // signed-in result waiting behind the recovery code
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -83,6 +85,7 @@ export default function LockScreen({ onSignedIn }) {
       if (res.passwordChangeRequired) {
         setUsername(res.username)
         setFirstPassword(!!res.firstPassword)
+        setPolicy(res.passwordPolicy === 'simple' ? 'simple' : 'strong')
         go('choose')
       } else {
         setPassword('')
@@ -93,7 +96,7 @@ export default function LockScreen({ onSignedIn }) {
 
   const submitChoose = (e) => {
     e.preventDefault()
-    if (!passwordReady(newPassword, confirm)) return
+    if (!passwordReady(newPassword, confirm, policy)) return
     run(async () => {
       const res = await api('auth.setPassword', {
         username: username.trim(),
@@ -119,7 +122,9 @@ export default function LockScreen({ onSignedIn }) {
     })
   }
 
-  const hint = passwordHint(newPassword, confirm)
+  // Choosing a password after signing in: the user's rule; recovering the administrator's: strong.
+  const rule = mode === 'choose' ? policy : 'strong'
+  const hint = passwordHint(newPassword, confirm, rule)
   const errorBox = error && (
     <p className="field-error" role="alert">
       {error}
@@ -152,7 +157,7 @@ export default function LockScreen({ onSignedIn }) {
         />
       </label>
       <p id="new-password-hint" className={hint ? 'field-error' : 'field-hint'} aria-live="polite">
-        {hint || '8 رموز على الأقل (حروف أو أرقام أو علامات)، ولا تحتوي على اسم المستخدم.'}
+        {hint || policyText(rule)}
       </p>
     </>
   )
@@ -236,7 +241,7 @@ export default function LockScreen({ onSignedIn }) {
               </header>
               {newPasswordFields}
               {errorBox}
-              {submitButton('حفظ ومتابعة', KeyRound, !passwordReady(newPassword, confirm))}
+              {submitButton('حفظ ومتابعة', KeyRound, !passwordReady(newPassword, confirm, policy))}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"

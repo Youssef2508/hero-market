@@ -5,7 +5,8 @@
 //   server:      node src/server/cli.js reset-password <username>
 // The user receives a temporary password that must be changed at the next sign-in; their sessions
 // end, any old PIN stops working, and the reset is written to the event log. A disabled account
-// stays disabled (only an administrator can enable it again).
+// stays disabled (only an administrator can enable it again). A generated temporary password meets
+// the strong rule (D-113).
 const { findAccount } = require('./credentials')
 const { hashPassword, newTemporaryPassword } = require('./password')
 
@@ -23,7 +24,7 @@ async function resetPassword(pool, username, { via = 'local command' } = {}) {
     await client.query(
       `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
               password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours',
-              updated_at = LOCALTIMESTAMP(0) WHERE id = $2`,
+              password_strong = true, updated_at = LOCALTIMESTAMP(0) WHERE id = $2`,
       [await hashPassword(temporary), account.id]
     )
     await client.query(

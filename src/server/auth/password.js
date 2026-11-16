@@ -57,6 +57,27 @@ function passwordProblem(password, username = '') {
   return ''
 }
 
+/**
+ * The rule for a user who signs in only at the shop (owner, D-113): any password that is not empty
+ * – digits only, letters only, short – within the technical maximum. Signing in through the
+ * internet needs the strong rule (passwordProblem); the service decides which applies from the
+ * user's own permissions, never from what a screen says.
+ */
+function simplePasswordProblem(password) {
+  const p = String(password ?? '')
+  if (!p.trim()) return 'اكتب كلمة المرور.'
+  if (p.length > MAX_LENGTH) return `كلمة المرور يجب ألا تزيد عن ${MAX_LENGTH} حرفاً.`
+  return ''
+}
+
+/** The problem with a new password under the rule that applies ('strong' or 'simple'), or ''. */
+function newPasswordProblem(password, username, policy) {
+  return policy === 'simple' ? simplePasswordProblem(password) : passwordProblem(password, username)
+}
+
+/** True when the password meets the strong rule (recorded with it: users.password_strong). */
+const meetsStrongRule = (password, username) => passwordProblem(password, username) === ''
+
 // Crockford base32 without look-alike characters: easy to read aloud and to type.
 const ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
 function randomGroups(groups, size) {
@@ -123,6 +144,9 @@ const burnTime = async (password) => {
 module.exports = {
   MIN_LENGTH,
   passwordProblem,
+  simplePasswordProblem,
+  newPasswordProblem,
+  meetsStrongRule,
   hashPassword,
   verifyPassword,
   newRecoveryCode,

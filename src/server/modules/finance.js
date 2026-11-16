@@ -241,7 +241,10 @@ async function recordPurchase(db, ctx, p, { drawer = true, payable = true } = {}
     const missing = items.find((i) => !known.has(i.barcode))
     if (missing) throw notFound(`الصنف (${missing.barcode}) غير مسجل.`)
   }
-  if (paid > total + 0.005)
+  // A purchase pays at most its net. Completing a preliminary invoice pays nothing here (its payment
+  // was recorded at stage A, payable: false): a detailed total below what was paid is the
+  // supplier's debt to the store (D-064), so it is never refused (D-112).
+  if (payable && paid > total + 0.005)
     throw badRequest(
       `المدفوع (${Number(paid).toFixed(2)}) أكبر من صافي الفاتورة (${Number(total).toFixed(2)}).`
     )

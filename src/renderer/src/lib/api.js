@@ -39,6 +39,12 @@ export async function api(op, body = {}) {
   return res ? res.data : null
 }
 
+/**
+ * A change kept for the shop because it cannot be reached now (D-111): saved on the internet side
+ * and carried out in the shop once it is back. Its answer carries the message to show.
+ */
+export const isDeferred = (res) => !!res && res.pending === true && !!res.operationId
+
 /** Permission check for UI decisions only; the service enforces the real rule. */
 export function can(user, permission) {
   return !!user && Array.isArray(user.permissions) && user.permissions.includes(permission)

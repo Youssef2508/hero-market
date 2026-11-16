@@ -41,6 +41,7 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.opening`         | الرصيد الافتتاحي للموردين                                             |      ✓      |      ✓      |      |       |                     |                   |
 | `suppliers.pending`         | فواتير الموردين المبدئية                                              |      ✓      |      ✓      |  ✓   |   ✓   |                     |                   |
 | `suppliers.purchase_edit`   | تعديل بيانات فاتورة شراء مسجلة                                        |      ✓      |      ✓      |  ✓   |       |          ✓          |                   |
+| `suppliers.purchase_revise` | تصحيح أصناف وكميات وأسعار فاتورة شراء مسجلة                           |      ✓      |      ✓      |      |       |                     |                   |
 | `suppliers.payment_request` | طلب سداد دين مورد من الدرج                                            |      ✓      |      ✓      |      |       |                     |                   |
 | `suppliers.payment_approve` | اعتماد طلبات سداد الموردين                                            |      ✓      |      ✓      |      |       |                     |                   |
 | `checks.manage`             | الشيكات (متوقفة)                                                      |      ✓      |      ✓      |  ✓   |       |                     |                   |
@@ -204,6 +205,7 @@ Every permission is checked by the service on every request, before the request 
 | `supplierInvoices.release`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.reserve`       | all of `suppliers.manage`                                                                         |
 | `supplierInvoices.suppliers`     | any of `suppliers.pending`, `suppliers.view`, `suppliers.manage`                                  |
+| `supplierInvoices.updatePending` | all of `suppliers.manage`                                                                         |
 | `supplierPayments.approve`       | all of `suppliers.payment_approve`                                                                |
 | `supplierPayments.cancel`        | all of `suppliers.payment_request`                                                                |
 | `supplierPayments.create`        | all of `suppliers.payment_request`                                                                |
@@ -217,10 +219,14 @@ Every permission is checked by the service on every request, before the request 
 | `suppliers.create`               | all of `suppliers.manage`                                                                         |
 | `suppliers.delete`               | all of `suppliers.manage`                                                                         |
 | `suppliers.list`                 | any of `suppliers.view`, `suppliers.manage`                                                       |
+| `suppliers.previewRevision`      | all of `suppliers.purchase_revise`                                                                |
 | `suppliers.profile`              | any of `suppliers.view`, `suppliers.manage`                                                       |
 | `suppliers.purchaseDetail`       | any of `suppliers.view`, `suppliers.manage`                                                       |
+| `suppliers.purchaseRevisions`    | any of `suppliers.view`, `suppliers.manage`                                                       |
+| `suppliers.purchasesPage`        | any of `suppliers.view`, `suppliers.manage`                                                       |
 | `suppliers.repay`                | all of `suppliers.manage`                                                                         |
 | `suppliers.returnPurchase`       | all of `suppliers.manage`                                                                         |
+| `suppliers.revisePurchase`       | all of `suppliers.purchase_revise`                                                                |
 | `suppliers.setOpening`           | all of `suppliers.opening`                                                                        |
 | `suppliers.update`               | all of `suppliers.manage`                                                                         |
 | `suppliers.updatePurchase`       | all of `suppliers.purchase_edit`                                                                  |

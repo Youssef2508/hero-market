@@ -8,7 +8,8 @@
 //   add     – a new fact (sale, return, payment, purchase, movement, shift): both sides' are kept
 //   merge   – master data: merged field by field; the shop's value wins a same-field conflict
 //   state   – changes the state of an existing record (close, approve, cancel, complete, reverse)
-//   linked  – needs the two sides connected (barcode change, deleting a record, reset)
+//   linked  – carried out only in the shop (barcode change, deleting a record, a purchase
+//             correction); while it cannot be reached, kept and carried out on its return (D-111)
 //   device  – belongs to the device or the side it runs on (session, reservation, backup, link)
 //
 // Every operation not listed is a read. tests/service/operationKinds.test.js fails when an
@@ -47,6 +48,9 @@ const KINDS = {
   'suppliers.delete': 'linked',
   'suppliers.updatePurchase': 'merge',
   'suppliers.returnPurchase': 'add',
+  // A correction moves stock, prices and the balance from the invoice as the shop holds it: carried
+  // out in the shop only, kept for it while it cannot be reached (D-111, D-112).
+  'suppliers.revisePurchase': 'linked',
   'expenses.create': 'add',
   'expenses.delete': 'state',
   'expenseCategories.save': 'merge',
@@ -61,6 +65,7 @@ const KINDS = {
   'supplierInvoices.createPending': 'add',
   'supplierInvoices.cancel': 'state',
   'supplierInvoices.convert': 'state',
+  'supplierInvoices.updatePending': 'linked',
   'supplierInvoices.reserve': 'device',
   'supplierInvoices.release': 'device',
   'supplierPayments.create': 'add',

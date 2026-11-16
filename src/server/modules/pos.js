@@ -120,8 +120,35 @@ async function buildLines(db, items, products) {
   return lines
 }
 
+/**
+ * The spellings a scanned or typed code is looked up by, in order of preference. A code is text:
+ * 1, 01 and 001 are three products (D-110). The only other spelling is the scanner's: a 12-digit
+ * UPC-A and the 13-digit EAN-13 of the same article (a leading 0) – tried after the exact code.
+ */
+function codeSpellings(raw) {
+  if (/^\d{12}$/.test(raw)) return [raw, `0${raw}`]
+  if (/^0\d{12}$/.test(raw)) return [raw, raw.slice(1)]
+  return [raw]
+}
+
+/** The product registered under the first of these spellings, by its main or an extra barcode. */
+async function productBySpellings(db, spellings) {
+  return (
+    await db.query(
+      `SELECT p.*, x.unit_id AS extra_unit_id, (p.barcode <> s.code) AS by_extra
+         FROM unnest($1::text[]) WITH ORDINALITY AS s(code, n)
+         LEFT JOIN product_barcodes x ON x.barcode = s.code
+         JOIN products p ON p.barcode = s.code OR p.barcode = x.product_barcode
+        ORDER BY s.n, (p.barcode = s.code) DESC
+        LIMIT 1`,
+      [spellings]
+    )
+  ).rows[0]
+}
+
 module.exports = function posModule(app) {
-  // Exact lookup over the candidate spellings the terminal derived from a scan (as-is, without / with a leading zero).
+  // Exact lookup over the candidate spellings the terminal derived from a scan, the first that is
+  // registered winning (D-110: never whichever row the database happens to return first).
   app.operation({
     name: 'pos.lookup',
     permission: 'pos.sell',
@@ -134,7 +161,8 @@ module.exports = function posModule(app) {
     },
     handler: async (ctx, { codes }) => {
       const { rows } = await ctx.pool.query(
-        'SELECT * FROM products WHERE barcode = ANY($1::text[]) AND is_active LIMIT 1',
+        `SELECT p.* FROM products p WHERE p.barcode = ANY($1::text[]) AND p.is_active
+          ORDER BY array_position($1::text[], p.barcode) LIMIT 1`,
         [codes]
       )
       return rows[0] ? maskCost(ctx, rows)[0] : null
@@ -154,27 +182,20 @@ module.exports = function posModule(app) {
     },
     handler: async (ctx, { code }) => {
       const raw = code.trim()
-      const variants = [...new Set([raw, raw.replace(/^0+/, ''), '0' + raw].filter(Boolean))]
       const db = ctx.pool
-      let product = (
-        await db.query('SELECT * FROM products WHERE barcode = ANY($1::text[]) LIMIT 1', [variants])
-      ).rows[0]
-      let unit = product ? baseUnit(product) : null
+      // The exact code first – a product's own barcode, then an extra or packaging barcode – and
+      // only then the scanner's other spelling of a 12/13-digit article number (D-110).
+      const found = raw ? await productBySpellings(db, codeSpellings(raw)) : null
+      let product = null
+      let unit = null
       let qty = null
       let scale = null
-      if (!product) {
-        const extra = (
-          await db.query(
-            'SELECT product_barcode, unit_id FROM product_barcodes WHERE barcode = ANY($1::text[]) LIMIT 1',
-            [variants]
-          )
-        ).rows[0]
-        if (extra) {
-          product = (
-            await db.query('SELECT * FROM products WHERE barcode = $1', [extra.product_barcode])
-          ).rows[0]
-          unit = await loadUnit(db, product, extra.unit_id, { purpose: 'sell' })
-        }
+      if (found) {
+        const { extra_unit_id: extraUnit, by_extra: byExtra, ...row } = found
+        product = row
+        unit = byExtra
+          ? await loadUnit(db, product, extraUnit, { purpose: 'sell' })
+          : baseUnit(product)
       }
       if (!product) {
         const settings = await readAll(db)

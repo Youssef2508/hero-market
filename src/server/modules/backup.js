@@ -43,6 +43,8 @@ const TABLES = [
   'supplier_pending_invoices',
   'supplier_purchase_returns',
   'supplier_purchase_return_items',
+  // The corrections of recorded purchases (D-112), with the lines before and after.
+  'supplier_purchase_revisions',
   'checks_register',
   'expense_categories',
   'expenses',
@@ -63,7 +65,7 @@ const TABLES = [
   'sync_attention'
 ]
 // Tables a backup made before they existed does not hold: restored as empty.
-const SINCE_LATER = new Set(['remote_operations', 'sync_attention'])
+const SINCE_LATER = new Set(['remote_operations', 'sync_attention', 'supplier_purchase_revisions'])
 // User triggers are off while rows are restored: restored movements must not be applied to stock
 // a second time, and restored stock is not a direct write (stock_movements, products guard).
 const TRIGGER_TABLES = ['products', 'stock_movements', 'sales', 'shifts']

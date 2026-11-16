@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, newClientRef } from '../lib/api'
+import { api, isDeferred, newClientRef } from '../lib/api'
 import { effectiveCost } from '../lib/purchaseLines'
 
 export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerCustomConfirm }) {
@@ -279,7 +279,11 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
   const handleDeleteSupplier = async (supplierId) => {
     triggerCustomConfirm('هل أنت متأكد من حذف هذا المورد وكافة سجلاته؟', async () => {
       try {
-        await api('suppliers.delete', { supplierId })
+        const res = await api('suppliers.delete', { supplierId })
+        if (isDeferred(res)) {
+          triggerCustomAlert(`حذف المورد: ${res.message}`)
+          return
+        }
         setSelectedSupplier(null)
         setSupplierLedger([])
         setSupplierPurchases([])

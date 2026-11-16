@@ -303,6 +303,14 @@ module.exports = function supplierInvoicesModule(app) {
               idemKey: `cancel-pending:${b.clientRef}`
             })
           }
+          // The account reads as a statement (QA-03): the payment made with the invoice is cancelled
+          // too, and the money the supplier gave back is entered against it – before 1.8.0 only the
+          // refund was entered, so the statement showed the supplier owed what had come back.
+          await ledger(
+            'adjustment',
+            -paid,
+            `إلغاء ${label}: المدفوع ${paid.toFixed(2)} أعاده المورد`
+          )
           await ledger('refund', paid, `المورد أعاد ${paid.toFixed(2)} ج.م (إلغاء ${label})`)
         } else if (paid > 0) {
           // Not returned: the supplier owes it to the store (a credit on the supplier's account).
@@ -461,6 +469,91 @@ module.exports = function supplierInvoicesModule(app) {
           purchaseId: purchase.purchaseId,
           difference
         }
+      })
+  })
+
+  // Correct a preliminary invoice that has no lines yet (owner, 1.8.0, D-112): its total, number and
+  // notes. The payable moves by (new − old) total, one explicit ledger row; what was paid with it
+  // stays as it was (paid more than the corrected total, the supplier owes the store). Refused while
+  // another user holds it (D-099); a completed or cancelled one is corrected as a purchase.
+  app.operation({
+    name: 'supplierInvoices.updatePending',
+    permission: 'suppliers.manage',
+    schema: {
+      type: 'object',
+      required: ['invoiceId', 'total'],
+      additionalProperties: false,
+      properties: {
+        invoiceId: { type: 'integer' },
+        total: { type: 'number', exclusiveMinimum: 0 },
+        invoiceRef: { type: ['string', 'null'], maxLength: 80 },
+        notes: { type: ['string', 'null'], maxLength: 500 },
+        reason: { type: ['string', 'null'], maxLength: 300 },
+        reservationToken: { type: ['string', 'null'], maxLength: 64 }
+      }
+    },
+    handler: async (ctx, b) =>
+      ctx.tx(async (db) => {
+        const inv = await pendingRow(db, b.invoiceId, true)
+        if (!inv) throw notFound('الفاتورة المبدئية غير موجودة.')
+        if (inv.status !== 'pending')
+          throw conflict(
+            inv.status === 'converted'
+              ? `الفاتورة المبدئية #${inv.id} أُكملت بفاتورة الشراء #${inv.purchase_id}؛ تُصحَّح من فاتورة الشراء.`
+              : `الفاتورة المبدئية #${inv.id} ملغاة.`
+          )
+        await reservations.check(db, ctx, 'pending', inv.id, b.reservationToken || null)
+        const oldTotal = round2(inv.total)
+        const total = round2(b.total)
+        const paid = round2(inv.paid)
+        const invoiceRef =
+          b.invoiceRef === undefined ? inv.invoice_ref || '' : (b.invoiceRef || '').trim()
+        const notes = b.notes === undefined ? inv.notes || '' : (b.notes || '').trim()
+        if (
+          total === oldTotal &&
+          invoiceRef === (inv.invoice_ref || '') &&
+          notes === (inv.notes || '')
+        )
+          throw badRequest('لم يتغير شيء في الفاتورة المبدئية.')
+        // The preliminary total covers at least what was paid with it (0018). A delivery worth less
+        // is completed with its lines – the difference becomes the supplier's debt to the store.
+        if (total + 0.005 < paid)
+          throw badRequest(
+            `الإجمالي (${total.toFixed(2)}) أقل مما دُفع مع الفاتورة (${paid.toFixed(2)}). أكمل الفاتورة بأصنافها الفعلية: يُسجَّل الفرق ديناً على المورد للمتجر.`
+          )
+        const mode = paid <= 0 ? 'credit' : paid >= total - 0.005 ? 'cash' : 'partial'
+        await db.query(
+          `UPDATE supplier_pending_invoices SET total = $2, invoice_ref = $3, notes = $4, payment_mode = $5
+            WHERE id = $1`,
+          [inv.id, total, invoiceRef || null, notes || null, mode]
+        )
+        const delta = round2(total - oldTotal)
+        if (delta !== 0) {
+          await db.query('UPDATE suppliers SET debt_balance = debt_balance + $1 WHERE id = $2', [
+            delta,
+            inv.supplier_id
+          ])
+          await db.query(
+            `INSERT INTO supplier_ledger (supplier_id, type, amount, description, timestamp) VALUES ($1, 'adjustment', $2, $3, LOCALTIMESTAMP(0))`,
+            [
+              inv.supplier_id,
+              delta,
+              `تصحيح الفاتورة المبدئية #${inv.id}: الإجمالي ${total.toFixed(2)} بدل ${oldTotal.toFixed(2)}`
+            ]
+          )
+        }
+        await ctx.audit(
+          db,
+          'supplier_pending_edit',
+          `تصحيح الفاتورة المبدئية #${inv.id} للمورد "${inv.supplier_name}": الإجمالي ${total.toFixed(2)} بدل ${oldTotal.toFixed(2)} ج.م${b.reason ? ` – السبب: ${String(b.reason).trim()}` : ''}`,
+          {
+            invoiceId: inv.id,
+            from: { total: oldTotal, invoiceRef: inv.invoice_ref || '', notes: inv.notes || '' },
+            to: { total, invoiceRef, notes },
+            delta
+          }
+        )
+        return { invoice: await pendingRow(db, inv.id), delta }
       })
   })
 

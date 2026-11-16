@@ -232,6 +232,16 @@ const PERMISSIONS = [
     requires: 'suppliers.manage'
   },
   {
+    // Correcting a recorded purchase's lines and amounts (owner, 1.8.0, D-112): a revision with its
+    // stock, cost and supplier-account consequences. Administrators by default.
+    key: 'suppliers.purchase_revise',
+    module: 'suppliers',
+    label: 'تصحيح أصناف وكميات وأسعار فاتورة شراء مسجلة',
+    description:
+      'إضافة صنف أو حذفه أو استبداله، وتصحيح الكميات والأسعار والخصم في فاتورة شراء مسجلة وفق ما استُلم فعلاً. يُعدَّل المخزون وحساب المورد بحركات تصحيح، ويُحفظ كل تعديل في سجل الفاتورة',
+    requires: 'suppliers.manage'
+  },
+  {
     // Supplier debt-payment requests (owner, 1.5.2, D-090): cash from the drawer, the balance after
     // an administrator approves.
     key: 'suppliers.payment_request',
@@ -403,6 +413,8 @@ const MANAGEMENT = ALL.filter(
       // grants the request to a cashier (D-090).
       'suppliers.payment_request',
       'suppliers.payment_approve',
+      // Correcting a recorded purchase's lines and amounts (D-112).
+      'suppliers.purchase_revise',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
       // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).

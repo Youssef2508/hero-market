@@ -1709,3 +1709,160 @@ Every change is in the shared service and the shared screens, so the shop PC and
   - `syncReconnect.test.js` fails on the former agent: still unconfirmed after 20 s;
   - `syncSnapshotOrder.test.js`: the table order, and a first send of more than one batch identical on both sides;
   - `scripts/bench/offline-sync.js` measures an outage end to end with the agent as the shop runs it.
+
+## D-110 Product codes are text; the owner's approvals from the phone keep the session (1.8.0)
+
+- **A code opened another product** (owner: searching `1` and pressing Enter opened `01`; `01` opened `001`).
+  - **Cause** (`pos.resolve`, `src/server/modules/pos.js`): every scanned or typed code was looked up under three spellings at once: as typed, without its leading zeros, and with one more zero. The query took the first row with `LIMIT 1` and no order, so with `1`, `01` and `001` all registered the database's own row order chose. A click on a result and Enter on the highlighted result both send that result's code back through the same lookup, so even a correct choice could come back as another product.
+  - **Evidence:** `productCodes.test.js` on the former code: selecting `01` sold `001` (its stock fell, not `01`'s), and six of its eight tests fail.
+  - **Where the spellings came from:** packaging barcodes (`edb3693`), so that a scanner reading a 12-digit UPC-A finds the product registered under its 13-digit EAN-13 (the same digits after a `0`). That is the only real equivalence.
+  - **Rule now:**
+    - A code matches exactly itself: the product's own barcode first, then an extra or packaging barcode.
+    - Only a 12-digit code also finds the 13-digit `0` + code (and the reverse), and only when nothing is registered under the exact code.
+    - Short codes never gain or lose zeros. `pos.lookup` takes its candidates in the order given.
+    - Product management lists the exact code first, then the chosen sort.
+  - **Checked and unchanged:** the till's list already put the exact code first. Purchases, damaged goods, discounts and product details look codes up exactly. Codes are `text` everywhere (database, export, synchronisation); the import template's code columns are text. Scale labels keep their own rule (D-095).
+- **Approving or rejecting a supplier payment request from the phone failed while the shop was offline** (owner's test, 2026-11-15).
+  - **Evidence:** the proxy's log on the cloud server, 15 times between 03:20 and 10:35 UTC: `supplierPayments.reserve` answered 200, the `approve` or `reject` right after it 401 (signed out) in under 5 ms. The phone then showed the sign-in screen, and the owner signed in again and retried. The shop was not linked during that whole time (its link was quiet from 01:05 to 11:30), so the cloud carried out those requests itself.
+  - **Cause** (`src/server/app.js`):
+    - To keep session tokens out of the page, any answer from an operation the cloud carried out itself that had a `token` field went into the session cookie instead of the answer.
+    - A reservation (D-099) is answered `{ token, until }`, so reserving replaced the browser's session with the reservation's token, and the next step was refused as signed out.
+    - Forwarded operations return before that code, which is why the same steps worked while the shop was linked.
+    - `supplierInvoices.reserve` had the same fault (completing a preliminary invoice from the phone, offline).
+  - **Fix:** only `auth.login`, `auth.setup`, `auth.setPassword` and `auth.recover` set the cookie; every other answer is returned as it is.
+  - **"After the shop reconnected":** the attempts the owner made then were still before the shop's link came back. Approvals forwarded to a linked shop worked (Saturday 23:22).
+  - **Also:**
+    - an answer the cloud could not confirm in time (504 "sent, awaiting the shop's confirmation") is no longer reported as a failure: the page asks what became of that operation (`link.operation`) for up to 30 s, and shows its real outcome;
+    - the reservation itself was sound: it is per user, renewed with the same token by the same user on another device, and expires by itself (5 or 30 minutes, database clock), so a closed phone or a lost connection never holds a request beyond its deadline.
+  - **Tests:**
+    - `cloudOwnerOffline.test.js` drives the cloud as a browser does, its cookie jar following every `Set-Cookie`. The first test fails on the former code (the reservation's token is missing from the answer, the session replaced).
+    - The other scenarios:
+      - offline approval and rejection;
+      - approval online;
+      - the same user on two phones;
+      - two administrators, and a phone that reserved and left (the reservation expires and another takes over);
+      - approval and rejection at the same moment, plus the same approval twice (one outcome, paid or reversed once);
+      - a lost answer (carried out once, the outcome found).
+
+## D-111 Changes that need the shop are kept for it while it is offline (1.8.0, cloud migration 0006)
+
+- **Before:** while the shop was unreachable, the cloud carried out every change on its copy (D-103) except the `linked` operations, which it refused: changing a barcode or code, deleting a product, supplier, user or role. The owner met this as "I cannot change a product's code from the phone".
+- **The rule:** connectivity is not a permission. Each of these needs the shop's own records at the moment it is carried out:
+  - a barcode change renames the product's whole history;
+  - a deletion depends on what the shop holds;
+  - a purchase correction (D-112) moves stock, prices and the balance from the invoice as the shop has it.
+
+  So it is carried out in the shop, never on the copy.
+
+- **Now:**
+  - **Kept while offline:** such a change made while the shop is unreachable is stored on the cloud as a deferred operation and answered 202 "saved; it will be carried out in the shop once the connection returns". The same applies to one handed over that could not be confirmed in time but was never taken.
+  - **Delivered once:** on its next contact, the shop first receives the cloud's own changes, then each kept operation. It carries each out once by its own handler, as the same user, with the same checks against its data at that moment. Its outcome (done, or refused with the reason) comes back.
+  - **On the phone:** «عمليات بانتظار المتجر» in the link strip lists these operations with their outcomes, and one not yet handed over can be withdrawn (`cloud.withdrawOperation`).
+  - **When the shop is reachable:** everything works as before.
+- **Product edits from the phone:**
+  - name, prices, cost, category, units, active or stopped, and several fields at once already worked offline and still do: saved at once on the copy and merged field by field (D-103);
+  - the same field changed on both sides keeps the shop's value and is listed under «تحتاج انتباهك»;
+  - a barcode change waits for the shop, and the rest of the edit is saved at once on the current barcode.
+- **Conflicts:** a kept change that the shop refuses (for example the new barcode given meanwhile to another product at the shop) is shown with its reason. Nothing else changes and nothing is lost.
+- **Physical operations:** none of these touch a drawer. A rejection's cash goes back to the request's shift drawer as a record (D-100), the same as when an administrator rejects from the shop.
+- **Tests (`cloudOwnerOffline.test.js`):**
+  - several fields edited offline, merged with the shop's own change;
+  - a barcode change and a deletion kept, retried with the same id (one operation), one withdrawn, the rest carried out once;
+  - a kept change refused by a conflict at the shop;
+  - a purchase correction made offline.
+
+## D-112 Recorded purchase invoices are corrected to what was delivered; every supplier's invoices in one list (1.8.0, migration 0040)
+
+- **Before:**
+  - a recorded invoice's quantities and prices could not be corrected: only its number and notes (D-088);
+  - the established way, a purchase return plus a new invoice, left the owner adding lines to reach the real total;
+  - completing a preliminary invoice whose detailed total was below what had been paid with it was refused («المدفوع أكبر من صافي الفاتورة»), although D-064 says the supplier then owes the store the difference.
+- **The correction** (`suppliers.revisePurchase`; preview `suppliers.previewRevision`; permission `suppliers.purchase_revise`, administrators by default; `src/server/modules/purchaseRevisions.js`):
+  - **What can change:** add, remove or replace a product, and correct quantities, units, prices, the discount, the number and the notes. A purchase recorded by its total only corrects its total.
+  - **Totals:** the corrected total is computed from the lines, the same as when recording.
+  - **Supplier:** the payable moves by (corrected net − previous net), one `adjustment` ledger row. Payments and their cash are never touched. Paid more than the corrected invoice, the supplier owes the store the difference (a balance below zero).
+  - **Stock:** per product, the difference between the lines before and after is posted as a `purchase_correction` movement on top of the history. Stock may go below zero (D-041); the preview says so.
+  - **Purchase price (D-087):**
+    - a product takes the corrected price only while this invoice is its latest purchase and set its current price;
+    - a product removed from the invoice goes back to the price of its purchase before;
+    - otherwise the price is kept and the preview says why.
+  - **Past sales:** they keep their recorded cost and profit. The units sold since the invoice are shown, never re-costed.
+  - **Returns:** a line with goods returned to the supplier keeps its product and unit, never falls below what was returned, and is never removed. The returns' credit never exceeds the corrected net.
+  - **History:** each correction is kept (`supplier_purchase_revisions`: lines before and after, totals, stock, prices, what was sold since, who, when, why) and shown in the invoice. The invoice always shows its corrected values.
+  - **Concurrency and atomicity:** one transaction. The revision the screen was opened on must still be the invoice's (`expectedRevision`), so two corrections at once give one result and the other is told to reopen. A request id records a correction once. The preview is the same work, rolled back.
+  - **From the phone while offline:** kept for the shop (D-111).
+- **Preliminary invoices:**
+  - one without lines has its total (up or down), number and notes corrected (`supplierInvoices.updatePending`), with one ledger row for the difference;
+  - a total below what was paid with it is refused there (the database requires paid ≤ total); such a delivery is completed with its lines instead;
+  - completing with a total below what was paid is accepted now, and the supplier owes the store the difference.
+- **Every supplier's invoices** (`suppliers.purchasesPage`):
+  - **Layout:** the supplier's page shows the suppliers, the selected one and its ledger. Below it, one list of all purchase invoices.
+  - **Default:** today's invoices, in the store's time zone, newest first.
+  - **Filters:** from and to days (both included), supplier, number (the supplier's or the system's), paid, partly paid or on credit, where it was paid from, and corrected or not.
+  - **Paging:** 50 a page from the service, with the count and totals of the whole selection.
+  - **«كل فواتير هذا المورد»** shows one supplier's whole history. Choosing another supplier never resets the filters.
+- **Tests:**
+  - `purchaseRevisions.test.js` (11):
+    - 3,000 → 3,500 and 3,000 → 2,500;
+    - partly paid, fully paid, and corrected below what was paid;
+    - a product replaced;
+    - a quantity corrected after sales (below zero, sales untouched);
+    - two corrections at once, a retry and a stale screen;
+    - returns limiting a correction, and the permission;
+    - the list's filters and pages;
+    - preliminary corrections and a completion below what was paid.
+  - Every scenario checks the supplier's balance and ledger, payments and cash, stock against its ledger (`verifyLedger`), prices and sales.
+
+## D-113 The password rule follows internet access (1.8.0, migration 0040)
+
+- **The owner's rule:** cashiers who sign in only at the shop may use a simple password. Whoever may sign in through the internet keeps the strong rule (D-058, D-105).
+- **Simple:** any password that is not empty or only spaces, up to 128 characters: digits only, letters only, one character.
+- **Strong:** as before. At least 8 characters, 4 different ones, not a plain run, not a common password, not containing the username.
+- **Which rule applies:** the user's own permissions decide, on the service, never a screen. `internet.access` means strong; otherwise simple.
+- **Recorded:** only a hash is kept, so `users.password_strong` records whether the password meets the strong rule when it is set. Every earlier password met it.
+- **Enforced everywhere a password is set or access granted:**
+  - choosing a password at first sign-in, changing it, an administrator's temporary password (the rule of the user's role), recovery, and the command-line reset (generated, strong);
+  - **granting internet access** by a new role is refused while the user's password is simple, unless it is reset in the same step: a strong temporary password, then a strong one chosen at the next sign-in;
+  - adding internet access to a role is refused while any of its users has a simple password, naming them;
+  - taking internet access away never weakens a password; the user may choose a simple one afterwards;
+  - **through the internet**, an account whose recorded password is simple is refused at sign-in and on every request. This covers internet access and a simple password meeting through synchronisation.
+- **Unchanged:** scrypt hashing, sessions, the wrong-password limits (the same for simple passwords), internet access still needing its permission, and passwords never logged.
+- **Screens:** the hints under a new password follow the user's rule; the service's message is shown if it refuses.
+- **Test:** `passwordPolicy.test.js` covers all of the above against the real service and its cloud.
+
+## D-114 The shop's connection on the internet screens: its state and its last successful contact (1.8.0)
+
+- **Before:** the strip said only «متصل» or «غير متصل», refreshed by a request that waited up to 25 s, so it could still say connected that long after the shop dropped.
+- **Source of truth:** `cloud_stores.last_seen_at`. It is written with the cloud's own clock when an authenticated request from the shop of the same database version arrives, and kept in the database, so a restart of the cloud neither forgets it nor makes it newer.
+- **Never used:** the time the page loaded, signed in, or last asked.
+- **Measured before choosing thresholds** (proxy log of the real link, 2026-11-15, 2,033 requests): the shop calls at least every 15 s through its sync cycle. Gaps between contacts were p50 0.8 s, p90 11.6 s and p99 15.2 s.
+- **States:**
+  - **unknown:** never in contact (or not paired);
+  - **connected:** the last contact is at most 25 s old;
+  - **delayed:** older than that, though the cloud still routes to the shop;
+  - **offline:** the cloud's own routing rule — no contact for 40 s (`linkGraceMs`), or the shop's open request closed.
+- **On the screen:**
+  - «متصل الآن — آخر تواصل منذ 4 ثوانٍ», «الاتصال متأخر — آخر تواصل منذ 18 ثانية», «المحل غير متصل — آخر تواصل ناجح: 10:45:12 م»;
+  - times are shown in the store's time zone;
+  - the age counts on every second in the page, on the cloud's clock (the page's own clock never enters).
+- **No new polling:** the screens' existing open request also returns once the shop's contact is 5 s newer than the one they know, and the moment the cloud stops routing to the shop is announced.
+- **Fixed with it (QA-02):** the end of a held link request counted as contact. On a connection that died without closing, that kept the shop "reachable" for up to 65 s instead of 40 s. Contact is a request's arrival.
+- **Tests:**
+  - `linkConnectivity.test.js` (4): unknown, connected, delayed, offline announced, recovery, a reload, a restart of the cloud;
+  - `connectivity.test.mjs` (6): the page's clock wrong by hours, Arabic plurals, the store's time zone;
+  - in a real browser on the QA test stack: a half-open drop went connected → delayed at 23 s → offline at 37 s; a clean cut went offline in 0.5 s.
+
+## D-115 Pre-handover quality campaign 1.8.0: fixes (1.8.0)
+
+- **QA-01:** a date shaped right but not on the calendar (2026-02-29) made five date filters answer 500. It is now refused as invalid (PostgreSQL 22007 and 22008 → 400). Found by sweeping every operation with hostile values (`apiHardening.test.js`).
+- **QA-03:**
+  - **The fault:** cancelling a preliminary invoice whose payment the supplier gave back entered the refund but not the cancellation of that payment, so the supplier's account, read as a statement, showed the store owing what had come back. The balance itself was right.
+  - **The fix:** both rows are entered.
+  - **Existing stores:** a store holding such a cancellation is put right once, at its next start, in the shop only (`money/repairs.js`; never on the cloud, which receives the row by synchronisation).
+  - **Found by** the property-based invariant test (`invariants.test.js`, 5 seeds × 200 random operations).
+- **QA-04:** the strip's "data shown as of" and its operation lists used the page's time zone beside a last contact in the store's. All are now the store's.
+- **QA-05:** the reorder assistant's two summary cards wrapped one word per line on a 360 px phone. They now stack.
+- **Tests strengthened from a mutation sample** (`scripts/qa/mutation-sample.js`: 17 realistic bugs in critical rules, all caught):
+  - the exact code against another product's 12/13-digit spelling;
+  - a short code never gaining a zero;
+  - a correction below what was returned, at a price that still covers the returns' credit.

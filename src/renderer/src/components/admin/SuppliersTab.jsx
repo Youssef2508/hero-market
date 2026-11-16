@@ -10,22 +10,20 @@ import {
   MapPin,
   UserRound,
   HandCoins,
-  Pencil,
-  Printer,
-  PackageMinus,
-  Eye
+  Pencil
 } from 'lucide-react'
 import { EmptyState, SortableTh, Timestamp, NumberField } from '../ui'
 import { formatMoney } from '../../lib/utils'
 import PaymentDestination from './PaymentDestination'
 import PaymentMethodSelect from './PaymentMethodSelect'
 import { fixedDestination } from '../../lib/destination'
-import { api, can } from '../../lib/api'
+import { api, can, isDeferred } from '../../lib/api'
 import { rowKeys } from '../../lib/keyboard'
 import PendingInvoiceModal from '../modals/PendingInvoiceModal'
 import CancelPendingModal from '../modals/CancelPendingModal'
 import PurchaseReturnModal from '../modals/PurchaseReturnModal'
 import PurchaseDetailModal from '../modals/PurchaseDetailModal'
+import PurchaseInvoices from './PurchaseInvoices'
 import SupplierPaymentRequests from './SupplierPaymentRequests'
 import EditSupplierModal from '../modals/EditSupplierModal'
 import { BalanceText } from './SupplierBalance'
@@ -37,7 +35,7 @@ const MODE_LABELS = { cash: 'نقدي', credit: 'آجل', partial: 'دفع جز�
  * Preliminary supplier invoices waiting for their lines (D-064): total and payment recorded, no
  * stock yet. An administrator completes each one ("إكمال") in the purchase window.
  */
-function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
+function PendingInvoices({ rows, canConvert, onConvert, onCancel, onEdit }) {
   if (!rows || rows.length === 0) return null
   return (
     <section className="card">
@@ -111,6 +109,17 @@ function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
                             إكمال
                           </button>
                         )}
+                        {canConvert && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => onEdit(p)}
+                            disabled={busy}
+                            title={why || 'تصحيح الإجمالي أو الرقم أو الملاحظات'}
+                          >
+                            تصحيح
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn-sm btn-secondary"
@@ -131,6 +140,124 @@ function PendingInvoices({ rows, canConvert, onConvert, onCancel }) {
         </div>
       </div>
     </section>
+  )
+}
+
+/**
+ * Correct a preliminary invoice that has no lines yet (D-112): its total – up or down – number and
+ * notes. The supplier's balance moves by the difference; what was paid with it stays as it was.
+ */
+function EditPendingModal({ invoice, onClose, onDone, triggerCustomAlert }) {
+  const [total, setTotal] = useState(String(invoice.total))
+  const [invoiceRef, setInvoiceRef] = useState(invoice.invoice_ref || '')
+  const [notes, setNotes] = useState(invoice.notes || '')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const next = Math.round((parseFloat(total) || 0) * 100) / 100
+  const delta = Math.round((next - Number(invoice.total)) * 100) / 100
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      const res = await api('supplierInvoices.updatePending', {
+        invoiceId: invoice.id,
+        total: next,
+        invoiceRef: invoiceRef.trim(),
+        notes: notes.trim(),
+        reason: reason.trim() || null
+      })
+      triggerCustomAlert?.(
+        isDeferred(res)
+          ? `تصحيح الفاتورة المبدئية: ${res.message}`
+          : `تم تصحيح الفاتورة المبدئية #${invoice.id}.`
+      )
+      onDone()
+      onClose()
+    } catch (err) {
+      triggerCustomAlert?.('تعذّر الحفظ: ' + err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
+      <form
+        data-enter-step
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-pending-title"
+        onSubmit={save}
+        style={{ width: 520 }}
+      >
+        <div className="modal-header">
+          <h2 id="edit-pending-title">تصحيح الفاتورة المبدئية #{invoice.id}</h2>
+          <p>
+            {invoice.supplier_name} · مدفوع {formatMoney(invoice.paid)} ج.م (لا يتغير)
+          </p>
+        </div>
+        <div className="modal-body stack">
+          <label className="field">
+            <span className="field-label">الإجمالي (ج.م)</span>
+            <NumberField
+              className="input num"
+              min={Number(invoice.paid) || 0}
+              step="0.01"
+              value={total}
+              onChange={(e) => setTotal(e.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">رقم الفاتورة (مرجع)</span>
+            <input
+              className="input"
+              maxLength={80}
+              value={invoiceRef}
+              onChange={(e) => setInvoiceRef(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">ملاحظات</span>
+            <input
+              className="input"
+              maxLength={500}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">سبب التصحيح (اختياري)</span>
+            <input
+              className="input"
+              maxLength={300}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+          <p className="field-hint">
+            {delta === 0
+              ? 'لا يتغير حساب المورد.'
+              : `يتغير حساب المورد بـ ${delta > 0 ? '+' : ''}${formatMoney(delta)} ج.م.`}{' '}
+            إن كان المستلم أقل مما دُفع مع الفاتورة فأكملها بأصنافها الفعلية: يُسجَّل الفرق ديناً
+            على المورد.
+          </p>
+        </div>
+        <div className="modal-footer">
+          <button data-modal-close type="button" className="btn btn-secondary" onClick={onClose}>
+            رجوع
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            disabled={busy || !(next > 0)}
+          >
+            حفظ التصحيح
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -173,6 +300,7 @@ export default function SuppliersTab({
 }) {
   const [pendingOpen, setPendingOpen] = useState(false)
   const [cancelling, setCancelling] = useState(null)
+  const [editingPending, setEditingPending] = useState(null)
   const [returning, setReturning] = useState(null)
   const [viewing, setViewing] = useState(null)
   // Who is completing which preliminary invoice changes on other PCs and phones (D-099): look again
@@ -183,6 +311,11 @@ export default function SuppliersTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [editing, setEditing] = useState(false)
+  // The list of every supplier's invoices (D-112): shown for one supplier when asked, and loaded
+  // again after anything that changes invoices.
+  const [focus, setFocus] = useState(null)
+  const [invoicesKey, setInvoicesKey] = useState(0)
+  const invoicesChanged = () => setInvoicesKey((k) => k + 1)
   // A recorded supplier invoice printed again from what was saved (POS-02, D-077); nothing is
   // recorded by printing.
   const printPurchase = async (p) => {
@@ -241,7 +374,20 @@ export default function SuppliersTab({
         canConvert={can(currentUser, 'suppliers.manage')}
         onConvert={startConvertPending}
         onCancel={setCancelling}
+        onEdit={setEditingPending}
       />
+      {editingPending && (
+        <EditPendingModal
+          invoice={editingPending}
+          onClose={() => setEditingPending(null)}
+          onDone={() => {
+            fetchPendingInvoices?.()
+            fetchSuppliersList?.()
+            if (selectedSupplier) fetchSupplierProfile(selectedSupplier)
+          }}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
       {editing && selectedSupplier && (
         <EditSupplierModal
           supplier={selectedSupplier}
@@ -259,8 +405,13 @@ export default function SuppliersTab({
           purchase={viewing}
           canManage={canManage}
           canEdit={can(currentUser, 'suppliers.purchase_edit')}
+          canRevise={can(currentUser, 'suppliers.purchase_revise')}
           onClose={() => setViewing(null)}
-          onSaved={() => fetchSupplierProfile(selectedSupplier)}
+          onSaved={() => {
+            invoicesChanged()
+            if (selectedSupplier) fetchSupplierProfile(selectedSupplier)
+            fetchSuppliersList?.()
+          }}
           onPrint={window.api?.printer?.printReport ? printPurchase : null}
           onReturn={(p) => {
             setViewing(null)
@@ -275,7 +426,10 @@ export default function SuppliersTab({
           currentUser={currentUser}
           currentShift={currentShift}
           onClose={() => setReturning(null)}
-          onDone={(supplier) => fetchSupplierProfile(supplier || selectedSupplier)}
+          onDone={(supplier) => {
+            invoicesChanged()
+            if (supplier || selectedSupplier) fetchSupplierProfile(supplier || selectedSupplier)
+          }}
           triggerCustomAlert={triggerCustomAlert}
         />
       )}
@@ -441,6 +595,14 @@ export default function SuppliersTab({
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
+                    onClick={() => setFocus({ supplierId: s.id, seq: Date.now() })}
+                  >
+                    <ReceiptText size={15} aria-hidden="true" />
+                    كل فواتير هذا المورد
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
                     onClick={() => setEditing(true)}
                   >
                     <Pencil size={15} aria-hidden="true" />
@@ -507,104 +669,6 @@ export default function SuppliersTab({
             <section className="card">
               <div className="card-header">
                 <h2 className="card-title">
-                  <ReceiptText size={18} aria-hidden="true" />
-                  فواتير الشراء
-                </h2>
-              </div>
-              <div className="card-body">
-                {supplierPurchases.length === 0 ? (
-                  <p className="cell-muted text-center">لا توجد فواتير</p>
-                ) : (
-                  <div className="table-wrap">
-                    {/* Five columns so the table fits the supplier's page without sideways
-                        scrolling (owner, 2026-10-22): date and payment type under the invoice,
-                        the discount and returns under the net. */}
-                    <table className="table table-compact">
-                      <thead>
-                        <tr>
-                          <th>الفاتورة</th>
-                          <th className="num">الصافي</th>
-                          <th className="num">المدفوع</th>
-                          <th className="num">المتبقي</th>
-                          <th>
-                            <span className="visually-hidden">إجراءات</span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {supplierPurchases.map((p) => (
-                          <tr key={p.id}>
-                            <td>
-                              <span className="ltr-id">{p.invoice_ref || `#${p.id}`}</span>
-                              <div className="cell-muted">
-                                <Timestamp value={p.timestamp} />
-                              </div>
-                              <span className="badge">{p.payment_type}</span>
-                            </td>
-                            <td className="num">
-                              {formatMoney(p.total_amount)}
-                              {Number(p.discount) > 0 && (
-                                <div className="cell-muted">خصم {formatMoney(p.discount)}</div>
-                              )}
-                              {Number(p.returned_value) > 0 && (
-                                <div className="cell-muted">
-                                  مرتجع {formatMoney(p.returned_value)}
-                                </div>
-                              )}
-                            </td>
-                            <td className="num">{formatMoney(p.paid_amount)}</td>
-                            <td
-                              className={`num money-strong ${(p.remaining || 0) > 0 ? 'text-danger' : 'text-success'}`}
-                            >
-                              {formatMoney(p.remaining)}
-                            </td>
-                            <td>
-                              <div className="row-actions">
-                                <button
-                                  type="button"
-                                  className="icon-btn"
-                                  aria-label={`عرض فاتورة الشراء ${p.invoice_ref || p.id}`}
-                                  title="عرض الفاتورة وأصنافها"
-                                  onClick={() => setViewing(p)}
-                                >
-                                  <Eye size={15} aria-hidden="true" />
-                                </button>
-                                {canManage && (
-                                  <button
-                                    type="button"
-                                    className="icon-btn"
-                                    aria-label={`طباعة فاتورة الشراء ${p.invoice_ref || p.id}`}
-                                    title="طباعة الفاتورة (نسخة)"
-                                    onClick={() => printPurchase(p)}
-                                  >
-                                    <Printer size={15} aria-hidden="true" />
-                                  </button>
-                                )}
-                                {canManage && p.item_count > 0 && (
-                                  <button
-                                    type="button"
-                                    className="icon-btn"
-                                    aria-label={`مرتجع من فاتورة الشراء ${p.invoice_ref || p.id}`}
-                                    title="مرتجع مشتريات"
-                                    onClick={() => setReturning(p)}
-                                  >
-                                    <PackageMinus size={15} aria-hidden="true" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="card-header">
-                <h2 className="card-title">
                   <BookOpenText size={18} aria-hidden="true" />
                   دفتر حساب المورد
                 </h2>
@@ -652,11 +716,20 @@ export default function SuppliersTab({
             <EmptyState
               icon={Truck}
               title="اختر مورداً"
-              text="اختر مورداً من القائمة لعرض فواتير الشراء ودفتر الحساب وتسجيل السداد."
+              text="اختر مورداً من القائمة لعرض بياناته ودفتر حسابه وتسجيل السداد."
             />
           </section>
         )}
       </div>
+      <PurchaseInvoices
+        suppliers={suppliersList}
+        canManage={canManage}
+        focus={focus}
+        refreshKey={`${invoicesKey}:${supplierPurchases.length}:${pendingInvoices?.length ?? 0}`}
+        onView={setViewing}
+        onPrint={window.api?.printer?.printReport ? printPurchase : null}
+        onReturn={setReturning}
+      />
     </>
   )
 }

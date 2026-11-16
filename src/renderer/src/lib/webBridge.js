@@ -29,7 +29,37 @@ const newId = () =>
     (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16)
   )
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// How long a screen waits for the outcome of an operation handed to the shop whose answer did not
+// come back in time (D-110), before telling the user it is still waiting – never that it failed.
+const CONFIRM_WAIT_MS = 30000
+
 async function call(op, body) {
+  const answer = await send(op, body, newId())
+  const pending = answer.status === 504 && answer.error?.code === 'pending_confirmation'
+  const id = answer.error?.details?.operationId
+  if (!pending || !id) return answer
+  // A timeout is not a failure: the operation may have been carried out. Ask what became of it.
+  const until = Date.now() + CONFIRM_WAIT_MS
+  while (Date.now() < until) {
+    await sleep(2000)
+    const r = await send('link.operation', { operationId: id }, newId())
+    const o = r.status === 200 ? r.data : null
+    if (!o || o.status === 'queued' || o.status === 'sent') continue
+    if (o.status === 'applied') return { status: 200, data: o.result ?? { ok: true } }
+    return {
+      status: 409,
+      error: o.error || {
+        code: 'not_executed',
+        message: 'تعذر تنفيذ العملية في المتجر ولم يتغير شيء.'
+      }
+    }
+  }
+  return answer
+}
+
+async function send(op, body, operationId) {
   let res
   try {
     res = await fetch(`/api/${op}`, {
@@ -38,7 +68,7 @@ async function call(op, body) {
       headers: {
         'content-type': 'application/json',
         'x-heromarket-web': '1',
-        'x-heromarket-operation-id': newId(),
+        'x-heromarket-operation-id': operationId,
         'x-heromarket-terminal': terminalName()
       },
       body: JSON.stringify(body || {})

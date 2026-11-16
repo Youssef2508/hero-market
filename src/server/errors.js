@@ -60,6 +60,11 @@ function fromDatabaseError(err) {
     case '22P02':
     case '22003':
       return badRequest('بيانات غير صالحة.')
+    // A date shaped right but not a day of the calendar (2026-02-29, 2026-13-01): the caller's
+    // mistake, never a failure of the service (QA 1.8.0: five date filters answered 500).
+    case '22007':
+    case '22008':
+      return badRequest('تاريخ غير صالح.')
     case 'ECONNREFUSED':
     case 'ECONNRESET':
     case 'ETIMEDOUT':

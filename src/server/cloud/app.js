@@ -104,7 +104,13 @@ function registerSyncRoutes(app, pool, hooks = {}) {
       crypto.timingSafeEqual(Buffer.from(s.token_hash, 'hex'), Buffer.from(sha256(token), 'hex'))
     if (!ok) throw new CloudError(401, 'unauthorized', 'unauthorized')
     if (hooks.schemaCheck) await hooks.schemaCheck(req.headers['x-heromarket-schema'])
-    await pool.query('UPDATE cloud_stores SET last_seen_at = now() WHERE store_id = $1', [id])
+    // The shop's last successful contact, on this side's clock (D-114): a request that arrived,
+    // was authenticated and is of the same database version. The strip on the screens shows it.
+    const seen = await pool.query(
+      'UPDATE cloud_stores SET last_seen_at = now() WHERE store_id = $1 RETURNING last_seen_at',
+      [id]
+    )
+    if (hooks.onSeen) hooks.onSeen(seen.rows[0].last_seen_at)
     return s
   }
 

@@ -1,0 +1,104 @@
+[
+  {
+    "name": "exact code first",
+    "file": "src/server/modules/pos.js",
+    "outcome": "killed",
+    "tests": ["tests/service/productCodes.test.js"]
+  },
+  {
+    "name": "UPC-A spelling rule",
+    "file": "src/server/modules/pos.js",
+    "outcome": "killed",
+    "tests": ["tests/service/productCodes.test.js"]
+  },
+  {
+    "name": "correction moves the payable by the difference",
+    "file": "src/server/modules/purchaseRevisions.js",
+    "outcome": "killed",
+    "tests": ["tests/service/purchaseRevisions.test.js"]
+  },
+  {
+    "name": "correction checks the revision",
+    "file": "src/server/modules/purchaseRevisions.js",
+    "outcome": "killed",
+    "tests": ["tests/service/purchaseRevisions.test.js"]
+  },
+  {
+    "name": "correction stock difference",
+    "file": "src/server/modules/purchaseRevisions.js",
+    "outcome": "killed",
+    "tests": ["tests/service/purchaseRevisions.test.js"]
+  },
+  {
+    "name": "returns limit a correction",
+    "file": "src/server/modules/purchaseRevisions.js",
+    "outcome": "killed",
+    "tests": ["tests/service/purchaseRevisions.test.js"]
+  },
+  {
+    "name": "only sign-ins set the cookie",
+    "file": "src/server/app.js",
+    "outcome": "killed",
+    "tests": ["tests/service/cloudOwnerOffline.test.js"]
+  },
+  {
+    "name": "linked operations deferred offline",
+    "file": "src/server/app.js",
+    "outcome": "killed",
+    "tests": ["tests/service/cloudOwnerOffline.test.js"]
+  },
+  {
+    "name": "password rule follows internet access",
+    "file": "src/server/auth/access.js",
+    "outcome": "killed",
+    "tests": ["tests/service/passwordPolicy.test.js"]
+  },
+  {
+    "name": "granting internet needs a strong password",
+    "file": "src/server/modules/admin.js",
+    "outcome": "killed",
+    "tests": ["tests/service/passwordPolicy.test.js"]
+  },
+  {
+    "name": "reservation blocks another user",
+    "file": "src/server/money/reservations.js",
+    "outcome": "killed",
+    "tests": ["tests/service/reservations.test.js"]
+  },
+  {
+    "name": "approval pays the balance once",
+    "file": "src/server/modules/supplierPayments.js",
+    "outcome": "killed",
+    "tests": ["tests/service/supplierPaymentRequests.test.js"]
+  },
+  {
+    "name": "cancellation enters the returned payment (QA-03)",
+    "file": "src/server/modules/supplierInvoices.js",
+    "outcome": "killed",
+    "tests": ["tests/service/supplierLedgerRepair.test.js"]
+  },
+  {
+    "name": "connectivity: healthy threshold",
+    "file": "src/server/cloud/link.js",
+    "outcome": "killed",
+    "tests": ["tests/service/linkConnectivity.test.js"]
+  },
+  {
+    "name": "connectivity: a dead request is not contact (QA-02)",
+    "file": "src/server/cloud/link.js",
+    "outcome": "killed",
+    "tests": ["tests/service/linkConnectivity.test.js"]
+  },
+  {
+    "name": "impossible dates refused (QA-01)",
+    "file": "src/server/errors.js",
+    "outcome": "killed",
+    "tests": ["tests/service/apiHardening.test.js"]
+  },
+  {
+    "name": "an unknown product at checkout",
+    "file": "src/server/modules/pos.js",
+    "outcome": "killed",
+    "tests": ["tests/service/checkout.test.js"]
+  }
+]
