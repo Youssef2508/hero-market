@@ -219,17 +219,34 @@ const shot = async (page, name) => {
     await page.locator('button', { hasText: 'معاينة التأثير' }).click()
     await page.locator('text=الفرق على حساب المورد').waitFor({ timeout: 15000 })
     await shot(page, '4-desk-revision-preview')
+    // Saved while the cloud routes to the shop (after the offline part, the link may still be on its
+    // way back): carried out in the shop at once. Saved in a gap, it is kept for the shop (D-111)
+    // and carried out on the next contact – either way it must reach the shop once.
+    for (let i = 0; i < 100 && !(await cloud.app.cloudLink.shopUp()); i++) await sleep(100)
     await page.locator('button', { hasText: 'حفظ التصحيح' }).click()
     const saved = await alertText(page)
-    const p = (
-      await shop.pool.query(
-        'SELECT revision, total_amount::float8 AS t FROM supplier_purchases WHERE id = $1',
-        [purchase.purchaseId]
-      )
-    ).rows[0]
+    let p
+    for (let i = 0; i < 60; i++) {
+      p = (
+        await shop.pool.query(
+          'SELECT revision, total_amount::float8 AS t FROM supplier_purchases WHERE id = $1',
+          [purchase.purchaseId]
+        )
+      ).rows[0]
+      if (p.revision === 1) break
+      await sleep(500)
+    }
+    const revisions = Number(
+      (
+        await shop.pool.query(
+          'SELECT count(*) AS n FROM supplier_purchase_revisions WHERE purchase_id = $1',
+          [purchase.purchaseId]
+        )
+      ).rows[0].n
+    )
     check(
-      'purchase correction: previewed, saved in the shop (revision 1, 360)',
-      /تم تصحيح/.test(saved) && p.revision === 1 && p.t === 360,
+      'purchase correction: previewed, saved, in the shop once (revision 1, 360)',
+      /تم تصحيح|حُفظت العملية/.test(saved) && p.revision === 1 && p.t === 360 && revisions === 1,
       saved.slice(0, 60)
     )
 
