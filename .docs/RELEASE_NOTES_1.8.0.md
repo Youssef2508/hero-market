@@ -28,3 +28,17 @@ Written for the shop owner. 1.8.0 keeps product codes like `1`, `01` and `001` a
 - **The website on 1.8.0 with a shop still on 1.7.0:** nothing mixes; the shop keeps selling; after its update, sync resumes with the same link and nothing is counted twice.
 - **A separate copy of the website** (the real website was not touched): linking a store of 10,003 products, phone approvals with the shop offline, restarts during sync, security checks, 20 minutes with the connection dropping 9 times, and 31 screens at phone, tablet and desktop sizes.
 - **All 618 automatic tests,** plus the full program on Windows and in a browser on every change.
+
+## The installer
+
+|            |                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| File       | `HeroMarket-Setup-1.8.0.exe`                                                                                                 |
+| Size       | 181,038,606 bytes                                                                                                            |
+| SHA-256    | `d36cf0b99b6f0dc4cde1f4de3379cc031daf63523ad6012f28dc6c526df775fd`                                                           |
+| Built from | the tag `v1.8.0` (`main`'s merge commit `c58f5e5`) by the release workflow on GitHub, after lint and every test passed there |
+| Signed     | no ("Windows protected your PC" → More info → Run anyway)                                                                    |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.8.0.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+**The website** was updated to 1.8.0 on 2026-11-16 and still serves the shop's own store, with the same link. Until the shop PC runs 1.8.0, its sync screen says the versions differ; that is expected.
