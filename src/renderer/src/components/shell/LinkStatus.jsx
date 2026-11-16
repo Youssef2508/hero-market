@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { CloudOff, RefreshCw, Wifi } from 'lucide-react'
+import { CloudOff, HelpCircle, RefreshCw, Wifi } from 'lucide-react'
 import { api } from '../../lib/api'
+import { connectivityNow, connectivityText } from '../../lib/connectivity'
 
 const when = (iso) =>
   new Date(iso).toLocaleString('ar-EG', {
@@ -10,20 +11,33 @@ const when = (iso) =>
     minute: '2-digit'
   })
 
+const LOOK = {
+  connected: ['is-live', Wifi, 'status'],
+  delayed: ['is-delayed', RefreshCw, 'status'],
+  offline: ['is-off', CloudOff, 'alert'],
+  unknown: ['is-delayed', HelpCircle, 'status'],
+  unpaired: ['is-delayed', HelpCircle, 'status']
+}
+
 /**
- * The internet way in only (Phase 2, D-101): whether what is on the screen is the shop as it is
- * right now. Figures are never presented as current when they are not:
- *   live        – the shop is reachable and has nothing left to send;
- *   delayed     – reachable, with changes still on their way;
- *   unavailable – the shop cannot be reached; what is shown is the shop as of the last
- *                 synchronisation plus what was done here since (it reaches the shop later, D-103).
- * One request stays open to the cloud and returns when something changes, so nobody refreshes:
- * each change is announced to the screens as the window event `heromarket:data-changed`.
+ * The internet way in only (Phase 2, D-101; D-114): the shop's connection and its last successful
+ * contact, as the cloud observed it.
+ *   connected – a recent contact; delayed – none for a while, still routed to the shop; offline –
+ *   the cloud works on its copy (the shop as of the last synchronisation plus what was done here,
+ *   which reaches the shop later, D-103); unknown – the shop has never been in contact.
+ * One request stays open to the cloud and returns when something changes – the copy, the link, or
+ * a newer contact – so nobody refreshes: each change of the copy is announced to the screens as
+ * the window event `heromarket:data-changed`. Between answers the age counts on by itself, on the
+ * cloud's clock, so "connected" never outlives the contact it stands for.
  */
 export default function LinkStatus() {
   const web = !!window.api?.isWeb
-  const [state, setState] = useState(null)
+  // The cloud's last answer, and when it arrived (this page's clock, only to count from).
+  const [answer, setAnswer] = useState(null)
+  const [now, setNow] = useState(0)
+  const [serverDown, setServerDown] = useState(false)
   const seq = useRef(null)
+  const known = useRef(null)
 
   useEffect(() => {
     if (!web) return undefined
@@ -34,28 +48,39 @@ export default function LinkStatus() {
           const s =
             seq.current === null
               ? await api('link.state')
-              : await api('link.watch', { after: seq.current, timeoutMs: 25000 })
+              : await api('link.watch', {
+                  after: seq.current,
+                  timeoutMs: 25000,
+                  seenAt: known.current
+                })
           if (stop) return
           if (seq.current !== null && s.seq !== seq.current)
             window.dispatchEvent(new CustomEvent('heromarket:data-changed', { detail: s }))
           seq.current = s.seq
-          setState(s)
+          known.current = s.lastContactAt ? Date.parse(s.lastContactAt) : null
+          const at = Date.now()
+          setServerDown(false)
+          setAnswer({ s, at })
+          setNow(at)
         } catch (e) {
           if (stop || e.status === 401) return
           // The cloud itself did not answer: say so, and try again shortly.
-          setState((prev) => ({ ...(prev || {}), reachable: false, freshness: 'offline' }))
+          setServerDown(true)
           await new Promise((r) => setTimeout(r, 5000))
         }
       }
     }
     loop()
+    // The age of the last contact counts on every second, with no request.
+    const t = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       stop = true
+      clearInterval(t)
     }
   }, [web])
 
+  const state = answer?.s
   if (!web || !state) return null
-  const kind = state.freshness
   const waiting = (
     <>
       {state.waitingOperations > 0 && (
@@ -64,32 +89,29 @@ export default function LinkStatus() {
       <DeferredOperations count={state.deferredOperations || 0} seq={state.seq} />
     </>
   )
-  if (kind === 'live')
+  if (serverDown)
     return (
-      <div className="link-status is-live" role="status">
-        <Wifi size={15} aria-hidden="true" />
-        <span>متصل بالمتجر – البيانات محدّثة</span>
+      <div className="link-status is-off" role="alert">
+        <CloudOff size={15} aria-hidden="true" />
+        <span>تعذر الاتصال بالخادم. تحقق من الإنترنت.</span>
         {waiting}
       </div>
     )
-  if (kind === 'delayed')
-    return (
-      <div className="link-status is-delayed" role="status">
-        <RefreshCw size={15} aria-hidden="true" />
-        <span>متصل بالمتجر – جارٍ استلام {state.pendingChanges} تغييراً</span>
-        {waiting}
-      </div>
-    )
+  const conn = connectivityNow(state, answer.at, Math.max(now, answer.at))
+  const [tone, Icon, role] = LOOK[conn.state]
   return (
-    <div className="link-status is-off" role="alert">
-      <CloudOff size={15} aria-hidden="true" />
-      <span>
-        {kind === 'offline'
-          ? 'تعذر الاتصال بالخادم. تحقق من الإنترنت.'
-          : 'المتجر غير متصل الآن. البيانات المعروضة حتى'}
-      </span>
-      {kind !== 'offline' && state.lastSyncedAt && <strong>{when(state.lastSyncedAt)}</strong>}
-      {kind !== 'offline' && <span>العمليات تُسجَّل هنا وتصل إلى المتجر عند عودة الاتصال.</span>}
+    <div className={`link-status ${tone}`} role={role} data-connectivity={conn.state}>
+      <Icon size={15} aria-hidden="true" />
+      <span>{connectivityText(conn, state)}</span>
+      {conn.state === 'connected' && state.pendingChanges > 0 && (
+        <span>– جارٍ استلام {state.pendingChanges} تغييراً</span>
+      )}
+      {conn.state === 'offline' && state.lastSyncedAt && (
+        <span>
+          البيانات المعروضة حتى <strong>{when(state.lastSyncedAt)}</strong>، والعمليات تُسجَّل هنا
+          وتصل إلى المحل عند عودة الاتصال.
+        </span>
+      )}
       {waiting}
     </div>
   )

@@ -46,6 +46,13 @@ module.exports = function cloudLink(app, cfg) {
   // for 25 seconds at a time), and how long a user's request waits for the shop's answer.
   const graceMs = cfg.linkGraceMs ?? 40000
   const forwardMs = cfg.forwardTimeoutMs ?? 20000
+  // The strip on the screens (D-114): connected while the shop's last successful contact is at most
+  // this old. Measured on the real link (2026-11-15, 2,033 requests): the shop calls at least every
+  // 15 s (its sync cycle; p99 15.2 s between contacts), and a browser learns of a contact within
+  // SEEN_STEP_MS, so a healthy link never reads older than about 20 s. Offline is the routing's
+  // own rule: no contact for graceMs, or the shop's open request closed.
+  const healthyMs = cfg.linkHealthyMs ?? 25000
+  const SEEN_STEP_MS = cfg.linkSeenStepMs ?? 5000
 
   const live = {
     held: 0, // requests the shop PC is holding open right now
@@ -54,13 +61,29 @@ module.exports = function cloudLink(app, cfg) {
     answers: new Map(), // operation id → resolver of the user's waiting request
     bodies: new Map(), // operation id → data kept out of the database (passwords)
     seq: 0, // grows whenever the copy or the link's state changes
-    watchers: new Set()
+    watchers: new Set(),
+    lastSeen: null, // the shop's last successful contact (ms, this side's clock), D-114
+    seenWatchers: new Set(), // screens waiting for a newer last contact
+    lossTimer: null
   }
   const changed = () => {
     live.seq += 1
     for (const w of [...live.watchers]) w()
   }
   const reachable = () => live.held > 0 || Date.now() - live.lastContact < graceMs
+  // When the shop stops calling, the moment it stops counting as reachable is announced to the
+  // screens (D-114) – before, they learned it only at their next scheduled look.
+  const armLoss = () => {
+    clearTimeout(live.lossTimer)
+    live.lossTimer = setTimeout(() => {
+      if (!reachable()) changed()
+    }, graceMs + 50)
+    live.lossTimer.unref?.()
+  }
+  const seen = (at) => {
+    live.lastSeen = new Date(at).getTime()
+    for (const w of [...live.seenWatchers]) w()
+  }
 
   async function theStore(db = pool) {
     return (await db.query('SELECT * FROM cloud_stores ORDER BY created_at LIMIT 1')).rows[0]
@@ -83,6 +106,7 @@ module.exports = function cloudLink(app, cfg) {
   }
   const { store } = registerSyncRoutes(app, pool, {
     ...(cfg.cloudHooks || {}),
+    onSeen: seen,
     schemaCheck,
     // A new epoch: the shop sends everything again; what is here is replaced, not mixed. Refused
     // while this side still holds work the shop has not received (D-103): it would be lost.
@@ -245,6 +269,7 @@ module.exports = function cloudLink(app, cfg) {
     async (req) => {
       await store(req)
       live.lastContact = Date.now()
+      armLoss()
       let n = 0
       for (const r of req.body.results || []) if (UUID.test(r.id)) n += await settle(r.id, r)
       for (const id of req.body.unknown || [])
@@ -328,6 +353,7 @@ module.exports = function cloudLink(app, cfg) {
       const s = await store(req)
       const wasReachable = reachable()
       live.lastContact = Date.now()
+      armLoss()
       live.held += 1
       // The shop PC's side of this request went away (its program stopped, its connection broke):
       // the shop is unreachable from this moment, not when the request would have timed out (D-104).
@@ -400,10 +426,13 @@ module.exports = function cloudLink(app, cfg) {
         return { ops: out, check, changes }
       } finally {
         live.held -= 1
+        // The shop's contact was this request's arrival. Its end proves nothing: on a connection
+        // that died without closing, the answer goes nowhere (D-114). Counting the end as contact
+        // kept a shop whose internet had dropped "reachable" for up to 65 s instead of 40 s.
         if (gone) {
           live.lastContact = 0
           changed()
-        } else live.lastContact = Date.now()
+        }
       }
     }
   )
@@ -622,9 +651,31 @@ module.exports = function cloudLink(app, cfg) {
       : { waiting: 0, queued: 0, deferred: 0 }
     const up = !!s && reachable() && s.health?.ok !== false
     const pending = Number(s?.health?.pending ?? 0)
+    // D-114: the last successful contact on this side's clock, kept in the database (a restart
+    // of this service does not forget it, nor make it look newer than it is).
+    const stored = s?.last_seen_at ? new Date(s.last_seen_at).getTime() : 0
+    const last = Math.max(stored, live.lastSeen || 0) || null
+    const now = Date.now()
     return {
       linked: !!s,
       reachable: up,
+      // unknown: never in contact; offline: this side does not route to the shop now (no contact
+      // for offlineMs, or its open request closed); delayed: routed, but the last contact is older
+      // than healthyMs; connected: a recent contact.
+      connectivity: !s
+        ? 'unpaired'
+        : !last
+          ? 'unknown'
+          : !up
+            ? 'offline'
+            : now - last > healthyMs
+              ? 'delayed'
+              : 'connected',
+      lastContactAt: last ? new Date(last).toISOString() : null,
+      serverTime: new Date(now).toISOString(),
+      healthyMs,
+      offlineMs: graceMs,
+      timeZone: app.config?.timeZone || null,
       // live: the shop is reachable and has nothing left to send; delayed: reachable, with
       // changes still on their way; unavailable: what is shown is as of lastSyncedAt.
       freshness: !up ? 'unavailable' : pending > 0 ? 'delayed' : 'live',
@@ -654,19 +705,26 @@ module.exports = function cloudLink(app, cfg) {
       type: 'object',
       properties: {
         after: { type: 'integer', minimum: 0 },
-        timeoutMs: { type: 'integer', minimum: 0, maximum: 60000 }
+        timeoutMs: { type: 'integer', minimum: 0, maximum: 60000 },
+        // The last contact the screen knows (ms). It is told of a newer one once it is at least
+        // SEEN_STEP_MS newer (D-114): its "last contact … ago" stays true without polling.
+        seenAt: { type: ['integer', 'null'], minimum: 0 }
       }
     },
-    handler: async (ctx, { after = 0, timeoutMs = 25000 }) => {
-      if (live.seq <= after && timeoutMs > 0)
+    handler: async (ctx, { after = 0, timeoutMs = 25000, seenAt = null }) => {
+      const newer = () => seenAt !== null && (live.lastSeen || 0) >= seenAt + SEEN_STEP_MS
+      if (live.seq <= after && timeoutMs > 0 && !newer())
         await new Promise((resolve) => {
           const done = () => {
             clearTimeout(timer)
             live.watchers.delete(done)
+            live.seenWatchers.delete(onSeen)
             resolve()
           }
+          const onSeen = () => newer() && done()
           const timer = setTimeout(done, timeoutMs)
           live.watchers.add(done)
+          if (seenAt !== null) live.seenWatchers.add(onSeen)
         })
       return describe()
     }
