@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { KeyRound, CircleCheck, CircleAlert } from 'lucide-react'
 import { api } from '../../lib/api'
 import { playSound } from '../../lib/utils'
-import { passwordHint, passwordReady } from '../../lib/passwordHint'
+import { passwordHint, passwordReady, policyText } from '../../lib/passwordHint'
 import PasswordInput from '../auth/PasswordInput'
 
 const ROLE_LABELS = { admin: 'مدير النظام', manager: 'مشرف', cashier: 'كاشير' }
@@ -23,7 +23,9 @@ function ChangePasswordDialog({ onClose, currentUser }) {
   const [recoveryCode, setRecoveryCode] = useState('')
   const [busy, setBusy] = useState(false)
   const isSuperAdmin = currentUser.roleKey === 'super_admin'
-  const hint = passwordHint(next, confirm)
+  // The user's own rule (D-113): strong with internet access, otherwise any non-empty password.
+  const policy = currentUser.passwordPolicy === 'simple' ? 'simple' : 'strong'
+  const hint = passwordHint(next, confirm, policy)
 
   const fail = (err) => {
     setErrorMsg(err.message)
@@ -34,7 +36,7 @@ function ChangePasswordDialog({ onClose, currentUser }) {
     e.preventDefault()
     setErrorMsg('')
     setSuccessMsg('')
-    if (!passwordReady(next, confirm)) return
+    if (!passwordReady(next, confirm, policy)) return
     setBusy(true)
     try {
       await api('auth.changePassword', { currentPassword: current, newPassword: next })
@@ -146,7 +148,7 @@ function ChangePasswordDialog({ onClose, currentUser }) {
               />
             </label>
             <p className={hint ? 'field-error' : 'field-hint'} aria-live="polite">
-              {hint || '8 رموز على الأقل (حروف أو أرقام أو علامات)، ولا تحتوي على اسم المستخدم.'}
+              {hint || policyText(policy)}
             </p>
             {isSuperAdmin && (
               <button
@@ -170,7 +172,7 @@ function ChangePasswordDialog({ onClose, currentUser }) {
               type="submit"
               className="btn btn-primary"
               style={{ flex: 1 }}
-              disabled={busy || !current || !passwordReady(next, confirm)}
+              disabled={busy || !current || !passwordReady(next, confirm, policy)}
             >
               تغيير كلمة المرور
             </button>

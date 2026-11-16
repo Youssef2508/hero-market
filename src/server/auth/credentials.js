@@ -22,6 +22,7 @@ async function findAccount(db, username) {
   if (!name) return null
   const { rows } = await db.query(
     `SELECT id, username, is_active, password_scrypt, must_change_password, pin_hash, password_hash, recovery_hash,
+            role_id, password_strong,
             (temp_password_expires_at IS NOT NULL AND temp_password_expires_at < LOCALTIMESTAMP) AS temp_expired
        FROM users WHERE lower(username) = lower($1)
       ORDER BY (username = $1) DESC, id LIMIT 1`,

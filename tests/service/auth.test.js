@@ -168,11 +168,17 @@ test('change password: verifies the current one, applies the rules, signs out ot
   const change = (currentPassword, newPassword) =>
     svc.call('auth.changePassword', { currentPassword, newPassword }, a)
   assert.equal((await change('Wrong-pass-1', 'Cashier-pass-9')).status, 400)
-  assert.equal((await change('Cashier-pass-1', 'short1')).status, 400, 'too short')
-  // USER-01 (D-058): letters-only passwords are now allowed; guessable ones are still refused.
-  assert.equal((await change('Cashier-pass-1', 'abcdefgh')).status, 400, 'a plain run')
-  assert.equal((await change('Cashier-pass-1', 'aaaaaaab')).status, 400, 'too few characters')
-  assert.equal((await change('Cashier-pass-1', 'legacy_hash-1')).status, 400, 'contains username')
+  // The strong rule, for whoever may sign in through the internet (the owner here; D-113). USER-01
+  // (D-058): letters-only passwords are allowed; guessable ones are still refused.
+  const owner = (await login('owner', OWNER_PW, 'till-o')).body.token
+  const strong = (newPassword) =>
+    svc.call('auth.changePassword', { currentPassword: OWNER_PW, newPassword }, owner)
+  assert.equal((await strong('short1')).status, 400, 'too short')
+  assert.equal((await strong('abcdefgh')).status, 400, 'a plain run')
+  assert.equal((await strong('aaaaaaab')).status, 400, 'too few characters')
+  assert.equal((await strong('owner-pass-77')).status, 400, 'contains username')
+  // This cashier signs in only at the shop: the simple rule (D-113) – never empty, any length.
+  assert.equal((await change('Cashier-pass-1', '   ')).status, 400, 'only spaces')
   assert.equal((await change('Cashier-pass-1', 'Cashier-pass-9')).status, 200)
   assert.equal((await svc.call('auth.me', {}, a)).status, 200, 'this terminal stays signed in')
   assert.equal((await svc.call('auth.me', {}, b)).status, 401, 'other terminals signed out')
@@ -241,13 +247,21 @@ test('administrator reset: a temporary password that must be changed; the old on
     (await login('newcomer', created.body.temporaryPassword)).body.passwordChangeRequired,
     true
   )
-  // An administrator cannot pick a weak temporary password either.
+  // An administrator cannot pick a weak temporary password for a role that may sign in through the
+  // internet; for one that signs in only at the shop it follows the simple rule (D-113).
+  const internetRole = (await q("SELECT id FROM roles WHERE key = 'super_admin'"))[0].id
   const weak = await svc.call(
     'users.create',
-    { username: 'weakling', roleId: user.role_id, password: '1234' },
+    { username: 'weakling', roleId: internetRole, password: '1234' },
     owner
   )
   assert.equal(weak.status, 400)
+  const local = await svc.call(
+    'users.create',
+    { username: 'shopkeeper', roleId: user.role_id, password: '1234' },
+    owner
+  )
+  assert.equal(local.status, 200)
   const list = (await svc.call('users.list', {}, owner)).body
   const state = Object.fromEntries(list.map((u) => [u.username, u.login_state]))
   assert.deepEqual([state.owner, state.newcomer], ['password', 'temporary'])

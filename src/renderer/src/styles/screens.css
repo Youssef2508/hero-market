@@ -283,6 +283,16 @@
   max-width: 420px;
   flex: 1 1 260px;
 }
+/* The purchase invoice filters (D-112): labelled fields that wrap, each at a readable width. */
+.purchase-filters {
+  align-items: flex-end;
+}
+.purchase-filters .field {
+  flex: 1 1 150px;
+  min-width: 130px;
+  max-width: 260px;
+  margin: 0;
+}
 
 /* ── Overview (management home) ──────────────────────────────── */
 .overview-hero {

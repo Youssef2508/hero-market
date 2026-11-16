@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ShieldCheck, Plus, Save, Trash2, Lock, Users, Copy } from 'lucide-react'
 import { EmptyState } from '../ui'
-import { api } from '../../lib/api'
+import { api, isDeferred } from '../../lib/api'
 import { useLiveTick } from '../../lib/live'
 
 const MODULE_LABELS = {
@@ -122,7 +122,8 @@ export default function RolesTab({ currentUser, triggerCustomAlert, triggerCusto
   const remove = () =>
     triggerCustomConfirm(`هل تريد حذف الدور "${original.name}"؟`, async () => {
       try {
-        await api('roles.delete', { id: original.id })
+        const res = await api('roles.delete', { id: original.id })
+        if (isDeferred(res)) triggerCustomAlert(`حذف الدور: ${res.message}`)
         setDraft(null)
         await load(null)
       } catch (e) {

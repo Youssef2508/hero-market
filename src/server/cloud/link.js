@@ -24,7 +24,7 @@ const { withTransaction } = require('../db/pool')
 const { migrate } = require('../db/migrate')
 const { ServiceError, notFound } = require('../errors')
 const { applyChanges, FLOOR } = require('../sync/merge')
-const { SECRET_BODY, withoutSecrets } = require('../sync/operationKinds')
+const { SECRET_BODY, withoutSecrets, kindOf } = require('../sync/operationKinds')
 const { registerSyncRoutes, MIGRATIONS } = require('./app')
 const { pair } = require('./pairing')
 const { SyncAgent } = require('../sync/agent')
@@ -37,6 +37,8 @@ const UNREACHABLE =
 const PENDING =
   'أُرسلت العملية إلى المتجر ولم يصل تأكيد تنفيذها بعد. ستظهر نتيجتها عند عودة الاتصال؛ لا تكررها.'
 const NOT_EXECUTED = 'تعذر تنفيذ العملية في المتجر ولم يتغير شيء. حاول مرة أخرى.'
+const DEFERRED =
+  'المتجر غير متصل الآن: حُفظت العملية وستُنفَّذ في المتجر مرة واحدة عند عودة الاتصال. تجد حالتها في «عمليات بانتظار المتجر»، ويمكنك سحبها قبل تنفيذها.'
 
 module.exports = function cloudLink(app, cfg) {
   const pool = app.pool
@@ -482,7 +484,16 @@ module.exports = function cloudLink(app, cfg) {
         )
       throw new ServiceError(502, 'not_executed', NOT_EXECUTED, { operationId: id })
     }
-    // No answer in time. Never handed over: taken back, nothing happened. Handed over: unknown.
+    // No answer in time. A change that needs the shop stays waiting for it (D-111), as when the
+    // shop was already known to be unreachable; anything else never handed over is taken back.
+    if (kindOf(def.name) === 'linked') {
+      const kept = await pool.query(
+        "UPDATE cloud_operations SET deferred = true WHERE id = $1 AND status = 'queued' RETURNING id",
+        [id]
+      )
+      if (kept.rowCount) return deferredAnswer(id, def.name)
+    }
+    // Never handed over: taken back, nothing happened. Handed over: unknown.
     const back = await pool.query(
       "UPDATE cloud_operations SET status = 'withdrawn', done_at = now() WHERE id = $1 AND status = 'queued' RETURNING id",
       [id]
@@ -495,6 +506,106 @@ module.exports = function cloudLink(app, cfg) {
     return answerOf(now)
   }
 
+  // ── Changes that need the shop, while it cannot be reached (D-111) ──
+  const deferredAnswer = (id, operation) => ({
+    pending: true,
+    operationId: id,
+    operation,
+    message: DEFERRED
+  })
+
+  /**
+   * Keep a change that only the shop can carry out (operation kind "linked"): queued, never taken
+   * back by a timeout, handed to the shop on its next contact and carried out there once, as the
+   * same user, by its own handler – which checks it again against the shop's data at that moment.
+   */
+  async function defer({ def, auth, body, req }) {
+    const s = await theStore()
+    if (!s) throw new ServiceError(503, 'shop_unreachable', UNREACHABLE)
+    if (SECRET_BODY.has(def.name)) throw new ServiceError(503, 'shop_unreachable', UNREACHABLE)
+    const given = String(req.headers['x-heromarket-operation-id'] || '')
+    const id = UUID.test(given) ? given.toLowerCase() : crypto.randomUUID()
+    const terminal = String(req.headers['x-heromarket-terminal'] || 'الإنترنت').slice(0, 80)
+    const created = await pool.query(
+      `INSERT INTO cloud_operations (id, store_id, operation, body, user_id, username, terminal, deferred)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true) ON CONFLICT (id) DO NOTHING RETURNING id`,
+      [id, s.store_id, def.name, json(body), auth.user.id, auth.user.username, terminal]
+    )
+    if (!created.rowCount) {
+      // The same attempt again: what became of it, never a second operation.
+      const prior = (await pool.query('SELECT * FROM cloud_operations WHERE id = $1', [id])).rows[0]
+      if (prior.user_id !== auth.user.id || prior.operation !== def.name)
+        throw new ServiceError(409, 'conflict', 'رقم العملية مستخدم لعملية أخرى.')
+      if (!['queued', 'sent'].includes(prior.status)) return answerOf(prior)
+    }
+    changed()
+    return deferredAnswer(id, def.name)
+  }
+
+  const operationRow = (r) => ({
+    id: r.id,
+    operation: r.operation,
+    status: r.status,
+    deferred: r.deferred,
+    httpStatus: r.http_status,
+    result: r.result,
+    error: r.error,
+    body: r.body,
+    createdAt: r.created_at,
+    doneAt: r.done_at
+  })
+
+  // A user's own deferred operations: those still waiting, and those of the last week with their
+  // outcome. (What became of one operation is link.operation.)
+  app.operation({
+    name: 'cloud.operations',
+    handler: async (ctx) =>
+      (
+        await pool.query(
+          `SELECT * FROM cloud_operations WHERE user_id = $1 AND deferred
+              AND (status IN ('queued', 'sent') OR created_at > now() - interval '7 days')
+            ORDER BY seq DESC LIMIT 100`,
+          [ctx.user.id]
+        )
+      ).rows.map(operationRow)
+  })
+
+  // Withdraw one's own deferred operation while it is still waiting: the shop never receives it.
+  app.operation({
+    name: 'cloud.withdrawOperation',
+    schema: {
+      type: 'object',
+      required: ['id'],
+      properties: { id: { type: 'string', pattern: UUID.source.slice(1, -1) } }
+    },
+    handler: async (ctx, { id }) => {
+      const r = await pool.query(
+        `UPDATE cloud_operations SET status = 'withdrawn', done_at = now()
+          WHERE id = $1 AND user_id = $2 AND deferred AND status = 'queued' RETURNING *`,
+        [id.toLowerCase(), ctx.user.id]
+      )
+      if (r.rowCount) {
+        changed()
+        return operationRow(r.rows[0])
+      }
+      const now = (
+        await pool.query('SELECT * FROM cloud_operations WHERE id = $1 AND user_id = $2', [
+          id.toLowerCase(),
+          ctx.user.id
+        ])
+      ).rows[0]
+      if (!now) throw notFound('العملية غير موجودة.')
+      throw new ServiceError(
+        409,
+        'not_waiting',
+        now.status === 'sent'
+          ? 'وصلت العملية إلى المتجر ويجري تنفيذها؛ لا يمكن سحبها الآن.'
+          : 'انتهت العملية ولم تعد بانتظار المتجر.',
+        { operation: operationRow(now) }
+      )
+    }
+  })
+
   // ── What the screens ask about the link ──────────────────────
   async function describe() {
     const s = await theStore()
@@ -502,12 +613,13 @@ module.exports = function cloudLink(app, cfg) {
       ? (
           await pool.query(
             `SELECT count(*) FILTER (WHERE status = 'sent')::int AS waiting,
-                    count(*) FILTER (WHERE status = 'queued')::int AS queued
+                    count(*) FILTER (WHERE status = 'queued')::int AS queued,
+                    count(*) FILTER (WHERE deferred)::int AS deferred
                FROM cloud_operations WHERE store_id = $1 AND status IN ('queued', 'sent')`,
             [s.store_id]
           )
         ).rows[0]
-      : { waiting: 0, queued: 0 }
+      : { waiting: 0, queued: 0, deferred: 0 }
     const up = !!s && reachable() && s.health?.ok !== false
     const pending = Number(s?.health?.pending ?? 0)
     return {
@@ -521,6 +633,8 @@ module.exports = function cloudLink(app, cfg) {
       lastChangeAt: s?.last_push_at || null,
       pendingChanges: pending,
       waitingOperations: open.waiting,
+      // Changes that need the shop, kept until it is back (D-111).
+      deferredOperations: open.deferred,
       seq: live.seq
     }
   }
@@ -648,6 +762,7 @@ module.exports = function cloudLink(app, cfg) {
 
   app.decorate('cloudLink', {
     forward,
+    defer,
     shopUp,
     describe,
     reachable,

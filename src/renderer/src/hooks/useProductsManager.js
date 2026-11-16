@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, isDeferred } from '../lib/api'
 
 export function useProductsManager({
   fetchAdminData,
@@ -142,11 +142,20 @@ export function useProductsManager({
     const saveProduct = async () => {
       try {
         // A corrected barcode (PROD-01) is changed first; the other fields are saved on it.
-        const nextBarcode = (editProduct.new_barcode ?? barcode).trim()
+        let nextBarcode = (editProduct.new_barcode ?? barcode).trim()
+        let deferred = null
         if (nextBarcode && nextBarcode !== barcode) {
-          await api('products.changeBarcode', { barcode, newBarcode: nextBarcode })
-          // Saved: a retry of the other fields uses the new barcode.
-          setEditProduct((prev) => ({ ...prev, barcode: nextBarcode, new_barcode: undefined }))
+          const changed = await api('products.changeBarcode', { barcode, newBarcode: nextBarcode })
+          if (isDeferred(changed)) {
+            // The shop is not reachable (D-111): the new barcode waits for it; the other fields
+            // are saved now on the current one, and the shop renames the product after them.
+            deferred = { ...changed, to: nextBarcode }
+            nextBarcode = barcode
+            setEditProduct((prev) => ({ ...prev, new_barcode: undefined }))
+          } else {
+            // Saved: a retry of the other fields uses the new barcode.
+            setEditProduct((prev) => ({ ...prev, barcode: nextBarcode, new_barcode: undefined }))
+          }
         }
         await api('products.update', {
           barcode: nextBarcode || barcode,
@@ -167,7 +176,11 @@ export function useProductsManager({
             ? { is_active: editProduct.is_active !== false }
             : {})
         })
-        if (setToastMessage) {
+        if (deferred)
+          triggerCustomAlert(
+            `حُفظت بيانات المنتج. تغيير الباركود إلى ${deferred.to}: ${deferred.message}`
+          )
+        else if (setToastMessage) {
           setToastMessage('تم تحديث بيانات المنتج بنجاح!')
           setTimeout(() => setToastMessage(null), 2500)
         }
@@ -193,8 +206,10 @@ export function useProductsManager({
       'هل أنت متأكد من رغبتك في حذف هذا المنتج نهائياً من قاعدة البيانات؟',
       async () => {
         try {
-          await api('products.delete', { barcode })
-          triggerCustomAlert('تم حذف المنتج بنجاح!')
+          const res = await api('products.delete', { barcode })
+          triggerCustomAlert(
+            isDeferred(res) ? `حذف المنتج: ${res.message}` : 'تم حذف المنتج بنجاح!'
+          )
           if (fetchAdminData) await fetchAdminData()
         } catch (err) {
           // The service explains when the product is linked to past sales.

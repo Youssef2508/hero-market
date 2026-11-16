@@ -56,8 +56,13 @@ export default function LinkStatus() {
 
   if (!web || !state) return null
   const kind = state.freshness
-  const waiting = state.waitingOperations > 0 && (
-    <WaitingOperations count={state.waitingOperations} seq={state.seq} />
+  const waiting = (
+    <>
+      {state.waitingOperations > 0 && (
+        <WaitingOperations count={state.waitingOperations} seq={state.seq} />
+      )}
+      <DeferredOperations count={state.deferredOperations || 0} seq={state.seq} />
+    </>
   )
   if (kind === 'live')
     return (
@@ -72,6 +77,7 @@ export default function LinkStatus() {
       <div className="link-status is-delayed" role="status">
         <RefreshCw size={15} aria-hidden="true" />
         <span>متصل بالمتجر – جارٍ استلام {state.pendingChanges} تغييراً</span>
+        {waiting}
       </div>
     )
   return (
@@ -141,6 +147,123 @@ function WaitingOperations({ count, seq }) {
                       <span className="cell-muted">
                         {r.username} · {when(r.created_at)}
                       </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                data-modal-close
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setOpen(false)}
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+const DEFERRED_STATUS = {
+  queued: 'بانتظار اتصال المتجر',
+  sent: 'وصلت إلى المتجر – جارٍ التنفيذ',
+  applied: 'نُفذت في المتجر',
+  refused: 'رفضها المتجر – لم يتغير شيء',
+  not_executed: 'لم تُنفَّذ – لم يتغير شيء',
+  withdrawn: 'سحبتها – لم تُرسل'
+}
+const DEFERRED_NAMES = {
+  'products.changeBarcode': 'تغيير باركود صنف',
+  'products.delete': 'حذف صنف',
+  'suppliers.delete': 'حذف مورد',
+  'users.delete': 'حذف مستخدم',
+  'roles.delete': 'حذف دور',
+  'suppliers.revisePurchase': 'تصحيح فاتورة شراء',
+  'supplierInvoices.updatePending': 'تعديل فاتورة مبدئية'
+}
+/** What a deferred operation is about, from its own data. */
+function deferredSubject(r) {
+  const b = r.body || {}
+  if (r.operation === 'products.changeBarcode') return `${b.barcode} ← ${b.newBarcode}`
+  if (b.barcode) return b.barcode
+  if (b.purchaseId) return `فاتورة #${b.purchaseId}`
+  if (b.invoiceId) return `فاتورة مبدئية #${b.invoiceId}`
+  return ''
+}
+
+/**
+ * Changes that only the shop can carry out, made here while it could not be reached (D-111): each
+ * is kept, reaches the shop on its return and is carried out there once, after the shop has
+ * checked it against its own data. Until it is handed over, the person who made it may withdraw it.
+ */
+function DeferredOperations({ count, seq }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState([])
+  const [error, setError] = useState('')
+  const load = () =>
+    api('cloud.operations')
+      .then(setRows)
+      .catch(() => setRows([]))
+  useEffect(() => {
+    if (open) load()
+  }, [open, seq])
+  const withdraw = async (id) => {
+    setError('')
+    try {
+      await api('cloud.withdrawOperation', { id })
+    } catch (e) {
+      setError(e.message)
+    }
+    load()
+  }
+  if (!count && !open) return null
+  return (
+    <>
+      <button type="button" className="link-status-waiting" onClick={() => setOpen(true)}>
+        {count} عملية بانتظار المتجر
+      </button>
+      {open && (
+        <div className="modal-overlay" role="presentation">
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deferred-ops-title"
+          >
+            <div className="modal-header">
+              <h2 id="deferred-ops-title">عمليات بانتظار المتجر</h2>
+              <p>
+                عمليات تحتاج المتجر نفسه، حُفظت هنا أثناء انقطاعه. تُنفَّذ في المتجر مرة واحدة عند
+                عودة الاتصال بعد التحقق منها هناك، وتظهر نتيجتها هنا. يمكنك سحب ما لم يُرسل بعد.
+              </p>
+            </div>
+            <div className="modal-body">
+              {error && <p className="field-error">{error}</p>}
+              {!rows.length ? (
+                <p className="cell-muted">لا توجد عمليات.</p>
+              ) : (
+                <ul className="waiting-ops">
+                  {rows.map((r) => (
+                    <li key={r.id}>
+                      <strong>{DEFERRED_NAMES[r.operation] || r.operation}</strong>
+                      <span className="ltr-id">{deferredSubject(r)}</span>
+                      <span>{DEFERRED_STATUS[r.status] || r.status}</span>
+                      {r.error?.message && <span className="field-error">{r.error.message}</span>}
+                      <span className="cell-muted">{when(r.createdAt)}</span>
+                      {r.status === 'queued' && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => withdraw(r.id)}
+                        >
+                          سحب
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

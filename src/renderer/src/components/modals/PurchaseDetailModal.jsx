@@ -1,20 +1,22 @@
-import { useEffect, useState } from 'react'
-import { ReceiptText } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { History, PencilLine, ReceiptText } from 'lucide-react'
 import { api } from '../../lib/api'
 import { formatMoney } from '../../lib/utils'
 import { Timestamp } from '../ui'
+import PurchaseRevisionModal from './PurchaseRevisionModal'
 
 /**
- * A recorded supplier invoice with its lines and returns (owner, 1.5.2, D-088). Everyone who sees
- * suppliers can open it. With «تعديل بيانات فاتورة شراء مسجلة» its reference and notes can be corrected:
- * they change no stock, cost or balance. Quantities and prices of a recorded purchase are corrected
- * by a purchase return and a new invoice, so stock, the supplier's balance and the purchase price
- * stay explained by their records.
+ * A recorded supplier invoice with its lines, returns and corrections (owner, 1.5.2, D-088; 1.8.0,
+ * D-112). Everyone who sees suppliers can open it. With «تعديل بيانات فاتورة شراء مسجلة» its reference
+ * and notes can be corrected: they change no stock, cost or balance. With «تصحيح أصناف وكميات وأسعار
+ * فاتورة شراء مسجلة» its lines and amounts are corrected to what was delivered: a revision, previewed
+ * first, that moves stock and the supplier's balance by correction records and keeps the history.
  */
 export default function PurchaseDetailModal({
   purchase,
   canManage,
   canEdit,
+  canRevise,
   onClose,
   onSaved,
   onReturn,
@@ -24,8 +26,10 @@ export default function PurchaseDetailModal({
   const [detail, setDetail] = useState(null)
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [revisions, setRevisions] = useState([])
+  const [revising, setRevising] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let stop = false
     api('suppliers.purchaseDetail', { purchaseId: purchase.id })
       .then((d) => {
@@ -34,10 +38,14 @@ export default function PurchaseDetailModal({
         setForm({ invoiceRef: d.purchase.invoice_ref || '', notes: d.purchase.notes || '' })
       })
       .catch((err) => triggerCustomAlert?.('تعذّر تحميل الفاتورة: ' + err.message))
+    api('suppliers.purchaseRevisions', { purchaseId: purchase.id })
+      .then((r) => !stop && setRevisions(r))
+      .catch(() => {})
     return () => {
       stop = true
     }
   }, [purchase.id, triggerCustomAlert])
+  useEffect(() => load(), [load])
 
   const p = detail?.purchase
   const changed =
@@ -170,6 +178,27 @@ export default function PurchaseDetailModal({
                   </ul>
                 </>
               )}
+              {revisions.length > 0 && (
+                <>
+                  <h3 className="till-section-title">
+                    <History size={15} aria-hidden="true" /> تصحيحات هذه الفاتورة
+                  </h3>
+                  <ul className="bullet-list">
+                    {revisions.map((r) => (
+                      <li key={r.revision}>
+                        المراجعة {r.revision} · <Timestamp value={r.createdAt} />
+                        {r.createdByName && ` · ${r.createdByName}`} · الصافي{' '}
+                        {formatMoney(r.oldTotal)} ← {formatMoney(r.newTotal)} ج.م
+                        {r.delta !== 0 &&
+                          ` (${r.delta > 0 ? '+' : ''}${formatMoney(r.delta)} على حساب المورد)`}
+                        {r.stockChanges.length > 0 &&
+                          ` · المخزون: ${r.stockChanges.map((c) => `${c.name} ${c.change > 0 ? '+' : ''}${c.change}`).join('، ')}`}
+                        {r.reason && ` · ${r.reason}`}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
               {canEdit ? (
                 <>
                   <label className="field">
@@ -192,8 +221,9 @@ export default function PurchaseDetailModal({
                     />
                   </label>
                   <p className="field-hint">
-                    الكميات والأسعار لا تُعدَّل مباشرة لأنها غيّرت المخزون وحساب المورد وسعر الشراء.
-                    للتصحيح: سجّل «مرتجع مشتريات» للكمية الخاطئة، ثم فاتورة جديدة بالصحيح.
+                    {canRevise
+                      ? 'لتصحيح الأصناف أو الكميات أو الأسعار بما استُلم فعلاً استخدم «تصحيح الأصناف والمبالغ».'
+                      : 'الكميات والأسعار يصححها من لديه صلاحية «تصحيح أصناف وكميات وأسعار فاتورة شراء مسجلة»، أو تُصحَّح بمرتجع مشتريات.'}
                   </p>
                 </>
               ) : (
@@ -209,6 +239,12 @@ export default function PurchaseDetailModal({
           {onPrint && (
             <button type="button" className="btn btn-secondary" onClick={() => onPrint(purchase)}>
               طباعة
+            </button>
+          )}
+          {canRevise && detail && (
+            <button type="button" className="btn btn-secondary" onClick={() => setRevising(true)}>
+              <PencilLine size={15} aria-hidden="true" />
+              تصحيح الأصناف والمبالغ
             </button>
           )}
           {canManage && detail?.items.length > 0 && onReturn && (
@@ -228,6 +264,17 @@ export default function PurchaseDetailModal({
           )}
         </div>
       </form>
+      {revising && detail && (
+        <PurchaseRevisionModal
+          detail={detail}
+          onClose={() => setRevising(false)}
+          onSaved={() => {
+            load()
+            onSaved?.()
+          }}
+          triggerCustomAlert={triggerCustomAlert}
+        />
+      )}
     </div>
   )
 }

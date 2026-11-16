@@ -7,7 +7,7 @@ const Fastify = require('fastify')
 const { createPool, withTransaction } = require('./db/pool')
 const { migrate, listMigrations, DEFAULT_DIR } = require('./db/migrate')
 const { schemaState, assertNotNewer } = require('./db/upgrade')
-const { ensureAccessControl, describeUser } = require('./auth/access')
+const { ensureAccessControl, describeUser, WEAK_FOR_INTERNET } = require('./auth/access')
 const { ServiceError, unauthorized, forbidden, fromDatabaseError } = require('./errors')
 const { KEYS } = require('./auth/permissions')
 const { cloudRoute, kindOf, CLOUD_REFUSED } = require('./sync/operationKinds')
@@ -31,6 +31,10 @@ function sha256(s) {
 
 // The browser's session cookie (the internet way in). Never readable by page scripts.
 const SESSION_COOKIE = 'hm_session'
+// The operations whose `token` is a new session, carried in the cookie instead of the answer. Any
+// other answer keeps its fields as they are: a reservation's token (D-099) once replaced the
+// browser's session here, so the next action was answered as signed out (D-110).
+const SESSION_OPERATIONS = new Set(['auth.login', 'auth.setup', 'auth.setPassword', 'auth.recover'])
 function cookieOf(req, name) {
   for (const part of String(req.headers.cookie || '').split(';')) {
     const i = part.indexOf('=')
@@ -165,6 +169,9 @@ async function createService(cfg) {
     const user = await describeUser(pool, rows[0].user_id)
     if (!user || !user.isActive) throw unauthorized('تم تعطيل هذا الحساب.')
     if (cloud && !user.permissions.includes(INTERNET)) throw forbidden(NO_INTERNET)
+    // Internet access granted on one side while a simple password was chosen on the other (the
+    // two met by synchronisation): not through the internet until a strong one is chosen (D-113).
+    if (cloud && !user.passwordStrong) throw forbidden(WEAK_FOR_INTERNET)
     return { sessionId: rows[0].id, user }
   }
 
@@ -210,12 +217,13 @@ async function createService(cfg) {
           // reaches the shop when it is back (D-103) – except the few that need both sides together.
           if (await app.cloudLink.shopUp())
             return app.cloudLink.forward({ def, auth, body: req.body || {}, req })
-          if (kindOf(def.name) === 'linked')
-            throw new ServiceError(
-              503,
-              'shop_unreachable',
-              'المتجر غير متصل الآن. هذه العملية تحتاج اتصال المتجر (تغيير باركود أو حذف سجل أو إعادة ضبط)؛ حاول عند عودة الاتصال.'
-            )
+          // A change that needs the shop (a barcode change, a deletion, a purchase correction) is
+          // kept for it instead of refused (D-111): connectivity is not a permission. The shop
+          // carries it out once on its next contact, checking it again there.
+          if (kindOf(def.name) === 'linked') {
+            reply.code(202)
+            return app.cloudLink.defer({ def, auth, body: req.body || {}, req })
+          }
         }
         const ctx = {
           pool,
@@ -265,7 +273,7 @@ async function createService(cfg) {
         if (cloud && req.headers['x-heromarket-web'] === '1') {
           // A browser never holds the session token: it goes into the cookie, out of the answer.
           const cookie = { secure: !cfg.insecureCookies, hours: SESSION_HOURS }
-          if (result?.token) {
+          if (SESSION_OPERATIONS.has(def.name) && result?.token) {
             reply.header('set-cookie', sessionCookie(result.token, cookie))
             const { token: _kept, ...rest } = result
             return rest

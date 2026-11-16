@@ -2,11 +2,17 @@
 // Sign-in (stage 4 phase 3): username + password. PINs are only accepted once, to move an existing
 // user to a password (see src/server/auth/credentials.js); choosing the password erases the PIN.
 const crypto = require('crypto')
-const { describeUser } = require('../auth/access')
+const {
+  describeUser,
+  permissionsForRole,
+  passwordPolicyOf,
+  WEAK_FOR_INTERNET
+} = require('../auth/access')
 const { shiftRequiredFor } = require('../auth/shiftRule')
 const { checkCredentials } = require('../auth/credentials')
 const {
-  passwordProblem,
+  newPasswordProblem,
+  meetsStrongRule,
   hashPassword,
   verifyPassword,
   newRecoveryCode,
@@ -16,7 +22,7 @@ const {
   needsRehash
 } = require('../auth/password')
 const { guardKeys, checkGuard, recordFailure, clearTerminal } = require('../auth/guard')
-const { badRequest, unauthorized, conflict } = require('../errors')
+const { badRequest, unauthorized, conflict, forbidden } = require('../errors')
 const { sha256 } = require('../app')
 
 const WRONG = 'اسم المستخدم أو كلمة المرور غير صحيحة.'
@@ -52,12 +58,14 @@ async function openShiftOf(db, userId) {
  * sessions. A super administrator without a recovery code receives one (returned once, stored hashed).
  */
 async function storePassword(db, userId, password, { keepSessions = false } = {}) {
+  const username = (await db.query('SELECT username FROM users WHERE id = $1', [userId])).rows[0]
+    ?.username
   await db.query(
     `UPDATE users SET password_scrypt = $1, must_change_password = false, temp_password_expires_at = NULL,
-            password_changed_at = LOCALTIMESTAMP(0),
+            password_changed_at = LOCALTIMESTAMP(0), password_strong = $3,
             pin_lookup = NULL, pin_hash = NULL, password_hash = NULL, updated_at = LOCALTIMESTAMP(0)
       WHERE id = $2`,
-    [await hashPassword(password), userId]
+    [await hashPassword(password), userId, meetsStrongRule(password, username)]
   )
   if (!keepSessions)
     await db.query(
@@ -83,9 +91,18 @@ async function ensureRecoveryCode(db, userId, { replace = false } = {}) {
   return code
 }
 
-function assertNewPassword(password, username) {
-  const problem = passwordProblem(password, username)
-  if (problem) throw badRequest(problem, { code: 'weak_password' })
+/**
+ * Refuse a new password that does not meet the rule that applies (D-113): 'strong' for whoever may
+ * sign in through the internet (and by default), 'simple' for whoever signs in only at the shop.
+ */
+function assertNewPassword(password, username, policy = 'strong') {
+  const problem = newPasswordProblem(password, username, policy)
+  if (problem) throw badRequest(problem, { code: 'weak_password', policy })
+}
+
+/** The password rule of a role's permissions ('strong' with internet access). */
+async function policyOfRole(db, roleId) {
+  return passwordPolicyOf(roleId ? await permissionsForRole(db, roleId) : [])
 }
 
 const passwordSchema = { type: 'string', minLength: 1, maxLength: 128 }
@@ -178,8 +195,17 @@ module.exports = function authModule(app) {
         return {
           passwordChangeRequired: true,
           username: account.username,
-          firstPassword: !account.password_scrypt
+          firstPassword: !account.password_scrypt,
+          // The rule the password to choose must meet (D-113), for the screen's hints.
+          passwordPolicy: await policyOfRole(ctx.pool, account.role_id)
         }
+      // Through the internet only with a password that meets the strong rule (D-113).
+      if (
+        ctx.cloud &&
+        account.password_strong === false &&
+        (await policyOfRole(ctx.pool, account.role_id)) === 'strong'
+      )
+        throw forbidden(WEAK_FOR_INTERNET)
       return ctx.tx(async (db) => {
         // A hash made with older, weaker parameters is renewed now that the password is known (D-105).
         // Only in the shop: the cloud receives the new hash with the user's record.
@@ -223,7 +249,11 @@ module.exports = function authModule(app) {
       }
       clearTerminal(ctx.guard, key)
       if (state === 'expired') throw unauthorized(EXPIRED)
-      assertNewPassword(newPassword, account.username)
+      assertNewPassword(
+        newPassword,
+        account.username,
+        await policyOfRole(ctx.pool, account.role_id)
+      )
       if (newPassword === currentPassword)
         throw badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية.', {
           code: 'weak_password'
@@ -349,7 +379,7 @@ module.exports = function authModule(app) {
           recordFailure(ctx.guard, key)
           throw badRequest('كلمة المرور الحالية غير صحيحة!')
         }
-        assertNewPassword(newPassword, ctx.user.username)
+        assertNewPassword(newPassword, ctx.user.username, passwordPolicyOf(ctx.user.permissions))
         if (newPassword === currentPassword)
           throw badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية.')
         // Other terminals signed in as this user are signed out; this session stays.
@@ -393,4 +423,10 @@ module.exports = function authModule(app) {
   })
 }
 
-module.exports.helpers = { createSession, storePassword, assertNewPassword, passwordSchema }
+module.exports.helpers = {
+  createSession,
+  storePassword,
+  assertNewPassword,
+  policyOfRole,
+  passwordSchema
+}

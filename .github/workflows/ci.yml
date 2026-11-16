@@ -73,6 +73,11 @@ jobs:
           npm install --no-save --ignore-scripts playwright-core@1.49.1
           node scripts/e2e/browser.js
 
+      - name: Browser end-to-end – the owner on a phone with the shop offline, invoice corrections, codes 1/01/001
+        # The same pages, at phone and desk sizes (made-up data, D-110 – D-112).
+        timeout-minutes: 10
+        run: node scripts/e2e/owner.js
+
       - name: Dependency audit (gate)
         # Fails on any high or critical advisory, runtime or build, unless it has a reviewed, dated
         # exception in .github/audit-exceptions.json (pre-production audit SEC-07). The summary is

@@ -8,8 +8,13 @@
 //  - every change is audited; permission changes take effect on the next request (no caching).
 const { badRequest, conflict, forbidden, notFound } = require('../errors')
 const { PERMISSIONS, KEYS } = require('../auth/permissions')
-const { hashPassword, newTemporaryPassword, verifyPassword } = require('../auth/password')
-const { activeSuperAdmins, permissionsForRole } = require('../auth/access')
+const {
+  hashPassword,
+  newTemporaryPassword,
+  verifyPassword,
+  meetsStrongRule
+} = require('../auth/password')
+const { activeSuperAdmins, permissionsForRole, passwordPolicyOf } = require('../auth/access')
 const { helpers: authHelpers } = require('./auth')
 
 // Sign-in state shown to administrators: 'pin' (not moved to a password yet), 'temporary'
@@ -18,16 +23,35 @@ const LOGIN_STATE = `CASE WHEN u.password_scrypt IS NULL THEN 'pin'
   WHEN u.must_change_password THEN 'temporary' ELSE 'password' END`
 
 /**
- * Temporary password for a new or reset account: the administrator's choice (same rules as any
- * password) or a generated one. The user must replace it at their first sign-in.
+ * Temporary password for a new or reset account: the administrator's choice (the rule of the role
+ * it is for, D-113) or a generated one, which meets the strong rule. The user must replace it at
+ * their first sign-in. Returns it with whether it meets the strong rule (users.password_strong).
  */
-function temporaryPassword(given, username) {
+function temporaryPassword(given, username, role) {
   if (given) {
-    authHelpers.assertNewPassword(given, username)
-    return given
+    authHelpers.assertNewPassword(given, username, passwordPolicyOf(role.permissions))
+    return { temporary: given, strong: meetsStrongRule(given, username) }
   }
-  return newTemporaryPassword()
+  return { temporary: newTemporaryPassword(), strong: true }
 }
+
+/**
+ * Internet access only with a password that meets the strong rule (D-113): the users who would
+ * gain it with a simple password. Only a hash is kept, so the rule recorded when it was set decides.
+ */
+async function weakPasswordsAmong(db, userIds) {
+  if (!userIds.length) return []
+  return (
+    await db.query(
+      `SELECT username FROM users WHERE id = ANY($1::int[]) AND password_scrypt IS NOT NULL
+          AND NOT password_strong ORDER BY username`,
+      [userIds]
+    )
+  ).rows.map((r) => r.username)
+}
+const INTERNET = 'internet.access'
+const weakMessage = (names) =>
+  `كلمة مرور ${names.length === 1 ? `«${names[0]}»` : `هؤلاء المستخدمين (${names.map((n) => `«${n}»`).join('، ')})`} بسيطة، والدخول عبر الإنترنت يحتاج كلمة مرور قوية. أعد تعيين كلمة المرور (كلمة مؤقتة قوية) ليختار المستخدم كلمة قوية عند دخوله التالي، ثم امنح الصلاحية.`
 
 async function roleWithPerms(db, roleId) {
   const role = (await db.query('SELECT * FROM roles WHERE id = $1', [roleId])).rows[0]
@@ -88,7 +112,7 @@ module.exports = function adminModule(app) {
           throw conflict('اسم المستخدم هذا مسجل مسبقاً! يرجى اختيار اسم آخر.')
         }
         const role = await assertAssignable(db, ctx, u.roleId)
-        const temporary = temporaryPassword(u.password, username)
+        const { temporary, strong } = temporaryPassword(u.password, username, role)
         const legacyRole =
           role.key === 'super_admin'
             ? 'admin'
@@ -98,9 +122,9 @@ module.exports = function adminModule(app) {
                 ? 'cashier'
                 : role.key || 'custom'
         const r = await db.query(
-          `INSERT INTO users (username, role, role_id, password_scrypt, must_change_password, is_active, created_at)
-           VALUES ($1, $2, $3, $4, true, true, LOCALTIMESTAMP(0)) RETURNING id`,
-          [username, legacyRole, role.id, await hashPassword(temporary)]
+          `INSERT INTO users (username, role, role_id, password_scrypt, must_change_password, is_active, created_at, password_strong)
+           VALUES ($1, $2, $3, $4, true, true, LOCALTIMESTAMP(0), $5) RETURNING id`,
+          [username, legacyRole, role.id, await hashPassword(temporary), strong]
         )
         await ctx.audit(db, 'user_create', `إنشاء مستخدم جديد "${username}" بدور ${role.name}`)
         // Shown once to the administrator, who hands it to the user.
@@ -163,6 +187,17 @@ module.exports = function adminModule(app) {
         ) {
           throw conflict('اسم المستخدم هذا مسجل مسبقاً! يرجى اختيار اسم آخر.')
         }
+        // Internet access gained by a new role, with a simple password kept (D-113): refused, unless
+        // the password is replaced in the same step (a reset gives one that meets the role's rule).
+        const beforePermissions = before.role_id ? await permissionsForRole(db, before.role_id) : []
+        if (
+          !u.resetPassword &&
+          role.permissions.includes(INTERNET) &&
+          !beforePermissions.includes(INTERNET)
+        ) {
+          const weak = await weakPasswordsAmong(db, [before.id])
+          if (weak.length) throw conflict(weakMessage(weak), { code: 'weak_password_for_internet' })
+        }
         let temporary = null
         if (u.resetPassword) {
           if (isSelf) throw forbidden('لتغيير كلمة مرورك استخدم "تغيير كلمة المرور".')
@@ -181,12 +216,14 @@ module.exports = function adminModule(app) {
             )
             throw forbidden('كلمة مرورك غير صحيحة؛ لم تتم إعادة التعيين.')
           }
-          temporary = temporaryPassword(u.password, username)
+          const chosen = temporaryPassword(u.password, username, role)
+          temporary = chosen.temporary
           // The old password and any PIN stop working; the user's sessions end.
           await db.query(
             `UPDATE users SET password_scrypt = $1, must_change_password = true, pin_lookup = NULL, pin_hash = NULL,
-                    password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours' WHERE id = $2`,
-            [await hashPassword(temporary), u.id]
+                    password_hash = NULL, temp_password_expires_at = LOCALTIMESTAMP(0) + interval '72 hours',
+                    password_strong = $3 WHERE id = $2`,
+            [await hashPassword(temporary), u.id, chosen.strong]
           )
           await db.query(
             'UPDATE sessions SET revoked_at = LOCALTIMESTAMP(0) WHERE user_id = $1 AND revoked_at IS NULL',
@@ -347,6 +384,15 @@ module.exports = function adminModule(app) {
         assertWithinActor(ctx, [...added, ...removed])
         if (before.id === ctx.user.roleId && removed.includes('roles.manage')) {
           throw forbidden('لا يمكنك إزالة صلاحية إدارة الأدوار من دورك الحالي.')
+        }
+        // Internet access for a role whose users include simple passwords (D-113): refused, naming them.
+        if (added.includes(INTERNET)) {
+          const members = (
+            await db.query('SELECT id FROM users WHERE role_id = $1 AND is_active', [r.id])
+          ).rows.map((x) => x.id)
+          const weak = await weakPasswordsAmong(db, members)
+          if (weak.length)
+            throw conflict(weakMessage(weak), { code: 'weak_password_for_internet', users: weak })
         }
         await db.query(
           'UPDATE roles SET name = $1, description = $2, updated_at = LOCALTIMESTAMP(0) WHERE id = $3',

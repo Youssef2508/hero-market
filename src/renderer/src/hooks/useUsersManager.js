@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, isDeferred } from '../lib/api'
 
 export function useUsersManager({
   currentUser,
@@ -39,8 +39,8 @@ export function useUsersManager({
     }
     triggerCustomConfirm(`هل أنت متأكد من حذف حساب "${u.username}" نهائياً؟`, async () => {
       try {
-        await api('users.delete', { id: u.id })
-        triggerCustomAlert('تم حذف الحساب بنجاح!')
+        const res = await api('users.delete', { id: u.id })
+        triggerCustomAlert(isDeferred(res) ? `حذف الحساب: ${res.message}` : 'تم حذف الحساب بنجاح!')
         await fetchUsersList()
       } catch (err) {
         triggerCustomAlert(

@@ -8,7 +8,8 @@ import {
   templateSheets,
   readWorkbook,
   cellNumber,
-  cellText
+  cellText,
+  exportSheets
 } from '../../src/shared/storeImport.mjs'
 
 const roundTrip = async (sheets) => readExcelFile(await writeExcelFile(sheets).toBuffer())
@@ -95,4 +96,25 @@ test('cells: Arabic digits, separators and currency; whole numbers as text witho
   assert.equal(cellText(6221234567890), '6221234567890')
   assert.equal(cellText('٠١٠٠'), '0100')
   assert.ok(SHEETS.products.columns.some((c) => c.key === 'unit_kind'))
+})
+
+test('codes 1, 01 and 001 stay three codes through an export and its import (D-110)', async () => {
+  const products = ['1', '01', '001'].map((barcode, i) => ({
+    barcode,
+    name: `صنف ${i}`,
+    retail_price: 10,
+    cost_price: 5,
+    stock_qty: 0,
+    unit: 'قطعة',
+    unit_kind: 'بالعدد',
+    category: '',
+    reorder_limit: 0
+  }))
+  const sheets = await roundTrip(exportSheets({ products, customers: [], suppliers: [] }))
+  const r = readWorkbook(sheets)
+  assert.deepEqual(r.errors, [])
+  assert.deepEqual(
+    r.products.map((p) => p.barcode),
+    ['1', '01', '001']
+  )
 })

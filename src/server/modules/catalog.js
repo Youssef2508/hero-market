@@ -87,6 +87,8 @@ module.exports = function catalogModule(app) {
       const field = SORTABLE.includes(sortField) ? sortField : 'name'
       const params = []
       const conds = []
+      // The product whose code is exactly the text comes first (D-110): 1 before 01 and 001.
+      let exactFirst = ''
       if (search) {
         params.push(likeEscape(search))
         conds.push(
@@ -102,6 +104,11 @@ module.exports = function catalogModule(app) {
       const total = (
         await ctx.pool.query(`SELECT count(*) AS count FROM products p ${where}`, params)
       ).rows[0].count
+      const listParams = [...params]
+      if (search) {
+        listParams.push(search.trim())
+        exactFirst = `(p.barcode = $${listParams.length}) DESC, `
+      }
       const rows = (
         await ctx.pool.query(
           // The largest active package (D-065): the stock is also shown as complete packages and
@@ -111,8 +118,8 @@ module.exports = function catalogModule(app) {
              LEFT JOIN LATERAL (SELECT name, factor FROM product_units u
                                  WHERE u.product_barcode = p.barcode AND u.is_active
                                  ORDER BY u.factor DESC, u.id LIMIT 1) pk ON true
-            ${where} ORDER BY p.${field} ${sortAsc ? 'ASC' : 'DESC'}, p.barcode LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
-          params
+            ${where} ORDER BY ${exactFirst}p.${field} ${sortAsc ? 'ASC' : 'DESC'}, p.barcode LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
+          listParams
         )
       ).rows
       return { total, page, perPage: PER_PAGE, field, rows: maskCost(ctx, rows) }

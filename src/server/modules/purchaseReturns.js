@@ -24,7 +24,7 @@ async function purchaseLines(db, purchaseId) {
     await db.query(
       `SELECT i.id, i.product_barcode AS barcode, COALESCE(p.name, i.product_barcode) AS name, p.unit AS base_unit, i.qty::float8 AS qty,
               i.unit_cost::float8 AS unit_cost, i.line_total::float8 AS line_total,
-              i.unit_name, COALESCE(i.unit_factor, 1)::float8 AS unit_factor,
+              i.unit_id, i.unit_name, COALESCE(i.unit_factor, 1)::float8 AS unit_factor,
               COALESCE((SELECT SUM(r.qty) FROM supplier_purchase_return_items r WHERE r.purchase_item_id = i.id), 0)::float8 AS returned
          FROM supplier_purchase_items i LEFT JOIN products p ON p.barcode = i.product_barcode
         WHERE i.purchase_id = $1 ORDER BY i.id`,

@@ -95,7 +95,8 @@ async function permissionsForRole(db, roleId) {
 /** Public shape of the logged-in user (no secrets). `role` keeps the legacy text for existing UI labels. */
 async function describeUser(db, userId) {
   const { rows } = await db.query(
-    `SELECT u.id, u.username, u.role AS legacy_role, u.is_active, r.id AS role_id, r.key AS role_key, r.name AS role_name
+    `SELECT u.id, u.username, u.role AS legacy_role, u.is_active, u.password_strong,
+            r.id AS role_id, r.key AS role_key, r.name AS role_name
      FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
     [userId]
   )
@@ -110,9 +111,21 @@ async function describeUser(db, userId) {
     roleKey: u.role_key,
     roleName: u.role_name,
     isActive: u.is_active,
-    permissions
+    permissions,
+    // D-113: the rule a new password must meet – strong for whoever may sign in through the
+    // internet, simple for whoever signs in only at the shop – and whether the current one is strong.
+    passwordPolicy: passwordPolicyOf(permissions),
+    passwordStrong: u.password_strong !== false
   }
 }
+
+// D-113: an account that may sign in through the internet but whose password is a simple one.
+const WEAK_FOR_INTERNET =
+  'كلمة مرور هذا الحساب بسيطة ولا تصلح للدخول عبر الإنترنت. غيّرها إلى كلمة مرور قوية من جهاز المتجر («تغيير كلمة المرور»)، ثم سجّل الدخول من هنا.'
+
+/** The password rule for these permissions: 'strong' with internet access, otherwise 'simple'. */
+const passwordPolicyOf = (permissions) =>
+  permissions.includes('internet.access') ? 'strong' : 'simple'
 
 /** Number of active users holding the protected super-administrator role (lock-out protection). */
 async function activeSuperAdmins(db, excludeUserId = null) {
@@ -124,4 +137,11 @@ async function activeSuperAdmins(db, excludeUserId = null) {
   return rows[0].n
 }
 
-module.exports = { ensureAccessControl, permissionsForRole, describeUser, activeSuperAdmins }
+module.exports = {
+  ensureAccessControl,
+  permissionsForRole,
+  describeUser,
+  activeSuperAdmins,
+  passwordPolicyOf,
+  WEAK_FOR_INTERNET
+}
