@@ -15,7 +15,8 @@ const unauthorized = (msg = 'انتهت الجلسة، يرجى تسجيل ال�
   new ServiceError(401, 'unauthorized', msg)
 const forbidden = (msg = 'ليس لديك صلاحية لتنفيذ هذا الإجراء.') =>
   new ServiceError(403, 'forbidden', msg)
-const notFound = (msg = 'العنصر المطلوب غير موجود.') => new ServiceError(404, 'not_found', msg)
+const notFound = (msg = 'العنصر المطلوب غير موجود.', details) =>
+  new ServiceError(404, 'not_found', msg, details)
 const conflict = (msg, details) => new ServiceError(409, 'conflict', msg, details)
 // The operation moves drawer cash and the user has no open shift (the terminal offers to open one).
 const shiftRequired = (msg) => new ServiceError(409, 'shift_required', msg)

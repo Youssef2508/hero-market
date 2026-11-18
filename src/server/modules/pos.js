@@ -19,6 +19,7 @@ const {
   round4
 } = require('../inventory/units')
 const { badRequest, forbidden, conflict, notFound } = require('../errors')
+const { productForLabel } = require('../inventory/scaleItems')
 const { loadShift } = require('./shifts').helpers
 const { maskCost } = require('./catalog')
 const { readAll } = require('./settings')
@@ -220,31 +221,14 @@ module.exports = function posModule(app) {
             }
           )
         if (scale) {
+          // A scale item with the label's code, else a product registered the older way under the
+          // label's digits (2000001), else the one product whose code is the label's item code
+          // without leading zeros. Two at the same step: refused, never a choice (D-117).
+          product = await productForLabel(db, scale)
           const c = scale.code
-          // The product may be registered under the label's digits up to the code (2000001, as the
-          // owner registers them), the code digits (000001 / 1), or the digits after the prefix
-          // (00001: the code part of the defaults before 1.5.2).
-          const afterPrefix = scale.fullCode.slice(scale.prefix.length)
-          const candidates = [
-            ...new Set(
-              [
-                scale.fullCode,
-                c,
-                afterPrefix,
-                c.replace(/^0+/, ''),
-                afterPrefix.replace(/^0+/, '')
-              ].filter(Boolean)
-            )
-          ]
-          product = (
-            await db.query(
-              'SELECT * FROM products WHERE barcode = ANY($1::text[]) ORDER BY array_position($1::text[], barcode) LIMIT 1',
-              [candidates]
-            )
-          ).rows[0]
           if (!product)
             throw notFound(
-              `لا يوجد صنف مسجل بكود الميزان ${scale.fullCode} (${c}). سجّل الصنف بهذا الكود أولاً.`,
+              `لا يوجد صنف ميزان بكود ${scale.fullCode} (${c}). علّم الصنف «صنف ميزان» في شاشة الصنف، أو سجّله بهذا الكود.`,
               { scale: 'unknown_product', code: scale.fullCode }
             )
           if (scale.kind === 'weight' && (await kindRule(db, product.unit_kind)).decimals === 0)

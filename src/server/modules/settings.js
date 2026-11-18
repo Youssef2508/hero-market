@@ -6,6 +6,7 @@ const { pathToFileURL } = require('url')
 const { badRequest, conflict, notFound } = require('../errors')
 const { DEFAULT_SCALE, normalizeScaleLabels } = require('../inventory/units')
 const { normaliseRequiredRoles } = require('../auth/shiftRule')
+const { checkSettings } = require('../inventory/scaleItems')
 
 let receiptLib = null
 async function receipt() {
@@ -154,6 +155,8 @@ module.exports = function settingsModule(app) {
         for (const [k, raw] of Object.entries(values)) {
           const v = normalise(k, raw)
           if (v === before[k]) continue
+          // New scale settings must leave every scale item's label naming one product (D-117).
+          if (k === 'scale_labels') await checkSettings(db, JSON.parse(v))
           await db.query(
             'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
             [k, v]
