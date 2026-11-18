@@ -19,3 +19,17 @@ Written for the shop owner. 1.9.1 corrects one rule of «صنف ميزان» fro
 - Ticking `1` and `01` together, or `1` while `00001` is ticked: refused, also when two people do it at the same moment.
 - A return without an invoice with no reason, or only spaces, is saved with no reason.
 - Every automatic test.
+
+## The installer
+
+|            |                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| File       | `HeroMarket-Setup-1.9.1.exe`                                                                                                 |
+| Size       | 181,057,184 bytes                                                                                                            |
+| SHA-256    | `87f0e6f65e28bccd3b58bd3edf50a6659d3fe26730d7d2cf53caaecb10a0cf34`                                                           |
+| Built from | the tag `v1.9.1` (`main`'s merge commit `9213104`) by the release workflow on GitHub, after lint and every test passed there |
+| Signed     | no ("Windows protected your PC" → More info → Run anyway)                                                                    |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.9.1.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+**The website** was updated to 1.9.1 on 2026-11-18 and still serves the shop's own store, with the same link. Until the shop PC runs 1.9.1, its sync screen says the versions differ; that is expected.
