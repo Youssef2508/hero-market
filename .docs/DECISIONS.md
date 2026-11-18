@@ -1866,3 +1866,64 @@ Every change is in the shared service and the shared screens, so the shop PC and
   - the exact code against another product's 12/13-digit spelling;
   - a short code never gaining a zero;
   - a correction below what was returned, at a price that still covers the returns' credit.
+
+## D-116 Returns without an invoice (1.9.0)
+
+- **What:** a trusted customer brings goods back without the receipt. A separate screen, «مرتجع بدون فاتورة», and a separate permission, `sales.return_without_invoice`: administrators by default, never cashiers; the owner grants it to the roles he trusts with it. Invoice returns (`sales.returnItem`, `sales.returnEntire`) keep their own rules.
+- **Its own document:** `customer_returns` and `customer_return_items`. No invoice number is invented (`sale_returns.sale_id` stays required). Each line keeps the price applied, so a later price change never changes the return.
+- **Price:** the product's selling price now (of the unit returned): no invoice says what it was sold at. Shown before the confirmation. No price override (none exists for sales either).
+- **One transaction:**
+  - the goods back into sellable stock: one `customer_return` movement per product;
+  - the refund out of the user's own open shift drawer: one cash `refund` movement, described «مرتجع بدون فاتورة #…». The drawer's expected cash, the close report and the treasury therefore count it as a return. No open shift: refused (`shift_required`), as for every cash refund.
+- **Required:** a reason. **Optional:** a known customer.
+- **Once:** a request id (`client_ref`, unique). A retry, a second press or a lost reply returns the same return: never a second refund.
+- **Reports:** sales stay what was invoiced; these refunds are shown apart («returnsWithoutInvoice»), and their margin (refund − the cost of the goods back in stock) comes off the net profit.
+- **Synchronisation:** both tables are synchronised (an `add` operation, like invoice returns), and deliveries are idempotent by id.
+
+## D-117 Scale items keep their own codes (1.9.0)
+
+- **What:** «صنف ميزان» on a product (`products.scale_item`). A scale label is matched to the code without its leading zeros (`scale_key`), so code 1 is read from the label 2000001 001257 and never has to be registered as 2000001. The code is never changed.
+- **Opt-in only (owner, 2026-11-18):** the update marks nothing and changes no code. 2000001 stays 2000001, unmarked; 1 stays 1. Nothing is inferred from a code.
+- **How a label is resolved:**
+  1. A product's own barcode that is exactly the scanned text comes first, as before.
+  2. Otherwise the marked product with the label's key.
+  3. Otherwise, for products nobody marked, exactly as before 1.9.0: the first product whose code is one of the label's spellings, in a fixed order – the digits up to the item code (2000001), the item-code digits (00001), the digits after the prefix, then those without leading zeros (1).
+- **Marking is checked strictly,** in the service, under one lock, and refused (409, every conflict named) when:
+  - another marked product has the same key (1, 01, 001, 0001; in either order);
+  - another product answers that key's labels today – registered under the label's digits, or with exactly the key as its code (marking 01 while an unmarked 1 exists would move the labels 2000001… from 1 to 01);
+  - another product's own barcode is itself such a label;
+  - the code has letters or is longer than the label's item code;
+  - the labels carry weight and the product is counted in pieces.
+- **The same check runs on** a changed code, an extra barcode, the import (row errors), and the scale settings themselves (refused while any marked product would no longer fit or would conflict).
+- **Database guard:** one key per product (a unique constraint, deferred to the end of the transaction so one synchronised batch moving a key is applied whole).
+- **Shop only:** marking runs only at the shop (`linked`, D-111): the shop holds every code of the store.
+- **Audit:** «فحص أصناف الميزان» in the scale settings lists anything that no longer fits, and changes nothing.
+
+## D-118 Keyboard-first: the arrows move between the controls of every screen (1.9.0)
+
+- **The arrows:** an arrow key moves the focus to the nearest usable control in that direction on the screen, as the eye sees it – correct in Arabic without depending on the order of the page's code (`lib/spatialNav.js`).
+- **Order of preference:**
+  - the same row (for ← →) or the same column (for ↑ ↓) first;
+  - otherwise, within the area the focus is in (the top bar, the sidebar, the page), a control that lies mostly in that direction (within 45°);
+  - only when the area has nothing in that direction, the nearest control in another area.
+- **An open window is the only place it looks.** This replaces the cycle among a window's buttons (1.5.2); fields are reached too.
+- **Never taken from someone who needs it:**
+  - a component's own keys come first: the product list, table rows, radio groups, tabs, menus, the sidebar's vertical list;
+  - groups leave at their ends instead of going round;
+  - in a text field ← → move the caret and leave only from its edge (or when it is empty or all selected);
+  - a closed list box is passed like a button – Enter opens it and its arrows then choose;
+  - Tab, Shift+Tab, the F keys and the mouse are unchanged.
+- **Enter:** activates what has the focus. Buttons and links already did; a checkbox or radio toggles; a role=button, option or tab is clicked; a list box opens.
+- **Focus:** shown by a solid ring with a gap, in both themes.
+- **Fields with a value:** a window's first field with a value (the opening float) and a field reached by the arrows are selected, so typing replaces the value.
+- **The till:**
+  - after a scan, a choice from the list, a scale label or a weight, the focus is on that line's quantity, selected, so typing 50 replaces the 1;
+  - the quantity is a draft until Enter or leaving the box. Enter checks it against the product's measure: a counted product refuses 2.5, with the reason under the line and the focus kept; then Enter goes back to the product field;
+  - a scan that starts in the quantity box (the next product scanned without Enter) drops what it typed there and goes to the product field;
+  - a scan of a product already in the invoice is added to its own line, and the focus goes to that line.
+
+## D-119 «عدد الأصناف» at the till (1.9.0)
+
+- **What:** the invoice's distinct lines, always shown beside its title («عدد الأصناف: 3»): 5 Pepsi, 6 yogurt and 3 juice are 3.
+- **Source:** counted from the cart itself, so it follows every add, merge, removal, unit change, clear and completed sale. A carton and loose pieces of the same product are two lines, as in the cart.
+- **The badge beside it** keeps the amounts: pieces, kilograms, litres.
