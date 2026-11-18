@@ -1738,3 +1738,50 @@ label.btn.is-disabled {
   font-size: var(--fs-xs);
   white-space: normal;
 }
+
+/* «فحص أصناف الميزان» (D-117) */
+.scale-audit {
+  display: grid;
+  gap: var(--sp-2, 8px);
+  border-top: 1px solid var(--border);
+}
+.scale-audit-list {
+  margin: 0;
+  padding-inline-start: 1.2em;
+  font-size: var(--fs-sm);
+}
+
+/* «مرتجع بدون فاتورة» (D-116) */
+.dropdown-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface);
+  max-height: 260px;
+  overflow: auto;
+}
+.dropdown-list .dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.return-no-invoice {
+  display: grid;
+  gap: 16px;
+}
+.rni-qty {
+  width: 96px;
+}
+.rni-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fs-base);
+}
+.rni-total strong {
+  font-size: var(--fs-xl, 1.4rem);
+}

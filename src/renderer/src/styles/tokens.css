@@ -135,7 +135,8 @@
   --shadow-1: 0 1px 2px rgba(16, 32, 26, 0.05), 0 1px 1px rgba(16, 32, 26, 0.03);
   --shadow-2: 0 6px 18px rgba(16, 32, 26, 0.1), 0 2px 4px rgba(16, 32, 26, 0.05);
   --shadow-3: 0 24px 48px rgba(10, 24, 19, 0.2), 0 4px 12px rgba(10, 24, 19, 0.08);
-  --focus-ring: 0 0 0 3px rgba(21, 154, 114, 0.38);
+  /* Keyboard focus (D-118): a solid ring with a gap, clear on any background. */
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-focus);
 
   --sidebar-bg: #153b32;
   --sidebar-border: #10302a;
@@ -218,7 +219,7 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 22px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-3: 0 28px 56px rgba(0, 0, 0, 0.6), 0 6px 16px rgba(0, 0, 0, 0.35);
-  --focus-ring: 0 0 0 3px rgba(52, 195, 145, 0.42);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-focus);
 
   --sidebar-bg: #0a110f;
   --sidebar-border: #1c2723;

@@ -169,6 +169,7 @@ function App() {
     pendingWeight,
     confirmWeight,
     editWeight,
+    lastAdded,
     triggerDeleteItem,
     triggerClearCart,
     updateQty,
@@ -731,6 +732,7 @@ function App() {
             pendingWeight={pendingWeight}
             confirmWeight={confirmWeight}
             editWeight={editWeight}
+            lastAdded={lastAdded}
             triggerDeleteItem={triggerDeleteItem}
             cartSubtotal={cartSubtotal}
             discount={discount}

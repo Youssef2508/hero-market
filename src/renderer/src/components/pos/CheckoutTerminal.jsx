@@ -133,16 +133,60 @@ function ShortagesButton({ dbStats, onPrint, onPdf }) {
   )
 }
 
-// Quantity box of a cart line (POS-01). The typed text is kept while typing, so "0", "0." and
-// "0.5" can be typed (the box used to snap back to the cart value at "0"). A valid quantity reaches
-// the cart at once; on leaving the box, "0" removes the line (as before) and anything invalid goes
-// back to the last valid quantity.
-function QtyInput({ item, inputRef, onQty, onZero }) {
+/** Why a typed quantity does not suit the line (its measurement kind and unit), or ''. */
+function qtyProblem(item, value) {
+  const q = Number(value)
+  const decimals = kindInfo(item.kind).decimals
+  const base = q * (Number(item.factor) || 1)
+  const fits = (n, d) => Math.abs(n * 10 ** d - Math.round(n * 10 ** d)) < 1e-6
+  if (!fits(q, 3)) return 'الكمية تقبل ثلاث خانات عشرية على الأكثر.'
+  if (!fits(base, decimals))
+    return decimals === 0
+      ? `«${item.name}» يباع بالعدد: اكتب عدداً صحيحاً.`
+      : `الكمية تقبل ${decimals} خانات عشرية على الأكثر.`
+  return ''
+}
+
+// Quantity box of a cart line (POS-01, keyboard-first till D-118). The typed text is a draft: Enter
+// (or leaving the box) checks it and writes it to the line; Esc puts the line's quantity back. Reached
+// from the keyboard or after a scan, the box's text is selected, so typing 50 replaces the 1; a mouse
+// click places the caret as usual. Enter returns to the product field for the next scan. "0" removes
+// the line (as before). A scanner that starts typing here (the next product scanned without Enter)
+// is moved to the product field by useBarcode, which tells this box to drop what the scan typed.
+function QtyInput({ item, inputRef, onQty, onZero, onDone, onError }) {
   const [text, setText] = useState(String(item.qty))
   const focused = useRef(false)
+  const byMouse = useRef(false)
+  const dropDraft = useRef(false)
   // The cart changed from elsewhere (stepper, another scan): show it unless the user is typing.
   useEffect(() => {
     if (!focused.current) setText(String(item.qty))
+  }, [item.qty])
+  /** Check the draft and write it to the line; false (with the reason shown) when it is invalid. */
+  const commit = (draft, { quiet = false } = {}) => {
+    const { value, zero } = qtyFromText(draft)
+    if (zero) {
+      onZero()
+      return true
+    }
+    if (value === null || qtyProblem(item, value)) {
+      if (!quiet) onError(value === null ? 'اكتب كمية صحيحة أكبر من صفر.' : qtyProblem(item, value))
+      return false
+    }
+    if (Number(value) !== Number(item.qty)) onQty(value)
+    return true
+  }
+  // useBarcode tells the box a scan began in it (hm-scanner-took-focus): what it typed is dropped.
+  const own = useRef(null)
+  useEffect(() => {
+    const el = own.current
+    if (!el) return
+    const drop = () => {
+      dropDraft.current = true
+      setText(String(item.qty))
+    }
+    el.addEventListener('hm-scanner-took-focus', drop)
+    return () => el.removeEventListener('hm-scanner-took-focus', drop)
   }, [item.qty])
   return (
     <input
@@ -150,18 +194,43 @@ function QtyInput({ item, inputRef, onQty, onZero }) {
       inputMode="decimal"
       className="qty-input num"
       value={text}
-      ref={inputRef}
-      onFocus={() => (focused.current = true)}
-      onChange={(e) => {
-        setText(e.target.value)
-        const { value } = qtyFromText(e.target.value)
-        if (value !== null) onQty(value)
+      ref={(el) => {
+        own.current = el
+        inputRef(el)
+      }}
+      data-qty-input=""
+      data-line-key={item.key}
+      onMouseDown={() => (byMouse.current = true)}
+      onFocus={(e) => {
+        focused.current = true
+        dropDraft.current = false
+        // From the keyboard or a scan: the whole quantity, so the first digit typed replaces it.
+        if (!byMouse.current) e.target.select()
+        byMouse.current = false
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (commit(text)) onDone()
+          else e.target.select()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          e.stopPropagation()
+          setText(String(item.qty))
+          dropDraft.current = true
+          onDone()
+        }
       }}
       onBlur={() => {
         focused.current = false
-        const { value, zero } = qtyFromText(text)
-        if (zero) onZero()
-        else if (value === null) setText(String(item.qty))
+        if (dropDraft.current) {
+          dropDraft.current = false
+          setText(String(item.qty))
+          return
+        }
+        if (!commit(text, { quiet: true })) setText(String(item.qty))
       }}
       aria-label={`كمية ${item.name}`}
     />
@@ -255,6 +324,7 @@ function CheckoutTerminal({
   pendingWeight,
   confirmWeight,
   editWeight,
+  lastAdded = null,
   triggerDeleteItem,
   cartSubtotal,
   discount,
@@ -418,6 +488,32 @@ function CheckoutTerminal({
   const rowRefs = useRef({})
   const prevCartRef = useRef(cart)
   const resultsRef = useRef(null)
+  // Keyboard-first till (D-118): each line's quantity box by line key, and its last error.
+  const qtyByKey = useRef({})
+  const [qtyError, setQtyError] = useState(null)
+
+  /** Back to the product field, ready for the next scan or name. */
+  const backToSearch = () => {
+    const field = barcodeInputRef.current
+    if (!field) return
+    field.focus()
+    field.select?.()
+  }
+
+  // After a scan, a choice from the list or a weight: the quantity of exactly the line it reached,
+  // selected, so typing the quantity replaces it and Enter goes back to the product field. Not while
+  // a window is open (the weight window, a question): its own focus comes first.
+  useEffect(() => {
+    if (!lastAdded) return
+    const t = setTimeout(() => {
+      if (document.querySelector('.modal-overlay')) return
+      const el = qtyByKey.current[lastAdded.key]
+      if (!el || !el.isConnected) return
+      el.focus()
+      el.select()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [lastAdded])
 
   // Brief highlight + scroll for the line that was just added or incremented.
   useEffect(() => {
@@ -536,8 +632,8 @@ function CheckoutTerminal({
   const otherKinds = [...new Set(cart.map((i) => i.kind || 'count'))].filter(
     (k) => !['count', 'weight', 'volume'].includes(k)
   )
+  // The distinct lines are shown on their own («عدد الأصناف», D-119); the badge gives the amounts.
   const cartSummary = [
-    `${itemCount} صنف`,
     pieceCount ? `${Math.round(pieceCount)} قطعة` : null,
     kgCount ? `${(Math.round(kgCount * 1000) / 1000).toFixed(3)} كجم` : null,
     literCount ? `${(Math.round(literCount * 1000) / 1000).toFixed(3)} لتر` : null,
@@ -683,7 +779,13 @@ function CheckoutTerminal({
           <div className="cart-head">
             <div className="cart-title">
               <h2>الفاتورة الحالية</h2>
-              {itemCount > 0 && <span className="badge num">{cartSummary}</span>}
+              {/* Distinct lines of the invoice, from the cart itself (D-119): 5 Pepsi and 6 yogurt are 2. */}
+              <span className="cart-count" aria-live="polite" data-testid="cart-line-count">
+                عدد الأصناف: <strong className="num">{itemCount}</strong>
+              </span>
+              {itemCount > 0 && cartSummary.trim() && (
+                <span className="badge num">{cartSummary}</span>
+              )}
             </div>
             <div className="row">
               <ShortagesButton
@@ -776,9 +878,20 @@ function CheckoutTerminal({
                           </button>
                           <QtyInput
                             item={item}
-                            inputRef={(el) => (qtyInputRefs.current[index] = el)}
-                            onQty={(v) => handleQtyChangeAttempt(item.key, v)}
+                            inputRef={(el) => {
+                              qtyInputRefs.current[index] = el
+                              qtyByKey.current[item.key] = el
+                            }}
+                            onQty={(v) => {
+                              setQtyError(null)
+                              handleQtyChangeAttempt(item.key, v)
+                            }}
                             onZero={() => triggerDeleteItem(item.key)}
+                            onDone={() => {
+                              setQtyError(null)
+                              backToSearch()
+                            }}
+                            onError={(message) => setQtyError({ key: item.key, message })}
                           />
                           <button
                             type="button"
@@ -792,6 +905,11 @@ function CheckoutTerminal({
                             <Minus size={14} />
                           </button>
                         </div>
+                        {qtyError?.key === item.key && (
+                          <span className="qty-error" role="alert">
+                            {qtyError.message}
+                          </span>
+                        )}
                         {item.units && item.units.length > 1 ? (
                           <select
                             className="line-unit-select"
@@ -1120,7 +1238,15 @@ function CheckoutTerminal({
                       type="button"
                       key={c.id}
                       className="dropdown-item client-result"
-                      onClick={() => selectClient(c)}
+                      onClick={(e) => {
+                        // The list closes with the choice: the keyboard goes on from the customer's
+                        // name (D-118), never from nowhere.
+                        const field = e.currentTarget
+                          .closest('.customer-fields')
+                          ?.querySelector('input[aria-label="اسم العميل"]')
+                        selectClient(c)
+                        setTimeout(() => field?.focus(), 0)
+                      }}
                     >
                       <span className="client-result-name">
                         {c.name} {c.code && <span className="ltr-id cell-muted">{c.code}</span>}

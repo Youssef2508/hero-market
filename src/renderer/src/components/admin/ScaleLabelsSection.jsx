@@ -1,5 +1,7 @@
-import { Scale, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Scale, Plus, Trash2, ShieldCheck } from 'lucide-react'
 import { NumberField } from '../ui'
+import { api } from '../../lib/api'
 
 const parse = (text) => {
   try {
@@ -168,6 +170,57 @@ export default function ScaleLabelsSection({ value, defaults, onChange }) {
           )}
         </details>
       </details>
+      <ScaleAudit />
     </section>
+  )
+}
+
+/**
+ * «فحص أصناف الميزان» (D-117): every product marked «صنف ميزان» checked against the saved settings –
+ * codes that no longer fit the label and any two products one label could not tell apart. Nothing is
+ * changed: the owner decides which code to change or which mark to remove.
+ */
+function ScaleAudit() {
+  const [result, setResult] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const run = async () => {
+    setBusy(true)
+    try {
+      setResult(await api('products.scaleAudit', {}))
+    } catch (e) {
+      setResult({ error: e.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="card-body scale-audit">
+      <button type="button" className="btn btn-secondary btn-sm" onClick={run} disabled={busy}>
+        <ShieldCheck size={15} aria-hidden="true" />
+        فحص أصناف الميزان
+      </button>
+      {result?.error && <p className="field-error">{result.error}</p>}
+      {result && !result.error && (
+        <div role="status">
+          {result.problems.length === 0 ? (
+            <p className="text-muted">
+              {result.items} صنف ميزان، ولا يوجد تعارض: كل ملصق يقرأ صنفاً واحداً فقط.
+            </p>
+          ) : (
+            <>
+              <p className="field-error">
+                {result.problems.length} مشكلة في أصناف الميزان. غيّر كود أحد الصنفين أو عطّل خاصية
+                الميزان لأحدهما من شاشة الصنف:
+              </p>
+              <ul className="scale-audit-list">
+                {result.problems.map((p, i) => (
+                  <li key={i}>{p.message}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

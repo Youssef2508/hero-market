@@ -16,12 +16,12 @@
 // used Esc itself, for example to close a list inside it); Tab and Shift+Tab stay inside the top
 // window; a window that opens takes the focus (its first field, else its cancel button, never a
 // confirm button) and gives it back to where it was when it closes. The arrow keys move between
-// its buttons (owner, 2026-10-22).
+// everything in the window, fields too, by where it is on the screen (spatialNav.js, D-118; until
+// 1.8.0 they moved only between its buttons).
 
 const dirty = new WeakSet()
 let asking = false
 const openers = new Map()
-const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
 let lastOutside = null
 
 const FOCUSABLE =
@@ -45,8 +45,21 @@ function focusablesIn(overlay) {
   )
 }
 
+/** A field that opens with a value (the opening float, a suggested amount) is selected, so what the
+ * keyboard types replaces it (D-118) instead of being added to it. */
+function selectValue(el) {
+  if (!el?.matches?.('input') || !el.value || typeof el.select !== 'function') return
+  try {
+    if (el.selectionStart === el.selectionEnd) el.select()
+  } catch {
+    /* types without a selection */
+  }
+}
+
 function focusInto(overlay) {
-  if (!overlay.isConnected || overlay.contains(document.activeElement)) return
+  if (!overlay.isConnected) return
+  // A field with autoFocus already has it: only its value is selected.
+  if (overlay.contains(document.activeElement)) return selectValue(document.activeElement)
   const all = focusablesIn(overlay)
   const target =
     all.find((el) => el.matches('input:not([readonly]),select,textarea')) ||
@@ -54,6 +67,7 @@ function focusInto(overlay) {
     all.find((el) => !el.matches('.modal-close')) ||
     all[0]
   target?.focus()
+  selectValue(target)
 }
 
 function trackFocus() {
@@ -94,33 +108,6 @@ function onKeyDown(e) {
     if (wrapTo) {
       e.preventDefault()
       wrapTo.focus()
-    }
-  } else if (ARROWS.has(e.key) && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-    // Arrows move between a window's buttons and checkboxes (owner, 2026-10-22). Text and number
-    // fields, lists, dropdowns, radio groups and tabs keep their own arrows.
-    const top = topOverlay()
-    const el = document.activeElement
-    if (!top || !el || !top.contains(el) || e.defaultPrevented) return
-    const movable =
-      el.matches('button, a[href], input[type=checkbox]') &&
-      !el.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
-    if (!movable) return
-    // Only among buttons and checkboxes: an arrow never lands in a text field (which keeps its own).
-    const list = focusablesIn(top).filter(
-      (x) =>
-        !x.matches('.modal-close') &&
-        x.matches('button, a[href], input[type=checkbox]') &&
-        !x.closest('[role=tablist], [role=listbox], [role=menu], [role=radiogroup], tr[tabindex]')
-    )
-    const i = list.indexOf(el)
-    if (i === -1) return
-    // Right to left: ← and ↓ go forward, → and ↑ go back.
-    const rtl = getComputedStyle(top).direction === 'rtl'
-    const forward = e.key === 'ArrowDown' || (rtl ? e.key === 'ArrowLeft' : e.key === 'ArrowRight')
-    const next = list[(i + (forward ? 1 : -1) + list.length) % list.length]
-    if (next && next !== el) {
-      e.preventDefault()
-      next.focus()
     }
   } else if (e.key === 'Escape') {
     const top = topOverlay()

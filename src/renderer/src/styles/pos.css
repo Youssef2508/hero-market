@@ -347,6 +347,28 @@
   outline: none;
   background: var(--accent-soft);
 }
+/* The quantity being typed after a scan (D-118): unmistakable, in both themes. */
+.qty-input:focus-visible,
+.qty-input:focus {
+  box-shadow: inset 0 0 0 2px var(--border-focus);
+}
+.qty-error {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--danger-text);
+}
+/* «عدد الأصناف» (D-119): the invoice's distinct lines, always shown. */
+.cart-count {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cart-count strong {
+  color: var(--text);
+  font-size: var(--fs-base);
+}
 .line-unit {
   display: block;
   margin-top: 2px;

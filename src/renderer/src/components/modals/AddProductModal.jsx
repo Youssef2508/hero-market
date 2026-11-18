@@ -154,6 +154,20 @@ const AddProductModal = ({
                 onChange={(id) => setNewProduct((prev) => ({ ...prev, category_id: id }))}
               />
             </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={!!newProduct.scale_item}
+                onChange={(e) =>
+                  setNewProduct((prev) => ({ ...prev, scale_item: e.target.checked }))
+                }
+                data-testid="scale-item"
+              />
+              <span>
+                صنف ميزان: يُقرأ من ملصق الميزان بكوده نفسه (مثلاً الكود 1 من الملصق 2000001…)،
+                ويبقى الكود كما هو للبحث والبيع اليدوي.
+              </span>
+            </label>
           </div>
 
           <div className="modal-footer">

@@ -30,6 +30,9 @@ export function useCart({ playSound }) {
   const [depositChange, setDepositChange] = useState('')
   const [appliedCredit, setAppliedCredit] = useState(0)
   const [pendingWeight, setPendingWeight] = useState(null)
+  // The line a scan, a choice from the list or a weight just added or merged into (keyboard-first
+  // till, D-118): the till focuses its quantity box. `n` makes a second scan of the same line count.
+  const [lastAdded, setLastAdded] = useState(null)
 
   // Derived state: Cart subtotal before discount and credit
   const subTotal = round2(cart.reduce((sum, item) => sum + (item.total || 0), 0))
@@ -68,6 +71,7 @@ export function useCart({ playSound }) {
     }
     const qtyToAdd = given === null || given === undefined ? 1 : Number(given)
     const key = lineKey(product.barcode, unit.id)
+    setLastAdded((prev) => ({ key, n: (prev?.n || 0) + 1 }))
 
     setCart((prevCart) => {
       const existing = prevCart.find((item) => item.key === key)
@@ -110,6 +114,7 @@ export function useCart({ playSound }) {
     if (!p || kg === null || !(kg > 0)) return
     if (p.editKey) {
       updateQty(p.editKey, round3(kg))
+      setLastAdded((prev) => ({ key: p.editKey, n: (prev?.n || 0) + 1 }))
       return
     }
     addToCart({ product: p.product, unit: p.unit, units: p.units }, round3(kg))
@@ -225,6 +230,7 @@ export function useCart({ playSound }) {
     triggerClearCart,
     pendingWeight,
     confirmWeight,
-    editWeight
+    editWeight,
+    lastAdded
   }
 }
