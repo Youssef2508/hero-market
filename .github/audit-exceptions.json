@@ -1,4 +1,11 @@
 {
   "_comment": "Reviewed exceptions to the dependency gate (scripts/audit-gate.js). Each entry: advisory (the GHSA URL npm audit reports), reason, reviewedBy, expires (YYYY-MM-DD, at most 90 days ahead). An expired entry blocks again.",
-  "exceptions": []
+  "exceptions": [
+    {
+      "advisory": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "reason": "picomatch ReDoS on crafted extglob patterns; no patched release exists (all <= 4.0.7). A dev-only dependency of Vite (via fdir and tinyglobby), run at build time on the project's own glob patterns; it is not in the installer, the cloud server image or any code that handles user input. Upgrade as soon as a patched version is released.",
+      "reviewedBy": "Youssef2508 (approved 2026-11-18)",
+      "expires": "2027-02-15"
+    }
+  ]
 }
