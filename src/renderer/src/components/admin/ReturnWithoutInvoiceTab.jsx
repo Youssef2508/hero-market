@@ -168,7 +168,7 @@ export default function ReturnWithoutInvoiceTab({
   }
 
   const problems = lines.map((l) => qtyProblem(l, l.qty)).filter(Boolean)
-  const ready = lines.length > 0 && !problems.length && reason.trim() && total > 0
+  const ready = lines.length > 0 && !problems.length && total > 0
 
   const submit = async () => {
     if (!ready || busy) return
@@ -204,11 +204,7 @@ export default function ReturnWithoutInvoiceTab({
 
   const confirm = () => {
     if (!ready) {
-      setError(
-        !lines.length
-          ? 'أضف صنفاً واحداً على الأقل.'
-          : problems[0] || (!reason.trim() ? 'اكتب سبب المرتجع.' : 'قيمة المرتجع صفر.')
-      )
+      setError(!lines.length ? 'أضف صنفاً واحداً على الأقل.' : problems[0] || 'قيمة المرتجع صفر.')
       return
     }
     triggerCustomConfirm(
@@ -407,7 +403,7 @@ export default function ReturnWithoutInvoiceTab({
             </ul>
           )}
           <label className="field">
-            <span className="field-label">السبب *</span>
+            <span className="field-label">السبب (اختياري)</span>
             <input
               className="input"
               value={reason}

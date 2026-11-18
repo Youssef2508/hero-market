@@ -222,18 +222,9 @@ async function checkRows(db, body) {
       await db.query('SELECT barcode, name, scale_key FROM products WHERE scale_item')
     ).rows
     const keyRows = new Map()
-    // The label texts of a key, compiled once per key.
-    const compiled = new Map()
-    const matches = (key, code) => {
-      if (!compiled.has(key))
-        compiled.set(
-          key,
-          scaleItems
-            .labelPatterns(cfg, key)
-            .map((x) => ({ S: x.S, full: new RegExp(x.full), after: new RegExp(x.afterPrefix) }))
-        )
-      return compiled.get(key).some((x) => code === x.S || x.full.test(code) || x.after.test(code))
-    }
+    // A code in the file that is itself a whole label of a scale item's key (any other code is only
+    // itself: an unmarked 00001 does not stop 1 being marked, owner 2026-11-18).
+    const matches = (key, code) => scaleItems.labelKey(cfg, code) === key
     for (const p of cleanProducts.filter((x) => x.scale && x.barcode)) {
       const why = scaleItems.unfit(cfg, p.barcode)
       if (why) {
@@ -249,7 +240,7 @@ async function checkRows(db, body) {
           'scale_item'
         )
       else keyRows.set(key, p)
-      for (const c of await scaleItems.conflictsForKey(db, cfg, key, p.barcode, { marking: true }))
+      for (const c of await scaleItems.conflictsForKey(db, cfg, key, p.barcode))
         fail(
           P,
           p.row,

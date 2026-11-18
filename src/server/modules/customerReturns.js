@@ -72,7 +72,7 @@ module.exports = function customerReturnsModule(app) {
     permission: PERMISSION,
     schema: {
       type: 'object',
-      required: ['clientRef', 'lines', 'reason'],
+      required: ['clientRef', 'lines'],
       additionalProperties: false,
       properties: {
         clientRef: { type: 'string', minLength: 8, maxLength: 120 },
@@ -89,8 +89,8 @@ module.exports = function customerReturnsModule(app) {
           await db.query('SELECT id FROM customer_returns WHERE client_ref = $1', [clientRef])
         ).rows[0]
         if (done) return { ...(await documentOf(db, done.id)), duplicate: true }
-        const why = String(reason || '').trim()
-        if (!why) throw badRequest('اكتب سبب المرتجع (مثلاً: عميل معروف بدون الفاتورة).')
+        // The reason is optional (owner, 1.9.1): empty is stored as NULL.
+        const why = String(reason || '').trim() || null
         const shiftId = await ownOpenShift(db, ctx, currentShiftId)
         let client = null
         if (clientId) {
@@ -211,7 +211,7 @@ module.exports = function customerReturnsModule(app) {
         await ctx.audit(
           db,
           'customer_return',
-          `مرتجع بدون فاتورة #${head.id} بقيمة ${total.toFixed(2)} ج.م${client ? ` من العميل ${client.name}` : ''} – السبب: ${why}`,
+          `مرتجع بدون فاتورة #${head.id} بقيمة ${total.toFixed(2)} ج.م${client ? ` من العميل ${client.name}` : ''}${why ? ` – السبب: ${why}` : ''}`,
           {
             items: priced.map((l) => ({
               barcode: l.product.barcode,
