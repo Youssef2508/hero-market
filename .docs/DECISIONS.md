@@ -1875,7 +1875,7 @@ Every change is in the shared service and the shared screens, so the shop PC and
 - **One transaction:**
   - the goods back into sellable stock: one `customer_return` movement per product;
   - the refund out of the user's own open shift drawer: one cash `refund` movement, described «مرتجع بدون فاتورة #…». The drawer's expected cash, the close report and the treasury therefore count it as a return. No open shift: refused (`shift_required`), as for every cash refund.
-- **Required:** a reason. **Optional:** a known customer.
+- **Optional:** a reason and a known customer. (1.9.0 required the reason; the owner made it optional in 1.9.1, migration 0042: empty is stored as NULL.)
 - **Once:** a request id (`client_ref`, unique). A retry, a second press or a lost reply returns the same return: never a second refund.
 - **Reports:** sales stay what was invoiced; these refunds are shown apart («returnsWithoutInvoice»), and their margin (refund − the cost of the goods back in stock) comes off the net profit.
 - **Synchronisation:** both tables are synchronised (an `add` operation, like invoice returns), and deliveries are idempotent by id.
@@ -1886,14 +1886,14 @@ Every change is in the shared service and the shared screens, so the shop PC and
 - **Opt-in only (owner, 2026-11-18):** the update marks nothing and changes no code. 2000001 stays 2000001, unmarked; 1 stays 1. Nothing is inferred from a code.
 - **How a label is resolved:**
   1. A product's own barcode that is exactly the scanned text comes first, as before.
-  2. Otherwise the marked product with the label's key.
-  3. Otherwise, for products nobody marked, exactly as before 1.9.0: the first product whose code is one of the label's spellings, in a fixed order – the digits up to the item code (2000001), the item-code digits (00001), the digits after the prefix, then those without leading zeros (1).
+  2. Otherwise the marked product with the label's key. It takes its key's labels even where an unmarked product answered them before.
+  3. Only when no product is marked for the key, exactly as before 1.9.0: the first product whose code is one of the label's spellings, in a fixed order – the digits up to the item code (2000001), the item-code digits (00001), the digits after the prefix, then those without leading zeros (1).
 - **Marking is checked strictly,** in the service, under one lock, and refused (409, every conflict named) when:
   - another marked product has the same key (1, 01, 001, 0001; in either order);
-  - another product answers that key's labels today – registered under the label's digits, or with exactly the key as its code (marking 01 while an unmarked 1 exists would move the labels 2000001… from 1 to 01);
   - another product's own barcode is itself such a label;
   - the code has letters or is longer than the label's item code;
   - the labels carry weight and the product is counted in pieces.
+- **An unmarked product is only its own code (owner, 1.9.1, 2026-11-18).** 1.9.0 also refused a mark that would take a label from an unmarked product that answered it under step 3 (for example marking 1 while an unmarked 00001 or 2000001 exists). The owner corrected this: only another _marked_ product (or a barcode that is itself a label) conflicts. Typing or scanning 00001 or 2000001 still finds exactly that product.
 - **The same check runs on** a changed code, an extra barcode, the import (row errors), and the scale settings themselves (refused while any marked product would no longer fit or would conflict).
 - **Database guard:** one key per product (a unique constraint, deferred to the end of the transaction so one synchronised batch moving a key is applied whole).
 - **Shop only:** marking runs only at the shop (`linked`, D-111): the shop holds every code of the store.

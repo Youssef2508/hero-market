@@ -111,7 +111,7 @@ Unchanged by design: the new layer handles only the four arrow keys.
 
 - **Permission:** `sales.return_without_invoice`, given to «مدير النظام» and «مدير المتجر» only; never to cashiers by default. The service checks it on every request: a cashier's call is refused with 403 and nothing is written.
 - **Screen:** «مرتجع بدون فاتورة» in «البيع اليومي», shown only with the permission.
-- **The return:** scan or type each product; quantity (counted products whole, weights to the gram); an optional known customer; a required reason; the refund shown, then confirmed.
+- **The return:** scan or type each product; quantity (counted products whole, weights to the gram); an optional known customer; an optional reason (required in 1.9.0, optional since 1.9.1); the refund shown, then confirmed.
 - **Price:** the product's selling price now (of the unit returned), kept on the line.
 - **Its own document:** `customer_returns` + `customer_return_items`, with its number, time, user, customer, reason, lines, prices, total, the drawer movement and each stock movement. No invoice number is invented.
 
@@ -122,7 +122,7 @@ Unchanged by design: the new layer handles only the four arrow keys.
 - **Close report:** the return is in the returns list («مرتجع بدون فاتورة», no invoice) and counted in the returns total and the drawer's refunds. No open shift: refused with `shift_required`.
 - **Reports:** sales stay what was invoiced. The returns are shown apart, and their margin (refund − cost of the goods back) comes off the net profit (dashboard and periodic).
 - **Once only:** the same request twice, or two at the same moment → one return, one movement of each kind.
-- **Invalid inputs** are refused whole, with nothing written: 1.5 of a counted product, more than 3 decimals of a kilogram, an unknown product, an empty reason, no lines, a negative quantity, a product priced 0, a valid line beside an invalid one.
+- **Invalid inputs** are refused whole, with nothing written: 1.5 of a counted product, more than 3 decimals of a kilogram, an unknown product, no lines, a negative quantity, a product priced 0, a valid line beside an invalid one.
 - **Offline and duplicate delivery:** made with the link down → not on the website; after reconnecting, the website holds the return, its line, its drawer movement and its stock movement once. Everything sent a second time → still once.
 
 ## 8. Scale labels (D-117): decoding and an example
@@ -151,9 +151,6 @@ Typed codes stay exact: 1, 01, 001 and 0001 are four products, as fixed in D-110
   - 1 then 01 / 001 / 0001;
   - 03 then 3;
   - 004 then 0004;
-- another product answers that key's labels today:
-  - a product registered under the label's digits (2000005 stops 5);
-  - an unmarked product whose code is exactly the key (01 cannot be marked while 1 exists, or labels 2000001… would move from 1 to 01);
 - another product's own barcode is such a label;
 - the code has letters or is longer than the label's item code.
 
@@ -234,7 +231,7 @@ The end-to-end run saves them:
 - **Not tested end to end:**
   - a desktop restart while a no-invoice return waits to be sent (the outbox survives restarts, as for every table, but it was not tested for this one);
   - the website's own use of «مرتجع بدون فاتورة» from the owner's phone (it uses the owner's open shift there, like invoice returns).
-- **New behaviour for the owner:** marking 01 while an unmarked 1 exists is refused. If he wants 01 on the scale, he first changes or removes the conflicting code.
+- **Changed in 1.9.1 (owner, 2026-11-18):** an unmarked product no longer stops a mark. 1.9.0 refused marking 1 while an unmarked 00001 (or 2000001) existed, because labels 2000001… found 00001 before. Now the marked product takes its labels, and the unmarked one stays its own code.
 
 ## 17. In-place upgrade procedure
 
