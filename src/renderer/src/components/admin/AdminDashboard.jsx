@@ -25,6 +25,7 @@ const ClientsTab = lazy(() => import('./ClientsTab'))
 const SuppliersTab = lazy(() => import('./SuppliersTab'))
 const ChecksTab = lazy(() => import('./ChecksTab'))
 const DashboardPeriod = lazy(() => import('./DashboardPeriod'))
+const ReturnWithoutInvoiceTab = lazy(() => import('./ReturnWithoutInvoiceTab'))
 const TreasuryTab = lazy(() => import('./TreasuryTab'))
 const UsersTab = lazy(() => import('./UsersTab'))
 const ExpensesTab = lazy(() => import('./ExpensesTab'))
@@ -235,6 +236,15 @@ export default function AdminDashboard(props) {
         )}
         {adminTab === 'sales' && <SalesTab {...props} />}
         {adminTab === 'returns' && <InvoiceActionTab {...props} action="return" />}
+        {adminTab === 'return-no-invoice' && (
+          <ReturnWithoutInvoiceTab
+            currentUser={currentUser}
+            currentShift={props.currentShift}
+            onOpenShift={props.onOpenShift}
+            triggerCustomAlert={props.triggerCustomAlert}
+            triggerCustomConfirm={props.triggerCustomConfirm}
+          />
+        )}
         {adminTab === 'reprint' && <InvoiceActionTab {...props} action="reprint" />}
         {adminTab === 'payment-change' && <InvoiceActionTab {...props} action="payment" />}
         {adminTab === 'suppliers' && <SuppliersTab {...props} />}

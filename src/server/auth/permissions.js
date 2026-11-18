@@ -106,6 +106,15 @@ const PERMISSIONS = [
     description: 'إرجاع صنف أو فاتورة كاملة'
   },
   {
+    // A trusted customer's goods back without the receipt (owner, 1.9.0, D-116): the goods return
+    // to stock and the refund leaves the drawer at the current selling price. Administrators only by
+    // default; the owner grants it to the roles he trusts with it.
+    key: 'sales.return_without_invoice',
+    module: 'sales',
+    label: 'مرتجع بدون فاتورة',
+    description: 'استلام أصناف من عميل بدون فاتورة البيع وصرف قيمتها نقداً بسعر البيع الحالي'
+  },
+  {
     key: 'sales.return_request',
     module: 'sales',
     label: 'طلب مرتجع بموافقة المشرف',
@@ -415,6 +424,8 @@ const MANAGEMENT = ALL.filter(
       'suppliers.payment_approve',
       // Correcting a recorded purchase's lines and amounts (D-112).
       'suppliers.purchase_revise',
+      // Returns without an invoice: administrators by default; the owner grants them (D-116).
+      'sales.return_without_invoice',
       // The cheque archive is for administrators only (owner, 2026-10-21, D-060).
       'checks.archive',
       // Every cashier's invoices: administrators by default; supervisors see their own shift's (D-081).

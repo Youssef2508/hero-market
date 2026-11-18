@@ -91,6 +91,33 @@ async function returnLines(db, shiftId) {
       at: r.at
     })
   }
+  // Returns without an invoice (D-116): no invoice to name, what was brought back is on the return.
+  const plain = (
+    await db.query(
+      `SELECT c.id, c.total::float8 AS total, c.reason, c.username, c.created_at AS at, c.client_name,
+              COALESCE(json_agg(json_build_object('name', i.product_name, 'qty', i.quantity::float8, 'unit', COALESCE(i.unit_name, ''))
+                                ORDER BY i.id) FILTER (WHERE i.id IS NOT NULL), '[]') AS items
+         FROM customer_returns c LEFT JOIN customer_return_items i ON i.return_id = c.id
+        WHERE c.shift_id = $1 GROUP BY c.id ORDER BY c.id`,
+      [shiftId]
+    )
+  ).rows
+  for (const r of plain)
+    out.push({
+      id: r.id,
+      saleId: null,
+      kind: 'no_invoice',
+      kindLabel: 'مرتجع بدون فاتورة',
+      customer: (r.client_name || '').trim() || 'عميل بدون اسم – بدون فاتورة',
+      items: r.items,
+      refund: round2(r.total),
+      paidBack: round2(r.total),
+      method: 'cash',
+      reason: r.reason,
+      username: r.username,
+      at: r.at
+    })
+  out.sort((a, b) => new Date(a.at) - new Date(b.at))
   return out
 }
 

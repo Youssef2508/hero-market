@@ -127,6 +127,14 @@ module.exports = function reportsModule(app) {
           purchaseGainSql(`WHERE ${inRange('timestamp')}`, `WHERE ${inRange('created_at')}`)
         )
       ).v
+      // Returns without an invoice (D-116): the refund paid and the cost of the goods back in stock.
+      // No invoice's total goes down, so their margin is taken from the profit here.
+      const plainReturns = await one(
+        `SELECT COALESCE(SUM(r.total), 0)::float8 AS refund, COUNT(*)::int AS n,
+                COALESCE((SELECT SUM(m.qty * m.unit_cost) FROM stock_movements m
+                           WHERE m.kind = 'customer_return' AND ${inRange('m.created_at')}), 0)::float8 AS cost
+           FROM customer_returns r WHERE ${inRange('r.created_at')}`
+      )
       const purchaseReturns = await one(
         `SELECT COALESCE(SUM(credit_value), 0)::float8 AS v, COUNT(*)::int AS n FROM supplier_purchase_returns WHERE ${inRange('created_at')}`
       )
@@ -218,7 +226,15 @@ module.exports = function reportsModule(app) {
           purchaseReturns: r2(purchaseReturns.v),
           purchaseReturnCount: purchaseReturns.n,
           purchaseDiscounts: r2(purchaseGain),
-          netProfit: r2(Number(profit) - Number(damaged) - Number(expenses) + Number(purchaseGain)),
+          returnsWithoutInvoice: r2(plainReturns.refund),
+          returnsWithoutInvoiceCount: plainReturns.n,
+          netProfit: r2(
+            Number(profit) -
+              Number(damaged) -
+              Number(expenses) +
+              Number(purchaseGain) -
+              (Number(plainReturns.refund) - Number(plainReturns.cost))
+          ),
           cashFlow: r2(cashFlow)
         },
         salesByMethod,
@@ -280,6 +296,16 @@ module.exports = function reportsModule(app) {
       const purchaseGain = (
         await rows(db, purchaseGainSql(since('timestamp'), since('created_at')))
       )[0].v
+      // Returns without an invoice (D-116): their margin comes off the profit (see reports.dashboard).
+      const plain = (
+        await rows(
+          db,
+          `SELECT COALESCE(SUM(total), 0) AS refund,
+                  COALESCE((SELECT SUM(qty * unit_cost) FROM stock_movements WHERE kind = 'customer_return'
+                             ${start ? `AND created_at >= ${start}` : ''}), 0) AS cost
+             FROM customer_returns ${since('created_at')}`
+        )
+      )[0]
       // Owed by customers now (a balance, not a period figure).
       const outstanding = (await rows(db, 'SELECT SUM(debt_balance) AS t FROM clients'))[0].t
       const totalSales = Number(s.total) || 0
@@ -292,7 +318,9 @@ module.exports = function reportsModule(app) {
           (Number(profit) || 0) -
           (Number(damaged) || 0) -
           totalExpenses +
-          (Number(purchaseGain) || 0),
+          (Number(purchaseGain) || 0) -
+          ((Number(plain.refund) || 0) - (Number(plain.cost) || 0)),
+        returnsWithoutInvoice: Number(plain.refund) || 0,
         purchaseDiscounts: Number(purchaseGain) || 0,
         totalExpenses,
         invoiceCount: Number(s.count) || 0,

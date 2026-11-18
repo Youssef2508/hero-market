@@ -297,7 +297,12 @@ async function shiftReport(
   const returns = await q(
     `SELECT r.id, r.sale_id AS "saleId", r.refund::float8 AS refund, r.reason, r.username, r.created_at AS at,
             r.refund_method AS method, COALESCE(r.paid_back, r.refund)::float8 AS "paidBack"
-       FROM sale_returns r WHERE r.shift_id = $1 ORDER BY r.id`
+       FROM sale_returns r WHERE r.shift_id = $1
+     UNION ALL
+     -- Returns without an invoice (D-116): paid from this shift's drawer in cash.
+     SELECT c.id, NULL, c.total::float8, c.reason, c.username, c.created_at, 'cash', c.total::float8
+       FROM customer_returns c WHERE c.shift_id = $1
+     ORDER BY at, id`
   )
   // D-064: what each method's money was (sales are not collections; settlements are not invoice
   // payments), from the movement kinds of the shift.

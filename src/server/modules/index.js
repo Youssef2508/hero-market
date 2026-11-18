@@ -8,6 +8,7 @@ module.exports = [
   require('./catalog'),
   require('./catalog').registerInventory,
   require('./sales'),
+  require('./customerReturns'),
   require('./customers'),
   require('./finance'),
   require('./tills'),

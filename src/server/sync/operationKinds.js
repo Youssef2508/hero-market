@@ -31,10 +31,14 @@ const KINDS = {
   'products.update': 'merge',
   'products.changeBarcode': 'linked',
   'products.delete': 'linked',
+  // «صنف ميزان» (D-117): checked against every code of the store, so only the shop carries it out.
+  'products.setScaleItem': 'linked',
   'inventory.count': 'add',
   'productUnits.save': 'merge',
   'sales.returnItem': 'add',
   'sales.returnEntire': 'add',
+  // A return without an invoice (D-116): a new fact, like the invoice returns.
+  'sales.returnWithoutInvoice': 'add',
   'sales.changePaymentMethod': 'state',
   'clients.create': 'merge',
   'clients.update': 'merge',
