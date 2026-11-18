@@ -35,6 +35,9 @@ const TABLES = [
   'sale_item_cost_backfill',
   'sale_discounts',
   'sale_returns',
+  // Returns without an invoice (D-116) and what each brought back.
+  'customer_returns',
+  'customer_return_items',
   'suppliers',
   'supplier_ledger',
   'supplier_purchases',
@@ -65,7 +68,13 @@ const TABLES = [
   'sync_attention'
 ]
 // Tables a backup made before they existed does not hold: restored as empty.
-const SINCE_LATER = new Set(['remote_operations', 'sync_attention', 'supplier_purchase_revisions'])
+const SINCE_LATER = new Set([
+  'remote_operations',
+  'sync_attention',
+  'supplier_purchase_revisions',
+  'customer_returns',
+  'customer_return_items'
+])
 // User triggers are off while rows are restored: restored movements must not be applied to stock
 // a second time, and restored stock is not a direct write (stock_movements, products guard).
 const TRIGGER_TABLES = ['products', 'stock_movements', 'sales', 'shifts']

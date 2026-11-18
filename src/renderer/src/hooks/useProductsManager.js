@@ -90,6 +90,21 @@ export function useProductsManager({
           unit_kind: unit_kind || 'count',
           category_id: newProduct.category_id ?? null
         })
+        // «صنف ميزان» (D-117): its own step, checked against every code of the store.
+        if (newProduct.scale_item) {
+          try {
+            const r = await api('products.setScaleItem', {
+              barcode: String(barcode).trim(),
+              enabled: true
+            })
+            if (isDeferred(r)) triggerCustomAlert(`تمت إضافة المنتج. صنف الميزان: ${r.message}`)
+          } catch (err) {
+            triggerCustomAlert(`تمت إضافة المنتج بدون خاصية الميزان: ${err.message}`)
+            setShowAddModal(false)
+            if (fetchAdminData) await fetchAdminData()
+            return
+          }
+        }
         triggerCustomAlert('تمت إضافة المنتج بنجاح!')
         setShowAddModal(false)
         setNewProduct({
@@ -176,7 +191,27 @@ export function useProductsManager({
             ? { is_active: editProduct.is_active !== false }
             : {})
         })
-        if (deferred)
+        // «صنف ميزان» (D-117): changed on its own, after the code (it is checked on that code).
+        if (
+          editProduct.scale_item !== undefined &&
+          !!editProduct.scale_item !== !!editProduct.scale_item_was
+        ) {
+          try {
+            const r = await api('products.setScaleItem', {
+              barcode: nextBarcode || barcode,
+              enabled: !!editProduct.scale_item
+            })
+            if (isDeferred(r)) deferred = { ...r, to: deferred?.to, scale: true }
+          } catch (err) {
+            triggerCustomAlert(`حُفظت بيانات المنتج، ولم تُحفظ خاصية الميزان: ${err.message}`)
+            setShowEditModal(false)
+            if (fetchAdminData) await fetchAdminData()
+            return
+          }
+        }
+        if (deferred?.scale)
+          triggerCustomAlert(`حُفظت بيانات المنتج. خاصية الميزان: ${deferred.message}`)
+        else if (deferred)
           triggerCustomAlert(
             `حُفظت بيانات المنتج. تغيير الباركود إلى ${deferred.to}: ${deferred.message}`
           )

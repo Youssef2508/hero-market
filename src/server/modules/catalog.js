@@ -1,5 +1,6 @@
 'use strict'
 // Products (useProductsManager), reorder data (ReorderingTab), product lookup for damaged goods.
+const scale = require('../inventory/scaleItems')
 const { badRequest, conflict, notFound } = require('../errors')
 const { validateFactor, kindRule, checkStockValue } = require('../inventory/units')
 const { postMovement, adjustTo, verifyLedger } = require('../inventory/stock')
@@ -151,6 +152,8 @@ module.exports = function catalogModule(app) {
         const kind = rule.key
         if (Number(p.stock_qty)) checkStockValue(rule, p.stock_qty)
         const category = await categoryRef(db, p.category_id)
+        // A scale label of another product must not reach this new code (D-117).
+        await scale.checkBarcode(db, barcode, barcode)
         await db.query(
           // Two prices per unit (D-096): purchase and selling. The old wholesale column stays 0.
           `INSERT INTO products (barcode, name, cost_price, retail_price, stock_qty, reorder_limit, unit, unit_kind, category_id, category, is_active)
@@ -306,11 +309,14 @@ module.exports = function catalogModule(app) {
           ])
         ).rows[0]
         if (!p) throw notFound('الصنف غير موجود.')
+        await scale.checkBarcode(db, next, barcode)
         // Stock movements are immutable (0004); the cascade only renames their product, so it is
         // allowed for this one statement and switched off again at once.
         await db.query("SELECT set_config('hm.ledger_rebuild', 'on', true)")
         await db.query('UPDATE products SET barcode = $1 WHERE barcode = $2', [next, barcode])
         await db.query("SELECT set_config('hm.ledger_rebuild', 'off', true)")
+        // A scale item is found by its code: the new code is checked as a scale code too (D-117).
+        await scale.rekey(db, next)
         await ctx.audit(
           db,
           'product_barcode_change',
@@ -319,6 +325,48 @@ module.exports = function catalogModule(app) {
         )
         return { barcode: next }
       })
+  })
+
+  // «صنف ميزان» (D-117): the product is found from a scale label by its own code. Refused while a
+  // label could not tell it from another product. Only the shop carries it out (linked, D-111).
+  app.operation({
+    name: 'products.setScaleItem',
+    permission: 'products.manage',
+    schema: {
+      type: 'object',
+      required: ['barcode', 'enabled'],
+      properties: {
+        barcode: { type: 'string', minLength: 1, maxLength: 64 },
+        enabled: { type: 'boolean' }
+      }
+    },
+    handler: async (ctx, { barcode, enabled }) =>
+      ctx.tx(async (db) => {
+        const p = (
+          await db.query(
+            'SELECT barcode, name, unit_kind, scale_item FROM products WHERE barcode = $1 FOR UPDATE',
+            [barcode]
+          )
+        ).rows[0]
+        if (!p) throw notFound('الصنف غير موجود.')
+        if (p.scale_item === enabled) return { scaleItem: enabled, unchanged: true }
+        const r = await scale.setScaleItem(db, p, enabled)
+        await ctx.audit(
+          db,
+          'product_scale_item',
+          `${enabled ? 'تفعيل' : 'إلغاء'} صنف الميزان للصنف "${p.name}" (${p.barcode})`,
+          { scaleItem: enabled, scaleKey: r.scaleKey }
+        )
+        return r
+      })
+  })
+
+  // Every scale item checked against the store's settings: what no longer fits and every conflict.
+  app.operation({
+    name: 'products.scaleAudit',
+    permission: 'products.manage',
+    schema: { type: 'object', properties: {} },
+    handler: async (ctx) => scale.audit(ctx.pool, await scale.scaleConfig(ctx.pool))
   })
 
   app.operation({
@@ -579,11 +627,13 @@ module.exports.registerInventory = function inventoryOperations(app) {
             changes.added.push({ id, name: u.name, factor: u.factor })
           }
           keep.add(id)
-          for (const code of u.barcodes)
+          for (const code of u.barcodes) {
+            await scale.checkBarcode(db, code, b.barcode)
             await db.query(
               'INSERT INTO product_barcodes (barcode, product_barcode, unit_id) VALUES ($1, $2, $3)',
               [code, b.barcode, id]
             )
+          }
         }
         for (const e of existing.filter((x) => !keep.has(x.id))) {
           await db.query(
@@ -592,11 +642,13 @@ module.exports.registerInventory = function inventoryOperations(app) {
           )
           changes.deactivated.push({ id: e.id, name: e.name })
         }
-        for (const code of baseCodes)
+        for (const code of baseCodes) {
+          await scale.checkBarcode(db, code, b.barcode)
           await db.query(
             'INSERT INTO product_barcodes (barcode, product_barcode, unit_id) VALUES ($1, $2, NULL)',
             [code, b.barcode]
           )
+        }
         await ctx.audit(
           db,
           'product_units',

@@ -181,7 +181,11 @@ export default function InventoryTab({
                             type="button"
                             className="btn btn-sm btn-secondary"
                             onClick={() => {
-                              setEditProduct({ ...p, stock_base: p.stock_qty })
+                              setEditProduct({
+                                ...p,
+                                stock_base: p.stock_qty,
+                                scale_item_was: !!p.scale_item
+                              })
                               setShowEditModal(true)
                             }}
                           >

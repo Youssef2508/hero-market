@@ -474,6 +474,9 @@ module.exports = function adminModule(app) {
     handler: async (ctx) =>
       ctx.tx(async (db) => {
         const tables = [
+          // Returns without an invoice (D-116) point at shifts and customers: cleared first.
+          'customer_return_items',
+          'customer_returns',
           'supplier_payment_requests',
           'sale_payment_corrections',
           'supplier_pending_invoices',

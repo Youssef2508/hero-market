@@ -7,15 +7,15 @@ const nav = await import('../../src/renderer/src/components/shell/navigation.js'
 
 test('every defined screen is in the sidebar exactly once', () => {
   assert.deepEqual(nav.LAYOUT_PROBLEMS, [])
-  assert.equal(nav.ALL_NAV_ITEMS.length, 33)
-  assert.equal(new Set(nav.ALL_NAV_ITEMS.map((i) => i.id)).size, 33)
+  assert.equal(nav.ALL_NAV_ITEMS.length, 34)
+  assert.equal(new Set(nav.ALL_NAV_ITEMS.map((i) => i.id)).size, 34)
 })
 
 test('the groups, with the day’s selling first', () => {
   assert.deepEqual(
     nav.NAV_GROUPS.map((g) => [g.label, g.items.map((i) => i.id)]),
     [
-      ['البيع اليومي', ['pos', 'returns', 'reprint', 'payment-change']],
+      ['البيع اليومي', ['pos', 'returns', 'return-no-invoice', 'reprint', 'payment-change']],
       [
         'الحسابات',
         [

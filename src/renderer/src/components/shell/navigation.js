@@ -38,7 +38,8 @@ import {
   Settings,
   Archive,
   Landmark,
-  BellRing
+  BellRing,
+  PackageOpen
 } from 'lucide-react'
 
 // The screens, each defined once (grouped here as they were added; NAV_LAYOUT orders them).
@@ -234,6 +235,16 @@ const DEFINED_GROUPS = [
         tab: 'returns',
         description: 'مرتجع صنف أو فاتورة كاملة برقم الفاتورة، من أي وردية.'
       },
+      // A trusted customer's goods back without the receipt (owner, 1.9.0, D-116).
+      {
+        id: 'return-no-invoice',
+        permission: ['sales.return_without_invoice'],
+        label: 'مرتجع بدون فاتورة',
+        icon: PackageOpen,
+        view: 'admin',
+        tab: 'return-no-invoice',
+        description: 'استلام أصناف من عميل موثوق بدون فاتورة البيع، وصرف قيمتها نقداً.'
+      },
       {
         id: 'reprint',
         permission: ['sales.reprint'],
@@ -420,7 +431,7 @@ const NAV_LAYOUT = [
   {
     id: 'sell',
     label: 'البيع اليومي',
-    items: ['pos', 'returns', 'reprint', 'payment-change']
+    items: ['pos', 'returns', 'return-no-invoice', 'reprint', 'payment-change']
   },
   {
     id: 'accounts',

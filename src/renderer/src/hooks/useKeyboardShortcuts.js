@@ -62,7 +62,8 @@ export function useKeyboardShortcuts({
           e.preventDefault()
           if (cart && cart.length > 0 && triggerDeleteItem) {
             const lastItem = cart[cart.length - 1]
-            triggerDeleteItem(lastItem.barcode)
+            // By its line key (a carton and loose pieces are two lines): the barcode alone matched none.
+            triggerDeleteItem(lastItem.key)
           }
           break
         case 'Escape':

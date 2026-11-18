@@ -110,6 +110,10 @@ export function useBarcode({
         // Case A: Scanner typing, but target input is NOT focused
         if (document.activeElement !== targetInput) {
           const prevActive = document.activeElement
+          // A cart line's quantity box (D-118): it drops its draft itself (the scan's first
+          // character is not a quantity) and keeps the line's quantity – told before it loses focus.
+          const qtyBox = startsScan && prevActive?.matches?.('[data-qty-input]')
+          if (qtyBox) prevActive.dispatchEvent(new Event('hm-scanner-took-focus'))
           targetInput.focus()
 
           if (!startsScan) {
@@ -120,6 +124,7 @@ export function useBarcode({
             // If previously active element was an input, remove the scanner's first character from it
             if (
               prevActive &&
+              !qtyBox &&
               (prevActive.tagName === 'INPUT' || prevActive.tagName === 'TEXTAREA')
             ) {
               const charToRemove = prevChar

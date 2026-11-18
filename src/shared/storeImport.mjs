@@ -83,6 +83,12 @@ export const SHEETS = {
         header: 'سعر شراء العبوة',
         number: true,
         hint: 'اختياري: يظهر تلقائياً في فاتورة الشراء.'
+      },
+      // «صنف ميزان» (D-117): optional; a file without the column imports as before.
+      {
+        key: 'scale_item',
+        header: 'صنف ميزان',
+        hint: 'اكتب "نعم" لصنف يُقرأ من ملصق الميزان بكوده نفسه. فارغ = لا.'
       }
     ]
   },

@@ -86,7 +86,8 @@ module.exports = function storeImportModule(app) {
                   u.name AS pack_name, u.factor::float8 AS pack_factor,
                   (SELECT MIN(b.barcode) FROM product_barcodes b WHERE b.unit_id = u.id) AS pack_barcode,
                   CASE WHEN u.retail_auto THEN NULL ELSE u.retail_price::float8 END AS pack_price,
-                  u.purchase_cost::float8 AS pack_cost
+                  u.purchase_cost::float8 AS pack_cost,
+                  CASE WHEN p.scale_item THEN 'نعم' ELSE '' END AS scale_item
              FROM products p
              LEFT JOIN measure_kinds k ON k.key = p.unit_kind
              LEFT JOIN categories c ON c.id = p.category_id

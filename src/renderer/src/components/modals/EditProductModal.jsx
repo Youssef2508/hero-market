@@ -144,6 +144,20 @@ const EditProductModal = ({
             <label className="check-row">
               <input
                 type="checkbox"
+                checked={!!editProduct.scale_item}
+                onChange={(e) =>
+                  setEditProduct((prev) => ({ ...prev, scale_item: e.target.checked }))
+                }
+                data-testid="scale-item"
+              />
+              <span>
+                صنف ميزان: يُقرأ من ملصق الميزان بكوده نفسه (مثلاً الكود 1 من الملصق 2000001…)،
+                ويبقى الكود كما هو للبحث والبيع اليدوي.
+              </span>
+            </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
                 checked={editProduct.is_active !== false}
                 onChange={(e) =>
                   setEditProduct((prev) => ({ ...prev, is_active: e.target.checked }))

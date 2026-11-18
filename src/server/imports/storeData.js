@@ -21,6 +21,7 @@
 const path = require('path')
 const { pathToFileURL } = require('url')
 const { checkStockValue, validateFactor } = require('../inventory/units')
+const scaleItems = require('../inventory/scaleItems')
 
 // Rows per INSERT. Measured with 5,000 products (.docs/IMPORT_JOBS.md): 100 → 250 → 500 rows per
 // batch change the time by under 10%; 250 keeps each statement's parameters small.
@@ -176,8 +177,21 @@ async function checkRows(db, body) {
       }
       pack = { name: packName, factor, barcode: packBarcode, price, cost: num(p.pack_cost) }
     }
+    // «صنف ميزان» (D-117): نعم / لا, empty = no.
+    const scaleText = looseText(p.scale_item)
+    const scale = ['نعم', 'ايوه', 'yes', 'y', 'true', '1', '✓', 'صح'].includes(scaleText)
+    if (scaleText && !scale && !['لا', 'no', 'n', 'false', '0'].includes(scaleText))
+      fail(
+        P,
+        p.row,
+        `اكتب "نعم" أو اتركها فارغة في عمود صنف ميزان (وليس "${text(p.scale_item, 20)}").`,
+        'scale_item'
+      )
+    if (scale && !barcode)
+      fail(P, p.row, 'صنف الميزان يحتاج كوداً مكتوباً في عمود الباركود.', 'scale_item')
     cleanProducts.push({
       row: p.row,
+      scale,
       barcode,
       name,
       pack,
@@ -199,6 +213,67 @@ async function checkRows(db, body) {
     )
     for (const r of taken.rows)
       fail(P, codes.get(r.barcode), `الباركود (${r.barcode}) مسجل بالفعل في البرنامج.`, 'barcode')
+  }
+
+  // ── Scale items (D-117): a label must name one product, in the file and with the store.
+  if (cleanProducts.some((p) => p.scale) || cleanProducts.some((p) => /^\d+$/.test(p.barcode))) {
+    const cfg = await scaleItems.scaleConfig(db)
+    const stored = (
+      await db.query('SELECT barcode, name, scale_key FROM products WHERE scale_item')
+    ).rows
+    const keyRows = new Map()
+    // The label texts of a key, compiled once per key.
+    const compiled = new Map()
+    const matches = (key, code) => {
+      if (!compiled.has(key))
+        compiled.set(
+          key,
+          scaleItems
+            .labelPatterns(cfg, key)
+            .map((x) => ({ S: x.S, full: new RegExp(x.full), after: new RegExp(x.afterPrefix) }))
+        )
+      return compiled.get(key).some((x) => code === x.S || x.full.test(code) || x.after.test(code))
+    }
+    for (const p of cleanProducts.filter((x) => x.scale && x.barcode)) {
+      const why = scaleItems.unfit(cfg, p.barcode)
+      if (why) {
+        fail(P, p.row, why, 'scale_item')
+        continue
+      }
+      const key = scaleItems.scaleKeyOf(p.barcode)
+      if (keyRows.has(key))
+        fail(
+          P,
+          p.row,
+          `كود الميزان للصنف (${p.barcode}) هو نفس كود الصف ${keyRows.get(key).row} (${keyRows.get(key).barcode}) بعد حذف الأصفار من البداية.`,
+          'scale_item'
+        )
+      else keyRows.set(key, p)
+      for (const c of await scaleItems.conflictsForKey(db, cfg, key, p.barcode, { marking: true }))
+        fail(
+          P,
+          p.row,
+          `كود الميزان للصنف (${p.barcode}) يتعارض مع الصنف «${c.name}» (${c.barcode}) المسجل بالفعل.`,
+          'scale_item'
+        )
+      for (const q of cleanProducts)
+        if (q !== p && q.barcode && matches(key, q.barcode))
+          fail(
+            P,
+            q.row,
+            `الكود (${q.barcode}) هو كود ملصق الميزان للصنف في الصف ${p.row} (${p.barcode}).`,
+            'barcode'
+          )
+    }
+    for (const r of stored)
+      for (const q of cleanProducts)
+        if (q.barcode && matches(r.scale_key, q.barcode))
+          fail(
+            P,
+            q.row,
+            `الكود (${q.barcode}) هو كود ملصق الميزان للصنف «${r.name}» (${r.barcode}).`,
+            'barcode'
+          )
   }
 
   // ── Customers
@@ -374,6 +449,16 @@ async function writeRows(db, ctx, clean, { step = async () => {}, batch = BATCH_
         cat.map((c) => c.name)
       ]
     )
+    // Scale items (D-117), checked above; the database keeps one product per key as a last guard.
+    const scaled = part.filter((p) => p.scale)
+    if (scaled.length) {
+      await db.query(scaleItems.LOCK)
+      await db.query(
+        `UPDATE products p SET scale_item = true, scale_key = x.k
+           FROM unnest($1::text[], $2::text[]) AS x(b, k) WHERE p.barcode = x.b`,
+        [scaled.map(codeOf), scaled.map((p) => scaleItems.scaleKeyOf(codeOf(p)))]
+      )
+    }
     const packed = part.filter((p) => p.pack)
     if (packed.length) {
       const units = await db.query(
