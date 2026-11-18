@@ -25,3 +25,17 @@ Written for the shop owner. 1.9.0 makes the till and every screen work fully fro
 - **A return without an invoice** sent twice, or made offline and sent later, is recorded once; without the permission, or with a wrong line, nothing is written.
 - **Two people ticking** `1` and `01` at the same moment: exactly one succeeds.
 - **All 645 automatic tests,** plus the full program on Windows and in a browser on every change.
+
+## The installer
+
+|            |                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| File       | `HeroMarket-Setup-1.9.0.exe`                                                                                                 |
+| Size       | 181,052,159 bytes                                                                                                            |
+| SHA-256    | `c84581ba91265d4a62bee04674459c0200d814648e2f6c3788db88318e4dce27`                                                           |
+| Built from | the tag `v1.9.0` (`main`'s merge commit `09b5e56`) by the release workflow on GitHub, after lint and every test passed there |
+| Signed     | no ("Windows protected your PC" → More info → Run anyway)                                                                    |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.9.0.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+**The website** was updated to 1.9.0 on 2026-11-18 and still serves the shop's own store, with the same link. Until the shop PC runs 1.9.0, its sync screen says the versions differ; that is expected.
