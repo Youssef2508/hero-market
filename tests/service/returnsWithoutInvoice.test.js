@@ -151,7 +151,7 @@ test('the same request again returns the same return: one refund, one set of mov
   assert.equal(await num('SELECT count(*) FROM customer_returns WHERE client_ref = $1', [ref2]), 1)
 })
 
-test('invalid returns are refused whole: quantity, product, reason, price, no open shift', async (t) => {
+test('invalid returns are refused whole: quantity, product, price, no open shift', async (t) => {
   if (!requireDb(t)) return
   const before = await num('SELECT count(*) FROM customer_returns')
   const rice = await stock('RICE')
@@ -160,10 +160,6 @@ test('invalid returns are refused whole: quantity, product, reason, price, no op
   // More than three decimals of a kilogram.
   assert.equal((await create({ lines: [{ barcode: 'CHEESE', quantity: 0.0005 }] })).status, 400)
   assert.equal((await create({ lines: [{ barcode: 'NOPE', quantity: 1 }] })).status, 404)
-  assert.equal(
-    (await create({ lines: [{ barcode: 'RICE', quantity: 1 }], reason: '  ' })).status,
-    400
-  )
   assert.equal((await create({ lines: [] })).status, 400)
   assert.equal((await create({ lines: [{ barcode: 'RICE', quantity: -1 }] })).status, 400)
   // A valid line with an invalid one: nothing at all.
@@ -258,4 +254,17 @@ test('made while the shop is offline, sent later and delivered twice: the cloud 
     1
   )
   assert.deepEqual(await copyDifferences(twin), [])
+})
+
+test('the reason is optional: none, or only spaces, is kept as no reason', async (t) => {
+  if (!requireDb(t)) return
+  for (const reason of [undefined, '   ']) {
+    const r = await create({ lines: [{ barcode: 'RICE', quantity: 1 }], reason })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.reason, null)
+    assert.equal(
+      (await q('SELECT reason FROM customer_returns WHERE id = $1', [r.body.id]))[0].reason,
+      null
+    )
+  }
 })
