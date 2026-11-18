@@ -10,10 +10,10 @@
 // A label must name exactly one product, so whatever could make two products answer the same
 // label is refused before it is saved (D-117):
 //   - two scale items with the same key (1 and 01 and 001; 001 and 0001);
-//   - a scale item, and another product registered the older way under the same label's digits
-//     (2000001, or the item-code digits 00001), which a label also finds;
 //   - a scale item, and another product whose own barcode IS such a label (a 13-digit code with a
-//     configured prefix and a valid check digit).
+//     configured prefix and a valid check digit), since a scan of it would name both.
+// A product nobody marked is only its own code (owner, 2026-11-18): 00001 or 2000001 unmarked does
+// not stop 1 being marked; once 1 is marked, its labels name 1, and typing 00001 is still 00001.
 // Checked on every change that can alter it: marking or unmarking, a changed code, an extra
 // barcode, an import, and the scale settings themselves. The service is the authority (the shop,
 // D-111) and holds one lock for all of them; the database keeps one key per product as a last guard.
@@ -82,12 +82,22 @@ function labelPatterns(cfg, key) {
 /** A product as a conflict is reported: its code and name. */
 const named = (r) => ({ barcode: r.barcode, name: r.name })
 
+/** The scale key of a code that is itself a whole label of these settings, else null. */
+function labelKey(cfg, code) {
+  const s = cfg || DEFAULT_SCALE
+  if (s.enabled === false || !Object.keys(s.prefixes || {}).length) return null
+  const text = String(code ?? '')
+  if (text.length !== s.length || !/^\d+$/.test(text)) return null
+  const label = parseScaleLabel({ ...s, enabled: true }, text)
+  return label && !label.error ? scaleKeyOf(label.code) : null
+}
+
 /**
- * What a label of `key` would reach besides `self`: other scale items with the key, products
- * registered the older way under its digits, and other products' barcodes that are such labels.
- * Each entry: { barcode, name, why }.
+ * What a label of `key` would reach besides `self`: other scale items with the key, and other
+ * products' barcodes that are such labels. Products nobody marked are not asked: a mark takes the
+ * labels of its key, and they stay their own code. Each entry: { barcode, name, why }.
  */
-async function conflictsForKey(db, cfg, key, self, { marking = false } = {}) {
+async function conflictsForKey(db, cfg, key, self) {
   const found = []
   const seen = new Set()
   const add = (r, why) => {
@@ -103,22 +113,10 @@ async function conflictsForKey(db, cfg, key, self, { marking = false } = {}) {
     )
   ).rows)
     add(r, 'scale_key')
-  for (const p of labelPatterns(cfg, key)) {
-    const { rows } = await db.query(
-      `SELECT barcode, name FROM products
-        WHERE barcode <> $4 AND (barcode = $1 OR barcode ~ $2 OR barcode ~ $3 OR barcode = $5)
-        ORDER BY barcode`,
-      // Only when marking: a product whose code IS the key answers its labels today, and a mark
-      // would take them from it. Afterwards the mark is the answer, so the audit does not ask it.
-      [p.S, p.full, p.afterPrefix, self ?? '', marking ? key : null]
-    )
-    for (const r of rows) add(r, 'label_code')
-  }
-  // Barcodes that are themselves labels of these settings (13 digits with a configured prefix and a
-  // valid check digit) naming this key: a scan of one must not stand for two products.
+  // Barcodes that are themselves labels of these settings naming this key: a scan of one must not
+  // stand for two products.
   const s = cfg || DEFAULT_SCALE
-  const prefixes = Object.keys(s.prefixes || {})
-  if (s.enabled !== false && prefixes.length) {
+  if (s.enabled !== false && Object.keys(s.prefixes || {}).length) {
     const { rows } = await db.query(
       `SELECT barcode, name, barcode AS code FROM products WHERE length(barcode) = $1 AND barcode ~ '^[0-9]+$'
        UNION ALL
@@ -126,18 +124,13 @@ async function conflictsForKey(db, cfg, key, self, { marking = false } = {}) {
         WHERE length(b.barcode) = $1 AND b.barcode ~ '^[0-9]+$'`,
       [s.length]
     )
-    for (const r of rows) {
-      const label = parseScaleLabel({ ...s, enabled: true }, r.code)
-      if (label && !label.error && scaleKeyOf(label.code) === key) add(r, 'label_barcode')
-    }
+    for (const r of rows) if (labelKey(s, r.code) === key) add(r, 'label_barcode')
   }
   return found
 }
 
 const WHY = {
   scale_key: 'لأن الكودين يصبحان نفس كود الميزان بعد حذف الأصفار من البداية',
-  label_code:
-    'لأن ملصقات هذا الكود تقرأ ذلك الصنف الآن (كوده هو أرقام الملصق أو نفس الكود بدون أصفار)، فتفعيل الميزان سيغيّر الصنف الذي يقرؤه الملصق',
   label_barcode: 'لأن باركوده ملصق ميزان يقرأ نفس كود الصنف'
 }
 
@@ -188,7 +181,7 @@ async function setScaleItem(db, product, enabled) {
       { code: 'scale_kind' }
     )
   const key = scaleKeyOf(product.barcode)
-  const list = await conflictsForKey(db, cfg, key, product.barcode, { marking: true })
+  const list = await conflictsForKey(db, cfg, key, product.barcode)
   if (list.length)
     throw conflict(conflictMessage(product, list), { code: 'scale_conflict', conflicts: list })
   await db.query('UPDATE products SET scale_item = true, scale_key = $2 WHERE barcode = $1', [
@@ -200,7 +193,7 @@ async function setScaleItem(db, product, enabled) {
 
 /**
  * A barcode about to be given to `owner` (a new product, a changed code, an extra barcode): refused
- * when a label of some scale item would then reach two products. Call inside the transaction.
+ * when it is itself a label of another scale item. Call inside the transaction.
  */
 async function checkBarcode(db, code, owner) {
   const text = String(code ?? '').trim()
@@ -209,37 +202,21 @@ async function checkBarcode(db, code, owner) {
   if (!hasScale) return
   await db.query(LOCK)
   const cfg = await scaleConfig(db)
-  const keys = new Set()
-  const s = cfg || DEFAULT_SCALE
-  // The code as a whole label, as the item-code digits, as the label's digits up to the code, or
-  // as those digits after the prefix: which scale key would each make it answer?
-  const label = parseScaleLabel({ ...s, enabled: true }, text)
-  if (label && !label.error) keys.add(scaleKeyOf(label.code))
-  if (text.length === s.codeLength) keys.add(scaleKeyOf(text))
-  for (const p of Object.keys(s.prefixes || {})) {
-    for (const full of [text, p + text]) {
-      if (full.length === s.codeStart + s.codeLength && full.startsWith(p))
-        keys.add(scaleKeyOf(full.substr(s.codeStart, s.codeLength)))
-    }
-  }
-  keys.delete(null)
-  if (!keys.size) return
-  const { rows } = await db.query(
-    'SELECT barcode, name, scale_key FROM products WHERE scale_item AND scale_key = ANY($1::text[]) AND barcode <> $2',
-    [[...keys], owner ?? '']
-  )
-  // Only a real overlap counts: the scale item's own label texts must include this code.
-  for (const r of rows) {
-    const probe = labelPatterns(cfg, r.scale_key).some(
-      (p) => text === p.S || new RegExp(p.full).test(text) || new RegExp(p.afterPrefix).test(text)
+  // Only a code that is itself a whole label can be read as a scale item's label; any other code
+  // (00001, 2000001) is only itself, typed or scanned.
+  const key = labelKey(cfg, text)
+  if (key === null) return
+  const r = (
+    await db.query(
+      'SELECT barcode, name FROM products WHERE scale_item AND scale_key = $1 AND barcode <> $2',
+      [key, owner ?? '']
     )
-    const asLabel = label && !label.error && scaleKeyOf(label.code) === r.scale_key
-    if (probe || asLabel)
-      throw conflict(
-        `لا يمكن استخدام الكود ${text}: ملصقات الميزان للصنف «${r.name}» (${r.barcode}) تقرأ نفس الكود، فلن يعرف البرنامج أي الصنفين المقصود. اختر كوداً آخر أو عطّل خاصية الميزان لذلك الصنف.`,
-        { code: 'scale_conflict', conflicts: [named(r)] }
-      )
-  }
+  ).rows[0]
+  if (r)
+    throw conflict(
+      `لا يمكن استخدام الكود ${text}: هو ملصق ميزان للصنف «${r.name}» (${r.barcode})، فلن يعرف البرنامج أي الصنفين المقصود. اختر كوداً آخر أو عطّل خاصية الميزان لذلك الصنف.`,
+      { code: 'scale_conflict', conflicts: [named(r)] }
+    )
 }
 
 /** A scale item's code changed (products.changeBarcode): its key follows, and is checked again. */
@@ -301,13 +278,13 @@ async function checkSettings(db, cfg) {
 
 /**
  * The product a decoded label names (pos.resolve), or null when none (D-117).
- *   1. A product marked «صنف ميزان» with the label's key – the owner's explicit choice; unique.
- *   2. Otherwise exactly as before 1.9.0, for products nobody marked: the first product whose code is
- *      one of the label's spellings, in this order – the label's digits up to the item code
+ *   1. A product marked «صنف ميزان» with the label's key – the owner's explicit choice; unique. It
+ *      takes its key's labels even where an unmarked product answered them before (owner,
+ *      2026-11-18): the unmarked one stays its own code.
+ *   2. Only when no product is marked for the key, exactly as before 1.9.0: the first product whose
+ *      code is one of the label's spellings, in this order – the label's digits up to the item code
  *      (2000001), the item-code digits (00001), the digits after the prefix, then the same two
  *      without leading zeros (1). Never a guess: a fixed order of exact codes, unchanged since 1.5.2.
- * Marking a product (setScaleItem) is refused while it would change what step 2 gives for any label
- * (conflictsForKey), so a mark can never take a label away from the product it named before.
  */
 async function productForLabel(db, scale) {
   const key = scaleKeyOf(scale.code)
@@ -340,6 +317,7 @@ module.exports = {
   scaleKeyOf,
   scaleConfig,
   labelPatterns,
+  labelKey,
   conflictsForKey,
   setScaleItem,
   checkBarcode,

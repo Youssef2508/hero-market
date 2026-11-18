@@ -143,13 +143,48 @@ test('the same scale code is refused in either order: 1 then 01, 01 then 1, 001 
   ok(await setScale('004', false))
   ok(await setScale('0004', true))
   ok(await setScale('0004', false))
-  // Marking 01 while 1 is an unmarked product would take the labels 2000001… away from 1: refused,
-  // even with 1 not marked (D-117: a mark never changes what a label named before).
+  // With 1 unmarked, 01 may be marked: an unmarked product is only its own code (owner,
+  // 2026-11-18). The labels 2000001… then name 01; typing 1 is still 1.
   ok(await setScale('1', false))
-  const takeOver = await setScale('01', true)
-  assert.equal(takeOver.status, 409)
-  assert.match(takeOver.body.error.message, /جبنة رومي — الكود: 1/)
+  ok(await setScale('01', true))
+  assert.equal(ok(await resolve(label(1, 125))).product.barcode, '01')
+  assert.equal(ok(await resolve('1')).product.barcode, '1')
+  ok(await setScale('01', false))
   ok(await setScale('1', true))
+})
+
+test('the shop case: 1 can be marked while an unmarked 00001 exists, and each stays itself', async (t) => {
+  if (!requireDb(t)) return
+  // Before anything is marked for the key, a label 2000001… finds 00001 (the older lookup order).
+  ok(await setScale('1', false))
+  ok(
+    await svc.call(
+      'products.create',
+      { barcode: '00001', name: 'طبق فوم كبير', retail_price: 5, unit: 'قطعة' },
+      owner
+    )
+  )
+  // (00001 is sold by the piece, so that weight label is refused for it, as in 1.8.0.)
+  const before = await resolve(label(1, 125))
+  assert.equal(before.status, 400)
+  assert.match(before.body.error.message, /طبق فوم كبير/)
+  // Marking 1 is allowed: its labels now name 1 with the label's weight.
+  ok(await setScale('1', true))
+  const scanned = ok(await resolve(label(1, 125)))
+  assert.equal(scanned.product.barcode, '1')
+  assert.equal(scanned.qty, 0.125)
+  // Typed codes are exact: 1 is 1, 00001 is 00001, unchanged and unmarked.
+  assert.equal(ok(await resolve('1')).product.barcode, '1')
+  assert.equal(ok(await resolve('00001')).product.barcode, '00001')
+  assert.deepEqual(
+    await one("SELECT scale_item, scale_key FROM products WHERE barcode = '00001'"),
+    {
+      scale_item: false,
+      scale_key: null
+    }
+  )
+  // The audit has nothing to say about it.
+  assert.deepEqual(ok(await svc.call('products.scaleAudit', {}, owner)).problems, [])
 })
 
 test('two scale items with one key are impossible even in the database', async (t) => {
@@ -160,10 +195,10 @@ test('two scale items with one key are impossible even in the database', async (
   )
 })
 
-test('a product registered the older way under the label digits conflicts with a scale item', async (t) => {
+test('a product registered the older way under the label digits does not stop a scale item', async (t) => {
   if (!requireDb(t)) return
-  // 2000005 (the label's digits) already answers labels of code 5: a product 5 cannot be a scale
-  // item, the label would name both.
+  // 2000005 (the label's digits), unmarked, answers labels of code 5 while nothing is marked. Marking
+  // 5 takes those labels; 2000005 stays its own code.
   ok(
     await svc.call(
       'products.create',
@@ -178,10 +213,12 @@ test('a product registered the older way under the label digits conflicts with a
       owner
     )
   )
-  const r = await setScale('5', true)
-  assert.equal(r.status, 409)
-  assert.match(r.body.error.message, /زيتون \(مسجل بكود الملصق\) — الكود: 2000005/)
-  // The older registration still works as before.
+  assert.equal(ok(await resolve(label(5, 250))).product.barcode, '2000005')
+  ok(await setScale('5', true))
+  assert.equal(ok(await resolve(label(5, 250))).product.barcode, '5')
+  assert.equal(ok(await resolve('2000005')).product.barcode, '2000005')
+  // Unmarked again, the label goes back to the older registration.
+  ok(await setScale('5', false))
   assert.equal(ok(await resolve(label(5, 250))).product.barcode, '2000005')
 })
 
@@ -195,22 +232,24 @@ test('a barcode that is itself a label of a scale item cannot be given to anothe
   )
   assert.equal(asNew.status, 409)
   assert.equal(asNew.body.error.details.code, 'scale_conflict')
-  // The label's digits up to the code (the older registration) and the item-code digits.
-  for (const code of ['2000001', '00001']) {
-    const r = await svc.call(
-      'products.create',
-      { barcode: code, name: `صنف ${code}`, retail_price: 10, unit: 'قطعة' },
-      owner
-    )
-    assert.equal(r.status, 409, code)
-  }
   // As an extra barcode of another product.
   const units = await svc.call(
     'productUnits.save',
-    { barcode: 'PEPSI', units: [], baseBarcodes: ['2000001'] },
+    { barcode: 'PEPSI', units: [], baseBarcodes: [label(1, 750)] },
     owner
   )
   assert.equal(units.status, 409, JSON.stringify(units.body))
+  // A code that is not a whole label is only itself: 2000001 may be a product while 1 is marked,
+  // and a label of 1 still names 1.
+  ok(
+    await svc.call(
+      'products.create',
+      { barcode: '2000001', name: 'صنف 2000001', retail_price: 10, unit: 'قطعة' },
+      owner
+    )
+  )
+  assert.equal(ok(await resolve(label(1, 300))).product.barcode, '1')
+  assert.equal(ok(await resolve('2000001')).product.barcode, '2000001')
   // And the other way: a product whose own barcode is a label of code 12 stops 12 becoming a scale item.
   ok(
     await svc.call(
@@ -259,21 +298,19 @@ test('labels: wrong check digit, another prefix, zero weight and an unknown code
   assert.equal(unknown.body.error.details.scale, 'unknown_product')
 })
 
-test('products nobody marked resolve exactly as before 1.9.0; a mark that would change it is refused', async (t) => {
+test('products nobody marked resolve exactly as before 1.9.0; a mark takes its labels', async (t) => {
   if (!requireDb(t)) return
   // 7 and 07, both unmarked: a label of code 7 is 7, as in 1.8.0 (its exact code, never 07).
   ok(await setScale('7', false))
   assert.equal(ok(await resolve(label(7, 200))).product.barcode, '7')
   // A product registered the older way under the label's digits still comes first.
   assert.equal(ok(await resolve(label(5, 200))).product.barcode, '2000005')
-  // Marking 07 would move that label from 7 to 07: refused.
-  const r = await setScale('07', true)
-  assert.equal(r.status, 409)
-  assert.match(r.body.error.message, /حلاوة سايبة — الكود: 7/)
-  // Marking 7 itself changes nothing a label names: allowed, and the label is still 7.
-  ok(await setScale('7', true))
+  // Marking 07 takes the label from the unmarked 7; typing 7 is still 7.
+  ok(await setScale('07', true))
+  assert.equal(ok(await resolve(label(7, 200))).product.barcode, '07')
+  assert.equal(ok(await resolve('7')).product.barcode, '7')
+  ok(await setScale('07', false))
   assert.equal(ok(await resolve(label(7, 200))).product.barcode, '7')
-  ok(await setScale('7', false))
 })
 
 test('a weight label on a product counted in pieces cannot be a scale item', async (t) => {
@@ -323,10 +360,10 @@ test('scale settings that a scale item no longer fits, or that make a label ambi
     ),
     JSON.stringify(short.body.error.details.problems)
   )
-  // The same change also makes a label ambiguous: with a 2-digit item code, the label of scale item
-  // 1 carries the digits 01 – the code of another product, 01. Both are reported.
+  // An unmarked product (01, whose code is now the label's item-code digits) is only its own code
+  // and is not a problem: only what concerns a scale item is reported.
   assert.ok(
-    short.body.error.details.problems.some((p) => p.barcode === '1' && p.with?.barcode === '01'),
+    !short.body.error.details.problems.some((p) => p.with?.barcode === '01'),
     JSON.stringify(short.body.error.details.problems)
   )
   // The saved settings are unchanged.
