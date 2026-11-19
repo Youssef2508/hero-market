@@ -778,7 +778,7 @@ Format: context → decision → reason → consequences (→ alternatives).
   - **Owner's answer:** the supplier is credited the lines' value × net ÷ gross, so a discount is never credited twice. The part of the discount given back reduces the purchase gain.
   - The payable falls by the credit; below zero the supplier owes the store.
   - Money is recorded only when the supplier hands it back now, by its method, in the current shift or the treasury (`supplier_refund`). The rest stays owed by the supplier.
-  - Goods already sold cannot go back (refused). One transaction; a request id makes a retry return the first result.
+  - The stock may go below zero, as a sale can (owner, 1.9.2; before, a return larger than the recorded stock was refused): the recorded stock is not always what is on the shelf, and a wrong invoice must still be returnable. One transaction; a request id makes a retry return the first result.
   - Permission `suppliers.manage` (granted per role by an administrator). Audit with the lines, values and refund.
 - **Open:** the spec's line selling price that updates the product on posting (original SUP-02) is not built. The owner's revision says the purchase must not change prices automatically, so it waits for the owner.
 
@@ -1893,6 +1893,7 @@ Every change is in the shared service and the shared screens, so the shop PC and
   - another product's own barcode is itself such a label;
   - the code has letters or is longer than the label's item code;
   - the labels carry weight and the product is counted in pieces.
+- **The website's form, shop offline (owner, 1.9.2):** a code change is kept for the shop (D-111); a «صنف ميزان» change in the same save is held back, not kept with the old code (the shop would refuse it once the product is renamed). The owner is told to tick it on the new code when the shop is back.
 - **An unmarked product is only its own code (owner, 1.9.1, 2026-11-18).** 1.9.0 also refused a mark that would take a label from an unmarked product that answered it under step 3 (for example marking 1 while an unmarked 00001 or 2000001 exists). The owner corrected this: only another _marked_ product (or a barcode that is itself a label) conflicts. Typing or scanning 00001 or 2000001 still finds exactly that product.
 - **The same check runs on** a changed code, an extra barcode, the import (row errors), and the scale settings themselves (refused while any marked product would no longer fit or would conflict).
 - **Database guard:** one key per product (a unique constraint, deferred to the end of the transaction so one synchronised batch moving a key is applied whole).

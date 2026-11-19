@@ -34,6 +34,16 @@ const AddPurchaseModal = ({
   const fromTreasury = isAdmin(currentUser) && !(currentShift && currentShift.status === 'open')
   const setItems = (fn) => setNewPurchaseForm((p) => ({ ...p, items: fn(p.items || []) }))
   const itemsTotal = Math.round(items.reduce((a, l) => a + lineTotal(l), 0) * 100) / 100
+  // What the supplier is owed: the lines (or the typed total) less the invoice discount.
+  const netTotal = Math.max(
+    0,
+    Math.round(
+      ((items.length ? itemsTotal : parseFloat(newPurchaseForm.total_amount) || 0) -
+        (parseFloat(newPurchaseForm.discount) || 0)) *
+        100
+    ) / 100
+  )
+  const fullCash = newPurchaseForm.payment_type === 'نقدي'
 
   // `picked` is a product row from the list; a scanned or typed barcode is looked up.
   const addLine = async (barcode, picked = null) => {
@@ -332,19 +342,32 @@ const AddPurchaseModal = ({
                     ? 'المبلغ المدفوع نقداً الآن من الخزنة (ج.م)'
                     : 'المبلغ المدفوع نقداً الآن من درج الوردية (ج.م)'}
                 </label>
-                <NumberField
-                  id="purchase-paid"
-                  className="form-input"
-                  min="0"
-                  step="0.01"
-                  aria-describedby="purchase-paid-hint"
-                  value={newPurchaseForm.paid_amount}
-                  onChange={(e) =>
-                    setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
-                  }
-                  placeholder="0.00"
-                />
+                {fullCash ? (
+                  // «نقدي كامل» (owner, 1.9.2): the whole net, filled in and kept in step.
+                  <output
+                    id="purchase-paid"
+                    className="form-input num"
+                    aria-live="polite"
+                    aria-describedby="purchase-paid-hint"
+                  >
+                    {formatMoney(netTotal)}
+                  </output>
+                ) : (
+                  <NumberField
+                    id="purchase-paid"
+                    className="form-input"
+                    min="0"
+                    step="0.01"
+                    aria-describedby="purchase-paid-hint"
+                    value={newPurchaseForm.paid_amount}
+                    onChange={(e) =>
+                      setNewPurchaseForm((p) => ({ ...p, paid_amount: e.target.value }))
+                    }
+                    placeholder="0.00"
+                  />
+                )}
                 <p id="purchase-paid-hint" className="field-hint">
+                  {fullCash ? 'نقدي كامل: يُدفع صافي الفاتورة كله الآن. ' : ''}
                   {fromTreasury
                     ? 'لا توجد وردية مفتوحة لك: يُسجَّل المدفوع على الخزنة تلقائياً.'
                     : 'يخرج المدفوع من درج ورديتك المفتوحة.'}
