@@ -2,7 +2,7 @@
 // SUP-02 invoice discount and purchase returns (owner, 2026-10-22, D-066), with exact balances.
 // Discount: invoice-level only; the lines keep their prices, so product costs and the owner's
 // prices never move; the payable, payments and reports use the net; profit counts it as a gain.
-// Returns: partial, never more than bought, stock out at the line's cost, the supplier credited
+// Returns: partial, never more than bought (the stock may go below zero), stock out at the line's cost, the supplier credited
 // line value × net ÷ gross, money recorded only when received, once per request.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
@@ -363,8 +363,10 @@ test('money given back: recorded once by its method where it arrives; the rest s
   assert.equal(r2(t1 - t0), 20)
 })
 
-test('goods already sold cannot go back: refused, and nothing is written', async (t) => {
+test('a return larger than the recorded stock is allowed: the stock goes below zero, as a sale can', async (t) => {
   if (!requireDb(t)) return
+  // The owner's case (1.9.2): the stock is -1, an invoice of 10 was recorded by mistake, and
+  // everything bought on it is sold since; the whole invoice goes back.
   ok(await buy({ total_amount: 30, items: [{ barcode: 'A1', qty: 3, unitCost: 10 }] }))
   const pid = (await lastPurchase()).id
   const [item] = await itemsOf(pid)
@@ -376,16 +378,21 @@ test('goods already sold cannot go back: refused, and nothing is written', async
         clientRef: ref(),
         shiftId: shift.id,
         paymentType: 'نقدي',
-        items: [{ barcode: 'A1', qty: stockNow }]
+        items: [{ barcode: 'A1', qty: stockNow + 1 }]
       },
       owner
     )
   )
+  assert.equal((await product('A1')).s, -1)
   const before = await debt()
-  const n = (await q('SELECT 1 FROM supplier_purchase_returns')).length
-  const r = await giveBack(pid, [{ purchaseItemId: item.id, qty: 3 }])
-  assert.equal(r.status, 409)
-  assert.equal(await debt(), before)
-  assert.equal((await q('SELECT 1 FROM supplier_purchase_returns')).length, n)
-  assert.equal((await product('A1')).s, 0)
+  const back = ok(await giveBack(pid, [{ purchaseItemId: item.id, qty: 3 }]))
+  assert.equal(back.credit, 30)
+  assert.equal((await product('A1')).s, -4)
+  assert.equal(await debt(), r2(before - 30))
+  const mv = await one(
+    "SELECT qty::float8 n, unit_cost::float8 c, balance_after::float8 b FROM stock_movements WHERE product_barcode = 'A1' AND kind = 'purchase_return' ORDER BY id DESC LIMIT 1"
+  )
+  assert.deepEqual(mv, { n: -3, c: 10, b: -4 })
+  // Still never more than bought on the line.
+  assert.equal((await giveBack(pid, [{ purchaseItemId: item.id, qty: 1 }])).status, 409)
 })

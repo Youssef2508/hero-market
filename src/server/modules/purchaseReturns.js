@@ -255,17 +255,10 @@ module.exports = function purchaseReturnsModule(app) {
         ).rows[0].id
         const label = `مرتجع مشتريات #${returnId} (فاتورة #${purchase.invoice_ref || purchase.id})`
 
-        // Stock leaves at the line's cost, products locked in a stable order.
+        // Stock leaves at the line's cost, products locked in a stable order. The stock may go below
+        // zero, as a sale can (owner, 1.9.2): the recorded stock is not always the shelf, and a
+        // wrong invoice must still be returnable. Never more than bought (checked above).
         for (const l of [...picked].sort((a, c) => (a.barcode < c.barcode ? -1 : 1))) {
-          const p = (
-            await db.query('SELECT stock_qty FROM products WHERE barcode = $1 FOR UPDATE', [
-              l.barcode
-            ])
-          ).rows[0]
-          if (Number(p.stock_qty) + 0.0005 < l.baseQty)
-            throw conflict(
-              `المخزون الحالي من "${l.name}" (${Number(p.stock_qty)}) أقل من الكمية المرتجعة (${l.baseQty}).`
-            )
           await db.query(
             `INSERT INTO supplier_purchase_return_items (return_id, purchase_item_id, product_barcode, qty, base_qty, unit_cost, line_value)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
