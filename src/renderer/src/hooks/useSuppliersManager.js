@@ -169,7 +169,9 @@ export function useSuppliersManager({ currentShift, triggerCustomAlert, triggerC
     // Optional invoice-level discount (D-066): the supplier is owed the net.
     const discount = Math.round((parseFloat(newPurchaseForm.discount) || 0) * 100) / 100
     const total = Math.round((gross - discount) * 100) / 100
-    const paid = parseFloat(newPurchaseForm.paid_amount) || 0
+    // «نقدي كامل»: the whole net is paid now (owner, 1.9.2), whatever the field held.
+    const paid =
+      newPurchaseForm.payment_type === 'نقدي' ? total : parseFloat(newPurchaseForm.paid_amount) || 0
     if (gross <= 0) {
       triggerCustomAlert('يرجى إدخال مبلغ الفاتورة!')
       return
