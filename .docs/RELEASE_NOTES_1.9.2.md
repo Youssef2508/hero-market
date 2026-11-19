@@ -14,3 +14,17 @@ Written for the shop owner. 1.9.2 makes three corrections the owner asked for. E
 
 - A product at stock -1 with a purchase invoice of 3: the whole invoice returned; the stock is -4, the supplier is credited, and returning more than the line bought is still refused.
 - Every automatic test.
+
+## The installer
+
+|            |                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| File       | `HeroMarket-Setup-1.9.2.exe`                                                                                                 |
+| Size       | 181,057,405 bytes                                                                                                            |
+| SHA-256    | `f9f8a682eb3af3bedf9cb80c11ba4ebb1ef01b6f152cf7ce80424d4ee369ddcf`                                                           |
+| Built from | the tag `v1.9.2` (`main`'s merge commit `97e7a86`) by the release workflow on GitHub, after lint and every test passed there |
+| Signed     | no ("Windows protected your PC" → More info → Run anyway)                                                                    |
+
+Check the file before installing: `Get-FileHash HeroMarket-Setup-1.9.2.exe` must show the SHA-256 above ([ROLLOUT_GUIDE.md](ROLLOUT_GUIDE.md) step 10).
+
+**The website** was updated to 1.9.2 on 2026-11-19 and still serves the shop's own store, with the same link. A shop PC still on 1.9.0 installs 1.9.2 directly: it brings the 1.9.1 database change with it.
