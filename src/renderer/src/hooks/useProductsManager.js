@@ -192,10 +192,21 @@ export function useProductsManager({
             : {})
         })
         // «صنف ميزان» (D-117): changed on its own, after the code (it is checked on that code).
-        if (
+        const scaleChanged =
           editProduct.scale_item !== undefined &&
           !!editProduct.scale_item !== !!editProduct.scale_item_was
-        ) {
+        // The new code waits for the shop: the mark would be sent with the old code, and refused
+        // there once the product is renamed (owner, 1.9.2). It is held back, and the owner told.
+        if (scaleChanged && deferred) {
+          triggerCustomAlert(
+            `حُفظت بيانات المنتج. تغيير الباركود إلى ${deferred.to}: ${deferred.message} ` +
+              'لم تُحفظ خاصية «صنف ميزان»: تُضبط بعد أن ينفّذ المتجر تغيير الباركود. افتح الصنف بكوده الجديد عند عودة اتصال المتجر وفعّلها.'
+          )
+          setShowEditModal(false)
+          if (fetchAdminData) await fetchAdminData()
+          return
+        }
+        if (scaleChanged) {
           try {
             const r = await api('products.setScaleItem', {
               barcode: nextBarcode || barcode,
